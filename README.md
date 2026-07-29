@@ -95,6 +95,49 @@ the documented fallbacks.
 
 `.env` is gitignored.
 
+### Getting your API keys
+
+All providers are optional — with an empty `.env` the demo runs fully
+offline (local JSON + rule-based intent). Add keys to unlock each layer:
+
+**DeepSeek (recommended; used via its Anthropic-compatible endpoint)**
+
+1. Sign up at [platform.deepseek.com](https://platform.deepseek.com) and
+   create an API key under **API Keys**.
+2. Set in `.env`:
+   ```
+   ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
+   ANTHROPIC_AUTH_TOKEN=sk-<your-deepseek-key>
+   ANTHROPIC_MODEL=deepseek-v4-flash
+   ```
+
+**OpenAI (alternative LLM, used only when the Anthropic vars are absent)**
+
+1. Create a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
+2. Set `OPENAI_API_KEY=sk-<your-openai-key>`.
+
+**Langfuse Cloud (hosted trace backend)**
+
+1. Sign up at [cloud.langfuse.com](https://cloud.langfuse.com) (free tier)
+   and create an organization + project.
+2. In the project go to **Settings → API Keys → Create new API keys** and
+   copy the `pk-lf-…` / `sk-lf-…` pair.
+3. Set in `.env`:
+   ```
+   LANGFUSE_PUBLIC_KEY=pk-lf-<your-public-key>
+   LANGFUSE_SECRET_KEY=sk-lf-<your-secret-key>
+   LANGFUSE_HOST=https://cloud.langfuse.com
+   ```
+
+**Self-hosted Langfuse (local Docker, no signup)**
+
+Use the throwaway demo values from `langfuse/.env.example` — see
+[Startup flow C](#c-self-hosted-langfuse-optional-but-recommended).
+
+> **Security**: `.env` is covered by `.gitignore` (verified — no real key
+> exists in the git history). Never paste keys into tracked files, and
+> rotate any key that has been shared in chats, tickets, or screenshots.
+
 ## Startup flows
 
 ### A. Local Python (dev)

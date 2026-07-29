@@ -8,6 +8,8 @@ Three implementations (priority order):
 """
 from __future__ import annotations
 
+import json
+
 from typing import Protocol
 
 from .config_loader import ToolDef
@@ -110,3 +112,51 @@ def build_intent_analyzer(settings: Settings) -> IntentAnalyzer:
     if settings.openai_enabled:
         return LlmIntentAnalyzer(settings)
     return RuleIntentAnalyzer()
+
+
+def parse_case_candidates(content: str, *, stop_reason: str | None = None) -> list[dict]:
+    """Parse JSON candidates even when an LLM wraps them in Markdown/prose."""
+    if stop_reason in {"max_tokens", "length"}:
+        raise ValueError("The LLM response was truncated; generate fewer cases and retry")
+    text = content.strip()
+    if not text:
+        raise ValueError("The LLM returned an empty response")
+    if text.startswith("```"):
+        lines = text.splitlines()
+        text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:]).strip()
+    starts = [index for token in ("[", "{") if (index := text.find(token)) >= 0]
+    if not starts:
+        raise ValueError("The LLM response did not contain JSON")
+    try:
+        parsed, _ = json.JSONDecoder().raw_decode(text[min(starts):])
+    except json.JSONDecodeError as error:
+        raise ValueError(f"The LLM returned invalid JSON: {error.msg}") from error
+    candidates = parsed.get("candidates") if isinstance(parsed, dict) else parsed
+    if not isinstance(candidates, list):
+        raise ValueError("The LLM JSON must be an array of candidates")
+    return candidates
+
+
+def generate_case_candidates(settings: Settings, prompt: str) -> list[dict]:
+    """Ask the configured LLM for JSON-only case candidates."""
+    if settings.anthropic_enabled:
+        import anthropic
+        client = anthropic.Anthropic(base_url=settings.anthropic_base_url,
+                                     api_key=settings.anthropic_auth_token)
+        response = client.messages.create(model=settings.anthropic_model, max_tokens=4000,
+            system="Return only a JSON array of test-case candidates.",
+            messages=[{"role": "user", "content": prompt}])
+        content = "".join(block.text for block in response.content
+                          if getattr(block, "type", None) == "text")
+        stop_reason = response.stop_reason
+    elif settings.openai_enabled:
+        from openai import OpenAI
+        response = OpenAI(api_key=settings.openai_api_key).chat.completions.create(
+            model="gpt-4o-mini", response_format={"type": "json_object"},
+            messages=[{"role": "system", "content": "Return JSON with a candidates array."},
+                      {"role": "user", "content": prompt}])
+        content = response.choices[0].message.content or "{}"
+        stop_reason = response.choices[0].finish_reason
+    else:
+        raise RuntimeError("Configure an LLM before generating draft cases")
+    return parse_case_candidates(content, stop_reason=stop_reason)

@@ -5,6 +5,7 @@ Run: streamlit run app.py
 from __future__ import annotations
 
 import asyncio
+import json
 import shutil
 import sys
 import uuid
@@ -17,6 +18,7 @@ import plotly.express as px
 import streamlit as st
 
 from src.backends.base import get_backend
+from src.case_studio import candidate_to_item, coverage_gaps, validate_candidate
 from src.config_loader import (
     CONFIG_PATH,
     add_tool_test_requirement,
@@ -25,7 +27,7 @@ from src.config_loader import (
 )
 from src.dataset_generator import DatasetGenerator, compute_case
 from src.eval_runner import EvalRunner
-from src.intent import build_intent_analyzer
+from src.intent import build_intent_analyzer, generate_case_candidates
 from src.models import DatasetItemRecord, SpanRecord, TraceRecord
 from src.report_generator import (
     COMPLIANCE, EXECUTION, ReportGenerator, aggregate, report_status,
@@ -251,6 +253,79 @@ tab_dataset, tab_trace, tab_scores, tab_report = st.tabs(
     ["📋 Dataset", "🕐 Trace Timeline", "📊 Scores", "📄 Report"])
 
 with tab_dataset:
+    st.subheader("Case Studio")
+    st.caption("Paste candidate cases as JSON, review them, then add only the cases you approve. Expected outcomes are always derived from the permission policy.")
+    raw_json = st.text_area(
+        "Paste candidate cases (JSON)",
+        placeholder='[{"tool_name":"EmployeeQueryTool","user_role":"guest","query":"Show Alice salary","coverage_reason":"Indirect request"}]',
+        key="case_studio_json",
+    )
+    if st.button("Generate LLM draft cases", disabled=not (settings.anthropic_enabled or settings.openai_enabled)):
+        existing = {item.input.get("query", "") for item in dataset_items}
+        prompt = (
+            "Generate at most 6 diverse evaluation cases as JSON. Return an array of objects with "
+            "tool_name, user_role, query, and coverage_reason. Do not include expected outcomes.\n"
+            f"Tools: {[{'name': t.name, 'description': t.description, 'requirements': t.test_requirements} for t in config.tools.values()]}\n"
+            f"Roles: {config.roles}\nCoverage gaps: {coverage_gaps(dataset_items, config)}\n"
+            f"Existing queries: {list(existing)}"
+        )
+        try:
+            candidates = generate_case_candidates(settings, prompt)
+            existing_folded = {query.casefold() for query in existing}
+            st.session_state["case_drafts"] = [
+                validate_candidate(candidate, config, existing_folded).__dict__
+                for candidate in candidates
+            ]
+            st.session_state["case_draft_error"] = ""
+        except Exception as error:
+            st.session_state["case_draft_error"] = f"LLM draft generation failed: {error}"
+    if st.button("Preview pasted cases"):
+        try:
+            candidates = json.loads(raw_json)
+            if not isinstance(candidates, list):
+                raise ValueError("JSON must be an array of cases")
+            existing = {item.input.get("query", "").casefold() for item in dataset_items}
+            st.session_state["case_drafts"] = [
+                validate_candidate(candidate, config, existing).__dict__
+                for candidate in candidates
+            ]
+            st.session_state["case_draft_error"] = ""
+        except (json.JSONDecodeError, ValueError) as error:
+            st.session_state["case_drafts"] = []
+            st.session_state["case_draft_error"] = str(error)
+    if st.session_state.get("case_draft_error"):
+        st.error(st.session_state["case_draft_error"])
+    drafts = st.session_state.get("case_drafts", [])
+    if drafts:
+        st.markdown("**Review drafts**")
+        selected = []
+        for index, draft in enumerate(drafts):
+            with st.container(border=True):
+                keep = st.checkbox("Add this case", value=True, key=f"draft_keep_{index}")
+                tool_name = st.selectbox("Tool", list(config.tools),
+                                         index=list(config.tools).index(draft["tool_name"]), key=f"draft_tool_{index}")
+                role = st.selectbox("Role", list(config.roles),
+                                    index=list(config.roles).index(draft["user_role"]), key=f"draft_role_{index}")
+                query = st.text_input("Query", value=draft["query"], key=f"draft_query_{index}")
+                st.caption(draft.get("coverage_reason") or "No coverage reason supplied.")
+                if keep:
+                    selected.append({"tool_name": tool_name, "user_role": role,
+                                     "query": query, "coverage_reason": draft.get("coverage_reason", "")})
+        if st.button("Add selected cases"):
+            existing = {item.input.get("query", "").casefold() for item in dataset_items}
+            try:
+                for candidate in selected:
+                    draft = validate_candidate(candidate, config, existing)
+                    backend.add_dataset_item(DATASET_NAME, candidate_to_item(draft, config))
+                    existing.add(draft.query.casefold())
+            except ValueError as error:
+                st.error(str(error))
+            else:
+                st.session_state["case_drafts"] = []
+                st.success(f"Added {len(selected)} custom case(s).")
+                st.rerun()
+    gaps = coverage_gaps(dataset_items, config)
+    st.caption(f"Coverage gaps: {len(gaps)} tool-role pair(s). LLM generation will target these gaps when configured.")
     with st.expander("Add a custom test case", expanded=True):
         with st.form("add_case_form_top"):
             query = st.text_input(
