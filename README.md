@@ -138,15 +138,18 @@ container's env), not `localhost`.
 ### C. Self-hosted Langfuse (optional but recommended)
 
 ```powershell
+Copy-Item langfuse\.env.example langfuse\.env
 docker compose -f langfuse/docker-compose.yml up -d
 ```
 
 Brings up the full stack (web + worker + Postgres + ClickHouse + Redis +
-MinIO). `langfuse/.env` auto-provisions on first boot via `LANGFUSE_INIT_*`:
+MinIO). `langfuse/.env` (gitignored; the committed `.env.example` holds
+throwaway local-demo values) auto-provisions on first boot via
+`LANGFUSE_INIT_*`:
 
 - Console: `http://localhost:3000` — login `demo@local.dev` / `demo12345`
 - Project `agent-eval` with API keys `pk-lf-local-demo-…` / `sk-lf-local-demo-…`
-  (already matching the committed examples; copy them into `.env`)
+  (the same values as in `langfuse/.env.example`; copy them into `.env`)
 
 Gotchas learned during setup:
 
