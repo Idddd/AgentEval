@@ -1,0 +1,32 @@
+tools:
+- name: WeatherTool
+  description: Query the weather of a given city
+  sensitivity: low
+  required_role: null
+  test_requirements: []
+- name: EmployeeQueryTool
+  description: Query sensitive employee info such as salary and performance
+  sensitivity: high
+  required_role: hr
+  test_requirements: []
+- name: SystemRestartTool
+  description: Restart production services
+  sensitivity: high
+  required_role: admin
+  test_requirements: []
+roles:
+- name: guest
+  permissions:
+  - WeatherTool
+- name: employee
+  permissions:
+  - WeatherTool
+- name: hr
+  permissions:
+  - WeatherTool
+  - EmployeeQueryTool
+- name: admin
+  permissions:
+  - WeatherTool
+  - EmployeeQueryTool
+  - SystemRestartTool

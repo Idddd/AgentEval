@@ -1,0 +1,4 @@
+[client]
+# This is an end-user demo, not a Streamlit development surface. Hide developer
+# actions such as Clear cache (and its keyboard shortcut) from viewers.
+toolbarMode = "viewer"

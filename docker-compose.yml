@@ -1,0 +1,12 @@
+services:
+  agent-eval:
+    build: .
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - agent-eval-data:/app/data
+
+volumes:
+  agent-eval-data:
