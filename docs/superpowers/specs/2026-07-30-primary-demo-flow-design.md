@@ -76,7 +76,11 @@ The notice must not mutate data, navigate away from the selected Demo Agent, or
 present a fake success state. Controls use a `Preview` label or tooltip so the
 limitation is discoverable before interaction.
 
-No Reset control and no Roadmap icon or text appears in the primary interface.
+No Roadmap icon or text appears in the primary interface. A small,
+low-emphasis **Reset demo** control remains at the bottom of the navigation for
+repeat presentations. It restores the selected Demo Agent, active module,
+evaluation progress, and preview notices to their initial state. It must not
+clear Streamlit function caches, delete SQLite records, or modify files.
 
 ## Demo Dataset
 
@@ -151,6 +155,8 @@ as a failed test.
 - Status meaning never depends on color alone.
 - The UI does not claim that a preview-only configuration was saved.
 - Empty states are not shown in the primary demo path.
+- `Reset demo` remains visually secondary and asks for lightweight confirmation
+  before restoring only the in-session demo state.
 
 ## State and Error Handling
 
@@ -175,7 +181,8 @@ outside the main demo path or behind an advanced control.
    distinct.
 7. Agent and Tool create/edit controls communicate future extensibility but do
    not fake persistence.
-8. No Roadmap or Reset control appears.
+8. No Roadmap content appears, and the bottom `Reset demo` control resets only
+   in-session presentation state without clearing caches or persistent data.
 9. The existing automated test suite remains green, with focused UI tests added
    for the primary demo path and preview-only controls.
 
