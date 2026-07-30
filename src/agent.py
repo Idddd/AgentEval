@@ -10,10 +10,14 @@ Trace structure (identical under both backends):
 """
 from __future__ import annotations
 
+import uuid
+
 from .backends.base import Tracer
 from .config_loader import ToolsConfig
 from .intent import IntentAnalyzer
 from .tools_mock import run_mock_tool
+from .tool_runtime import ToolAdapterRegistry, ToolExecutor, ToolRequest
+from .workbench_models import ToolBinding, ToolEvidence
 
 
 def check_permission(user_role: str, tool_name: str, config: ToolsConfig,
@@ -35,10 +39,20 @@ def check_permission(user_role: str, tool_name: str, config: ToolsConfig,
 
 class TargetAgent:
     def __init__(self, config: ToolsConfig, tracer: Tracer,
-                 analyzer: IntentAnalyzer):
+                 analyzer: IntentAnalyzer, executor: ToolExecutor | None = None):
         self.config = config
         self.tracer = tracer
         self.analyzer = analyzer
+        if executor is None:
+            registry = ToolAdapterRegistry()
+            registry.register(
+                "python",
+                lambda binding: lambda arguments: run_mock_tool(
+                    binding.name, arguments.get("query", ""),
+                ),
+            )
+            executor = ToolExecutor(tracer, registry)
+        self.executor = executor
 
     async def run(self, query: str, user_id: str, user_role: str, *,
                   scenario: str = "unknown", tags: list[str] | None = None,
@@ -55,6 +69,7 @@ class TargetAgent:
     def _run_inner(self, query: str, user_role: str, meta: dict,
                    inject_bug: str | None) -> dict:
         guard_result, executed, tool_name, result_text = None, False, None, ""
+        tool_evidence: list[ToolEvidence] = []
         try:
             # 1. Intent analysis
             with self.tracer.span("intent_analysis", metadata=meta) as s:
@@ -68,21 +83,24 @@ class TargetAgent:
             elif tool_def.sensitivity == "high" and inject_bug == "skip_guard":
                 # Injected misbehavior for the demo failing case: a rogue
                 # agent that executes sensitive tools WITHOUT the guard.
-                result_text = self._execute_tool(tool_name, query, meta)
+                result_text, evidence = self._execute_tool(tool_name, query, meta)
+                tool_evidence.append(evidence)
                 executed = True
             elif tool_def.sensitivity == "high":
                 # 2a. High sensitivity: guard first; on deny no tool_execution at all
                 guard_result = check_permission(
                     user_role, tool_name, self.config, self.tracer, meta)
                 if guard_result["granted"]:
-                    result_text = self._execute_tool(tool_name, query, meta)
+                    result_text, evidence = self._execute_tool(tool_name, query, meta)
+                    tool_evidence.append(evidence)
                     executed = True
                 else:
                     result_text = (f"Denied: role {user_role} is not allowed to "
                                    f"use {tool_name}. {guard_result['reason']}")
             else:
                 # 2b. Low sensitivity: execute directly, no guard
-                result_text = self._execute_tool(tool_name, query, meta)
+                result_text, evidence = self._execute_tool(tool_name, query, meta)
+                tool_evidence.append(evidence)
                 executed = True
         except Exception as e:  # spec 4.4: trace must stay complete on errors
             result_text = f"Execution error: {e}"
@@ -96,13 +114,23 @@ class TargetAgent:
             "tool_called": tool_name if executed else None,
             "guard_result": guard_result,
             "trace_id": self.tracer.last_trace_id(),
+            "tool_evidence": tool_evidence,
         }
 
-    def _execute_tool(self, tool_name: str, query: str, meta: dict) -> str:
+    def _execute_tool(self, tool_name: str, query: str,
+                      meta: dict) -> tuple[str, ToolEvidence]:
+        tool_def = self.config.tools[tool_name]
+        binding = ToolBinding(
+            tool_id=tool_name, name=tool_name, description=tool_def.description,
+            connection_type="python", adapter_config={}, input_schema={"type": "object"},
+            output_schema={"type": "object"}, permission={},
+            test_requirements=tuple(tool_def.test_requirements),
+            verification_required=tool_def.sensitivity == "high", enabled=True,
+        )
         with self.tracer.span("tool_execution", metadata=meta):
-            with self.tracer.span(tool_name,
-                                  input={"query": query},
-                                  metadata=meta) as s:
-                out = run_mock_tool(tool_name, query)
-                s.set_output(out)
-                return out["result"]
+            result, evidence = self.executor.execute(
+                binding, ToolRequest(uuid.uuid4().hex, tool_name, {"query": query}),
+            )
+        if result.error:
+            return f"Execution error: {result.error}", evidence
+        return (result.output or {}).get("result", ""), evidence

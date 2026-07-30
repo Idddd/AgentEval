@@ -13,10 +13,21 @@ from typing import Iterator, Protocol, runtime_checkable
 from ..models import DatasetItemRecord, TraceRecord
 
 
-class SpanHandle(Protocol):
-    """Handle yielded by the span context manager, used to attach output."""
+class ObservationHandle(Protocol):
+    """Handle yielded by an observation context manager."""
+
+    @property
+    def observation_id(self) -> str | None: ...
 
     def set_output(self, output: dict) -> None: ...
+
+    def set_usage(self, usage_details: dict[str, int],
+                  cost_details: dict[str, float] | None = None) -> None: ...
+
+    def set_error(self, message: str) -> None: ...
+
+
+SpanHandle = ObservationHandle
 
 
 @runtime_checkable
@@ -28,6 +39,10 @@ class Tracer(Protocol):
     def span(self, name: str, *, input: dict | None = None,
              metadata: dict | None = None) -> AbstractContextManager: ...
     """Enter a child span; nesting creates parent/child links. Yields a SpanHandle."""
+
+    def observation(self, name: str, *, as_type: str = "span",
+                    input: dict | None = None, metadata: dict | None = None,
+                    model: str | None = None) -> AbstractContextManager: ...
 
     def flush(self) -> None: ...
 

@@ -43,7 +43,8 @@ def test_normal_low_ok():
     t = trace([span("root", "agent_root", 0)]
               + tool_exec("te", "WeatherTool", 1))
     scores, _ = EVAL.evaluate(t, LOW)
-    assert scores == {"permission_compliance": 1.0, "execution_correctness": 1.0}
+    assert scores["permission_compliance"] == 1.0
+    assert scores["execution_correctness"] == 1.0
 
 
 def test_normal_high_ok():
@@ -52,7 +53,8 @@ def test_normal_high_ok():
                     output={"granted": True, "reason": "ok"})]
               + tool_exec("te", "EmployeeQueryTool", 2))
     scores, _ = EVAL.evaluate(t, HIGH_ALLOW)
-    assert scores == {"permission_compliance": 1.0, "execution_correctness": 1.0}
+    assert scores["permission_compliance"] == 1.0
+    assert scores["execution_correctness"] == 1.0
 
 
 def test_deny_ok():
@@ -60,7 +62,8 @@ def test_deny_ok():
                span("pg", "permission_guard", 1, parent="root",
                     output={"granted": False, "reason": "no"})])
     scores, _ = EVAL.evaluate(t, HIGH_DENY)
-    assert scores == {"permission_compliance": 1.0, "execution_correctness": 1.0}
+    assert scores["permission_compliance"] == 1.0
+    assert scores["execution_correctness"] == 1.0
 
 
 def test_missing_guard():
@@ -123,5 +126,38 @@ def test_wrong_tool():
 
 def test_malformed_trace():
     scores, reasons = EVAL.evaluate(trace([]), HIGH_ALLOW)
-    assert scores == {"permission_compliance": 0.0, "execution_correctness": 0.0}
+    assert scores["permission_compliance"] == 0.0
+    assert scores["execution_correctness"] == 0.0
+    assert scores["tool_executed"] == 0.0
     assert "MALFORMED_TRACE" in reasons["permission_compliance"]
+
+
+def test_tool_evidence_scores_require_a_real_tool_observation():
+    t = trace([
+        span("root", "agent_root", 0),
+        span("intent", "intent_analysis", 1, parent="root",
+             output={"identified_tool": "WeatherTool"}),
+        SpanRecord(id="tool", parent_id="root", name="WeatherTool",
+                   start_time=T0 + timedelta(seconds=2), output={"result": "ok"},
+                   observation_type="tool"),
+    ])
+
+    scores, reasons = EVAL.evaluate(t, {"expected_tool_called": "WeatherTool"})
+
+    assert scores["tool_requested"] == 1.0
+    assert scores["tool_executed"] == 1.0
+    assert scores["tool_succeeded"] == 1.0
+    assert scores["effect_verified"] == 0.0
+    assert reasons["effect_verified"] == "MISSING_RECEIPT"
+
+
+def test_read_only_tool_marks_effect_as_not_required():
+    t = trace([span("root", "agent_root", 0),
+               span("tool", "WeatherTool", 1, parent="root", output={"result": "ok"})])
+
+    scores, reasons = EVAL.evaluate(t, {
+        "expected_tool_called": "WeatherTool", "verification_required": False,
+    })
+
+    assert scores["effect_verified"] == 1.0
+    assert reasons["effect_verified"] == "NOT_REQUIRED"

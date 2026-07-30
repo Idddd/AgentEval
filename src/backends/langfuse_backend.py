@@ -22,12 +22,25 @@ from ..models import DatasetItemRecord, ScoreRecord, SpanRecord, TraceRecord
 from ..settings import PROJECT_ROOT, Settings
 
 
-class _LangfuseSpanHandle:
-    def __init__(self, span):
-        self._span = span
+class _LangfuseObservationHandle:
+    def __init__(self, observation):
+        self._observation = observation
+
+    @property
+    def observation_id(self) -> str | None:
+        return getattr(self._observation, "id", None)
 
     def set_output(self, output: dict) -> None:
-        self._span.update(output=output)
+        self._observation.update(output=output)
+
+    def set_usage(self, usage_details: dict[str, int],
+                  cost_details: dict[str, float] | None = None) -> None:
+        self._observation.update(
+            usage_details=usage_details, cost_details=cost_details or {},
+        )
+
+    def set_error(self, message: str) -> None:
+        self._observation.update(level="ERROR", status_message=message)
 
 
 class LangfuseTracer:
@@ -38,9 +51,8 @@ class LangfuseTracer:
     @contextmanager
     def start_trace(self, name: str, *, user_id: str, tags: list[str],
                     metadata: dict):
-        # root span acts as the trace carrier; child spans attach automatically
-        # via nested start_as_current_span
-        with self._lf.start_as_current_span(name="agent_root") as root:
+        with self._lf.start_as_current_observation(
+                name="agent_root", as_type="agent") as root:
             self._lf.update_current_trace(
                 name=name, user_id=user_id, tags=tags, metadata=metadata,
             )
@@ -50,10 +62,18 @@ class LangfuseTracer:
     @contextmanager
     def span(self, name: str, *, input: dict | None = None,
              metadata: dict | None = None):
-        with self._lf.start_as_current_span(name=name) as s:
-            if input is not None or metadata is not None:
-                s.update(input=input, metadata=metadata or {})
-            yield _LangfuseSpanHandle(s)
+        with self.observation(name, as_type="span", input=input,
+                              metadata=metadata) as handle:
+            yield handle
+
+    @contextmanager
+    def observation(self, name: str, *, as_type: str = "span",
+                    input: dict | None = None, metadata: dict | None = None,
+                    model: str | None = None):
+        with self._lf.start_as_current_observation(
+            name=name, as_type=as_type, input=input, metadata=metadata or {}, model=model,
+        ) as observation:
+            yield _LangfuseObservationHandle(observation)
 
     def flush(self) -> None:
         self._lf.flush()
@@ -82,6 +102,12 @@ def _to_trace_record(t) -> TraceRecord:
             input=getattr(o, "input", None),
             output=getattr(o, "output", None),
             metadata=_clean_meta(getattr(o, "metadata", None)),
+            observation_type=getattr(o, "type", "span") or "span",
+            level=getattr(o, "level", "DEFAULT") or "DEFAULT",
+            status_message=getattr(o, "status_message", None),
+            model=getattr(o, "model", None),
+            usage_details=getattr(o, "usage_details", None) or {},
+            cost_details=getattr(o, "cost_details", None) or {},
         )
         for o in (getattr(t, "observations", None) or [])
     ]

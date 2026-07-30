@@ -33,6 +33,26 @@ def test_trace_roundtrip(tmp_path):
     assert store.list_traces(tag="other") == []
 
 
+def test_typed_tool_and_generation_roundtrip(tmp_path):
+    """Typed observations and their cost data survive local persistence."""
+    backend = LocalJsonBackend(tmp_path)
+    with backend.tracer.start_trace("agent-run", user_id="u1", tags=["run-1"], metadata={}):
+        with backend.tracer.observation(
+            "call-tool", as_type="tool", input={"city": "Paris"}, metadata={"call_id": "c1"}
+        ) as tool:
+            tool.set_output({"temperature": 21})
+        with backend.tracer.observation(
+            "answer", as_type="generation", input={"prompt": "weather"},
+            metadata={}, model="model-a"
+        ) as generation:
+            generation.set_output({"text": "21 C"})
+            generation.set_usage({"input": 10, "output": 4}, {"input": 0.001, "output": 0.002})
+    trace = LocalJsonStore(tmp_path).get_trace(backend.tracer.last_trace_id())
+    assert trace.find_span("call-tool").observation_type == "tool"
+    assert trace.find_span("answer").usage_details == {"input": 10, "output": 4}
+    assert trace.find_span("answer").cost_details["output"] == 0.002
+
+
 def test_dataset_roundtrip(tmp_path):
     backend = LocalJsonBackend(tmp_path)
     items = [DatasetItemRecord(id="a", input={"query": "q"},

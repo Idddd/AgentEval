@@ -43,6 +43,12 @@ def trace_to_dict(t: TraceRecord) -> dict:
                 "input": s.input,
                 "output": s.output,
                 "metadata": s.metadata,
+                "observation_type": s.observation_type,
+                "level": s.level,
+                "status_message": s.status_message,
+                "model": s.model,
+                "usage_details": s.usage_details,
+                "cost_details": s.cost_details,
             }
             for s in t.spans
         ],
@@ -70,6 +76,12 @@ def trace_from_dict(d: dict) -> TraceRecord:
                 input=s.get("input"),
                 output=s.get("output"),
                 metadata=s.get("metadata", {}),
+                observation_type=s.get("observation_type", "span"),
+                level=s.get("level", "DEFAULT"),
+                status_message=s.get("status_message"),
+                model=s.get("model"),
+                usage_details=s.get("usage_details", {}),
+                cost_details=s.get("cost_details", {}),
             )
             for s in d.get("spans", [])
         ],
@@ -88,6 +100,19 @@ class _LocalSpanHandle:
 
     def set_output(self, output: dict) -> None:
         self._span.output = output
+
+    @property
+    def observation_id(self) -> str | None:
+        return self._span.id
+
+    def set_usage(self, usage_details: dict[str, int],
+                  cost_details: dict[str, float] | None = None) -> None:
+        self._span.usage_details = dict(usage_details)
+        self._span.cost_details = dict(cost_details or {})
+
+    def set_error(self, message: str) -> None:
+        self._span.level = "ERROR"
+        self._span.status_message = message
 
 
 class LocalTracer:
@@ -116,9 +141,17 @@ class LocalTracer:
         }
         self._local.stack = []
         self._local.root_spans = []
+        root = SpanRecord(
+            id=uuid.uuid4().hex, parent_id=None, name="agent_root",
+            start_time=_now(), observation_type="agent",
+        )
+        self._local.root_spans.append(root)
+        self._local.stack.append(root)
         try:
             yield SimpleNamespace(trace_id=trace_id)
         finally:
+            root.end_time = _now()
+            self._local.stack.pop()
             state = self._local.state
             trace = TraceRecord(
                 trace_id=trace_id,
@@ -135,6 +168,14 @@ class LocalTracer:
     @contextmanager
     def span(self, name: str, *, input: dict | None = None,
              metadata: dict | None = None):
+        with self.observation(name, as_type="span", input=input,
+                              metadata=metadata) as handle:
+            yield handle
+
+    @contextmanager
+    def observation(self, name: str, *, as_type: str = "span",
+                    input: dict | None = None, metadata: dict | None = None,
+                    model: str | None = None):
         stack = self._stack()
         span = SpanRecord(
             id=uuid.uuid4().hex,
@@ -143,6 +184,8 @@ class LocalTracer:
             start_time=_now(),
             input=input,
             metadata=dict(metadata or {}),
+            observation_type=as_type,
+            model=model,
         )
         self._local.root_spans.append(span)
         stack.append(span)
