@@ -35,20 +35,29 @@ installed project virtual environment.
 3. Start Eval Studio.
 
    ```powershell
-   .\.venv\Scripts\python.exe -m streamlit run app.py --server.port 8501 --server.headless true
+   .\.venv\Scripts\python.exe -m streamlit run app.py --server.address 0.0.0.0 --server.port 8501 --server.headless true
    ```
 
-   Open `http://localhost:8501`.
+   Open `http://localhost:8501`. Other users on the same LAN can open
+   `http://<this-computer-LAN-IP>:8501` when Windows Firewall allows port
+   `8501`.
 
 ## Demo flow
 
-On startup, Eval Studio selects the **Permission Compliance Agent** demo. No
-provider key or Langfuse connection is required.
+On startup, Eval Studio creates or reuses a durable **Permission Compliance
+Agent** demo. No provider key or Langfuse connection is required.
 
-1. Review three Tools representing Agent, HTTP API, and local-service adapters.
-2. Review the six cases in **Permission Compliance Regression**.
-3. Open **Evaluation** and run the local deterministic demo.
-4. Inspect Tool evidence, LLM Judge scores, tokens, and cost in **Report**.
+1. **Agent** — select Permission Compliance Agent, review its three Target
+   Tools, baseline Report, history, and trends.
+2. **Dataset** — review the six cases in **Permission Compliance Regression**;
+   optionally add a case manually, paste JSON, or generate an LLM draft for
+   user review.
+3. **Evaluation** — confirm the locked Agent/Dataset revisions and run the
+   local deterministic evaluation.
+4. **Report** — inspect Test Results first, followed by Tool Evidence, LLM
+   Judge, historical Comparison, and finally Usage & Cost.
+5. **Reset demo** — return to Agent Home without deleting Dataset revisions,
+   Runs, or Report history.
 
 The sample Report contains five correct outcomes and one intentionally injected
 permission-bypass regression, making `PASS`, correctly blocked safety behavior,
@@ -56,14 +65,14 @@ and a genuine `FAIL` easy to distinguish.
 
 The small **Reset demo** control at the bottom of the sidebar restores only the
 presentation state. It does not clear Streamlit caches or delete SQLite data.
-Agent and Tool create/edit controls are UI previews in the primary Demo; saved
-custom Agents remain available in the Agent inventory.
+Reports remain available after browser refreshes and app restarts, and two or
+more Reports can be compared from the same Agent context.
 
 ## Extended product flow
 
-1. Create an Agent, or import the original tool configuration using the CLI.
-2. Configure the Agent's Tools and save an immutable Agent Revision.
-3. Create a Dataset for that Agent, add or generate cases, then publish a
+1. Create/import an Agent through the CLI, then select it on Agent Home.
+2. Configure its Tools and save an immutable Agent Revision through the CLI.
+3. Open Dataset for that Agent, add/import/generate cases, then publish a
    Dataset Revision.
 4. Run an evaluation for one Agent Revision and one Dataset Revision.
 5. Reopen the resulting Report at any time, then compare it with another
@@ -76,6 +85,11 @@ Costs remain separate so a Report makes the trade-offs clear:
 - **Dataset cost**: model usage while cases are generated.
 - **Evaluation total**: Agent plus Judge cost; Dataset generation is reported
   separately because it is not spent on every evaluation run.
+
+LLM Dataset generation is optional. If the provider is unavailable, manual
+case entry and JSON import remain available. Judge and Tool evidence are also
+optional Report sections: when absent they display `Not available` and do not
+change an otherwise passing Test Result.
 
 ## CLI
 

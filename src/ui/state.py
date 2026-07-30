@@ -31,7 +31,6 @@ def init_ui_state(default_agent_id: str | None = None) -> None:
     defaults = {
         "selected_agent_id": default_agent_id,
         "active_page": "Agent",
-        "active_agent_module": "Tools",
         "agent_dialog": None,
         "tool_editor": None,
         "demo_preview_notice": None,
@@ -84,7 +83,6 @@ def reset_demo_state(default_agent_id: str | None = None) -> None:
     _clear_transient_editor_and_review_state()
     st.session_state.selected_agent_id = default_agent_id
     navigate("Agent")
-    st.session_state.active_agent_module = "Tools"
     st.session_state.demo_reset_confirm = False
     st.session_state.demo_reset_pending = False
 
@@ -93,5 +91,4 @@ def select_agent(agent_id: str) -> None:
     """Open an Agent from the global Agent route with a clean page context."""
     _clear_page_selections()
     st.session_state.selected_agent_id = agent_id
-    st.session_state.active_agent_module = "Tools"
     navigate("Agent")
