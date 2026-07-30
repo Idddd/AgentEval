@@ -140,6 +140,11 @@ def _selected_agent(agents: Sequence[AgentProfile], default_agent_id: str) -> Ag
     return next(agent for agent in agents if agent.agent_id == selected_id)
 
 
+def _select_agent_from_home() -> None:
+    """Apply Agent-route cleanup after the selector updates its durable context."""
+    select_agent(st.session_state.selected_agent_id)
+
+
 def render_agent_home(
     registry: AgentRegistry | None,
     repository: WorkbenchRepository,
@@ -158,18 +163,13 @@ def render_agent_home(
     selected = _selected_agent(agents, default_agent_id)
     agent_ids = [agent.agent_id for agent in agents]
     names = {agent.agent_id: agent.name for agent in agents}
-    if st.session_state.get("agent_selector") != selected.agent_id:
-        st.session_state.pop("agent_selector", None)
-    selected_id = st.selectbox(
+    st.selectbox(
         "Agent",
         agent_ids,
-        index=agent_ids.index(selected.agent_id),
         format_func=names.__getitem__,
-        key="agent_selector",
+        key="selected_agent_id",
+        on_change=_select_agent_from_home,
     )
-    if selected_id != selected.agent_id:
-        select_agent(selected_id)
-        st.rerun()
 
     selected = repository.get_agent(st.session_state.selected_agent_id)
     revision = repository.get_current_agent_revision(selected.agent_id)

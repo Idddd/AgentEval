@@ -122,6 +122,24 @@ def test_agent_home_keeps_external_selection_when_selector_state_is_stale(tmp_pa
     assert app.selectbox[0].value == second.agent_id
 
 
+def test_agent_home_selectbox_change_updates_selected_agent(tmp_path):
+    repository = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    registry = AgentRegistry(repository)
+    first = registry.create("First", "")
+    registry.revise(first.agent_id, {}, ())
+    second = registry.create("Second", "")
+    registry.revise(second.agent_id, {}, ())
+
+    app = AppTest.from_string(
+        _render_home_script(tmp_path / "workbench.db", first.agent_id)
+    ).run(timeout=20)
+    app.selectbox[0].set_value(second.agent_id).run(timeout=20)
+
+    assert not app.exception
+    assert app.session_state["selected_agent_id"] == second.agent_id
+    assert app.title[0].value == "Second"
+
+
 def test_report_history_keeps_unknown_cost_and_cost_chart_omits_it(tmp_path):
     from src.ui.agents import report_history_rows
     from src.ui.charts import cost_trend_figure
