@@ -5,6 +5,34 @@ from enum import Enum
 from typing import Any
 
 
+class _FrozenDict(dict):
+    def _immutable(self, *args: Any, **kwargs: Any) -> None:
+        raise TypeError("mapping is immutable")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    __ior__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, _FrozenDict):
+        return value
+    if isinstance(value, dict):
+        return _FrozenDict({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, tuple):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, set):
+        return frozenset(_freeze(item) for item in value)
+    return value
+
+
 class RunStatus(str, Enum):
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
@@ -36,6 +64,13 @@ class ToolBinding:
     verification_required: bool
     enabled: bool
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "adapter_config", _freeze(self.adapter_config))
+        object.__setattr__(self, "input_schema", _freeze(self.input_schema))
+        object.__setattr__(self, "output_schema", _freeze(self.output_schema))
+        object.__setattr__(self, "permission", _freeze(self.permission))
+        object.__setattr__(self, "test_requirements", _freeze(self.test_requirements))
+
 
 @dataclass(frozen=True)
 class AgentRevision:
@@ -45,6 +80,10 @@ class AgentRevision:
     config_snapshot: dict[str, Any]
     tools: tuple[ToolBinding, ...]
     created_at: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "config_snapshot", _freeze(self.config_snapshot))
+        object.__setattr__(self, "tools", tuple(self.tools))
 
 
 @dataclass(frozen=True)
@@ -57,6 +96,12 @@ class TestCase:
     source: str = "manual"
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "input", _freeze(self.input))
+        object.__setattr__(self, "expected_output", _freeze(self.expected_output))
+        object.__setattr__(self, "tags", _freeze(self.tags))
+        object.__setattr__(self, "metadata", _freeze(self.metadata))
+
 
 @dataclass(frozen=True)
 class DatasetRevision:
@@ -68,6 +113,10 @@ class DatasetRevision:
     cases: tuple[TestCase, ...]
     created_at: str
     generation_costs: tuple[UsageCost, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "cases", tuple(self.cases))
+        object.__setattr__(self, "generation_costs", tuple(self.generation_costs))
 
 
 @dataclass(frozen=True)
@@ -128,6 +177,16 @@ class JudgeResult:
     trace_id: str
     observation_id: str | None
     usage_cost: UsageCost | None = None
+
+    def __post_init__(self) -> None:
+        rubric_categories = {"correctness", "relevance", "completeness", "safety"}
+        if set(self.scores) != rubric_categories:
+            raise ValueError("scores must contain exactly the required rubric categories")
+        if any(
+            not isinstance(score, int) or isinstance(score, bool) or not 1 <= score <= 5
+            for score in self.scores.values()
+        ):
+            raise ValueError("rubric scores must be integers from 1 to 5")
 
     @property
     def average(self) -> float:

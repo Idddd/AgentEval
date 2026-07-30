@@ -4,8 +4,10 @@ import pytest
 
 from src.workbench_models import (
     AgentRevision,
+    DatasetRevision,
     JudgeResult,
     RunStatus,
+    TestCase as WorkbenchTestCase,
     ToolBinding,
     ToolEvidence,
     UsageCost,
@@ -88,3 +90,82 @@ def test_read_only_tool_evidence_does_not_require_effect_receipt():
     assert evidence.passed is True
     assert evidence.effect_status == "NOT REQUIRED"
     assert RunStatus.COMPLETED.value == "COMPLETED"
+
+
+def test_revision_snapshots_deeply_freeze_nested_mappings_and_collections():
+    tool = ToolBinding(
+        tool_id="weather",
+        name="Weather",
+        description="Forecast lookup",
+        connection_type="http",
+        adapter_config={"request": {"url": "http://service/weather"}},
+        input_schema={"properties": {"city": {"type": "string"}}},
+        output_schema={"fields": ["temperature"]},
+        permission={"scopes": ["read"]},
+        test_requirements=("Handle timeout",),
+        verification_required=False,
+        enabled=True,
+    )
+    agent_revision = AgentRevision(
+        revision_id="ar_1",
+        agent_id="agent_1",
+        revision=1,
+        config_snapshot={"model": {"name": "deepseek-v4-flash"}},
+        tools=(tool,),
+        created_at="2026-07-30T00:00:00+00:00",
+    )
+    dataset_revision = DatasetRevision(
+        revision_id="dr_1",
+        dataset_id="dataset_1",
+        agent_id="agent_1",
+        name="Weather cases",
+        revision=1,
+        cases=(
+            WorkbenchTestCase(
+                case_id="case_1",
+                input={"cities": ["Paris"]},
+                expected_output={"forecast": {"unit": "C"}},
+                metadata={"source": {"name": "manual"}},
+            ),
+        ),
+        created_at="2026-07-30T00:00:00+00:00",
+    )
+
+    with pytest.raises(TypeError):
+        agent_revision.config_snapshot["model"]["name"] = "changed"
+    with pytest.raises(TypeError):
+        agent_revision.tools[0].input_schema["properties"]["city"]["type"] = "number"
+    with pytest.raises(AttributeError):
+        agent_revision.tools[0].output_schema["fields"].append("humidity")
+    with pytest.raises(AttributeError):
+        dataset_revision.cases[0].input["cities"].append("London")
+    with pytest.raises(TypeError):
+        dataset_revision.cases[0].metadata["source"]["name"] = "generated"
+
+
+@pytest.mark.parametrize(
+    "scores",
+    [
+        {"safety": 4},
+        {"correctness": 4, "relevance": 4, "completeness": 4, "safety": 0},
+        {"correctness": 4, "relevance": 4, "completeness": 4, "safety": 6},
+        {
+            "correctness": 4,
+            "relevance": 4,
+            "completeness": 4,
+            "safety": 4,
+            "style": 4,
+        },
+    ],
+)
+def test_judge_result_rejects_missing_extra_or_out_of_range_rubric_scores(scores):
+    with pytest.raises(ValueError):
+        JudgeResult(
+            scores=scores,
+            reasons={},
+            summary="Good response",
+            model="judge-model",
+            prompt_version="judge-v1",
+            trace_id="trace_judge",
+            observation_id="obs_judge",
+        )
