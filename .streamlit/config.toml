@@ -2,3 +2,11 @@
 # This is an end-user demo, not a Streamlit development surface. Hide developer
 # actions such as Clear cache (and its keyboard shortcut) from viewers.
 toolbarMode = "viewer"
+
+[theme]
+base = "light"
+primaryColor = "#176B55"
+backgroundColor = "#F4F6F4"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#17201E"
+font = "sans-serif"

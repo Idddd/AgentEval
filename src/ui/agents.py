@@ -133,19 +133,30 @@ def render_agent_workspace(
 ) -> None:
     revision = current_agent_revision(repository, agent)
     tool_count = len(revision.tools) if revision else 0
-    workspace, controls = st.columns([3.4, 2.0])
+    workspace, controls = st.columns([2.8, 2.6])
     with workspace:
         st.header(agent.name)
         st.caption(f"Revision {agent.current_revision}  ·  AVAILABLE  ·  {tool_count} Tools")
     with controls:
-        first, second, third = st.columns(3)
-        first.button("Revisions", key="agent_revisions", help="Revision history is coming next")
-        second.button("Edit agent", key="edit_agent", help="Agent metadata editor is coming next")
+        first, second, third = st.columns([1.0, 1.05, 1.4])
+        first.button(
+            "Revisions",
+            key="agent_revisions",
+            help="Revision history is coming next",
+            width="stretch",
+        )
+        second.button(
+            "Edit agent",
+            key="edit_agent",
+            help="Agent metadata editor is coming next",
+            width="stretch",
+        )
         if third.button(
             "New evaluation",
             key="new_evaluation",
             type="primary",
             help="Open the guided evaluation wizard",
+            width="stretch",
         ):
             st.session_state.active_agent_module = "Runs"
             st.rerun()
