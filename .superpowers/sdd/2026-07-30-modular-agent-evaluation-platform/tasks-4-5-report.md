@@ -36,7 +36,7 @@
 
 ## Commit
 
-- `ee3d21b feat: add typed observations and tool evidence`
+- `b18c37c feat: add typed observations and tool evidence`
 
 ## Concerns
 
