@@ -6,11 +6,12 @@ from pathlib import Path
 import streamlit as st
 
 from src.agent_registry import AgentRegistry
+from src.demo_workspace import DEMO_AGENT_ID
 from src.workbench_repository import WorkbenchRepository
 
 from .agents import render_agents_page
 from .datasets import CandidateGenerator
-from .state import init_ui_state
+from .state import PAGES, init_ui_state
 
 
 def _show_reset_confirmation() -> None:
@@ -44,13 +45,13 @@ def render_shell(
     langfuse_base_url: str | None = None,
 ) -> None:
     """Render the fixed global shell and dispatch to the active page."""
-    init_ui_state()
+    init_ui_state(default_agent_id=DEMO_AGENT_ID)
     with st.sidebar:
         st.markdown("<div class='brand-mark'>EVAL STUDIO</div>", unsafe_allow_html=True)
         st.caption("MODULAR EVALUATION")
         page = st.radio(
             "Global navigation",
-            ["Agents", "Datasets", "Reports", "Settings"],
+            PAGES,
             key="active_page",
             label_visibility="collapsed",
         )
@@ -80,7 +81,7 @@ def render_shell(
         st.caption("Local workbench · Immutable revisions")
 
     st.markdown("<div class='workspace-bar'><span>WORKSPACE</span><strong>Local evaluation environment</strong></div>", unsafe_allow_html=True)
-    if page == "Agents":
+    if page == "Agent":
         render_agents_page(
             registry,
             repository,

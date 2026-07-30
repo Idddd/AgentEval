@@ -99,15 +99,15 @@ def test_reset_demo_state_restores_session_without_deleting_agents(tmp_path):
     script = '''\
 import streamlit as st
 from src.ui.state import init_ui_state, reset_demo_state
-init_ui_state()
+init_ui_state("demo-permission-compliance")
 st.session_state.selected_agent_id = "other"
-st.session_state.active_page = "Reports"
+st.session_state.active_page = "Report"
 st.session_state.demo_module = "Report"
 st.session_state.demo_next_module = "Evaluation"
 st.session_state.demo_report_summary = {"status": "PASS"}
 st.session_state.demo_preview_notice = "open"
 st.session_state.demo_reset_confirm = True
-reset_demo_state()
+reset_demo_state("demo-permission-compliance")
 st.write(st.session_state.selected_agent_id)
 st.write(st.session_state.active_page)
 st.write(st.session_state.demo_module)
@@ -120,7 +120,7 @@ st.write(str(st.session_state.demo_reset_confirm))
 
     assert not app.exception
     assert "demo-permission-compliance" in visible_text(app)
-    assert "Agents" in visible_text(app)
+    assert "Agent" in visible_text(app)
     assert "Tools" in visible_text(app)
     assert SQLiteWorkbenchRepository(db).get_agent(agent.agent_id) == agent
 

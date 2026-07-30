@@ -23,6 +23,16 @@ _PREVIEW_NOTICE = (
 )
 
 
+def _init_legacy_demo_state() -> None:
+    """Keep the nested demo usable until its modules gain global routes."""
+    for key, value in {
+        "demo_module": "Tools",
+        "demo_next_module": None,
+        "demo_report_summary": None,
+    }.items():
+        st.session_state.setdefault(key, value)
+
+
 def _open_preview() -> None:
     st.session_state.demo_preview_notice = _PREVIEW_NOTICE
     st.rerun()
@@ -140,6 +150,7 @@ def _render_demo_report(trace_path: Path) -> None:
 
 def render_demo_workspace(trace_path: Path) -> None:
     """Render the fixed Demo Agent and its guided modules."""
+    _init_legacy_demo_state()
     if st.session_state.demo_next_module:
         st.session_state.demo_module = st.session_state.demo_next_module
         st.session_state.demo_next_module = None
