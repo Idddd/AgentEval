@@ -1,0 +1,86 @@
+"""Small, accessible Plotly figures for immutable report summaries."""
+from __future__ import annotations
+
+from collections.abc import Mapping
+
+import plotly.graph_objects as go
+
+
+PRIMARY = "#176B55"
+PRIMARY_LIGHT = "#A9D3C1"
+CREAM = "#EADCB8"
+INK = "#17201E"
+GRID = "#DCE3DF"
+
+
+def _layout(figure: go.Figure, *, height: int = 270) -> go.Figure:
+    figure.update_layout(
+        height=height,
+        margin=dict(l=8, r=18, t=12, b=16),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Arial, Helvetica, sans-serif", color=INK, size=12),
+        showlegend=False,
+    )
+    return figure
+
+
+def judge_figure(dimensions: Mapping[str, float]) -> go.Figure:
+    """Build the fixed 1–5 Judge rubric chart with visible value labels."""
+    keys = ("correctness", "relevance", "completeness", "safety")
+    labels = [name.title() for name in keys]
+    values = [float(dimensions.get(name, 0.0)) for name in keys]
+    figure = go.Figure(
+        go.Bar(
+            x=values,
+            y=labels,
+            orientation="h",
+            marker_color=[PRIMARY, PRIMARY_LIGHT, PRIMARY, PRIMARY_LIGHT],
+            text=[f"{value:.1f}" for value in values],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{y}: %{x:.1f}/5<extra></extra>",
+        )
+    )
+    figure.update_xaxes(range=[0, 5.45], tickvals=[1, 2, 3, 4, 5], gridcolor=GRID)
+    figure.update_yaxes(autorange="reversed")
+    return _layout(figure)
+
+
+def tool_funnel_figure(funnel: Mapping[str, int]) -> go.Figure:
+    """Build the Requested → Verified evidence funnel as labelled bars."""
+    keys = ("requested", "executed", "succeeded", "verified")
+    labels = [name.title() for name in keys]
+    values = [int(funnel.get(name, 0)) for name in keys]
+    figure = go.Figure(
+        go.Bar(
+            x=labels,
+            y=values,
+            marker_color=[PRIMARY, "#34826D", "#6AA38F", "#A9D3C1"],
+            text=[str(value) for value in values],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{x}: %{y}<extra></extra>",
+        )
+    )
+    figure.update_yaxes(rangemode="tozero", gridcolor=GRID, dtick=1)
+    return _layout(figure)
+
+
+def cost_figure(costs: Mapping[str, float]) -> go.Figure:
+    """Show only costs included in Evaluation Total; Dataset stays context."""
+    labels = ["Agent", "Judge"]
+    values = [float(costs.get("agent", 0.0)), float(costs.get("judge", 0.0))]
+    figure = go.Figure(
+        go.Bar(
+            x=labels,
+            y=values,
+            marker_color=[PRIMARY, CREAM],
+            text=[f"${value:.4f}" for value in values],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{x}: $%{y:.4f}<extra></extra>",
+        )
+    )
+    figure.update_yaxes(rangemode="tozero", gridcolor=GRID, tickprefix="$")
+    return _layout(figure)
