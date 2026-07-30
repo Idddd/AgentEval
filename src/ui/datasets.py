@@ -31,16 +31,13 @@ def _dataset_rows(repository: WorkbenchRepository, agent_id: str) -> list[dict[s
 
 
 def _current_tools(repository: WorkbenchRepository, agent_id: str) -> tuple[ToolBinding, ...]:
-    connect = getattr(repository, "_connect", None)
-    if connect is None:
-        return ()
-    with connect() as connection:
-        row = connection.execute(
-            "SELECT revision_id FROM agent_revisions WHERE agent_id = ? "
-            "ORDER BY revision DESC LIMIT 1",
-            (agent_id,),
-        ).fetchone()
-    return repository.get_agent_revision(row["revision_id"]).tools if row else ()
+    revision = repository.get_current_agent_revision(agent_id)
+    return revision.tools if revision is not None else ()
+
+
+def _dataset_key(agent_id: str, dataset_id: str, name: str) -> str:
+    """Namespace Dataset widgets by their locked Agent and Dataset draft."""
+    return f"{name}_{agent_id}_{dataset_id}"
 
 
 def _case_from_mapping(item: Mapping[str, Any], *, source: str) -> TestCase:
@@ -132,13 +129,15 @@ def _coverage_cases(tools: Sequence[ToolBinding], existing: Sequence[TestCase]) 
     return additions
 
 
-def _set_review(dataset_id: str, candidates: Sequence[TestCase], source: str) -> None:
-    st.session_state[f"dataset_review_{dataset_id}"] = list(candidates)
-    st.session_state[f"dataset_review_source_{dataset_id}"] = source
+def _set_review(
+    agent_id: str, dataset_id: str, candidates: Sequence[TestCase], source: str
+) -> None:
+    st.session_state[_dataset_key(agent_id, dataset_id, "dataset_review")] = list(candidates)
+    st.session_state[_dataset_key(agent_id, dataset_id, "dataset_review_source")] = source
 
 
-def _render_review(registry: DatasetRegistry, dataset_id: str) -> None:
-    review_key = f"dataset_review_{dataset_id}"
+def _render_review(registry: DatasetRegistry, agent_id: str, dataset_id: str) -> None:
+    review_key = _dataset_key(agent_id, dataset_id, "dataset_review")
     drafts: list[TestCase] = st.session_state.get(review_key, [])
     if not drafts:
         return
@@ -147,14 +146,20 @@ def _render_review(registry: DatasetRegistry, dataset_id: str) -> None:
     selected: list[TestCase] = []
     for index, draft in enumerate(drafts):
         with st.container(border=True):
-            keep = st.checkbox("Select case", value=True, key=f"dataset_review_keep_{dataset_id}_{index}")
+            keep = st.checkbox(
+                "Select case",
+                value=True,
+                key=_dataset_key(agent_id, dataset_id, f"dataset_review_keep_{index}"),
+            )
             query = st.text_input(
-                "Query", value=str(draft.input.get("query", "")), key=f"dataset_review_query_{dataset_id}_{index}"
+                "Query",
+                value=str(draft.input.get("query", "")),
+                key=_dataset_key(agent_id, dataset_id, f"dataset_review_query_{index}"),
             )
             expected = st.text_area(
                 "Expected output (JSON)",
                 value=json.dumps(dict(draft.expected_output), indent=2),
-                key=f"dataset_review_expected_{dataset_id}_{index}",
+                key=_dataset_key(agent_id, dataset_id, f"dataset_review_expected_{index}"),
             )
             if keep:
                 try:
@@ -176,7 +181,11 @@ def _render_review(registry: DatasetRegistry, dataset_id: str) -> None:
                         )
                     )
     accept, cancel = st.columns([1.4, 5])
-    if accept.button("Add selected cases", key=f"dataset_review_accept_{dataset_id}", type="primary"):
+    if accept.button(
+        "Add selected cases",
+        key=_dataset_key(agent_id, dataset_id, "dataset_review_accept"),
+        type="primary",
+    ):
         if not selected:
             st.warning("Select at least one valid case.")
         elif any(not str(case.input.get("query", "")).strip() for case in selected):
@@ -190,13 +199,15 @@ def _render_review(registry: DatasetRegistry, dataset_id: str) -> None:
                 st.session_state.pop(review_key, None)
                 st.success(f"Added {len(selected)} case(s).")
                 st.rerun()
-    if cancel.button("Cancel review", key=f"dataset_review_cancel_{dataset_id}"):
+    if cancel.button(
+        "Cancel review", key=_dataset_key(agent_id, dataset_id, "dataset_review_cancel")
+    ):
         st.session_state.pop(review_key, None)
         st.rerun()
 
 
-def _render_case_editor(registry: DatasetRegistry, dataset_id: str) -> None:
-    editor_key = f"dataset_editor_{dataset_id}"
+def _render_case_editor(registry: DatasetRegistry, agent_id: str, dataset_id: str) -> None:
+    editor_key = _dataset_key(agent_id, dataset_id, "dataset_editor")
     editor = st.session_state.get(editor_key)
     if editor is None:
         return
@@ -207,7 +218,7 @@ def _render_case_editor(registry: DatasetRegistry, dataset_id: str) -> None:
         return
     with st.container(border=True):
         st.subheader("Edit case" if editing else "Add case")
-        with st.form(f"dataset_case_form_{dataset_id}"):
+        with st.form(_dataset_key(agent_id, dataset_id, "dataset_case_form")):
             query = st.text_input("Query", value=str(existing.input.get("query", "")) if existing else "")
             expected = st.text_area(
                 "Expected output (JSON)",
@@ -277,26 +288,44 @@ def render_datasets_module(
     st.caption("Cases remain editable until you publish an immutable Dataset Revision.")
 
     action_columns = st.columns(5)
-    if action_columns[0].button("Add case", key="dataset_add_case", type="primary", width="stretch"):
-        st.session_state[f"dataset_editor_{dataset_id}"] = "new"
+    if action_columns[0].button(
+        "Add case",
+        key=_dataset_key(agent_id, dataset_id, "dataset_add_case"),
+        type="primary",
+        width="stretch",
+    ):
+        st.session_state[_dataset_key(agent_id, dataset_id, "dataset_editor")] = "new"
         st.rerun()
-    if action_columns[1].button("Generate with LLM", key="dataset_generate_llm", width="stretch"):
+    if action_columns[1].button(
+        "Generate with LLM",
+        key=_dataset_key(agent_id, dataset_id, "dataset_generate_llm"),
+        width="stretch",
+    ):
         generator = llm_generate or st.session_state.get("dataset_llm_generator")
         if generator is None:
-            st.session_state[f"dataset_llm_notice_{dataset_id}"] = True
+            st.session_state[_dataset_key(agent_id, dataset_id, "dataset_llm_notice")] = True
+            st.rerun()
         else:
             try:
                 raw = generator(agent_id, tuple(cases))
                 drafts = [_case_from_mapping(item, source="llm") for item in raw]
             except Exception as error:  # boundary: provider failures belong in the UI
-                st.session_state[f"dataset_llm_error_{dataset_id}"] = str(error)
+                st.error(f"LLM generation failed: {error}")
             else:
-                _set_review(dataset_id, drafts, "llm")
+                _set_review(agent_id, dataset_id, drafts, "llm")
+                st.rerun()
+    if action_columns[2].button(
+        "Import JSON",
+        key=_dataset_key(agent_id, dataset_id, "dataset_import_json"),
+        width="stretch",
+    ):
+        st.session_state[_dataset_key(agent_id, dataset_id, "dataset_import_open")] = True
         st.rerun()
-    if action_columns[2].button("Import JSON", key="dataset_import_json", width="stretch"):
-        st.session_state[f"dataset_import_open_{dataset_id}"] = True
-        st.rerun()
-    if action_columns[3].button("Complete coverage", key="dataset_complete_coverage", width="stretch"):
+    if action_columns[3].button(
+        "Complete coverage",
+        key=_dataset_key(agent_id, dataset_id, "dataset_complete_coverage"),
+        width="stretch",
+    ):
         additions = _coverage_cases(_current_tools(repository, agent_id), cases)
         if additions:
             registry.add_cases(dataset_id, additions)
@@ -305,13 +334,17 @@ def render_datasets_module(
         else:
             st.info("Coverage is complete for enabled Tool requirements.")
     if action_columns[4].button(
-        "Publish revision", key="dataset_publish", type="primary", disabled=not cases, width="stretch"
+        "Publish revision",
+        key=_dataset_key(agent_id, dataset_id, "dataset_publish"),
+        type="primary",
+        disabled=not cases,
+        width="stretch",
     ):
         revision = registry.publish(dataset_id)
         st.success(f"Published Dataset Revision {revision.revision} with {len(revision.cases)} case(s).")
         st.rerun()
 
-    notice_key = f"dataset_llm_notice_{dataset_id}"
+    notice_key = _dataset_key(agent_id, dataset_id, "dataset_llm_notice")
     if st.session_state.get(notice_key):
         st.markdown(
             "<div style='background:#FBF4E4;border:1px solid #EADCB8;border-radius:12px;padding:14px 16px;'>"
@@ -319,34 +352,36 @@ def render_datasets_module(
             "</div>",
             unsafe_allow_html=True,
         )
-    error = st.session_state.pop(f"dataset_llm_error_{dataset_id}", None)
-    if error:
-        st.error(f"LLM draft generation failed: {error}")
-
-    if st.session_state.get(f"dataset_import_open_{dataset_id}"):
+    if st.session_state.get(_dataset_key(agent_id, dataset_id, "dataset_import_open")):
         with st.container(border=True):
             st.subheader("Import JSON")
             raw = st.text_area(
                 "Cases (JSON array)",
                 placeholder='[{"input":{"query":"Hello"},"expected_output":{}}]',
-                key=f"dataset_import_payload_{dataset_id}",
+                key=_dataset_key(agent_id, dataset_id, "dataset_import_payload"),
             )
             preview, cancel = st.columns([1, 4])
-            if preview.button("Review import", key=f"dataset_import_preview_{dataset_id}", type="primary"):
+            if preview.button(
+                "Review import",
+                key=_dataset_key(agent_id, dataset_id, "dataset_import_preview"),
+                type="primary",
+            ):
                 try:
                     drafts = parse_imported_cases(raw)
                 except ValueError as error:
                     st.error(str(error))
                 else:
-                    _set_review(dataset_id, drafts, "json")
-                    st.session_state[f"dataset_import_open_{dataset_id}"] = False
+                    _set_review(agent_id, dataset_id, drafts, "json")
+                    st.session_state[_dataset_key(agent_id, dataset_id, "dataset_import_open")] = False
                     st.rerun()
-            if cancel.button("Cancel", key=f"dataset_import_cancel_{dataset_id}"):
-                st.session_state[f"dataset_import_open_{dataset_id}"] = False
+            if cancel.button(
+                "Cancel", key=_dataset_key(agent_id, dataset_id, "dataset_import_cancel")
+            ):
+                st.session_state[_dataset_key(agent_id, dataset_id, "dataset_import_open")] = False
                 st.rerun()
 
-    _render_case_editor(registry, dataset_id)
-    _render_review(registry, dataset_id)
+    _render_case_editor(registry, agent_id, dataset_id)
+    _render_review(registry, agent_id, dataset_id)
 
     cases = registry.list_draft(dataset_id)
     if not cases:
@@ -364,10 +399,14 @@ def render_datasets_module(
                 required_tool = case.expected_output.get("expected_tool_called") or "No Tool required"
                 st.caption(f"{case.source.upper()} · {required_tool} · {case.case_id}")
             edit, duplicate, delete = actions.columns(3)
-            if edit.button("Edit", key=f"dataset_edit_{case.case_id}"):
-                st.session_state[f"dataset_editor_{dataset_id}"] = case.case_id
+            if edit.button(
+                "Edit", key=_dataset_key(agent_id, dataset_id, f"dataset_edit_{case.case_id}")
+            ):
+                st.session_state[_dataset_key(agent_id, dataset_id, "dataset_editor")] = case.case_id
                 st.rerun()
-            if duplicate.button("Duplicate", key=f"dataset_duplicate_{case.case_id}"):
+            if duplicate.button(
+                "Duplicate", key=_dataset_key(agent_id, dataset_id, f"dataset_duplicate_{case.case_id}")
+            ):
                 clone = TestCase(
                     uuid.uuid4().hex,
                     {**dict(case.input), "query": f"{case.input.get('query', '')} (copy)"},
@@ -379,6 +418,8 @@ def render_datasets_module(
                 )
                 registry.add_cases(dataset_id, [clone])
                 st.rerun()
-            if delete.button("Delete", key=f"dataset_delete_{case.case_id}"):
+            if delete.button(
+                "Delete", key=_dataset_key(agent_id, dataset_id, f"dataset_delete_{case.case_id}")
+            ):
                 registry.delete_case(dataset_id, case.case_id)
                 st.rerun()

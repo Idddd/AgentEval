@@ -12,6 +12,8 @@ from src.dataset_registry import DatasetRegistry
 from src.workbench_models import DatasetRevision, EvalRun, TestCase, ToolBinding
 from src.workbench_repository import WorkbenchRepository
 
+from .state import navigate
+
 
 _KNOWN_ADAPTERS = {"python", "http", "mock", "langfuse"}
 
@@ -55,15 +57,6 @@ def _rows(repository: WorkbenchRepository, query: str, values: tuple[Any, ...]) 
     with connect() as connection:
         rows = connection.execute(query, values).fetchall()
     return [dict(row) for row in rows]
-
-
-def _agent_revisions(repository: WorkbenchRepository, agent_id: str):
-    rows = _rows(
-        repository,
-        "SELECT revision_id FROM agent_revisions WHERE agent_id = ? ORDER BY revision DESC",
-        (agent_id,),
-    )
-    return [repository.get_agent_revision(row["revision_id"]) for row in rows]
 
 
 def _dataset_revisions(repository: WorkbenchRepository, agent_id: str) -> list[DatasetRevision]:
@@ -136,13 +129,13 @@ def render_runs_module(
     report_service: Any | None = None,
 ) -> None:
     """Render a four-stage New Evaluation flow and durable run history."""
-    revisions = _agent_revisions(repository, agent_id)
+    agent_revision = repository.get_current_agent_revision(agent_id)
     datasets = _dataset_revisions(repository, agent_id)
     drafts = _draft_options(repository, agent_id)
     st.subheader("New evaluation")
     st.caption("Confirm immutable inputs, review evaluation settings, then start the run.")
 
-    if not revisions:
+    if agent_revision is None:
         st.markdown(
             "<div style='background:#FBF4E4;border:1px solid #EADCB8;border-radius:12px;padding:14px 16px;'>"
             "<strong>Agent Revision required</strong><br>Save an Agent configuration before starting an evaluation."
@@ -154,14 +147,8 @@ def render_runs_module(
 
     with st.container(border=True):
         st.markdown("**1 · Confirm Agent Revision**")
-        revision_labels = {
-            f"Revision {revision.revision} · {revision.created_at}": revision for revision in revisions
-        }
-        revision_label = st.selectbox(
-            "Agent Revision", list(revision_labels), key=f"run_agent_revision_{agent_id}"
-        )
-        agent_revision = revision_labels[revision_label]
         model = agent_revision.config_snapshot.get("model", "Not specified")
+        st.markdown(f"Locked Agent Revision **{agent_revision.revision}**")
         st.caption(f"Model: {model} · {len(agent_revision.tools)} Tool bindings")
 
     selected_dataset: DatasetRevision | None = None
@@ -210,12 +197,12 @@ def render_runs_module(
     with st.container(border=True):
         st.markdown("**3 · Review evaluators and cost scope**")
         evaluator_version = "v1"
-        judge_model = agent_revision.config_snapshot.get("judge_model", "Configured Judge model")
+        judge_model = agent_revision.config_snapshot.get("judge_model", "Not configured")
         left, right = st.columns(2)
         left.markdown(f"Evaluator version: **{evaluator_version}**")
-        left.caption("Deterministic failures override Judge scores.")
-        right.markdown(f"Judge model: **{judge_model}**")
-        right.caption("Correctness · Relevance · Completeness · Safety · 1–5")
+        left.caption("Required deterministic assertions and execution failures are authoritative.")
+        right.markdown(f"Judge model (optional): **{judge_model}**")
+        right.caption("Optional supporting assessment: Correctness · Relevance · Completeness · Safety")
         st.caption("Cost categories: Agent + Judge = Evaluation Total. Dataset Generation is reported separately.")
 
     cases = selected_dataset.cases if selected_dataset else ()
@@ -224,7 +211,8 @@ def render_runs_module(
     if unavailable:
         st.markdown(
             "<div style='background:#FBF4E4;border:1px solid #EADCB8;border-radius:12px;padding:14px 16px;'>"
-            f"<strong>Unavailable required Tools</strong><br>{unavailable_text}. Enable or connect these Tools before starting."
+            f"<strong>Tool evidence not currently available</strong><br>{unavailable_text}. "
+            "This is non-blocking; execution and deterministic assertion failures remain authoritative."
             "</div>",
             unsafe_allow_html=True,
         )
@@ -233,7 +221,7 @@ def render_runs_module(
         st.markdown("**4 · Start evaluation**")
         if runner is None:
             st.caption("The evaluation runner is not connected to this UI session.")
-        start_disabled = selected_dataset is None or bool(unavailable) or runner is None
+        start_disabled = selected_dataset is None or runner is None
         if st.button(
             "Start evaluation",
             key="run_start",
@@ -264,7 +252,7 @@ def render_runs_module(
                 st.session_state["selected_run_id"] = run.run_id
                 if report is not None:
                     st.session_state["selected_report_id"] = report.report_id
-                    st.session_state["active_agent_module"] = "Reports"
+                    navigate("Report")
                 st.success(f"Run {run.run_id} finished with status {run.status.value}.")
                 if progress_lines:
                     st.code("\n".join(progress_lines), language="text")
