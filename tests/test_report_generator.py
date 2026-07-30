@@ -38,3 +38,31 @@ def test_report_marks_failed_cases_action_required() -> None:
     assert summary == "1 failing case requires investigation."
     assert "## Status: ACTION REQUIRED" in markdown
     assert "1 failing case requires investigation." in markdown
+
+
+def test_structured_renderer_preserves_case_quality_words() -> None:
+    summary = {
+        "identity": {
+            "run_id": "run-1",
+            "agent": {"id": "a", "name": "Agent", "revision": 2},
+            "dataset": {"id": "d", "name": "Dataset", "revision": 3},
+        },
+        "status": "NEEDS ATTENTION",
+        "metrics": {
+            "total_cases": 2, "passed_cases": 0, "pass_rate": 0.0,
+            "judge_average": 2.5, "evaluation_cost_usd": 0.03,
+            "dataset_generation_cost_usd": 0.01,
+        },
+        "cases": [
+            {"case_id": "case-fail", "status": "FAIL", "trace_id": "t1"},
+            {"case_id": "case-incomplete", "status": "INCOMPLETE", "trace_id": "t2"},
+        ],
+        "failures": [],
+        "judge_dimensions": {}, "tool_funnel": {}, "costs": {}, "tokens": {},
+    }
+
+    markdown = ReportGenerator.render_summary(summary)
+
+    assert "## Status: NEEDS ATTENTION" in markdown
+    assert "| case-fail | FAIL |" in markdown
+    assert "| case-incomplete | INCOMPLETE |" in markdown

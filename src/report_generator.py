@@ -2,6 +2,7 @@
 Markdown report (spec 3.5)."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from .backends.base import TraceStore
@@ -56,6 +57,62 @@ class ReportGenerator:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(md, encoding="utf-8")
         return md
+
+    @staticmethod
+    def render_summary(summary: dict) -> str:
+        """Render only the immutable summary supplied by ``ReportService``."""
+        identity = summary.get("identity", {})
+        agent = identity.get("agent", {})
+        dataset = identity.get("dataset", {})
+        metrics = summary.get("metrics", {})
+        lines = [
+            "# Agent Evaluation Report",
+            "",
+            f"## Status: {summary.get('status', 'INCOMPLETE')}",
+            "",
+            "## Identity",
+            "| Field | Value |",
+            "|---|---|",
+            f"| Run | {identity.get('run_id', '-')} |",
+            f"| Agent | {agent.get('name', '-')} (revision {agent.get('revision', '-')}) |",
+            f"| Dataset | {dataset.get('name', '-')} (revision {dataset.get('revision', '-')}) |",
+            "",
+            "## Overview",
+            "| Metric | Value |",
+            "|---|---|",
+            f"| Total cases | {metrics.get('total_cases', 0)} |",
+            f"| Passed cases | {metrics.get('passed_cases', 0)} |",
+            f"| Pass rate | {metrics.get('pass_rate', 0.0):.1f}% |",
+            f"| Judge average | {metrics.get('judge_average', 0.0):.2f} |",
+            f"| Evaluation cost | ${metrics.get('evaluation_cost_usd', 0.0):.6f} |",
+            f"| Dataset generation cost | ${metrics.get('dataset_generation_cost_usd', 0.0):.6f} |",
+            "",
+            "## Cases",
+            "| Case | Status | Trace |",
+            "|---|---|---|",
+        ]
+        for case in summary.get("cases", ()):
+            lines.append(
+                f"| {case.get('case_id', '-')} | {case.get('status', 'INCOMPLETE')} "
+                f"| {case.get('trace_id', '-')} |"
+            )
+        lines.extend(["", "## Failure Details"])
+        failures = summary.get("failures", ())
+        if not failures:
+            lines.append("No failures.")
+        for failure in failures:
+            lines.extend([
+                f"### {failure.get('case_id', '-')}: {failure.get('status', 'INCOMPLETE')}",
+                f"- Trace: {failure.get('trace_id', '-')}",
+                "- Deterministic reasons: "
+                + json.dumps(failure.get("deterministic_reason_codes", {}), sort_keys=True),
+                "- Judge reasons: "
+                + json.dumps(failure.get("judge_reasons", {}), sort_keys=True),
+                "- Failed tool states: "
+                + json.dumps(failure.get("failed_tool_states", []), sort_keys=True),
+                "",
+            ])
+        return "\n".join(lines).rstrip() + "\n"
 
     def _render_md(self, traces: list[TraceRecord], stats: dict) -> str:
         total, passed = stats["total"], stats["passed"]
