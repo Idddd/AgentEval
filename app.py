@@ -19,6 +19,7 @@ from src.agent_adapter import PermissionAgentAdapter
 from src.backends.local_backend import LocalJsonBackend, LocalJsonStore
 from src.code_evaluator import CodeEvaluator
 from src.config_loader import load_tools_config
+from src.demo_workspace import DemoEvalRunner, seed_demo_workspace
 from src.eval_runner import EvalRunner
 from src.intent import build_intent_analyzer, generate_case_candidates
 from src.llm_judge import LlmJudge
@@ -26,6 +27,7 @@ from src.report_service import ReportService
 from src.settings import load_settings
 from src.sqlite_workbench import SQLiteWorkbenchRepository
 from src.ui.shell import render_shell
+from src.ui.settings_page import SettingsStatus
 from src.workbench_models import TestCase
 
 
@@ -218,12 +220,34 @@ def build_runner(settings: Any, repository: SQLiteWorkbenchRepository):
 load_styles()
 settings = load_settings(probe=False)
 repository = build_workbench(str(settings.workbench_db))
-report_service = ReportService(repository)
+report_service = ReportService(repository, repository.db_path.parent / "reports")
+demo_trace_path = settings.data_dir / "demo-tool-traces.jsonl"
+demo_seed = seed_demo_workspace(repository, report_service, demo_trace_path)
+demo_runner = DemoEvalRunner(repository, demo_trace_path, inject_regression=True)
+configured_runner = build_runner(settings, repository)
+
+
+def runner_provider(agent_id: str):
+    """Resolve the dependency-free Demo runner before optional provider runners."""
+    return demo_runner if agent_id == demo_seed.agent_id else configured_runner
+
+
+settings_status = SettingsStatus(
+    llm=("Available" if settings.anthropic_enabled or settings.openai_enabled else "Not configured"),
+    langfuse=(
+        "Available"
+        if settings.langfuse_public_key and settings.langfuse_secret_key
+        else "Not configured"
+    ),
+    database="Available",
+    demo_fixture="Available",
+)
 render_shell(
     AgentRegistry(repository),
     repository,
-    demo_trace_path=settings.data_dir / "demo-tool-traces.jsonl",
-    runner=build_runner(settings, repository),
+    default_agent_id=demo_seed.agent_id,
+    runner_provider=runner_provider,
+    settings_status=settings_status,
     report_service=report_service,
     llm_generate=build_llm_generator(settings),
     langfuse_base_url=(

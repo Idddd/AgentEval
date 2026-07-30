@@ -78,7 +78,9 @@ def visible_text(app: AppTest) -> str:
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory(prefix="agent-eval-ui-smoke-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix="agent-eval-ui-smoke-", ignore_cleanup_errors=True
+    ) as directory:
         root = Path(directory)
         repo = SQLiteWorkbenchRepository(root / "workbench.db")
         agents = AgentRegistry(repo)
@@ -122,8 +124,8 @@ render_reports_module(SQLiteWorkbenchRepository(Path({str(repo.db_path)!r})), {f
         text = visible_text(restarted)
         assert "NEEDS ATTENTION" in text
         assert "PASS" in text
-        assert "Tool evidence funnel" in text
-        assert "Agent and Judge costs" in text
+        assert "Tool Evidence" in text
+        assert "Usage & Cost" in text
         assert "Report history" in text
 
         previous_db = os.environ.get("WORKBENCH_DB")
@@ -133,19 +135,19 @@ render_reports_module(SQLiteWorkbenchRepository(Path({str(repo.db_path)!r})), {f
             assert not demo.exception, demo.exception
             assert "Permission Compliance Agent" in visible_text(demo)
             demo = next(
-                radio for radio in demo.radio if radio.key == "demo_module"
+                radio for radio in demo.radio if radio.key == "active_page"
             ).set_value("Evaluation").run(timeout=30)
             demo = next(
-                button for button in demo.button if button.key == "demo_run"
+                button for button in demo.button if button.key == "run_start"
             ).click().run(timeout=30)
             assert not demo.exception, demo.exception
             text = visible_text(demo)
             assert "NEEDS ATTENTION" in text
             assert "PASS" in text
             assert "FAIL" in text
-            assert "Tool execution evidence" in text
-            assert "Agent and Judge costs" in text
-            assert "Demo evaluation" in text
+            assert "Tool Evidence" in text
+            assert "Usage & Cost" in text
+            assert "Comparison" in text
         finally:
             if previous_db is None:
                 os.environ.pop("WORKBENCH_DB", None)

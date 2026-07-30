@@ -12,7 +12,7 @@ from src.dataset_registry import DatasetRegistry
 from src.workbench_models import DatasetRevision, EvalRun, RunStatus, TestCase, ToolBinding
 from src.workbench_repository import WorkbenchRepository
 
-from .state import navigate
+from .state import request_navigation
 
 
 _KNOWN_ADAPTERS = {"python", "http", "mock", "langfuse"}
@@ -281,7 +281,7 @@ def render_runs_module(
                             can_rerun = False
                         else:
                             st.session_state["selected_report_id"] = persisted_report.report_id
-                            navigate("Report")
+                            request_navigation("Report")
                 st.success(f"Run {run.run_id} finished with status {run.status.value}.")
                 if progress_lines:
                     st.code("\n".join(progress_lines), language="text")

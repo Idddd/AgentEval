@@ -40,6 +40,9 @@ def init_ui_state(default_agent_id: str | None = None) -> None:
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
+    pending_page = st.session_state.pop("pending_page", None)
+    if pending_page in PAGES:
+        st.session_state.active_page = pending_page
     if st.session_state.active_page not in PAGES:
         st.session_state.active_page = "Agent"
     if st.session_state.demo_reset_pending:
@@ -53,6 +56,13 @@ def navigate(page: str) -> None:
     if st.session_state.get("active_page") == page:
         return
     st.session_state.active_page = page
+
+
+def request_navigation(page: str) -> None:
+    """Apply a route before sidebar widget construction on the next rerun."""
+    if page not in PAGES:
+        raise ValueError(f"Unknown workbench page: {page}")
+    st.session_state.pending_page = page
 
 
 def _clear_page_selections() -> None:
@@ -75,9 +85,6 @@ def reset_demo_state(default_agent_id: str | None = None) -> None:
     st.session_state.selected_agent_id = default_agent_id
     navigate("Agent")
     st.session_state.active_agent_module = "Tools"
-    st.session_state.demo_module = "Tools"
-    st.session_state.demo_next_module = None
-    st.session_state.demo_report_summary = None
     st.session_state.demo_reset_confirm = False
     st.session_state.demo_reset_pending = False
 

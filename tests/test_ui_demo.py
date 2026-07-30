@@ -3,7 +3,7 @@ from streamlit.testing.v1 import AppTest
 from src.sqlite_workbench import SQLiteWorkbenchRepository
 
 
-def visible_text(app):
+def visible_text(app: AppTest) -> str:
     nodes = (
         app.get("title")
         + app.get("header")
@@ -12,135 +12,80 @@ def visible_text(app):
         + app.get("markdown")
         + app.get("text")
         + app.get("info")
+        + app.get("warning")
+        + app.get("error")
+        + app.get("metric")
     )
     return "\n".join(str(node.value) for node in nodes)
-
-
-def build_demo_app(tmp_path):
-    script = f'''\
-from pathlib import Path
-from src.ui.state import init_ui_state
-from src.ui.demo import render_demo_workspace
-init_ui_state()
-render_demo_workspace(Path({str(tmp_path / "traces.jsonl")!r}))
-'''
-    return AppTest.from_string(script).run(timeout=20)
 
 
 def build_full_app(tmp_path, monkeypatch):
     db = tmp_path / "workbench.db"
     monkeypatch.setenv("WORKBENCH_DB", str(db))
-    return AppTest.from_file("app.py").run(timeout=20), db
+    return AppTest.from_file("app.py").run(timeout=30), db
 
 
-def test_demo_workspace_opens_on_tools_with_preview_controls(tmp_path):
-    app = build_demo_app(tmp_path)
-    text = visible_text(app)
+def test_app_starts_on_persisted_demo_agent_home(tmp_path, monkeypatch):
+    app, db = build_full_app(tmp_path, monkeypatch)
+
     assert not app.exception
+    text = visible_text(app)
     assert "Permission Compliance Agent" in text
-    assert "Demo" in text
-    assert "WeatherTool" in text
-    assert "EmployeeQueryTool" in text
-    assert "SystemRestartTool" in text
-    assert {button.key for button in app.button} >= {
-        "demo_edit_agent",
-        "demo_add_tool",
-        "demo_new_agent",
-    }
+    assert "Latest Report" in text
+    assert "100.0%" in text
+    assert next(radio for radio in app.radio if radio.key == "active_page").value == "Agent"
+
+    repository = SQLiteWorkbenchRepository(db)
+    agents = [agent for agent in repository.list_agents() if agent.current_revision > 0]
+    assert len(agents) == 1
+    assert len(repository.list_reports(agents[0].agent_id)) == 1
 
 
-def test_demo_flow_reaches_complete_report(tmp_path):
-    app = build_demo_app(tmp_path)
-    module = next(radio for radio in app.radio if radio.key == "demo_module")
-    app = module.set_value("Dataset").run(timeout=20)
-    assert "Permission Compliance Regression" in visible_text(app)
-    assert "6 test cases" in visible_text(app)
-    assert "Blocked before Tool execution" in visible_text(app)
-
-    app = next(radio for radio in app.radio if radio.key == "demo_module").set_value(
+def test_primary_demo_run_opens_result_first_report(tmp_path, monkeypatch):
+    app, db = build_full_app(tmp_path, monkeypatch)
+    app = next(radio for radio in app.radio if radio.key == "active_page").set_value(
         "Evaluation"
-    ).run(timeout=20)
-    assert "Deterministic checks" in visible_text(app)
-    assert "LLM-as-a-Judge" in visible_text(app)
-    app = next(button for button in app.button if button.key == "demo_run").click().run(
-        timeout=20
+    ).run(timeout=30)
+    app = next(button for button in app.button if button.key == "run_start").click().run(
+        timeout=30
     )
-    text = visible_text(app)
-    assert "Demo evaluation" in text
-    assert "NEEDS ATTENTION" in text
-    assert "PASS" in text
-    assert "FAIL" in text
-    assert "demo-safe" in text
-    assert "demo-blocked" in text
-    assert "Tool execution evidence" in text
-    assert "Agent and Judge costs" in text
-
-
-def test_preview_control_does_not_create_agent(tmp_path):
-    db = tmp_path / "workbench.db"
-    repository = SQLiteWorkbenchRepository(db)
-    repository.create_agent("Existing Agent", "")
-    before = repository.list_agents()
-
-    app = build_demo_app(tmp_path)
-    app = next(
-        button for button in app.button if button.key == "demo_new_agent"
-    ).click().run(timeout=20)
-
-    after = SQLiteWorkbenchRepository(db).list_agents()
-    assert before == after
-    assert "Configuration UI preview" in visible_text(app)
-
-
-def test_reset_demo_state_restores_session_without_deleting_agents(tmp_path):
-    db = tmp_path / "workbench.db"
-    repository = SQLiteWorkbenchRepository(db)
-    agent = repository.create_agent("Keep Me", "")
-    script = '''\
-import streamlit as st
-from src.ui.state import init_ui_state, reset_demo_state
-init_ui_state("demo-permission-compliance")
-st.session_state.selected_agent_id = "other"
-st.session_state.active_page = "Report"
-st.session_state.demo_module = "Report"
-st.session_state.demo_next_module = "Evaluation"
-st.session_state.demo_report_summary = {"status": "PASS"}
-st.session_state.demo_preview_notice = "open"
-st.session_state.demo_reset_confirm = True
-reset_demo_state("demo-permission-compliance")
-st.write(st.session_state.selected_agent_id)
-st.write(st.session_state.active_page)
-st.write(st.session_state.demo_module)
-st.write(str(st.session_state.demo_report_summary))
-st.write(str(st.session_state.demo_preview_notice))
-st.write(str(st.session_state.demo_reset_confirm))
-'''
-
-    app = AppTest.from_string(script).run(timeout=20)
 
     assert not app.exception
-    assert "demo-permission-compliance" in visible_text(app)
-    assert "Agent" in visible_text(app)
-    assert "Tools" in visible_text(app)
-    assert SQLiteWorkbenchRepository(db).get_agent(agent.agent_id) == agent
+    assert next(radio for radio in app.radio if radio.key == "active_page").value == "Report"
+    text = visible_text(app)
+    assert "NEEDS ATTENTION" in text
+    assert "Test Results" in text
+    assert "Tool Evidence" in text
+    assert "LLM Judge" in text
+    assert "Comparison" in text
+    assert "Usage & Cost" in text
+
+    repository = SQLiteWorkbenchRepository(db)
+    agent = next(agent for agent in repository.list_agents() if agent.current_revision > 0)
+    reports = repository.list_reports(agent.agent_id)
+    assert len(reports) == 2
+    assert reports[0].summary["metrics"]["passed_cases"] == 5
+    assert reports[0].summary["metrics"]["pass_rate"] == 5 / 6 * 100
 
 
-def test_bottom_reset_requires_confirmation_and_restores_demo(tmp_path, monkeypatch):
-    app, _ = build_full_app(tmp_path, monkeypatch)
-    app = next(r for r in app.radio if r.key == "demo_module").set_value(
-        "Dataset"
-    ).run(timeout=20)
-    app = next(b for b in app.button if b.key == "reset_demo").click().run(
-        timeout=20
+def test_reset_returns_home_without_deleting_report_history(tmp_path, monkeypatch):
+    app, db = build_full_app(tmp_path, monkeypatch)
+    app = next(radio for radio in app.radio if radio.key == "active_page").set_value(
+        "Report"
+    ).run(timeout=30)
+    repository = SQLiteWorkbenchRepository(db)
+    agent = next(agent for agent in repository.list_agents() if agent.current_revision > 0)
+    report_count = len(repository.list_reports(agent.agent_id))
+
+    app = next(button for button in app.button if button.key == "reset_demo").click().run(
+        timeout=30
     )
     assert "Reset the presentation state?" in visible_text(app)
-    assert {button.key for button in app.button} >= {
-        "confirm_reset_demo",
-        "cancel_reset_demo",
-    }
-    assert next(r for r in app.radio if r.key == "demo_module").value == "Dataset"
     app = next(
         button for button in app.button if button.key == "confirm_reset_demo"
-    ).click().run(timeout=20)
-    assert next(r for r in app.radio if r.key == "demo_module").value == "Tools"
+    ).click().run(timeout=30)
+
+    assert not app.exception
+    assert next(radio for radio in app.radio if radio.key == "active_page").value == "Agent"
     assert "Clear caches" not in visible_text(app)
+    assert len(SQLiteWorkbenchRepository(db).list_reports(agent.agent_id)) == report_count

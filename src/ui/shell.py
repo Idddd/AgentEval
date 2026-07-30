@@ -7,7 +7,6 @@ from pathlib import Path
 import streamlit as st
 
 from src.agent_registry import AgentRegistry
-from src.demo_workspace import DEMO_AGENT_ID
 from src.workbench_models import AgentProfile, AgentRevision
 from src.workbench_repository import WorkbenchRepository
 
@@ -83,7 +82,7 @@ def render_shell(
     registry: AgentRegistry,
     repository: WorkbenchRepository,
     *,
-    default_agent_id: str = DEMO_AGENT_ID,
+    default_agent_id: str | None = None,
     runner_provider: Callable[[str], object | None] | None = None,
     settings_status: SettingsStatus | None = None,
     # Compatibility arguments keep the pre-Task-8 application caller runnable.
@@ -150,7 +149,7 @@ def render_shell(
 
     if page == "Agent":
         render_agent_home(
-            registry, repository, default_agent_id=default_agent_id
+            registry, repository, default_agent_id=default_agent_id or ""
         )
         return
     if page == "Settings":

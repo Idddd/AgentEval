@@ -12,7 +12,7 @@ from src.workbench_models import AgentProfile, ReportSnapshot
 from src.workbench_repository import WorkbenchRepository
 
 from .charts import cost_trend_figure, quality_trend_figure
-from .state import navigate, select_agent
+from .state import request_navigation, select_agent
 
 
 def valid_agents(repository: WorkbenchRepository) -> list[AgentProfile]:
@@ -99,7 +99,7 @@ def _render_latest_report(report: ReportSnapshot | None) -> None:
         )
         if action.button("View report", key=f"view_report_{report.report_id}", width="stretch"):
             st.session_state.selected_report_id = report.report_id
-            navigate("Report")
+            request_navigation("Report")
             st.rerun()
         st.caption(f"Created {report.created_at} · Agent revision {agent.get('revision', '—')}")
 
