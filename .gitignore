@@ -4,6 +4,10 @@ __pycache__/
 .env
 data/
 reports/
+*.db-wal
+*.db-shm
+*-wal
+*-shm
 .pytest_cache/
 .pytest_tmp*/
 streamlit.*.log
