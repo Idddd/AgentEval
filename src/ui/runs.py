@@ -9,7 +9,7 @@ from typing import Any
 import streamlit as st
 
 from src.dataset_registry import DatasetRegistry
-from src.workbench_models import DatasetRevision, EvalRun, TestCase, ToolBinding
+from src.workbench_models import DatasetRevision, EvalRun, RunStatus, TestCase, ToolBinding
 from src.workbench_repository import WorkbenchRepository
 
 from .state import navigate
@@ -268,13 +268,15 @@ def render_runs_module(
                         st.error("Report was not persisted for this completed run.")
                         can_rerun = False
                     else:
-                        report_matches_run = persisted_report.run_id == run.run_id
-                        run_matches_context = (
-                            run.agent_id == agent_id
-                            and run.agent_revision_id == agent_revision.revision_id
-                            and run.dataset_revision_id == selected_dataset.revision_id
+                        persisted_run = repository.get_run(persisted_report.run_id)
+                        persisted_run_matches_context = (
+                            persisted_run.status is RunStatus.COMPLETED
+                            and persisted_run.run_id == run.run_id
+                            and persisted_run.agent_id == agent_id
+                            and persisted_run.agent_revision_id == agent_revision.revision_id
+                            and persisted_run.dataset_revision_id == selected_dataset.revision_id
                         )
-                        if not report_matches_run or not run_matches_context:
+                        if not persisted_run_matches_context:
                             st.error("Report was not persisted for this completed run.")
                             can_rerun = False
                         else:
