@@ -121,3 +121,23 @@ st.write(str(st.session_state.demo_reset_confirm))
     assert "Agents" in visible_text(app)
     assert "Tools" in visible_text(app)
     assert SQLiteWorkbenchRepository(db).get_agent(agent.agent_id) == agent
+
+
+def test_bottom_reset_requires_confirmation_and_restores_demo(tmp_path, monkeypatch):
+    app, _ = build_full_app(tmp_path, monkeypatch)
+    app = next(r for r in app.radio if r.key == "demo_module").set_value(
+        "Dataset"
+    ).run(timeout=20)
+    app = next(b for b in app.button if b.key == "reset_demo").click().run(
+        timeout=20
+    )
+    assert "Reset the presentation state?" in visible_text(app)
+    assert {button.key for button in app.button} >= {
+        "confirm_reset_demo",
+        "cancel_reset_demo",
+    }
+    app = next(
+        button for button in app.button if button.key == "confirm_reset_demo"
+    ).click().run(timeout=20)
+    assert next(r for r in app.radio if r.key == "demo_module").value == "Tools"
+    assert "Clear caches" not in visible_text(app)

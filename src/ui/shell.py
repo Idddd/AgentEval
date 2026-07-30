@@ -1,6 +1,8 @@
 """Global navigation shell for the modular workbench."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 from src.agent_registry import AgentRegistry
@@ -23,6 +25,7 @@ def render_shell(
     registry: AgentRegistry,
     repository: WorkbenchRepository,
     *,
+    demo_trace_path: Path,
     runner: object | None = None,
     report_service: object | None = None,
     llm_generate: CandidateGenerator | None = None,
@@ -39,13 +42,28 @@ def render_shell(
             key="active_page",
             label_visibility="collapsed",
         )
-        st.markdown("<div class='sidebar-foot'>Local workbench<br>Immutable revisions</div>", unsafe_allow_html=True)
+        st.markdown("<div class='sidebar-spacer'></div>", unsafe_allow_html=True)
+        st.caption("DEMO CONTROLS")
+        if st.button("Reset demo", key="reset_demo", width="stretch"):
+            st.session_state.demo_reset_confirm = True
+            st.rerun()
+        if st.session_state.demo_reset_confirm:
+            st.caption("Reset the presentation state?")
+            confirm, cancel = st.columns(2)
+            if confirm.button("Reset", key="confirm_reset_demo", width="stretch"):
+                st.session_state.demo_reset_pending = True
+                st.rerun()
+            if cancel.button("Cancel", key="cancel_reset_demo", width="stretch"):
+                st.session_state.demo_reset_confirm = False
+                st.rerun()
+        st.caption("Local workbench · Immutable revisions")
 
     st.markdown("<div class='workspace-bar'><span>WORKSPACE</span><strong>Local evaluation environment</strong></div>", unsafe_allow_html=True)
     if page == "Agents":
         render_agents_page(
             registry,
             repository,
+            demo_trace_path=demo_trace_path,
             runner=runner,
             report_service=report_service,
             llm_generate=llm_generate,

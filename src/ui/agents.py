@@ -1,13 +1,17 @@
 """Agent list and selected-Agent workspace."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 from src.agent_registry import AgentRegistry
+from src.demo_workspace import DEMO_AGENT_DESCRIPTION, DEMO_AGENT_ID, DEMO_AGENT_NAME
 from src.workbench_models import AgentProfile
 from src.workbench_repository import WorkbenchRepository
 
 from .datasets import CandidateGenerator, render_datasets_module
+from .demo import render_demo_workspace
 from .reports import render_reports_module
 from .runs import render_runs_module
 from .state import select_agent
@@ -55,6 +59,7 @@ def render_agents_page(
     registry: AgentRegistry,
     repository: WorkbenchRepository,
     *,
+    demo_trace_path: Path,
     runner: object | None = None,
     report_service: object | None = None,
     llm_generate: CandidateGenerator | None = None,
@@ -76,19 +81,30 @@ def render_agents_page(
         return
 
     agents = repository.list_agents()
-    if not agents:
-        with st.container(border=True):
-            st.subheader("No agents yet")
-            st.caption("Start with an Agent to organize its Tools, Datasets, Runs, and Reports.")
-            if st.button("New agent", key="empty_new_agent", type="primary"):
-                st.session_state.agent_dialog = "new"
-                st.rerun()
-        return
-
-    if st.session_state.selected_agent_id not in {agent.agent_id for agent in agents}:
-        select_agent(agents[0].agent_id)
+    valid_agent_ids = {DEMO_AGENT_ID, *(agent.agent_id for agent in agents)}
+    if st.session_state.selected_agent_id not in valid_agent_ids:
+        select_agent(DEMO_AGENT_ID)
 
     st.markdown("#### Agent workspace")
+    demo_selected = st.session_state.selected_agent_id == DEMO_AGENT_ID
+    with st.container(border=True):
+        info, metrics, choose = st.columns([2.3, 2.5, 1.1])
+        with info:
+            st.markdown(f"**{DEMO_AGENT_NAME}**  <span class='demo-badge'>Demo</span>", unsafe_allow_html=True)
+            st.caption(DEMO_AGENT_DESCRIPTION)
+        with metrics:
+            st.caption("3 Tools  ·  1 Dataset  ·  Repeatable local evaluation")
+        with choose:
+            label = "Selected" if demo_selected else "Open"
+            if choose.button(
+                label,
+                key="select_agent_demo",
+                disabled=demo_selected,
+                width="stretch",
+            ):
+                select_agent(DEMO_AGENT_ID)
+                st.rerun()
+
     for agent in agents:
         datasets, runs = _agent_counts(repository, agent.agent_id)
         revision = current_agent_revision(repository, agent)
@@ -108,8 +124,12 @@ def render_agents_page(
                     select_agent(agent.agent_id)
                     st.rerun()
 
-    selected_agent = next(agent for agent in agents if agent.agent_id == st.session_state.selected_agent_id)
     st.divider()
+    if demo_selected:
+        render_demo_workspace(demo_trace_path)
+        return
+
+    selected_agent = next(agent for agent in agents if agent.agent_id == st.session_state.selected_agent_id)
     render_agent_workspace(
         registry,
         repository,
