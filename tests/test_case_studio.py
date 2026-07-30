@@ -1,4 +1,4 @@
-from src.case_studio import candidate_to_item, coverage_gaps, validate_candidate
+from src.case_studio import candidate_to_item, candidate_to_test_case, coverage_gaps, validate_candidate
 from src.config_loader import load_tools_config
 from src.dataset_generator import build_items
 from src.intent import parse_case_candidates
@@ -13,6 +13,22 @@ def test_valid_candidate_derives_expected_output():
     item = candidate_to_item(draft, config)
     assert item.metadata["scenario"] == "deny_no_permission"
     assert item.expected_output["expected_outcome"] == "denied"
+
+
+def test_candidate_to_test_case_is_a_workbench_llm_case():
+    config = load_tools_config()
+    draft = validate_candidate(
+        {"tool_name": "WeatherTool", "user_role": "guest", "query": "Weather in Rome"},
+        config, set(),
+    )
+
+    case = candidate_to_test_case(draft, config, "dataset-id")
+
+    assert case.source == "llm"
+    assert case.metadata == {
+        "scenario": "normal_low", "tool_name": "WeatherTool", "user_role": "guest"
+    }
+    assert case.expected_output["expected_outcome"] == "direct_call"
 
 
 def test_coverage_gaps_identifies_missing_tool_role_pairs():

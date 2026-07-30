@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from .config_loader import ToolsConfig
 from .dataset_generator import compute_case
 from .models import DatasetItemRecord
+from .workbench_models import TestCase
 
 
 @dataclass
@@ -44,6 +45,28 @@ def candidate_to_item(draft: DraftCase, config: ToolsConfig) -> DatasetItemRecor
         metadata={"scenario": scenario, "tool_name": draft.tool_name,
                   "user_role": draft.user_role, "custom": True,
                   "coverage_reason": draft.coverage_reason},
+    )
+
+
+def candidate_to_test_case(
+    draft: DraftCase, config: ToolsConfig, dataset_id: str
+) -> TestCase:
+    """Convert a validated generated candidate into a workbench draft case."""
+    scenario, expected = compute_case(config, draft.tool_name, draft.user_role)
+    return TestCase(
+        case_id=uuid.uuid4().hex,
+        input={
+            "query": draft.query,
+            "user_id": f"user_custom_{draft.user_role}",
+            "user_role": draft.user_role,
+        },
+        expected_output=expected,
+        source="llm",
+        metadata={
+            "scenario": scenario,
+            "tool_name": draft.tool_name,
+            "user_role": draft.user_role,
+        },
     )
 
 
