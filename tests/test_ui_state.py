@@ -1,3 +1,4 @@
+import pytest
 from streamlit.testing.v1 import AppTest
 
 
@@ -57,3 +58,21 @@ with pytest.raises(ValueError):
     app = AppTest.from_string(script).run(timeout=20)
 
     assert not app.exception
+
+
+@pytest.mark.parametrize("legacy_page", ("Agents", "Reports"))
+def test_init_ui_state_normalizes_stale_global_route_values(legacy_page):
+    """Old browser sessions must never reach a global route removed by migration."""
+    script = f'''\
+import streamlit as st
+from src.ui.state import init_ui_state
+
+st.session_state.active_page = {legacy_page!r}
+init_ui_state("demo-agent")
+st.text(st.session_state.active_page)
+'''
+
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    assert _text_values(app) == {"Agent"}

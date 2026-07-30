@@ -40,6 +40,8 @@ def init_ui_state(default_agent_id: str | None = None) -> None:
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
+    if st.session_state.active_page not in PAGES:
+        st.session_state.active_page = "Agent"
     if st.session_state.demo_reset_pending:
         reset_demo_state(default_agent_id)
 
