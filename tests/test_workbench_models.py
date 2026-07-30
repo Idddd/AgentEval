@@ -92,6 +92,20 @@ def test_read_only_tool_evidence_does_not_require_effect_receipt():
     assert RunStatus.COMPLETED.value == "COMPLETED"
 
 
+def test_immutable_json_arrays_have_coherent_equality():
+    case = WorkbenchTestCase(
+        case_id="case_1",
+        input={"values": [1, 2]},
+        expected_output={},
+    )
+
+    values = case.input["values"]
+
+    assert values == [1, 2]
+    assert not values != [1, 2]
+    assert values != [1, 3]
+
+
 def test_revision_snapshots_deeply_freeze_nested_mappings_and_collections():
     tool = ToolBinding(
         tool_id="weather",

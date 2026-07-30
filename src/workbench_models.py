@@ -27,6 +27,9 @@ class _FrozenList(tuple):
             return list(self) == other
         return super().__eq__(other)
 
+    def __ne__(self, other: Any) -> bool:
+        return not self == other
+
 
 def _freeze(value: Any) -> Any:
     if isinstance(value, _FrozenDict):
