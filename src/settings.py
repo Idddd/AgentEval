@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 @dataclass
 class Settings:
     openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
     anthropic_base_url: str | None = None
     anthropic_auth_token: str | None = None
     anthropic_model: str = "deepseek-v4-flash"
@@ -51,6 +52,7 @@ def load_settings(probe: bool = True) -> Settings:
     load_dotenv(PROJECT_ROOT / ".env", override=True)
     s = Settings(
         openai_api_key=_clean(os.getenv("OPENAI_API_KEY")),
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip(),
         anthropic_base_url=_clean(os.getenv("ANTHROPIC_BASE_URL")),
         anthropic_auth_token=_clean(os.getenv("ANTHROPIC_AUTH_TOKEN")),
         anthropic_model=os.getenv("ANTHROPIC_MODEL", "deepseek-v4-flash").strip(),

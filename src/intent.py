@@ -13,6 +13,7 @@ import json
 from typing import Protocol
 
 from .config_loader import ToolDef
+from .llm_gateway import AnthropicGateway, LlmGateway, LlmResponse, OpenAIGateway
 from .settings import Settings
 
 KEYWORDS: dict[str, list[str]] = {
@@ -45,30 +46,23 @@ _SYSTEM_PROMPT = (
 class AnthropicIntentAnalyzer:
     """Anthropic-compatible endpoint (e.g. DeepSeek's /anthropic API)."""
 
-    def __init__(self, settings: Settings):
-        import anthropic
-
-        self._client = anthropic.Anthropic(
+    def __init__(self, settings: Settings, gateway: LlmGateway | None = None):
+        self._gateway = gateway or AnthropicGateway(
+            settings.anthropic_model,
             base_url=settings.anthropic_base_url,
             api_key=settings.anthropic_auth_token,
         )
-        self._model = settings.anthropic_model
         self._fallback = RuleIntentAnalyzer()
         self.used_fallback = False
 
     def identify(self, query: str, tools: dict[str, ToolDef]) -> str | None:
         tool_desc = "\n".join(f"- {t.name}: {t.description}" for t in tools.values())
         try:
-            resp = self._client.messages.create(
-                model=self._model,
-                max_tokens=20,
-                system=f"{_SYSTEM_PROMPT}\n{tool_desc}",
-                messages=[{"role": "user", "content": query}],
+            response = self._gateway.complete(
+                f"{_SYSTEM_PROMPT}\n{tool_desc}",
+                [{"role": "user", "content": query}], 20,
             )
-            name = "".join(
-                block.text for block in resp.content
-                if getattr(block, "type", None) == "text"
-            ).strip()
+            name = response.text.strip()
             if name in tools:
                 return name
             return self._fallback.identify(query, tools)
@@ -78,26 +72,21 @@ class AnthropicIntentAnalyzer:
 
 
 class LlmIntentAnalyzer:
-    def __init__(self, settings: Settings):
-        from openai import OpenAI
-
-        self._client = OpenAI(api_key=settings.openai_api_key)
+    def __init__(self, settings: Settings, gateway: LlmGateway | None = None):
+        self._gateway = gateway or OpenAIGateway(
+            settings.openai_model, api_key=settings.openai_api_key,
+        )
         self._fallback = RuleIntentAnalyzer()
         self.used_fallback = False
 
     def identify(self, query: str, tools: dict[str, ToolDef]) -> str | None:
         tool_desc = "\n".join(f"- {t.name}: {t.description}" for t in tools.values())
         try:
-            resp = self._client.chat.completions.create(
-                model="gpt-4o-mini",
-                max_tokens=20,
-                temperature=0,
-                messages=[
-                    {"role": "system", "content": f"{_SYSTEM_PROMPT}\n{tool_desc}"},
-                    {"role": "user", "content": query},
-                ],
+            response = self._gateway.complete(
+                f"{_SYSTEM_PROMPT}\n{tool_desc}",
+                [{"role": "user", "content": query}], 20,
             )
-            name = (resp.choices[0].message.content or "").strip()
+            name = response.text.strip()
             if name in tools:
                 return name
             return self._fallback.identify(query, tools)
@@ -137,26 +126,30 @@ def parse_case_candidates(content: str, *, stop_reason: str | None = None) -> li
     return candidates
 
 
-def generate_case_candidates(settings: Settings, prompt: str) -> list[dict]:
-    """Ask the configured LLM for JSON-only case candidates."""
+def build_llm_gateway(settings: Settings) -> LlmGateway:
     if settings.anthropic_enabled:
-        import anthropic
-        client = anthropic.Anthropic(base_url=settings.anthropic_base_url,
-                                     api_key=settings.anthropic_auth_token)
-        response = client.messages.create(model=settings.anthropic_model, max_tokens=4000,
-            system="Return only a JSON array of test-case candidates.",
-            messages=[{"role": "user", "content": prompt}])
-        content = "".join(block.text for block in response.content
-                          if getattr(block, "type", None) == "text")
-        stop_reason = response.stop_reason
-    elif settings.openai_enabled:
-        from openai import OpenAI
-        response = OpenAI(api_key=settings.openai_api_key).chat.completions.create(
-            model="gpt-4o-mini", response_format={"type": "json_object"},
-            messages=[{"role": "system", "content": "Return JSON with a candidates array."},
-                      {"role": "user", "content": prompt}])
-        content = response.choices[0].message.content or "{}"
-        stop_reason = response.choices[0].finish_reason
-    else:
-        raise RuntimeError("Configure an LLM before generating draft cases")
-    return parse_case_candidates(content, stop_reason=stop_reason)
+        return AnthropicGateway(settings.anthropic_model, base_url=settings.anthropic_base_url,
+                                api_key=settings.anthropic_auth_token)
+    if settings.openai_enabled:
+        return OpenAIGateway(settings.openai_model, api_key=settings.openai_api_key)
+    raise RuntimeError("Configure an LLM before generating draft cases")
+
+
+def generate_case_candidates_response(settings: Settings, prompt: str,
+                                      gateway: LlmGateway | None = None
+                                      ) -> tuple[list[dict], LlmResponse]:
+    """Generate candidates and retain normalized usage for Dataset Registry callers."""
+    gateway = gateway or build_llm_gateway(settings)
+    response = gateway.complete(
+        "Return JSON with a candidates array.",
+        [{"role": "user", "content": prompt}],
+        4000,
+        json_mode=True,
+    )
+    return parse_case_candidates(response.text, stop_reason=response.stop_reason), response
+
+
+def generate_case_candidates(settings: Settings, prompt: str,
+                             gateway: LlmGateway | None = None) -> list[dict]:
+    """Ask the configured LLM for JSON-only case candidates."""
+    return generate_case_candidates_response(settings, prompt, gateway)[0]
