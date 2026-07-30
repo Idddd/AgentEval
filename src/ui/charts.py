@@ -112,7 +112,9 @@ def quality_trend_figure(rows: Sequence[Mapping[str, Any]]) -> go.Figure:
 
 def cost_trend_figure(rows: Sequence[Mapping[str, Any]]) -> go.Figure:
     """Plot immutable evaluation costs from oldest to newest."""
-    points = _chronological_rows(rows)
+    points = [
+        point for point in _chronological_rows(rows) if point.get("Cost") is not None
+    ]
     figure = go.Figure(
         go.Scatter(
             x=[point["Time"] for point in points],

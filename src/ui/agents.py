@@ -24,6 +24,11 @@ def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
+def _evaluation_cost(costs: Mapping[str, Any]) -> float | None:
+    value = costs.get("evaluation_total")
+    return float(value) if value is not None else None
+
+
 def report_history_rows(reports: Sequence[ReportSnapshot]) -> list[dict[str, Any]]:
     """Normalize immutable Report snapshots into newest-first Agent history rows."""
     ordered = sorted(
@@ -49,7 +54,7 @@ def report_history_rows(reports: Sequence[ReportSnapshot]) -> list[dict[str, Any
                 "Status": summary.get("status", report.status),
                 "Pass rate": current_rate,
                 "Pass rate delta": None,
-                "Cost": float(costs.get("evaluation_total", 0.0)),
+                "Cost": _evaluation_cost(costs),
             }
         )
     for index, row in enumerate(rows[:-1]):
@@ -87,7 +92,11 @@ def _render_latest_report(report: ReportSnapshot | None) -> None:
         status, pass_rate, cost, action = st.columns([1.3, 1.2, 1.2, 1.1])
         status.markdown(f"**{summary.get('status', report.status)}**")
         pass_rate.metric("Pass rate", f"{float(metrics.get('pass_rate', 0.0)):.1f}%")
-        cost.metric("Evaluation cost", f"${float(costs.get('evaluation_total', 0.0)):.4f}")
+        evaluation_cost = _evaluation_cost(costs)
+        cost.metric(
+            "Evaluation cost",
+            f"${evaluation_cost:.4f}" if evaluation_cost is not None else "Not available",
+        )
         if action.button("View report", key=f"view_report_{report.report_id}", width="stretch"):
             st.session_state.selected_report_id = report.report_id
             navigate("Report")
@@ -110,11 +119,12 @@ def _render_trends(rows: Sequence[Mapping[str, Any]]) -> None:
             )
     with cost:
         st.subheader("Cost trend")
-        if len(rows) < 2:
-            st.caption("At least two Reports are required to show a cost trend.")
+        cost_rows = [row for row in rows if row.get("Cost") is not None]
+        if len(cost_rows) < 2:
+            st.caption("At least two Reports with evaluation cost are required to show a cost trend.")
         else:
             st.plotly_chart(
-                cost_trend_figure(rows),
+                cost_trend_figure(cost_rows),
                 width="stretch",
                 config={"displayModeBar": False},
                 key="agent_cost_trend",
@@ -148,6 +158,8 @@ def render_agent_home(
     selected = _selected_agent(agents, default_agent_id)
     agent_ids = [agent.agent_id for agent in agents]
     names = {agent.agent_id: agent.name for agent in agents}
+    if st.session_state.get("agent_selector") != selected.agent_id:
+        st.session_state.pop("agent_selector", None)
     selected_id = st.selectbox(
         "Agent",
         agent_ids,

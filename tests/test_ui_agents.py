@@ -39,6 +39,20 @@ def _persist_reports(repository: SQLiteWorkbenchRepository, agent_id: str, outpu
         repository.save_report(run.run_id, "PASS", summary, output / f"{pass_rate}.md")
 
 
+def _render_home_script(db: Path, agent_id: str, setup: str = "") -> str:
+    return f"""
+import streamlit as st
+from src.ui.agents import render_agent_home
+from src.ui.state import init_ui_state, select_agent
+from src.sqlite_workbench import SQLiteWorkbenchRepository
+
+repository = SQLiteWorkbenchRepository({str(db)!r})
+init_ui_state({agent_id!r})
+{setup}
+render_agent_home(None, repository, default_agent_id={agent_id!r})
+"""
+
+
 def _visible_text(app: AppTest) -> str:
     nodes = (
         app.get("title")
@@ -86,6 +100,78 @@ def test_agent_trend_figures_use_history_in_chronological_order():
     assert list(quality.data[0].x) == [rows[1]["Time"], rows[0]["Time"]]
     assert list(quality.data[0].y) == [66.666, 50.0]
     assert list(cost.data[0].y) == [0.02, 0.03]
+
+
+def test_agent_home_keeps_external_selection_when_selector_state_is_stale(tmp_path):
+    repository = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    registry = AgentRegistry(repository)
+    first = registry.create("First", "")
+    registry.revise(first.agent_id, {}, ())
+    second = registry.create("Second", "")
+    registry.revise(second.agent_id, {}, ())
+
+    script = _render_home_script(
+        tmp_path / "workbench.db",
+        first.agent_id,
+        f"st.session_state.agent_selector = {first.agent_id!r}\nselect_agent({second.agent_id!r})",
+    )
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    assert app.session_state["selected_agent_id"] == second.agent_id
+    assert app.selectbox[0].value == second.agent_id
+
+
+def test_report_history_keeps_unknown_cost_and_cost_chart_omits_it(tmp_path):
+    from src.ui.agents import report_history_rows
+    from src.ui.charts import cost_trend_figure
+
+    repository = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    registry = AgentRegistry(repository)
+    agent = registry.create("Permission Compliance Agent", "")
+    revision = registry.revise(agent.agent_id, {}, ())
+    dataset_id = repository.create_dataset(agent.agent_id, "Permissions")
+    repository.replace_draft_cases(dataset_id, [WorkbenchCase("case", {"query": "test"}, {})])
+    dataset = repository.publish_dataset(dataset_id)
+    for pass_rate, cost in ((75.0, 0.02), (50.0, None), (25.0, 0.03)):
+        run = repository.create_run(revision.revision_id, dataset.revision_id)
+        summary = _summary(pass_rate=pass_rate)
+        summary["identity"]["run_id"] = run.run_id
+        if cost is None:
+            summary.pop("costs")
+        else:
+            summary["costs"]["evaluation_total"] = cost
+        repository.save_report(run.run_id, "PASS", summary, tmp_path / f"{pass_rate}.md")
+
+    rows = report_history_rows(repository.list_reports(agent.agent_id))
+    assert rows[1]["Cost"] is None
+    cost = cost_trend_figure(rows)
+    assert list(cost.data[0].y) == [0.02, 0.03]
+
+
+def test_agent_home_displays_unknown_latest_cost_and_hides_insufficient_cost_trend(tmp_path):
+    repository = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    registry = AgentRegistry(repository)
+    agent = registry.create("Permission Compliance Agent", "")
+    revision = registry.revise(agent.agent_id, {}, ())
+    dataset_id = repository.create_dataset(agent.agent_id, "Permissions")
+    repository.replace_draft_cases(dataset_id, [WorkbenchCase("case", {"query": "test"}, {})])
+    dataset = repository.publish_dataset(dataset_id)
+    for pass_rate, include_cost in ((66.666, True), (50.0, False)):
+        run = repository.create_run(revision.revision_id, dataset.revision_id)
+        summary = _summary(pass_rate=pass_rate)
+        summary["identity"]["run_id"] = run.run_id
+        if not include_cost:
+            summary.pop("costs")
+        repository.save_report(run.run_id, "PASS", summary, tmp_path / f"{pass_rate}.md")
+
+    app = AppTest.from_string(
+        _render_home_script(tmp_path / "workbench.db", agent.agent_id)
+    ).run(timeout=20)
+
+    assert not app.exception
+    assert next(metric for metric in app.metric if metric.label == "Evaluation cost").value == "Not available"
+    assert not any(chart.key == "agent_cost_trend" for chart in app.get("plotly_chart"))
 
 
 def test_agent_home_renders_selected_agent_overview_without_nested_modules(tmp_path, monkeypatch):
