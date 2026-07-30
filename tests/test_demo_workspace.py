@@ -1,3 +1,8 @@
+import asyncio
+
+import pytest
+
+
 def test_demo_fixture_has_three_connection_types_and_six_cases():
     from src.demo_workspace import (
         DEMO_AGENT_NAME,
@@ -57,3 +62,34 @@ def test_demo_report_contains_judge_tokens_and_cost(tmp_path):
     assert summary["costs"]["evaluation_total"] == (
         summary["costs"]["agent"] + summary["costs"]["judge"]
     )
+
+
+def test_seed_creates_one_marker_fixture_with_a_persisted_all_pass_baseline(tmp_path):
+    from src.demo_workspace import DemoEvalRunner, seed_demo_workspace
+    from src.report_service import ReportService
+    from src.sqlite_workbench import SQLiteWorkbenchRepository
+
+    repository = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    repository.create_agent("Unrelated", "Must not suppress the demo fixture")
+    reports = ReportService(repository, tmp_path / "reports")
+
+    first = seed_demo_workspace(repository, reports, tmp_path / "traces.jsonl")
+    second = seed_demo_workspace(repository, reports, tmp_path / "traces.jsonl")
+
+    assert second == first
+    assert len([agent for agent in repository.list_agents() if agent.current_revision > 0]) == 1
+    assert len(repository.list_reports(first.agent_id)) == 1
+    baseline = repository.get_report(first.baseline_report_id)
+    assert baseline.summary["metrics"]["pass_rate"] == 100.0
+    assert len(repository.get_dataset_revision(first.dataset_revision_id).cases) == 6
+
+    run = asyncio.run(
+        DemoEvalRunner(repository, tmp_path / "traces.jsonl", inject_regression=True).run_revision(
+            first.agent_revision_id, first.dataset_revision_id
+        )
+    )
+    report = reports.create(run.run_id)
+    assert report.summary["metrics"]["passed_cases"] == 5
+    assert report.summary["metrics"]["pass_rate"] == pytest.approx(83.333, rel=1e-3)
+    assert len(repository.list_reports(first.agent_id)) == 2
+    assert any(case["tool_evidence"] for case in report.summary["cases"])

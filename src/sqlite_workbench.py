@@ -346,6 +346,20 @@ class SQLiteWorkbenchRepository:
             created_at=row["created_at"],
         )
 
+    def get_current_agent_revision(self, agent_id: str) -> AgentRevision | None:
+        agent = self.get_agent(agent_id)
+        if agent.current_revision == 0:
+            return None
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute(
+                    "SELECT revision_id FROM agent_revisions WHERE agent_id = ? AND revision = ?",
+                    (agent_id, agent.current_revision),
+                ).fetchone(),
+                agent_id,
+            )
+        return self.get_agent_revision(row["revision_id"])
+
     def create_dataset(self, agent_id: str, name: str) -> str:
         dataset_id = _new_id()
         with self._connect() as connection:

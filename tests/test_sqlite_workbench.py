@@ -46,6 +46,20 @@ def test_agent_revision_and_dataset_revision_survive_restart(tmp_path):
     assert reopened.get_dataset_revision(dataset_revision.revision_id).cases[0].case_id == "case-1"
 
 
+def test_current_agent_revision_returns_none_for_drafts_and_the_current_snapshot(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    draft = repo.create_agent("Draft", "No revision yet")
+    agent = repo.create_agent("Versioned", "Has revisions")
+    first = repo.create_agent_revision(agent.agent_id, {"model": "v1"}, (tool(),))
+    current = repo.create_agent_revision(agent.agent_id, {"model": "v2"}, (tool(),))
+
+    assert repo.get_current_agent_revision(draft.agent_id) is None
+    assert repo.get_current_agent_revision(agent.agent_id) == current
+    assert repo.get_current_agent_revision(agent.agent_id) != first
+    with pytest.raises(KeyError):
+        repo.get_current_agent_revision("missing-agent")
+
+
 def test_agent_ownership_is_enforced(tmp_path):
     repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
     first = repo.create_agent("First", "")
