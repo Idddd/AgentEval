@@ -23,6 +23,7 @@ class Settings:
     openai_enabled: bool = False
     anthropic_enabled: bool = False
     data_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data")
+    workbench_db: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "workbench.db")
 
     @property
     def llm_mode(self) -> str:
@@ -56,6 +57,7 @@ def load_settings(probe: bool = True) -> Settings:
         langfuse_public_key=_clean(os.getenv("LANGFUSE_PUBLIC_KEY")),
         langfuse_secret_key=_clean(os.getenv("LANGFUSE_SECRET_KEY")),
         langfuse_host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+        workbench_db=Path(os.getenv("WORKBENCH_DB", str(PROJECT_ROOT / "data" / "workbench.db"))),
     )
     s.openai_enabled = s.openai_api_key is not None
     s.anthropic_enabled = bool(s.anthropic_base_url and s.anthropic_auth_token)
