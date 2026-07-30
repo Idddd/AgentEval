@@ -1,7 +1,8 @@
 """Small, accessible Plotly figures for immutable report summaries."""
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import plotly.graph_objects as go
 
@@ -84,3 +85,44 @@ def cost_figure(costs: Mapping[str, float]) -> go.Figure:
     )
     figure.update_yaxes(rangemode="tozero", gridcolor=GRID, tickprefix="$")
     return _layout(figure)
+
+
+def _chronological_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Turn newest-first Report history into chronological chart points."""
+    return list(reversed(rows))
+
+
+def quality_trend_figure(rows: Sequence[Mapping[str, Any]]) -> go.Figure:
+    """Plot immutable Report pass rates from oldest to newest."""
+    points = _chronological_rows(rows)
+    figure = go.Figure(
+        go.Scatter(
+            x=[point["Time"] for point in points],
+            y=[float(point["Pass rate"]) for point in points],
+            mode="lines+markers",
+            line=dict(color=PRIMARY, width=3),
+            marker=dict(color=PRIMARY, size=8),
+            hovertemplate="%{x}<br>Pass rate: %{y:.1f}%<extra></extra>",
+        )
+    )
+    figure.update_yaxes(range=[0, 100], gridcolor=GRID, ticksuffix="%")
+    figure.update_xaxes(gridcolor=GRID)
+    return _layout(figure, height=220)
+
+
+def cost_trend_figure(rows: Sequence[Mapping[str, Any]]) -> go.Figure:
+    """Plot immutable evaluation costs from oldest to newest."""
+    points = _chronological_rows(rows)
+    figure = go.Figure(
+        go.Scatter(
+            x=[point["Time"] for point in points],
+            y=[float(point["Cost"]) for point in points],
+            mode="lines+markers",
+            line=dict(color=CREAM, width=3),
+            marker=dict(color=CREAM, size=8),
+            hovertemplate="%{x}<br>Evaluation cost: $%{y:.4f}<extra></extra>",
+        )
+    )
+    figure.update_yaxes(rangemode="tozero", gridcolor=GRID, tickprefix="$")
+    figure.update_xaxes(gridcolor=GRID)
+    return _layout(figure, height=220)

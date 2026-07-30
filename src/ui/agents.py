@@ -1,58 +1,188 @@
-"""Agent list and selected-Agent workspace."""
+"""Selected-Agent home overview for the modular workbench."""
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
 
 from src.agent_registry import AgentRegistry
-from src.demo_workspace import DEMO_AGENT_DESCRIPTION, DEMO_AGENT_ID, DEMO_AGENT_NAME
-from src.workbench_models import AgentProfile
+from src.workbench_models import AgentProfile, ReportSnapshot
 from src.workbench_repository import WorkbenchRepository
 
-from .datasets import CandidateGenerator, render_datasets_module
-from .demo import render_demo_workspace
-from .reports import render_reports_module
-from .runs import render_runs_module
-from .state import select_agent
-from .tools import current_agent_revision, render_tools_module
+from .charts import cost_trend_figure, quality_trend_figure
+from .state import navigate, select_agent
 
 
-def _agent_counts(repository: WorkbenchRepository, agent_id: str) -> tuple[int, int]:
-    """Read Agent-owned summary counts from the durable SQLite workbench."""
-    with repository._connect() as connection:  # type: ignore[attr-defined]
-        datasets = connection.execute(
-            "SELECT COUNT(*) FROM datasets WHERE agent_id = ?", (agent_id,)
-        ).fetchone()[0]
-        runs = connection.execute(
-            "SELECT COUNT(*) FROM eval_runs WHERE agent_id = ?", (agent_id,)
-        ).fetchone()[0]
-    return datasets, runs
+def valid_agents(repository: WorkbenchRepository) -> list[AgentProfile]:
+    """Return only persisted Agents with an immutable revision to evaluate."""
+    return [agent for agent in repository.list_agents() if agent.current_revision > 0]
 
 
-def _new_agent_form(registry: AgentRegistry) -> None:
-    if st.session_state.agent_dialog != "new":
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def report_history_rows(reports: Sequence[ReportSnapshot]) -> list[dict[str, Any]]:
+    """Normalize immutable Report snapshots into newest-first Agent history rows."""
+    ordered = sorted(
+        reports,
+        key=lambda report: (report.created_at, report.report_id),
+        reverse=True,
+    )
+    rows: list[dict[str, Any]] = []
+    for report in ordered:
+        summary = _mapping(report.summary)
+        identity = _mapping(summary.get("identity"))
+        agent = _mapping(identity.get("agent"))
+        dataset = _mapping(identity.get("dataset"))
+        metrics = _mapping(summary.get("metrics"))
+        costs = _mapping(summary.get("costs"))
+        current_rate = float(metrics.get("pass_rate", 0.0))
+        rows.append(
+            {
+                "Report ID": report.report_id,
+                "Time": report.created_at,
+                "Agent revision": agent.get("revision"),
+                "Dataset revision": dataset.get("revision"),
+                "Status": summary.get("status", report.status),
+                "Pass rate": current_rate,
+                "Pass rate delta": None,
+                "Cost": float(costs.get("evaluation_total", 0.0)),
+            }
+        )
+    for index, row in enumerate(rows[:-1]):
+        row["Pass rate delta"] = row["Pass rate"] - rows[index + 1]["Pass rate"]
+    return rows
+
+
+def _tool_rows(agent_id: str, repository: WorkbenchRepository) -> list[dict[str, Any]]:
+    revision = repository.get_current_agent_revision(agent_id)
+    if revision is None:
+        return []
+    return [
+        {
+            "Name": tool.name,
+            "Tool ID": tool.tool_id,
+            "Connection": tool.connection_type.upper(),
+            "Enabled": "Yes" if tool.enabled else "No",
+            "Effect verification": "Required" if tool.verification_required else "Not required",
+        }
+        for tool in revision.tools
+    ]
+
+
+def _render_latest_report(report: ReportSnapshot | None) -> None:
+    st.subheader("Latest Report")
+    if report is None:
+        st.caption("No immutable Reports have been created for this Agent yet.")
         return
+    summary = _mapping(report.summary)
+    identity = _mapping(summary.get("identity"))
+    agent = _mapping(identity.get("agent"))
+    metrics = _mapping(summary.get("metrics"))
+    costs = _mapping(summary.get("costs"))
     with st.container(border=True):
-        st.subheader("New agent")
-        with st.form("new_agent_form"):
-            name = st.text_input("Agent name")
-            description = st.text_area("Description")
-            save, cancel = st.columns(2)
-            submitted = save.form_submit_button("Create agent", type="primary", width="stretch")
-            cancelled = cancel.form_submit_button("Cancel", width="stretch")
-        if cancelled:
-            st.session_state.agent_dialog = None
+        status, pass_rate, cost, action = st.columns([1.3, 1.2, 1.2, 1.1])
+        status.markdown(f"**{summary.get('status', report.status)}**")
+        pass_rate.metric("Pass rate", f"{float(metrics.get('pass_rate', 0.0)):.1f}%")
+        cost.metric("Evaluation cost", f"${float(costs.get('evaluation_total', 0.0)):.4f}")
+        if action.button("View report", key=f"view_report_{report.report_id}", width="stretch"):
+            st.session_state.selected_report_id = report.report_id
+            navigate("Report")
             st.rerun()
-        if submitted:
-            try:
-                agent = registry.create(name, description)
-            except ValueError as error:
-                st.error(str(error))
-            else:
-                select_agent(agent.agent_id)
-                st.session_state.agent_dialog = None
-                st.rerun()
+        st.caption(f"Created {report.created_at} · Agent revision {agent.get('revision', '—')}")
+
+
+def _render_trends(rows: Sequence[Mapping[str, Any]]) -> None:
+    quality, cost = st.columns(2)
+    with quality:
+        st.subheader("Quality trend")
+        if len(rows) < 2:
+            st.caption("At least two Reports are required to show a quality trend.")
+        else:
+            st.plotly_chart(
+                quality_trend_figure(rows),
+                width="stretch",
+                config={"displayModeBar": False},
+                key="agent_quality_trend",
+            )
+    with cost:
+        st.subheader("Cost trend")
+        if len(rows) < 2:
+            st.caption("At least two Reports are required to show a cost trend.")
+        else:
+            st.plotly_chart(
+                cost_trend_figure(rows),
+                width="stretch",
+                config={"displayModeBar": False},
+                key="agent_cost_trend",
+            )
+
+
+def _selected_agent(agents: Sequence[AgentProfile], default_agent_id: str) -> AgentProfile:
+    agent_ids = {agent.agent_id for agent in agents}
+    selected_id = st.session_state.get("selected_agent_id")
+    if selected_id not in agent_ids:
+        select_agent(default_agent_id if default_agent_id in agent_ids else agents[0].agent_id)
+        selected_id = st.session_state.selected_agent_id
+    return next(agent for agent in agents if agent.agent_id == selected_id)
+
+
+def render_agent_home(
+    registry: AgentRegistry | None,
+    repository: WorkbenchRepository,
+    *,
+    default_agent_id: str,
+) -> None:
+    """Render one persisted Agent and the immutable evidence attached to it."""
+    del registry  # Agent Home selects existing immutable Agents; it does not create them.
+    agents = valid_agents(repository)
+    st.caption("EVALUATION WORKBENCH")
+    if not agents:
+        st.title("Agent")
+        st.info("No evaluation-ready Agents are available.")
+        return
+
+    selected = _selected_agent(agents, default_agent_id)
+    agent_ids = [agent.agent_id for agent in agents]
+    names = {agent.agent_id: agent.name for agent in agents}
+    selected_id = st.selectbox(
+        "Agent",
+        agent_ids,
+        index=agent_ids.index(selected.agent_id),
+        format_func=names.__getitem__,
+        key="agent_selector",
+    )
+    if selected_id != selected.agent_id:
+        select_agent(selected_id)
+        st.rerun()
+
+    selected = repository.get_agent(st.session_state.selected_agent_id)
+    revision = repository.get_current_agent_revision(selected.agent_id)
+    reports = repository.list_reports(selected.agent_id)
+    rows = report_history_rows(reports)
+
+    st.title(selected.name)
+    st.caption(selected.description or "No description recorded.")
+    st.caption(
+        f"Revision {revision.revision if revision else 0} · Immutable evaluation context"
+    )
+    st.subheader("Target Tools")
+    tools = _tool_rows(selected.agent_id, repository)
+    if tools:
+        st.dataframe(tools, width="stretch", hide_index=True)
+    else:
+        st.caption("This immutable revision has no Target Tool bindings.")
+
+    _render_latest_report(reports[0] if reports else None)
+    _render_trends(rows)
+    st.subheader("Report history")
+    if rows:
+        st.dataframe(rows, width="stretch", hide_index=True)
+    else:
+        st.caption("No Reports yet.")
 
 
 def render_agents_page(
@@ -62,145 +192,9 @@ def render_agents_page(
     demo_trace_path: Path,
     runner: object | None = None,
     report_service: object | None = None,
-    llm_generate: CandidateGenerator | None = None,
+    llm_generate: object | None = None,
     langfuse_base_url: str | None = None,
 ) -> None:
-    """Render the Agent inventory and the selected Agent's modular workspace."""
-    header, action = st.columns([5, 1.2])
-    with header:
-        st.caption("EVALUATION WORKBENCH")
-        st.title("Agents")
-        st.caption("Create an Agent, define its Tools, then evaluate immutable revisions.")
-    with action:
-        st.write("")
-        if (
-            st.session_state.selected_agent_id != DEMO_AGENT_ID
-            and st.button("New agent", key="new_agent", type="primary", width="stretch")
-        ):
-            st.session_state.agent_dialog = "new"
-            st.rerun()
-    _new_agent_form(registry)
-    if st.session_state.agent_dialog == "new":
-        return
-
-    agents = repository.list_agents()
-    valid_agent_ids = {DEMO_AGENT_ID, *(agent.agent_id for agent in agents)}
-    if st.session_state.selected_agent_id not in valid_agent_ids:
-        select_agent(DEMO_AGENT_ID)
-
-    st.markdown("#### Agent workspace")
-    demo_selected = st.session_state.selected_agent_id == DEMO_AGENT_ID
-    with st.container(border=True):
-        info, metrics, choose = st.columns([2.3, 2.5, 1.1])
-        with info:
-            st.markdown(f"**{DEMO_AGENT_NAME}**  <span class='demo-badge'>Demo</span>", unsafe_allow_html=True)
-            st.caption(DEMO_AGENT_DESCRIPTION)
-        with metrics:
-            st.caption("3 Tools  ·  1 Dataset  ·  Repeatable local evaluation")
-        with choose:
-            label = "Selected" if demo_selected else "Open"
-            if choose.button(
-                label,
-                key="select_agent_demo",
-                disabled=demo_selected,
-                width="stretch",
-            ):
-                select_agent(DEMO_AGENT_ID)
-                st.rerun()
-
-    for agent in agents:
-        datasets, runs = _agent_counts(repository, agent.agent_id)
-        revision = current_agent_revision(repository, agent)
-        selected = agent.agent_id == st.session_state.selected_agent_id
-        with st.container(border=True):
-            info, metrics, choose = st.columns([2.3, 2.5, 1.1])
-            with info:
-                st.markdown(f"**{agent.name}**")
-                st.caption(agent.description or "No description")
-            with metrics:
-                st.caption(
-                    f"{len(revision.tools) if revision else 0} Tools  ·  {datasets} Datasets  ·  {runs} Runs"
-                )
-            with choose:
-                label = "Selected" if selected else "Open"
-                if choose.button(label, key=f"select_agent_{agent.agent_id}", disabled=selected, width="stretch"):
-                    select_agent(agent.agent_id)
-                    st.rerun()
-
-    st.divider()
-    if demo_selected:
-        render_demo_workspace(demo_trace_path)
-        return
-
-    selected_agent = next(agent for agent in agents if agent.agent_id == st.session_state.selected_agent_id)
-    render_agent_workspace(
-        registry,
-        repository,
-        selected_agent,
-        runner=runner,
-        report_service=report_service,
-        llm_generate=llm_generate,
-        langfuse_base_url=langfuse_base_url,
-    )
-
-
-def render_agent_workspace(
-    registry: AgentRegistry,
-    repository: WorkbenchRepository,
-    agent: AgentProfile,
-    *,
-    runner: object | None = None,
-    report_service: object | None = None,
-    llm_generate: CandidateGenerator | None = None,
-    langfuse_base_url: str | None = None,
-) -> None:
-    revision = current_agent_revision(repository, agent)
-    tool_count = len(revision.tools) if revision else 0
-    workspace, controls = st.columns([2.8, 2.6])
-    with workspace:
-        st.header(agent.name)
-        st.caption(f"Revision {agent.current_revision}  ·  AVAILABLE  ·  {tool_count} Tools")
-    with controls:
-        first, second, third = st.columns([1.0, 1.05, 1.4])
-        first.button(
-            "Revisions",
-            key="agent_revisions",
-            help="Revision history is coming next",
-            width="stretch",
-        )
-        second.button(
-            "Edit agent",
-            key="edit_agent",
-            help="Agent metadata editor is coming next",
-            width="stretch",
-        )
-        if third.button(
-            "New evaluation",
-            key="new_evaluation",
-            type="primary",
-            help="Open the guided evaluation wizard",
-            width="stretch",
-        ):
-            st.session_state.active_agent_module = "Runs"
-            st.rerun()
-
-    module = st.radio(
-        "Agent module",
-        ["Tools", "Datasets", "Runs", "Reports"],
-        horizontal=True,
-        key="active_agent_module",
-        label_visibility="collapsed",
-    )
-    if module == "Tools":
-        render_tools_module(registry, repository, agent)
-    elif module == "Datasets":
-        render_datasets_module(repository, agent.agent_id, llm_generate)
-    elif module == "Runs":
-        render_runs_module(repository, agent.agent_id, runner, report_service)
-    else:
-        render_reports_module(
-            repository,
-            agent.agent_id,
-            report_service,
-            langfuse_base_url=langfuse_base_url,
-        )
+    """Compatibility wrapper retained until the global shell moves to Agent Home."""
+    del demo_trace_path, runner, report_service, llm_generate, langfuse_base_url
+    render_agent_home(registry, repository, default_agent_id=st.session_state.selected_agent_id)
