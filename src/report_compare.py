@@ -12,15 +12,20 @@ class ReportComparison:
     added_case_ids: tuple[str, ...]
     removed_case_ids: tuple[str, ...]
     pass_rate_delta_shared: float
-    judge_deltas: dict[str, float]
+    judge_deltas: dict[str, float | None]
     tool_state_deltas: dict[str, int]
-    cost_delta_usd: float
-    token_deltas: dict[str, int]
+    cost_delta_usd: float | None
+    token_deltas: dict[str, int | None]
     resolved_failure_ids: tuple[str, ...]
     regression_ids: tuple[str, ...]
     unchanged_failure_ids: tuple[str, ...]
     agent_changes: dict[str, dict[str, object]]
     different_dataset_revisions: bool
+
+
+def _number(mapping: dict, name: str) -> float | None:
+    value = mapping.get(name)
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
 def compare_report_summaries(
@@ -73,7 +78,10 @@ def compare_report_summaries(
         removed_case_ids=removed,
         pass_rate_delta_shared=shared_rate(current_cases) - shared_rate(baseline_cases),
         judge_deltas={
-            name: float(current_judges.get(name, 0.0)) - float(baseline_judges.get(name, 0.0))
+            name: (
+                _number(current_judges, name) - _number(baseline_judges, name)
+                if _number(baseline_judges, name) is not None and _number(current_judges, name) is not None else None
+            )
             for name in judge_names
         },
         tool_state_deltas={
@@ -81,11 +89,16 @@ def compare_report_summaries(
             for name in tool_names
         },
         cost_delta_usd=(
-            float(current.get("costs", {}).get("evaluation_total", 0.0))
-            - float(baseline.get("costs", {}).get("evaluation_total", 0.0))
+            _number(current.get("costs", {}), "evaluation_total")
+            - _number(baseline.get("costs", {}), "evaluation_total")
+            if _number(baseline.get("costs", {}), "evaluation_total") is not None
+            and _number(current.get("costs", {}), "evaluation_total") is not None else None
         ),
         token_deltas={
-            name: int(current_tokens.get(name, 0)) - int(baseline_tokens.get(name, 0))
+            name: (
+                int(_number(current_tokens, name)) - int(_number(baseline_tokens, name))
+                if _number(baseline_tokens, name) is not None and _number(current_tokens, name) is not None else None
+            )
             for name in token_names
         },
         resolved_failure_ids=tuple(sorted(baseline_failures - current_failures)),

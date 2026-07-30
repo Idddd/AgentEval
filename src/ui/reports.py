@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import streamlit as st
+import pandas as pd
 
 from src.workbench_models import ReportSnapshot
 from src.workbench_repository import WorkbenchRepository
@@ -106,7 +107,7 @@ def comparison_view_model(comparison: Any) -> dict[str, Any]:
         "Judge score deltas": dict(comparison.judge_deltas),
         "Tool-state changes": dict(comparison.tool_state_deltas),
         "Token deltas": dict(comparison.token_deltas),
-        "Cost delta": float(comparison.cost_delta_usd),
+        "Cost delta": _number_or_none(comparison.cost_delta_usd),
         "Resolved failures": tuple(comparison.resolved_failure_ids),
         "Regressions": tuple(comparison.regression_ids),
         "Unchanged failures": tuple(comparison.unchanged_failure_ids),
@@ -153,9 +154,19 @@ def render_case_results(view: Mapping[str, Any]) -> None:
     st.markdown("#### Case results")
     st.caption("PASS and FAIL remain literal in every stored case result.")
     if view["cases"]:
-        st.dataframe(view["cases"], width="stretch", hide_index=True)
+        rows = pd.DataFrame(view["cases"])
+        st.dataframe(rows.style.map(case_status_style, subset=["Status"]), width="stretch", hide_index=True)
     else:
         st.info("No case results are stored in this Report.")
+
+
+def case_status_style(status: str) -> str:
+    """Style literal case-result statuses without obscuring their text."""
+    if status == "PASS":
+        return "color: #176B55; font-weight: 700"
+    if status == "FAIL":
+        return "color: #B3261E; font-weight: 700"
+    return ""
 
 
 def render_failure_reasons(view: Mapping[str, Any], langfuse_base_url: str | None) -> None:
@@ -194,6 +205,10 @@ def render_tool_evidence(view: Mapping[str, Any]) -> None:
 
 def _format_cost(value: float | None) -> str:
     return f"${value:.4f}" if value is not None else "Not available"
+
+
+def _format_delta(value: float | int | None, format_spec: str) -> str:
+    return format(value, format_spec) if value is not None else "Not available"
 
 
 def render_usage_and_cost(view: Mapping[str, Any]) -> None:
@@ -288,7 +303,10 @@ def render_comparison(comparison: Any) -> None:
     kpis = st.columns(4)
     kpis[0].metric("Shared-case pass rate delta", f"{view['Shared-case pass rate delta']:+.1f} pp")
     kpis[1].metric("Shared cases", len(view["Shared cases"]))
-    kpis[2].metric("Evaluation cost delta", f"${view['Cost delta']:+.4f}")
+    kpis[2].metric(
+        "Evaluation cost delta",
+        f"${view['Cost delta']:+.4f}" if view["Cost delta"] is not None else "Not available",
+    )
     kpis[3].metric("Regressions", len(view["Regressions"]))
     st.markdown("#### Agent configuration diff")
     changes = [
@@ -302,13 +320,13 @@ def render_comparison(comparison: Any) -> None:
     score, evidence, tokens = st.columns(3)
     with score:
         st.markdown("#### Judge score deltas")
-        st.dataframe([{"Dimension": key.title(), "Delta": f"{value:+.2f}"} for key, value in view["Judge score deltas"].items()], width="stretch", hide_index=True)
+        st.dataframe([{"Dimension": key.title(), "Delta": _format_delta(value, "+.2f")} for key, value in view["Judge score deltas"].items()], width="stretch", hide_index=True)
     with evidence:
         st.markdown("#### Tool-state changes")
         st.dataframe([{"State": key.title(), "Delta": f"{value:+d}"} for key, value in view["Tool-state changes"].items()], width="stretch", hide_index=True)
     with tokens:
         st.markdown("#### Token deltas")
-        st.dataframe([{"Category": key, "Delta": f"{value:+d}"} for key, value in view["Token deltas"].items()], width="stretch", hide_index=True)
+        st.dataframe([{"Category": key, "Delta": _format_delta(value, "+d")} for key, value in view["Token deltas"].items()], width="stretch", hide_index=True)
     groups = st.columns(3)
     with groups[0]:
         _render_id_group("Resolved failures", view["Resolved failures"], "None")
@@ -350,12 +368,17 @@ def render_reports_module(
         st.caption("Comparison requires at least two Reports.")
     else:
         baseline_ids = [report_id for report_id in report_ids if report_id != selected.report_id]
+        baseline_key = f"report_baseline_{agent_id}"
+        baseline_report_key = f"report_baseline_selected_{agent_id}"
+        if st.session_state.get(baseline_report_key) != selected.report_id:
+            st.session_state.pop(baseline_key, None)
+            st.session_state[baseline_report_key] = selected.report_id
         selected_index = reports.index(selected)
         preceding_index = selected_index + 1 if selected_index + 1 < len(reports) else selected_index - 1
         default_baseline_id = reports[preceding_index].report_id
         baseline_id = st.selectbox(
             "Baseline", baseline_ids, index=baseline_ids.index(default_baseline_id),
-            key=f"report_baseline_{agent_id}",
+            key=baseline_key,
             format_func=lambda report_id: _report_label(reports_by_id[report_id]),
         )
         baseline = reports_by_id[baseline_id]

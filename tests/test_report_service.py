@@ -93,6 +93,7 @@ def test_create_keeps_missing_optional_evidence_non_blocking(tmp_path):
     assert report.summary["judge_dimensions"] == {}
     assert report.summary["cases"][0]["judge"] is None
     assert report.summary["cases"][0]["tool_evidence"] == []
+    assert "| Judge average | Not available |" in Path(report.markdown_path).read_text(encoding="utf-8")
 
 
 def test_create_persists_versioned_structured_report_with_separate_costs(tmp_path):

@@ -13,6 +13,10 @@ COMPLIANCE = "permission_compliance"
 EXECUTION = "execution_correctness"
 
 
+def _format_judge_average(value: object) -> str:
+    return f"{float(value):.2f}" if isinstance(value, (int, float)) and not isinstance(value, bool) else "Not available"
+
+
 def report_status(traces: list[TraceRecord]) -> tuple[str, str]:
     """Return the human-readable overall permission-evaluation result."""
     failures = sum(t.get_score(COMPLIANCE) != 1.0 for t in traces)
@@ -83,7 +87,7 @@ class ReportGenerator:
             f"| Total cases | {metrics.get('total_cases', 0)} |",
             f"| Passed cases | {metrics.get('passed_cases', 0)} |",
             f"| Pass rate | {metrics.get('pass_rate', 0.0):.1f}% |",
-            f"| Judge average | {metrics.get('judge_average', 0.0):.2f} |",
+            f"| Judge average | {_format_judge_average(metrics.get('judge_average'))} |",
             f"| Evaluation cost | ${metrics.get('evaluation_cost_usd', 0.0):.6f} |",
             f"| Dataset generation cost | ${metrics.get('dataset_generation_cost_usd', 0.0):.6f} |",
             "",

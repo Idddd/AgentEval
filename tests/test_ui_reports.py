@@ -191,6 +191,78 @@ render_reports_module(repository, "agent-1", service)
     assert headings.index("Comparison") < headings.index("Usage & Cost")
 
 
+def test_case_result_statuses_have_accessible_colors_with_literal_text():
+    """Removing status-cell styling would make PASS/FAIL indistinguishable in the case table."""
+    from src.ui.reports import case_status_style
+
+    assert case_status_style("PASS") == "color: #176B55; font-weight: 700"
+    assert case_status_style("FAIL") == "color: #B3261E; font-weight: 700"
+    assert case_status_style("INCOMPLETE") == ""
+
+
+def test_comparison_renders_missing_cost_delta_as_not_available():
+    from streamlit.testing.v1 import AppTest
+
+    script = """
+from types import SimpleNamespace
+from src.ui.reports import render_comparison
+
+render_comparison(SimpleNamespace(
+    pass_rate_delta_shared=0.0, different_dataset_revisions=False,
+    agent_changes={}, judge_deltas={"correctness": None}, tool_state_deltas={},
+    token_deltas={"agent_input_tokens": None}, cost_delta_usd=None,
+    resolved_failure_ids=(), regression_ids=(), unchanged_failure_ids=(),
+    added_case_ids=(), removed_case_ids=(), shared_case_ids=(),
+))
+"""
+
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    assert app.metric[2].value == "Not available"
+
+
+def test_report_baseline_resets_when_selected_report_changes():
+    """A stale baseline must not survive a Report selection transition."""
+    from streamlit.testing.v1 import AppTest
+
+    summary = report_summary()
+    script = f"""
+from types import SimpleNamespace
+from src.ui.reports import render_reports_module
+from src.workbench_models import ReportSnapshot
+
+summary = {summary!r}
+reports = [
+    ReportSnapshot("newest", "run-newest", 1, "NEEDS ATTENTION", summary, "new.md", "2026-07-30T02:00:00+00:00"),
+    ReportSnapshot("middle", "run-middle", 1, "NEEDS ATTENTION", summary, "middle.md", "2026-07-30T01:30:00+00:00"),
+    ReportSnapshot("previous", "run-previous", 1, "NEEDS ATTENTION", summary, "previous.md", "2026-07-30T01:00:00+00:00"),
+    ReportSnapshot("oldest", "run-oldest", 1, "NEEDS ATTENTION", summary, "old.md", "2026-07-30T00:00:00+00:00"),
+]
+comparison = SimpleNamespace(
+    pass_rate_delta_shared=0.0, different_dataset_revisions=False,
+    agent_changes={{}}, judge_deltas={{}}, tool_state_deltas={{}}, token_deltas={{}},
+    cost_delta_usd=0.0, resolved_failure_ids=(), regression_ids=(),
+    unchanged_failure_ids=(), added_case_ids=(), removed_case_ids=(), shared_case_ids=(),
+)
+repository = SimpleNamespace(list_reports=lambda agent_id: reports)
+service = SimpleNamespace(compare=lambda baseline_id, current_id: comparison)
+render_reports_module(repository, "agent-1", service)
+"""
+
+    app = AppTest.from_string(script).run(timeout=20)
+    assert app.selectbox[1].value == "middle"
+    app.selectbox[0].set_value("middle").run(timeout=20)
+    assert app.selectbox[1].value == "previous"
+    app.selectbox[1].set_value("oldest").run(timeout=20)
+    app.selectbox[0].set_value("newest").run(timeout=20)
+    assert app.selectbox[1].value == "middle"
+    app.selectbox[0].set_value("previous").run(timeout=20)
+    assert app.selectbox[1].value == "oldest"
+    app.selectbox[0].set_value("oldest").run(timeout=20)
+    assert app.selectbox[1].value == "previous"
+
+
 def test_comparison_view_uses_shared_case_delta_and_complete_change_groups():
     from src.ui.reports import comparison_view_model
 

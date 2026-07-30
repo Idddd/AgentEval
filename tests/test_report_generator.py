@@ -66,3 +66,14 @@ def test_structured_renderer_preserves_case_quality_words() -> None:
     assert "## Status: NEEDS ATTENTION" in markdown
     assert "| case-fail | FAIL |" in markdown
     assert "| case-incomplete | INCOMPLETE |" in markdown
+
+
+def test_structured_renderer_marks_missing_judge_average_unavailable() -> None:
+    summary = {
+        "identity": {"agent": {}, "dataset": {}},
+        "metrics": {"judge_average": None},
+    }
+
+    markdown = ReportGenerator.render_summary(summary)
+
+    assert "| Judge average | Not available |" in markdown

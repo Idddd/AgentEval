@@ -126,14 +126,8 @@ class ReportService:
         ]
         version = max((item.artifact_version for item in existing), default=0) + 1
         markdown_path = self.output_dir / f"report_{run_id}_v{version}.md"
-        rendered_summary = summary
-        if summary["metrics"]["judge_average"] is None:
-            rendered_summary = {
-                **summary,
-                "metrics": {**summary["metrics"], "judge_average": 0.0},
-            }
         markdown_path.write_text(
-            ReportGenerator.render_summary(rendered_summary), encoding="utf-8",
+            ReportGenerator.render_summary(summary), encoding="utf-8",
         )
         return self.repository.save_report(run_id, quality_status, summary, markdown_path)
 
