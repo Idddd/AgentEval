@@ -12,8 +12,17 @@ def _binding(tool_id: str) -> ToolBinding:
     return ToolBinding(tool_id, tool_id.title(), "", "python", {}, {}, {}, {}, (), False, True)
 
 
-def _shell_script(database_path: str, agent_id: str, *, invalid_selection: bool = False) -> str:
-    selected = "missing-agent" if invalid_selection else agent_id
+def _shell_script(
+    database_path: str,
+    agent_id: str,
+    *,
+    selected_agent_id: str | None = None,
+    active_page: str = "Agent",
+) -> str:
+    selected = selected_agent_id if selected_agent_id is not None else agent_id
+    active_page_assignment = (
+        f"st.session_state.active_page = {active_page!r}" if active_page != "Agent" else ""
+    )
     return f'''\
 import streamlit as st
 from src.sqlite_workbench import SQLiteWorkbenchRepository
@@ -21,7 +30,7 @@ from src.ui import shell
 
 repository = SQLiteWorkbenchRepository({database_path!r})
 st.session_state.selected_agent_id = {selected!r}
-{'st.session_state.active_page = "Dataset"' if invalid_selection else ''}
+{active_page_assignment}
 
 def render_agent_home(registry, repository, *, default_agent_id):
     st.title("Agent overview")
@@ -105,13 +114,55 @@ def test_shell_dispatches_every_sidebar_destination_with_locked_agent_context(tm
         navigation = next(radio for radio in app.radio if radio.key == "active_page")
 
 
-def test_shell_returns_invalid_selected_agent_to_agent_home_with_guidance(tmp_path):
-    """Removing selected-Agent validation must expose downstream pages to missing records."""
-    repository, agent = _seed_repository(tmp_path)
-    app = AppTest.from_string(
-        _shell_script(str(repository.db_path), agent.agent_id, invalid_selection=True)
-    ).run(timeout=20)
-
+def _assert_invalid_agent_context_routes_home(app: AppTest) -> None:
     assert not app.exception
     assert app.session_state["active_page"] == "Agent"
     assert "Select an Agent to continue." in _visible_text(app)
+
+
+def test_shell_returns_missing_selected_agent_to_agent_home_with_guidance(tmp_path):
+    """Removing selected-Agent validation must expose downstream pages to missing records."""
+    repository, agent = _seed_repository(tmp_path)
+    app = AppTest.from_string(
+        _shell_script(
+            str(repository.db_path),
+            agent.agent_id,
+            selected_agent_id="missing-agent",
+            active_page="Dataset",
+        )
+    ).run(timeout=20)
+
+    _assert_invalid_agent_context_routes_home(app)
+
+
+def test_shell_returns_revision_zero_selected_agent_to_agent_home_with_guidance(tmp_path):
+    """A draft Agent cannot supply immutable context to a downstream page."""
+    repository, agent = _seed_repository(tmp_path)
+    draft = AgentRegistry(repository).create("Draft Agent", "")
+
+    app = AppTest.from_string(
+        _shell_script(
+            str(repository.db_path),
+            agent.agent_id,
+            selected_agent_id=draft.agent_id,
+            active_page="Report",
+        )
+    ).run(timeout=20)
+
+    _assert_invalid_agent_context_routes_home(app)
+
+
+def test_shell_returns_stale_current_revision_to_agent_home_with_guidance(tmp_path):
+    """A broken revision pointer must not render a zero-revision downstream context."""
+    repository, agent = _seed_repository(tmp_path)
+    with repository._connect() as connection:
+        connection.execute(
+            "UPDATE agents SET current_revision = ? WHERE agent_id = ?",
+            (99, agent.agent_id),
+        )
+
+    app = AppTest.from_string(
+        _shell_script(str(repository.db_path), agent.agent_id, active_page="Evaluation")
+    ).run(timeout=20)
+
+    _assert_invalid_agent_context_routes_home(app)

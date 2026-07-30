@@ -35,13 +35,30 @@ def locked_agent(
     repository: WorkbenchRepository, selected_agent_id: str | None
 ) -> AgentProfile | None:
     """Return an evaluation-ready selected Agent, or no locked context."""
+    context = _locked_agent_context(repository, selected_agent_id)
+    return context[0] if context is not None else None
+
+
+def _locked_agent_context(
+    repository: WorkbenchRepository, selected_agent_id: str | None
+) -> tuple[AgentProfile, AgentRevision] | None:
+    """Resolve the Agent and its current immutable revision atomically for routing."""
     if not selected_agent_id:
         return None
     try:
         agent = repository.get_agent(selected_agent_id)
+        if agent.current_revision <= 0:
+            return None
+        revision = repository.get_current_agent_revision(agent.agent_id)
     except KeyError:
         return None
-    return agent if agent.current_revision > 0 else None
+    if (
+        revision is None
+        or revision.agent_id != agent.agent_id
+        or revision.revision != agent.current_revision
+    ):
+        return None
+    return agent, revision
 
 
 def render_agent_context(agent: AgentProfile, revision: AgentRevision | None) -> None:
@@ -82,9 +99,12 @@ def render_shell(
     resolve_runner = runner_provider or (lambda _agent_id: runner)
     status = settings_status or _default_settings_status()
     requested_page = st.session_state.active_page
-    if requested_page not in {"Agent", "Settings"} and locked_agent(
-        repository, st.session_state.selected_agent_id
-    ) is None:
+    context = (
+        _locked_agent_context(repository, st.session_state.selected_agent_id)
+        if requested_page not in {"Agent", "Settings"}
+        else None
+    )
+    if requested_page not in {"Agent", "Settings"} and context is None:
         # This must happen before the radio widget is created: Streamlit does not
         # allow a widget's session-state key to change after instantiation.
         navigate("Agent")
@@ -137,11 +157,9 @@ def render_shell(
         render_settings_page(status)
         return
 
-    agent = locked_agent(repository, st.session_state.selected_agent_id)
-    if agent is None:  # pragma: no cover - pre-radio normalization handles this route.
+    if context is None:  # pragma: no cover - pre-radio normalization handles this route.
         return
-
-    revision = repository.get_current_agent_revision(agent.agent_id)
+    agent, revision = context
     render_agent_context(agent, revision)
     if page == "Dataset":
         render_datasets_module(repository, agent.agent_id, llm_generate)
