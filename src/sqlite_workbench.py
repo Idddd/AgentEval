@@ -10,6 +10,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from .workbench_models import (
     AgentProfile,
@@ -114,17 +115,17 @@ def _json(value: Any) -> str:
 
 def _json_default(value: Any) -> dict[str, Any]:
     if isinstance(value, frozenset):
-        return {"__workbench_collection__": "frozenset", "items": sorted(value, key=repr)}
+        return {"__workbench_internal_collection_v1__": "frozenset", "items": sorted(value, key=repr)}
     if isinstance(value, set):
-        return {"__workbench_collection__": "set", "items": sorted(value, key=repr)}
+        return {"__workbench_internal_collection_v1__": "set", "items": sorted(value, key=repr)}
     raise TypeError(f"{type(value).__name__} is not JSON serializable")
 
 
 def _json_object(value: dict[str, Any]) -> Any:
-    if set(value) == {"__workbench_collection__", "items"}:
-        if value["__workbench_collection__"] == "set":
+    if set(value) == {"__workbench_internal_collection_v1__", "items"}:
+        if value["__workbench_internal_collection_v1__"] == "set":
             return set(value["items"])
-        if value["__workbench_collection__"] == "frozenset":
+        if value["__workbench_internal_collection_v1__"] == "frozenset":
             return frozenset(value["items"])
     return value
 
@@ -134,8 +135,12 @@ def _decode_json(value: str) -> Any:
 
 
 _ENVIRONMENT_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
-_SENSITIVE_KEY = re.compile(r"(?:api[_-]?key|authorization|credential|password|private[_-]?key|secret|token)", re.I)
-_RAW_SECRET = re.compile(r"^(?:sk-[A-Za-z0-9_-]+|gh[pousr]_[A-Za-z0-9_-]+|Bearer\s+\S+)$", re.I)
+_CREDENTIAL_KEYS = frozenset(
+    {
+        "api_key", "secret", "password", "access_token", "client_secret", "authorization", "auth",
+        "token", "private_key", "credential",
+    }
+)
 _REFERENCE_KEYS = frozenset({"env", "environment", "secret_ref", "secret_reference"})
 _TERMINAL_RUN_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.PARTIAL, RunStatus.FAILED})
 
@@ -160,7 +165,7 @@ def _validate_secret_free(value: Any, sensitive: bool = False) -> None:
         return
     if isinstance(value, Mapping):
         for key, item in value.items():
-            _validate_secret_free(item, sensitive or bool(_SENSITIVE_KEY.search(str(key))))
+            _validate_secret_free(item, sensitive or str(key).lower() in _CREDENTIAL_KEYS)
         return
     if isinstance(value, (list, tuple, set, frozenset)):
         for item in value:
@@ -168,8 +173,21 @@ def _validate_secret_free(value: Any, sensitive: bool = False) -> None:
         return
     if sensitive and value is not None:
         raise ValueError("secret values must use environment-variable or secret references")
-    if isinstance(value, str) and _RAW_SECRET.fullmatch(value):
-        raise ValueError("secret values must use environment-variable or secret references")
+
+
+def _validate_connection_urls(value: Any) -> None:
+    if isinstance(value, Mapping):
+        for item in value.values():
+            _validate_connection_urls(item)
+        return
+    if isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            _validate_connection_urls(item)
+        return
+    if isinstance(value, str):
+        parsed = urlsplit(value)
+        if parsed.scheme and (parsed.username is not None or parsed.password is not None):
+            raise ValueError("connection URLs must not contain inline credentials")
 
 
 def _model_json(model: Any) -> str:
@@ -280,8 +298,10 @@ class SQLiteWorkbenchRepository:
         revision_id = _new_id()
         created_at = _now()
         _validate_secret_free(config_snapshot)
+        _validate_connection_urls(config_snapshot)
         for tool in tools:
-            _validate_secret_free(asdict(tool))
+            _validate_secret_free(tool.adapter_config)
+            _validate_connection_urls(tool.adapter_config)
         snapshot = AgentRevision(revision_id, agent_id, 0, config_snapshot, tools, created_at)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")

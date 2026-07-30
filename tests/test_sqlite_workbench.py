@@ -221,3 +221,57 @@ def test_reloaded_run_artifacts_and_report_summary_are_deeply_immutable(tmp_path
         loaded_report.summary["nested"]["value"] = 2
     with pytest.raises(TypeError):
         report.summary["nested"]["value"] = 2
+
+
+def test_secret_validation_ignores_tool_schemas_permissions_and_descriptions(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    agent = repo.create_agent("Schema fields", "auth documentation")
+    schema_tool = ToolBinding(
+        "schema", "Schema", "authorization is an output label", "python", {},
+        {"properties": {"max_tokens": {"type": "integer"}, "token_count": {"type": "integer"}}},
+        {"properties": {"access_token": {"type": "string"}}},
+        {"authorization": "domain-policy-value"}, (), False, True,
+    )
+
+    revision = repo.create_agent_revision(agent.agent_id, {}, (schema_tool,))
+    assert revision.tools == (schema_tool,)
+
+
+def test_exact_credential_keys_require_references_and_normal_urls_are_allowed(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    agent = repo.create_agent("Credentials", "")
+
+    with pytest.raises(ValueError):
+        repo.create_agent_revision(agent.agent_id, {"auth": "plain"}, ())
+
+    normal_url = ToolBinding("url", "URL", "", "http", {"url": "https://api.example.test/v1"}, {}, {}, {}, (), False, True)
+    revision = repo.create_agent_revision(
+        agent.agent_id,
+        {"auth": {"env": "SERVICE_AUTH"}},
+        (normal_url,),
+    )
+    assert revision.revision == 1
+
+
+def test_connection_urls_with_inline_credentials_are_rejected(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    agent = repo.create_agent("Connection", "")
+    credential_url = ToolBinding(
+        "url", "URL", "", "http", {"url": "https://user:password@api.example.test/v1"}, {}, {}, {}, (), False, True
+    )
+
+    with pytest.raises(ValueError):
+        repo.create_agent_revision(agent.agent_id, {}, (credential_url,))
+    with pytest.raises(ValueError):
+        repo.create_agent_revision(agent.agent_id, {"endpoint": "https://user:password@api.example.test/v1"}, ())
+
+
+def test_collection_tag_shaped_user_dictionary_round_trips_unchanged(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    agent = repo.create_agent("Tag collision", "")
+    envelope = {"__workbench_collection__": "set", "items": ["ordinary", "user", "data"]}
+    revision = repo.create_agent_revision(agent.agent_id, {"payload": envelope}, ())
+
+    loaded = SQLiteWorkbenchRepository(repo.db_path).get_agent_revision(revision.revision_id)
+    assert loaded.config_snapshot["payload"] == revision.config_snapshot["payload"]
+    assert isinstance(loaded.config_snapshot["payload"], dict)
