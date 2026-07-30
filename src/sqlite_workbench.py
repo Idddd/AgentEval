@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import uuid
+from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -110,10 +112,64 @@ def _json(value: Any) -> str:
     return json.dumps(value, default=_json_default, separators=(",", ":"), sort_keys=True)
 
 
-def _json_default(value: Any) -> list[Any]:
-    if isinstance(value, (set, frozenset)):
-        return sorted(value, key=repr)
+def _json_default(value: Any) -> dict[str, Any]:
+    if isinstance(value, frozenset):
+        return {"__workbench_collection__": "frozenset", "items": sorted(value, key=repr)}
+    if isinstance(value, set):
+        return {"__workbench_collection__": "set", "items": sorted(value, key=repr)}
     raise TypeError(f"{type(value).__name__} is not JSON serializable")
+
+
+def _json_object(value: dict[str, Any]) -> Any:
+    if set(value) == {"__workbench_collection__", "items"}:
+        if value["__workbench_collection__"] == "set":
+            return set(value["items"])
+        if value["__workbench_collection__"] == "frozenset":
+            return frozenset(value["items"])
+    return value
+
+
+def _decode_json(value: str) -> Any:
+    return json.loads(value, object_hook=_json_object)
+
+
+_ENVIRONMENT_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_SENSITIVE_KEY = re.compile(r"(?:api[_-]?key|authorization|credential|password|private[_-]?key|secret|token)", re.I)
+_RAW_SECRET = re.compile(r"^(?:sk-[A-Za-z0-9_-]+|gh[pousr]_[A-Za-z0-9_-]+|Bearer\s+\S+)$", re.I)
+_REFERENCE_KEYS = frozenset({"env", "environment", "secret_ref", "secret_reference"})
+_TERMINAL_RUN_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.PARTIAL, RunStatus.FAILED})
+
+
+def _is_secret_reference(value: Any) -> bool:
+    if isinstance(value, str):
+        name = value.removeprefix("env:")
+        if value.startswith("${") and value.endswith("}"):
+            name = value[2:-1]
+        return bool(_ENVIRONMENT_NAME.fullmatch(name) or value.startswith("secret://"))
+    return (
+        isinstance(value, Mapping)
+        and len(value) == 1
+        and next(iter(value)) in _REFERENCE_KEYS
+        and isinstance(next(iter(value.values())), str)
+        and _ENVIRONMENT_NAME.fullmatch(next(iter(value.values()))) is not None
+    )
+
+
+def _validate_secret_free(value: Any, sensitive: bool = False) -> None:
+    if sensitive and _is_secret_reference(value):
+        return
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            _validate_secret_free(item, sensitive or bool(_SENSITIVE_KEY.search(str(key))))
+        return
+    if isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            _validate_secret_free(item, sensitive)
+        return
+    if sensitive and value is not None:
+        raise ValueError("secret values must use environment-variable or secret references")
+    if isinstance(value, str) and _RAW_SECRET.fullmatch(value):
+        raise ValueError("secret values must use environment-variable or secret references")
 
 
 def _model_json(model: Any) -> str:
@@ -181,6 +237,14 @@ class SQLiteWorkbenchRepository:
             raise KeyError(identifier)
         return row
 
+    def _require_mutable_run(self, connection: sqlite3.Connection, run_id: str) -> sqlite3.Row:
+        run = self._require(
+            connection.execute("SELECT * FROM eval_runs WHERE run_id = ?", (run_id,)).fetchone(), run_id
+        )
+        if RunStatus(run["status"]) in _TERMINAL_RUN_STATUSES:
+            raise ValueError("terminal runs are immutable")
+        return run
+
     @staticmethod
     def _agent(row: sqlite3.Row) -> AgentProfile:
         return AgentProfile(**dict(row))
@@ -215,6 +279,10 @@ class SQLiteWorkbenchRepository:
     ) -> AgentRevision:
         revision_id = _new_id()
         created_at = _now()
+        _validate_secret_free(config_snapshot)
+        for tool in tools:
+            _validate_secret_free(asdict(tool))
+        snapshot = AgentRevision(revision_id, agent_id, 0, config_snapshot, tools, created_at)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             agent = self._require(
@@ -222,19 +290,20 @@ class SQLiteWorkbenchRepository:
                 agent_id,
             )
             revision_number = agent["current_revision"] + 1
+            snapshot = AgentRevision(revision_id, agent_id, revision_number, config_snapshot, tools, created_at)
             connection.execute(
                 "INSERT INTO agent_revisions VALUES (?, ?, ?, ?, ?)",
-                (revision_id, agent_id, revision_number, _json(config_snapshot), created_at),
+                (revision_id, agent_id, revision_number, _json(snapshot.config_snapshot), created_at),
             )
             connection.executemany(
                 "INSERT INTO agent_revision_tools VALUES (?, ?, ?)",
-                [(revision_id, tool.tool_id, _model_json(tool)) for tool in tools],
+                [(revision_id, tool.tool_id, _model_json(tool)) for tool in snapshot.tools],
             )
             connection.execute(
                 "UPDATE agents SET current_revision = ? WHERE agent_id = ?",
                 (revision_number, agent_id),
             )
-        return AgentRevision(revision_id, agent_id, revision_number, config_snapshot, tools, created_at)
+        return snapshot
 
     def get_agent_revision(self, revision_id: str) -> AgentRevision:
         with self._connect() as connection:
@@ -252,8 +321,8 @@ class SQLiteWorkbenchRepository:
             revision_id=row["revision_id"],
             agent_id=row["agent_id"],
             revision=row["revision"],
-            config_snapshot=json.loads(row["config_json"]),
-            tools=tuple(ToolBinding(**json.loads(tool_row["tool_json"])) for tool_row in tool_rows),
+            config_snapshot=_decode_json(row["config_json"]),
+            tools=tuple(ToolBinding(**_decode_json(tool_row["tool_json"])) for tool_row in tool_rows),
             created_at=row["created_at"],
         )
 
@@ -292,7 +361,7 @@ class SQLiteWorkbenchRepository:
                 "SELECT case_json FROM dataset_draft_cases WHERE dataset_id = ? ORDER BY position",
                 (dataset_id,),
             ).fetchall()
-        return [TestCase(**json.loads(row["case_json"])) for row in rows]
+        return [TestCase(**_decode_json(row["case_json"])) for row in rows]
 
     def add_dataset_generation_cost(self, dataset_id: str, cost: UsageCost) -> None:
         with self._connect() as connection:
@@ -323,7 +392,7 @@ class SQLiteWorkbenchRepository:
                 "SELECT usage_json FROM dataset_draft_usage_costs WHERE dataset_id = ? ORDER BY rowid",
                 (dataset_id,),
             ).fetchall()
-            costs = tuple(_usage_cost(json.loads(cost_row["usage_json"])) for cost_row in cost_rows)
+            costs = tuple(_usage_cost(_decode_json(cost_row["usage_json"])) for cost_row in cost_rows)
             connection.execute(
                 "INSERT INTO dataset_revisions VALUES (?, ?, ?, ?, ?, ?)",
                 (revision_id, dataset_id, dataset["agent_id"], revision_number, _json([asdict(cost) for cost in costs]), created_at),
@@ -345,7 +414,7 @@ class SQLiteWorkbenchRepository:
             dataset["agent_id"],
             dataset["name"],
             revision_number,
-            tuple(TestCase(**json.loads(case_row["case_json"])) for case_row in case_rows),
+            tuple(TestCase(**_decode_json(case_row["case_json"])) for case_row in case_rows),
             created_at,
             costs,
         )
@@ -373,9 +442,9 @@ class SQLiteWorkbenchRepository:
             agent_id=row["agent_id"],
             name=row["name"],
             revision=row["revision"],
-            cases=tuple(TestCase(**json.loads(case_row["case_json"])) for case_row in case_rows),
+            cases=tuple(TestCase(**_decode_json(case_row["case_json"])) for case_row in case_rows),
             created_at=row["created_at"],
-            generation_costs=tuple(_usage_cost(cost) for cost in json.loads(row["generation_costs_json"])),
+            generation_costs=tuple(_usage_cost(cost) for cost in _decode_json(row["generation_costs_json"])),
         )
 
     def create_run(self, agent_revision_id: str, dataset_revision_id: str) -> EvalRun:
@@ -421,10 +490,7 @@ class SQLiteWorkbenchRepository:
 
     def save_case_result(self, run_id: str, result: CaseResult) -> None:
         with self._connect() as connection:
-            self._require(
-                connection.execute("SELECT run_id FROM eval_runs WHERE run_id = ?", (run_id,)).fetchone(),
-                run_id,
-            )
+            self._require_mutable_run(connection, run_id)
             connection.execute(
                 "INSERT OR REPLACE INTO case_results VALUES (?, ?, ?)",
                 (run_id, result.case_id, _model_json(result)),
@@ -469,10 +535,7 @@ class SQLiteWorkbenchRepository:
 
     def finish_run(self, run_id: str, status: RunStatus) -> EvalRun:
         with self._connect() as connection:
-            self._require(
-                connection.execute("SELECT run_id FROM eval_runs WHERE run_id = ?", (run_id,)).fetchone(),
-                run_id,
-            )
+            self._require_mutable_run(connection, run_id)
             connection.execute(
                 "UPDATE eval_runs SET status = ?, completed_at = ? WHERE run_id = ?",
                 (status.value, _now(), run_id),
@@ -496,7 +559,7 @@ class SQLiteWorkbenchRepository:
             started_at=row["started_at"],
             completed_at=row["completed_at"],
             evaluator_version=row["evaluator_version"],
-            case_results=tuple(_case_result(json.loads(result_row["result_json"])) for result_row in result_rows),
+            case_results=tuple(_case_result(_decode_json(result_row["result_json"])) for result_row in result_rows),
         )
 
     def list_runs(self, agent_id: str) -> list[EvalRun]:
@@ -551,7 +614,7 @@ class SQLiteWorkbenchRepository:
             run_id=row["run_id"],
             artifact_version=row["artifact_version"],
             status=row["status"],
-            summary=json.loads(row["summary_json"]),
+            summary=_decode_json(row["summary_json"]),
             markdown_path=row["markdown_path"],
             created_at=row["created_at"],
         )

@@ -1,3 +1,5 @@
+import pytest
+
 from src.sqlite_workbench import SQLiteWorkbenchRepository
 from src.workbench_models import (
     CaseResult,
@@ -121,3 +123,101 @@ def test_run_results_and_reports_round_trip(tmp_path):
     assert (first_report.artifact_version, second_report.artifact_version) == (1, 2)
     assert reopened.get_report(second_report.report_id).summary == {"score": 5}
     assert reopened.list_reports(agent.agent_id) == [second_report, first_report]
+
+
+def test_rejects_raw_secret_values_but_accepts_secret_references(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    agent = repo.create_agent("Secure", "")
+
+    with pytest.raises(ValueError):
+        repo.create_agent_revision(agent.agent_id, {"api_key": "sk-live-secret"}, ())
+
+    with pytest.raises(ValueError):
+        repo.create_agent_revision(
+            agent.agent_id,
+            {},
+            (
+                ToolBinding(
+                    "secure", "Secure", "", "python", {"token": "raw-secret"}, {}, {}, {}, (), False, True
+                ),
+            ),
+        )
+
+    revision = repo.create_agent_revision(
+        agent.agent_id,
+        {"api_key": {"env": "OPENAI_API_KEY"}},
+        (
+            ToolBinding(
+                "secure", "Secure", "", "python", {"token": "secret://workbench/tool-token"}, {}, {}, {}, (), False, True
+            ),
+        ),
+    )
+    assert revision.revision == 1
+
+
+def test_terminal_run_rejects_result_changes_and_status_rewrites(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    agent = repo.create_agent("Terminal", "")
+    agent_revision = repo.create_agent_revision(agent.agent_id, {}, ())
+    dataset_id = repo.create_dataset(agent.agent_id, "Dataset")
+    repo.replace_draft_cases(dataset_id, [WorkbenchTestCase("case-1", {}, {})])
+    run = repo.create_run(agent_revision.revision_id, repo.publish_dataset(dataset_id).revision_id)
+    repo.finish_run(run.run_id, RunStatus.COMPLETED)
+    replacement = CaseResult("case-1", "trace-1", "changed", {}, {}, (), None, (), "PASS")
+
+    with pytest.raises(ValueError):
+        repo.save_case_result(run.run_id, replacement)
+    with pytest.raises(ValueError):
+        repo.finish_run(run.run_id, RunStatus.FAILED)
+
+
+def test_nested_set_and_frozenset_snapshots_round_trip_exactly(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    agent = repo.create_agent("Collections", "")
+    revision = repo.create_agent_revision(
+        agent.agent_id,
+        {"nested": {"set": {"a", "b"}, "frozenset": frozenset({"c", "d"})}},
+        (),
+    )
+
+    loaded = SQLiteWorkbenchRepository(repo.db_path).get_agent_revision(revision.revision_id)
+    snapshot = loaded.config_snapshot["nested"]
+    assert snapshot == revision.config_snapshot["nested"]
+    assert isinstance(snapshot["set"], frozenset)
+    assert isinstance(snapshot["frozenset"], frozenset)
+
+
+def test_reloaded_run_artifacts_and_report_summary_are_deeply_immutable(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    agent = repo.create_agent("Immutable artifacts", "")
+    agent_revision = repo.create_agent_revision(agent.agent_id, {}, ())
+    dataset_id = repo.create_dataset(agent.agent_id, "Dataset")
+    repo.replace_draft_cases(dataset_id, [WorkbenchTestCase("case-1", {}, {})])
+    run = repo.create_run(agent_revision.revision_id, repo.publish_dataset(dataset_id).revision_id)
+    result = CaseResult(
+        "case-1", "trace-1", "answer", {"score": 1.0}, {"score": "reason"},
+        (ToolEvidence("call-1", "tool", True, True, True, None, False, {"nested": {"value": 1}}, None,
+                      {"output": {"value": 1}}, None, "trace-1", None, None, None, None, None),),
+        JudgeResult(
+            {"correctness": 4, "relevance": 4, "completeness": 4, "safety": 4},
+            {"correctness": "ok", "relevance": "ok", "completeness": "ok", "safety": "ok"},
+            "pass", "judge", "v1", "judge-trace", None,
+        ),
+        (), "PASS",
+    )
+    repo.save_case_result(run.run_id, result)
+    report = repo.save_report(run.run_id, "PASS", {"nested": {"value": 1}}, tmp_path / "report.md")
+    reopened = SQLiteWorkbenchRepository(repo.db_path)
+    loaded_result = reopened.get_run(run.run_id).case_results[0]
+    loaded_report = reopened.get_report(report.report_id)
+
+    with pytest.raises(TypeError):
+        loaded_result.deterministic_scores["score"] = 0.0
+    with pytest.raises(TypeError):
+        loaded_result.tool_evidence[0].requested_arguments["nested"]["value"] = 2
+    with pytest.raises(TypeError):
+        loaded_result.judge.scores["safety"] = 1
+    with pytest.raises(TypeError):
+        loaded_report.summary["nested"]["value"] = 2
+    with pytest.raises(TypeError):
+        report.summary["nested"]["value"] = 2

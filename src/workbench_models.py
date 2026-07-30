@@ -28,6 +28,8 @@ def _freeze(value: Any) -> Any:
         return tuple(_freeze(item) for item in value)
     if isinstance(value, tuple):
         return tuple(_freeze(item) for item in value)
+    if isinstance(value, frozenset):
+        return frozenset(_freeze(item) for item in value)
     if isinstance(value, set):
         return frozenset(_freeze(item) for item in value)
     return value
@@ -154,6 +156,12 @@ class ToolEvidence:
     latency_ms: float | None
     receipt: dict[str, Any] | None
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "requested_arguments", _freeze(self.requested_arguments))
+        object.__setattr__(self, "executed_arguments", _freeze(self.executed_arguments))
+        object.__setattr__(self, "output", _freeze(self.output))
+        object.__setattr__(self, "receipt", _freeze(self.receipt))
+
     @property
     def effect_status(self) -> str:
         if not self.verification_required:
@@ -187,6 +195,8 @@ class JudgeResult:
             for score in self.scores.values()
         ):
             raise ValueError("rubric scores must be integers from 1 to 5")
+        object.__setattr__(self, "scores", _freeze(self.scores))
+        object.__setattr__(self, "reasons", _freeze(self.reasons))
 
     @property
     def average(self) -> float:
@@ -208,6 +218,12 @@ class CaseResult:
     judge: JudgeResult | None
     usage_costs: tuple[UsageCost, ...]
     status: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "deterministic_scores", _freeze(self.deterministic_scores))
+        object.__setattr__(self, "deterministic_reasons", _freeze(self.deterministic_reasons))
+        object.__setattr__(self, "tool_evidence", tuple(self.tool_evidence))
+        object.__setattr__(self, "usage_costs", tuple(self.usage_costs))
 
 
 @dataclass(frozen=True)
@@ -232,3 +248,6 @@ class ReportSnapshot:
     summary: dict[str, Any]
     markdown_path: str
     created_at: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "summary", _freeze(self.summary))
