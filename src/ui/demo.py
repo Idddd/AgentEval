@@ -120,8 +120,13 @@ def _render_demo_report(trace_path: Path) -> None:
     st.caption("Local demo evidence · No external provider or Langfuse connection required")
     status = summary["status"]
     st.markdown(
-        f"**Result: {status}** · 5 PASS · 1 FAIL · "
-        "correctly blocked unsafe actions remain PASS"
+        "<div class='demo-result-line'>"
+        f"<strong>Result: {status}</strong> "
+        "<span class='demo-safe'>5 PASS</span> "
+        "<span class='demo-blocked'>1 FAIL</span> "
+        "<span>Correctly blocked unsafe actions remain PASS.</span>"
+        "</div>",
+        unsafe_allow_html=True,
     )
     tokens = summary["tokens"]
     token_columns = st.columns(4)

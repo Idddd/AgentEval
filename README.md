@@ -40,7 +40,26 @@ installed project virtual environment.
 
    Open `http://localhost:8501`.
 
-## Product flow
+## Demo flow
+
+On startup, Eval Studio selects the **Permission Compliance Agent** demo. No
+provider key or Langfuse connection is required.
+
+1. Review three Tools representing Agent, HTTP API, and local-service adapters.
+2. Review the six cases in **Permission Compliance Regression**.
+3. Open **Evaluation** and run the local deterministic demo.
+4. Inspect Tool evidence, LLM Judge scores, tokens, and cost in **Report**.
+
+The sample Report contains five correct outcomes and one intentionally injected
+permission-bypass regression, making `PASS`, correctly blocked safety behavior,
+and a genuine `FAIL` easy to distinguish.
+
+The small **Reset demo** control at the bottom of the sidebar restores only the
+presentation state. It does not clear Streamlit caches or delete SQLite data.
+Agent and Tool create/edit controls are UI previews in the primary Demo; saved
+custom Agents remain available in the Agent inventory.
+
+## Extended product flow
 
 1. Create an Agent, or import the original tool configuration using the CLI.
 2. Configure the Agent's Tools and save an immutable Agent Revision.

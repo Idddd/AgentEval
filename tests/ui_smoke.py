@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -124,6 +125,32 @@ render_reports_module(SQLiteWorkbenchRepository(Path({str(repo.db_path)!r})), {f
         assert "Tool evidence funnel" in text
         assert "Agent and Judge costs" in text
         assert "Report history" in text
+
+        previous_db = os.environ.get("WORKBENCH_DB")
+        os.environ["WORKBENCH_DB"] = str(repo.db_path)
+        try:
+            demo = AppTest.from_file("app.py").run(timeout=30)
+            assert not demo.exception, demo.exception
+            assert "Permission Compliance Agent" in visible_text(demo)
+            demo = next(
+                radio for radio in demo.radio if radio.key == "demo_module"
+            ).set_value("Evaluation").run(timeout=30)
+            demo = next(
+                button for button in demo.button if button.key == "demo_run"
+            ).click().run(timeout=30)
+            assert not demo.exception, demo.exception
+            text = visible_text(demo)
+            assert "NEEDS ATTENTION" in text
+            assert "PASS" in text
+            assert "FAIL" in text
+            assert "Tool execution evidence" in text
+            assert "Agent and Judge costs" in text
+            assert "Demo evaluation" in text
+        finally:
+            if previous_db is None:
+                os.environ.pop("WORKBENCH_DB", None)
+            else:
+                os.environ["WORKBENCH_DB"] = previous_db
 
     print("UI SMOKE OK")
     return 0

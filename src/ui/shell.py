@@ -13,6 +13,18 @@ from .datasets import CandidateGenerator
 from .state import init_ui_state
 
 
+def _show_reset_confirmation() -> None:
+    st.session_state.demo_reset_confirm = True
+
+
+def _request_demo_reset() -> None:
+    st.session_state.demo_reset_pending = True
+
+
+def _cancel_demo_reset() -> None:
+    st.session_state.demo_reset_confirm = False
+
+
 def _render_placeholder(page: str) -> None:
     st.caption("EVALUATION WORKBENCH")
     st.title(page)
@@ -44,18 +56,27 @@ def render_shell(
         )
         st.markdown("<div class='sidebar-spacer'></div>", unsafe_allow_html=True)
         st.caption("DEMO CONTROLS")
-        if st.button("Reset demo", key="reset_demo", width="stretch"):
-            st.session_state.demo_reset_confirm = True
-            st.rerun()
+        st.button(
+            "Reset demo",
+            key="reset_demo",
+            width="stretch",
+            on_click=_show_reset_confirmation,
+        )
         if st.session_state.demo_reset_confirm:
             st.caption("Reset the presentation state?")
             confirm, cancel = st.columns(2)
-            if confirm.button("Reset", key="confirm_reset_demo", width="stretch"):
-                st.session_state.demo_reset_pending = True
-                st.rerun()
-            if cancel.button("Cancel", key="cancel_reset_demo", width="stretch"):
-                st.session_state.demo_reset_confirm = False
-                st.rerun()
+            confirm.button(
+                "Reset",
+                key="confirm_reset_demo",
+                width="stretch",
+                on_click=_request_demo_reset,
+            )
+            cancel.button(
+                "Cancel",
+                key="cancel_reset_demo",
+                width="stretch",
+                on_click=_cancel_demo_reset,
+            )
         st.caption("Local workbench · Immutable revisions")
 
     st.markdown("<div class='workspace-bar'><span>WORKSPACE</span><strong>Local evaluation environment</strong></div>", unsafe_allow_html=True)

@@ -70,6 +70,8 @@ def test_demo_flow_reaches_complete_report(tmp_path):
     assert "NEEDS ATTENTION" in text
     assert "PASS" in text
     assert "FAIL" in text
+    assert "demo-safe" in text
+    assert "demo-blocked" in text
     assert "Tool execution evidence" in text
     assert "Agent and Judge costs" in text
 
@@ -136,6 +138,7 @@ def test_bottom_reset_requires_confirmation_and_restores_demo(tmp_path, monkeypa
         "confirm_reset_demo",
         "cancel_reset_demo",
     }
+    assert next(r for r in app.radio if r.key == "demo_module").value == "Dataset"
     app = next(
         button for button in app.button if button.key == "confirm_reset_demo"
     ).click().run(timeout=20)

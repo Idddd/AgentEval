@@ -73,7 +73,10 @@ def render_agents_page(
         st.caption("Create an Agent, define its Tools, then evaluate immutable revisions.")
     with action:
         st.write("")
-        if st.button("New agent", key="new_agent", type="primary", width="stretch"):
+        if (
+            st.session_state.selected_agent_id != DEMO_AGENT_ID
+            and st.button("New agent", key="new_agent", type="primary", width="stretch")
+        ):
             st.session_state.agent_dialog = "new"
             st.rerun()
     _new_agent_form(registry)
