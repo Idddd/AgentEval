@@ -197,6 +197,45 @@ render_datasets_module(
     assert not buttons[f"dataset_import_json_{agent.agent_id}_{dataset_id}"].disabled
 
 
+def test_evaluation_does_not_reuse_a_published_draft_for_a_different_draft_source(tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    db = tmp_path / "workbench.db"
+    repository = SQLiteWorkbenchRepository(db)
+    agent = repository.create_agent("Agent", "")
+    repository.create_agent_revision(agent.agent_id, {"model": "test"}, ())
+    first_draft_id = repository.create_dataset(agent.agent_id, "First draft")
+    second_draft_id = repository.create_dataset(agent.agent_id, "Second draft")
+    registry = DatasetRegistry(repository)
+    registry.add_cases(first_draft_id, [WorkbenchCase("first", {"query": "First"}, {})])
+    registry.add_cases(second_draft_id, [WorkbenchCase("second", {"query": "Second"}, {})])
+    script = f"""
+from pathlib import Path
+from src.sqlite_workbench import SQLiteWorkbenchRepository
+from src.ui.runs import render_runs_module
+
+class Runner:
+    def run_revision(self, agent_revision_id, dataset_revision_id, progress):
+        raise AssertionError("The runner must not start before the selected draft is published")
+
+render_runs_module(SQLiteWorkbenchRepository(Path({str(db)!r})), {agent.agent_id!r}, Runner())
+"""
+    app = AppTest.from_string(script).run(timeout=20)
+    dot = chr(0xB7)
+    first_label = f"Publish current draft {dot} First draft {dot} 1 cases"
+    second_label = f"Publish current draft {dot} Second draft {dot} 1 cases"
+
+    next(select for select in app.selectbox if select.label == "Dataset source").set_value(
+        first_label
+    ).run(timeout=20)
+    next(button for button in app.button if button.key == "run_publish_dataset").click().run(timeout=20)
+    next(select for select in app.selectbox if select.label == "Dataset source").set_value(
+        second_label
+    ).run(timeout=20)
+
+    assert next(button for button in app.button if button.key == "run_start").disabled
+
+
 def test_completed_evaluation_routes_to_its_persisted_report(tmp_path):
     from streamlit.testing.v1 import AppTest
 
@@ -213,7 +252,49 @@ def test_completed_evaluation_routes_to_its_persisted_report(tmp_path):
         repository.create_run(agent_revision.revision_id, dataset_revision.revision_id).run_id,
         RunStatus.COMPLETED,
     )
-    report_id = "report-for-completed-run"
+    script = f"""
+from pathlib import Path
+from src.report_service import ReportService
+from src.sqlite_workbench import SQLiteWorkbenchRepository
+from src.ui.runs import render_runs_module
+from src.ui.state import init_ui_state
+
+class CompletedRunner:
+    def run_revision(self, agent_revision_id, dataset_revision_id, progress):
+        return SQLiteWorkbenchRepository(Path({str(db)!r})).get_run({completed_run.run_id!r})
+
+init_ui_state({agent.agent_id!r})
+render_runs_module(
+    SQLiteWorkbenchRepository(Path({str(db)!r})),
+    {agent.agent_id!r},
+    CompletedRunner(),
+    ReportService(SQLiteWorkbenchRepository(Path({str(db)!r})), Path({str(tmp_path / 'reports')!r})),
+)
+"""
+    app = AppTest.from_string(script).run(timeout=20)
+    next(button for button in app.button if button.key == "run_start").click().run(timeout=20)
+    report = repository.list_reports(agent.agent_id)[0]
+
+    assert app.session_state["active_page"] == "Report"
+    assert app.session_state["selected_report_id"] == report.report_id
+
+
+def test_evaluation_does_not_route_to_a_report_that_was_not_persisted(tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    db = tmp_path / "workbench.db"
+    repository = SQLiteWorkbenchRepository(db)
+    agent = repository.create_agent("Agent", "")
+    agent_revision = repository.create_agent_revision(agent.agent_id, {"model": "test"}, ())
+    dataset_id = repository.create_dataset(agent.agent_id, "Dataset")
+    DatasetRegistry(repository).add_cases(
+        dataset_id, [WorkbenchCase("case", {"query": "Evaluate"}, {})]
+    )
+    dataset_revision = DatasetRegistry(repository).publish(dataset_id)
+    completed_run = repository.finish_run(
+        repository.create_run(agent_revision.revision_id, dataset_revision.revision_id).run_id,
+        RunStatus.COMPLETED,
+    )
     script = f"""
 from pathlib import Path
 from types import SimpleNamespace
@@ -225,20 +306,22 @@ class CompletedRunner:
     def run_revision(self, agent_revision_id, dataset_revision_id, progress):
         return SQLiteWorkbenchRepository(Path({str(db)!r})).get_run({completed_run.run_id!r})
 
-class ReportService:
+class NonPersistingReportService:
     def create(self, run_id):
-        return SimpleNamespace(report_id={report_id!r})
+        return SimpleNamespace(report_id="not-persisted")
 
 init_ui_state({agent.agent_id!r})
 render_runs_module(
     SQLiteWorkbenchRepository(Path({str(db)!r})),
     {agent.agent_id!r},
     CompletedRunner(),
-    ReportService(),
+    NonPersistingReportService(),
 )
 """
     app = AppTest.from_string(script).run(timeout=20)
     next(button for button in app.button if button.key == "run_start").click().run(timeout=20)
 
-    assert app.session_state["active_page"] == "Report"
-    assert app.session_state["selected_report_id"] == report_id
+    assert app.session_state["active_page"] == "Agent"
+    assert "Report was not persisted for this completed run." in "\n".join(
+        str(node.value) for node in app.get("error")
+    )

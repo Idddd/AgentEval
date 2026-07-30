@@ -183,9 +183,19 @@ def render_runs_module(
                 except ValueError as error:
                     st.error(str(error))
                 else:
-                    st.session_state[f"run_published_dataset_{agent_id}"] = selected_dataset.revision_id
+                    st.session_state[f"run_published_dataset_{agent_id}"] = {
+                        "dataset_id": value["dataset_id"],
+                        "revision_id": selected_dataset.revision_id,
+                    }
                     st.rerun()
-            persisted_revision_id = st.session_state.get(f"run_published_dataset_{agent_id}")
+            persisted = st.session_state.get(f"run_published_dataset_{agent_id}")
+            persisted_revision_id = (
+                persisted.get("revision_id")
+                if source == "draft"
+                and isinstance(persisted, dict)
+                and persisted.get("dataset_id") == value["dataset_id"]
+                else None
+            )
             if selected_dataset is None and persisted_revision_id:
                 try:
                     selected_dataset = repository.get_dataset_revision(persisted_revision_id)
@@ -250,12 +260,30 @@ def render_runs_module(
                 st.error(f"Evaluation failed: {error}")
             else:
                 st.session_state["selected_run_id"] = run.run_id
+                can_rerun = True
                 if report is not None:
-                    st.session_state["selected_report_id"] = report.report_id
-                    navigate("Report")
+                    try:
+                        persisted_report = repository.get_report(report.report_id)
+                    except KeyError:
+                        st.error("Report was not persisted for this completed run.")
+                        can_rerun = False
+                    else:
+                        report_matches_run = persisted_report.run_id == run.run_id
+                        run_matches_context = (
+                            run.agent_id == agent_id
+                            and run.agent_revision_id == agent_revision.revision_id
+                            and run.dataset_revision_id == selected_dataset.revision_id
+                        )
+                        if not report_matches_run or not run_matches_context:
+                            st.error("Report was not persisted for this completed run.")
+                            can_rerun = False
+                        else:
+                            st.session_state["selected_report_id"] = persisted_report.report_id
+                            navigate("Report")
                 st.success(f"Run {run.run_id} finished with status {run.status.value}.")
                 if progress_lines:
                     st.code("\n".join(progress_lines), language="text")
-                st.rerun()
+                if can_rerun:
+                    st.rerun()
 
     _render_run_history(repository, agent_id)
