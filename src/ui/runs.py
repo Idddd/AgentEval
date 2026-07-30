@@ -264,11 +264,11 @@ def render_runs_module(
                 if report is not None:
                     try:
                         persisted_report = repository.get_report(report.report_id)
+                        persisted_run = repository.get_run(persisted_report.run_id)
                     except KeyError:
                         st.error("Report was not persisted for this completed run.")
                         can_rerun = False
                     else:
-                        persisted_run = repository.get_run(persisted_report.run_id)
                         persisted_run_matches_context = (
                             persisted_run.status is RunStatus.COMPLETED
                             and persisted_run.run_id == run.run_id

@@ -380,3 +380,68 @@ render_runs_module(
     assert "Report was not persisted for this completed run." in "\n".join(
         str(node.value) for node in app.get("error")
     )
+
+
+def test_evaluation_handles_a_persisted_report_with_a_missing_persisted_run(tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    db = tmp_path / "workbench.db"
+    repository = SQLiteWorkbenchRepository(db)
+    agent = repository.create_agent("Agent", "")
+    agent_revision = repository.create_agent_revision(agent.agent_id, {"model": "test"}, ())
+    dataset_id = repository.create_dataset(agent.agent_id, "Dataset")
+    DatasetRegistry(repository).add_cases(
+        dataset_id, [WorkbenchCase("case", {"query": "Evaluate"}, {})]
+    )
+    dataset_revision = DatasetRegistry(repository).publish(dataset_id)
+    completed_run = repository.finish_run(
+        repository.create_run(agent_revision.revision_id, dataset_revision.revision_id).run_id,
+        RunStatus.COMPLETED,
+    )
+    script = f"""
+from pathlib import Path
+from types import SimpleNamespace
+from src.sqlite_workbench import SQLiteWorkbenchRepository
+from src.ui.runs import render_runs_module
+from src.ui.state import init_ui_state
+
+class DanglingReportRepository:
+    def __init__(self, backing):
+        self.backing = backing
+
+    def get_report(self, report_id):
+        return SimpleNamespace(report_id=report_id, run_id="missing-persisted-run")
+
+    def get_run(self, run_id):
+        if run_id == "missing-persisted-run":
+            raise KeyError(run_id)
+        return self.backing.get_run(run_id)
+
+    def __getattr__(self, name):
+        return getattr(self.backing, name)
+
+class CompletedRunner:
+    def run_revision(self, agent_revision_id, dataset_revision_id, progress):
+        return SQLiteWorkbenchRepository(Path({str(db)!r})).get_run({completed_run.run_id!r})
+
+class DanglingReportService:
+    def create(self, run_id):
+        return SimpleNamespace(report_id="dangling-report")
+
+init_ui_state({agent.agent_id!r})
+render_runs_module(
+    DanglingReportRepository(SQLiteWorkbenchRepository(Path({str(db)!r}))),
+    {agent.agent_id!r},
+    CompletedRunner(),
+    DanglingReportService(),
+)
+"""
+    app = AppTest.from_string(script).run(timeout=20)
+    next(button for button in app.button if button.key == "run_start").click().run(timeout=20)
+
+    assert not app.exception
+    assert app.session_state["active_page"] == "Agent"
+    assert app.session_state["selected_run_id"] == completed_run.run_id
+    assert "Report was not persisted for this completed run." in "\n".join(
+        str(node.value) for node in app.get("error")
+    )
