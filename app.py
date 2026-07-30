@@ -6,15 +6,27 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from collections.abc import Sequence
+from typing import Any
 
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.agent_registry import AgentRegistry
+from src.agent import TargetAgent
+from src.agent_adapter import PermissionAgentAdapter
+from src.backends.local_backend import LocalJsonBackend, LocalJsonStore
+from src.code_evaluator import CodeEvaluator
+from src.config_loader import load_tools_config
+from src.eval_runner import EvalRunner
+from src.intent import build_intent_analyzer, generate_case_candidates
+from src.llm_judge import LlmJudge
+from src.report_service import ReportService
 from src.settings import load_settings
 from src.sqlite_workbench import SQLiteWorkbenchRepository
 from src.ui.shell import render_shell
+from src.workbench_models import TestCase
 
 
 st.set_page_config(page_title="Eval Studio", page_icon="◆", layout="wide", initial_sidebar_state="expanded")
@@ -55,7 +67,58 @@ def build_workbench(db_path: str) -> SQLiteWorkbenchRepository:
     return SQLiteWorkbenchRepository(Path(db_path))
 
 
+def build_llm_generator(settings: Any):
+    """Build a lazy candidate generator; provider errors remain inside the Dataset UI."""
+    if not (settings.anthropic_enabled or settings.openai_enabled):
+        return None
+
+    def generate(agent_id: str, cases: Sequence[TestCase]) -> list[dict]:
+        existing = [str(case.input.get("query", "")) for case in cases]
+        prompt = (
+            "Generate diverse Agent evaluation cases as JSON. Return a candidates array. "
+            "Each candidate must include input.query and expected_output. "
+            f"Agent ID: {agent_id}. Existing queries: {existing}"
+        )
+        return generate_case_candidates(settings, prompt)
+
+    return generate
+
+
+def build_runner(settings: Any, repository: SQLiteWorkbenchRepository):
+    """Build a local-first runner only when an LLM Judge is configured."""
+    if not (settings.anthropic_enabled or settings.openai_enabled):
+        return None
+    try:
+        from src.intent import build_llm_gateway
+
+        backend = LocalJsonBackend(settings.data_dir)
+        store = LocalJsonStore(settings.data_dir)
+        agent = TargetAgent(
+            load_tools_config(),
+            backend.tracer,
+            build_intent_analyzer(settings),
+        )
+        adapter = PermissionAgentAdapter(agent, store)
+        judge = LlmJudge(build_llm_gateway(settings), backend.tracer)
+        return EvalRunner(repository, adapter, CodeEvaluator(), judge)
+    except Exception:
+        # The Runs module presents the disconnected state and keeps navigation usable.
+        return None
+
+
 load_styles()
 settings = load_settings(probe=False)
 repository = build_workbench(str(settings.workbench_db))
-render_shell(AgentRegistry(repository), repository)
+report_service = ReportService(repository)
+render_shell(
+    AgentRegistry(repository),
+    repository,
+    runner=build_runner(settings, repository),
+    report_service=report_service,
+    llm_generate=build_llm_generator(settings),
+    langfuse_base_url=(
+        settings.langfuse_host
+        if settings.langfuse_public_key and settings.langfuse_secret_key
+        else None
+    ),
+)

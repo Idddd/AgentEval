@@ -42,3 +42,27 @@ def test_agents_page_and_tool_switching(tmp_path, monkeypatch):
     assert "Tool One" not in visible_text(app)
     assert "Reset Demo" not in visible_text(app)
     assert "Roadmap" not in visible_text(app)
+
+
+def test_agent_modules_render_real_dataset_and_report_states(tmp_path, monkeypatch):
+    db = tmp_path / "workbench.db"
+    repository = SQLiteWorkbenchRepository(db)
+    agent = AgentRegistry(repository).create("Integrated Agent", "")
+    repository.create_agent_revision(agent.agent_id, {}, ())
+    monkeypatch.setenv("WORKBENCH_DB", str(db))
+
+    app = AppTest.from_file("app.py").run(timeout=20)
+    module = next(radio for radio in app.radio if radio.key == "active_agent_module")
+
+    module.set_value("Datasets").run(timeout=20)
+    assert not app.exception
+    assert "Dataset draft" in visible_text(app)
+    assert "No cases in the current draft" in visible_text(app)
+
+    next(
+        radio for radio in app.radio if radio.key == "active_agent_module"
+    ).set_value("Reports").run(timeout=20)
+    assert not app.exception
+    assert "Report history" in visible_text(app)
+    assert "No reports yet" in visible_text(app)
+    assert "will appear here" not in visible_text(app)

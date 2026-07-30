@@ -7,6 +7,9 @@ from src.agent_registry import AgentRegistry
 from src.workbench_models import AgentProfile
 from src.workbench_repository import WorkbenchRepository
 
+from .datasets import CandidateGenerator, render_datasets_module
+from .reports import render_reports_module
+from .runs import render_runs_module
 from .state import select_agent
 from .tools import current_agent_revision, render_tools_module
 
@@ -48,7 +51,15 @@ def _new_agent_form(registry: AgentRegistry) -> None:
                 st.rerun()
 
 
-def render_agents_page(registry: AgentRegistry, repository: WorkbenchRepository) -> None:
+def render_agents_page(
+    registry: AgentRegistry,
+    repository: WorkbenchRepository,
+    *,
+    runner: object | None = None,
+    report_service: object | None = None,
+    llm_generate: CandidateGenerator | None = None,
+    langfuse_base_url: str | None = None,
+) -> None:
     """Render the Agent inventory and the selected Agent's modular workspace."""
     header, action = st.columns([5, 1.2])
     with header:
@@ -99,11 +110,26 @@ def render_agents_page(registry: AgentRegistry, repository: WorkbenchRepository)
 
     selected_agent = next(agent for agent in agents if agent.agent_id == st.session_state.selected_agent_id)
     st.divider()
-    render_agent_workspace(registry, repository, selected_agent)
+    render_agent_workspace(
+        registry,
+        repository,
+        selected_agent,
+        runner=runner,
+        report_service=report_service,
+        llm_generate=llm_generate,
+        langfuse_base_url=langfuse_base_url,
+    )
 
 
 def render_agent_workspace(
-    registry: AgentRegistry, repository: WorkbenchRepository, agent: AgentProfile
+    registry: AgentRegistry,
+    repository: WorkbenchRepository,
+    agent: AgentProfile,
+    *,
+    runner: object | None = None,
+    report_service: object | None = None,
+    llm_generate: CandidateGenerator | None = None,
+    langfuse_base_url: str | None = None,
 ) -> None:
     revision = current_agent_revision(repository, agent)
     tool_count = len(revision.tools) if revision else 0
@@ -115,7 +141,14 @@ def render_agent_workspace(
         first, second, third = st.columns(3)
         first.button("Revisions", key="agent_revisions", help="Revision history is coming next")
         second.button("Edit agent", key="edit_agent", help="Agent metadata editor is coming next")
-        third.button("New evaluation", key="new_evaluation", type="primary", help="Evaluation wizard is coming next")
+        if third.button(
+            "New evaluation",
+            key="new_evaluation",
+            type="primary",
+            help="Open the guided evaluation wizard",
+        ):
+            st.session_state.active_agent_module = "Runs"
+            st.rerun()
 
     module = st.radio(
         "Agent module",
@@ -126,7 +159,14 @@ def render_agent_workspace(
     )
     if module == "Tools":
         render_tools_module(registry, repository, agent)
+    elif module == "Datasets":
+        render_datasets_module(repository, agent.agent_id, llm_generate)
+    elif module == "Runs":
+        render_runs_module(repository, agent.agent_id, runner, report_service)
     else:
-        with st.container(border=True):
-            st.subheader(module)
-            st.caption(f"{module} for {agent.name} will appear here in the next workspace module.")
+        render_reports_module(
+            repository,
+            agent.agent_id,
+            report_service,
+            langfuse_base_url=langfuse_base_url,
+        )
