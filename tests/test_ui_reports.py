@@ -101,6 +101,96 @@ def test_report_view_model_keeps_text_statuses_and_four_state_tool_evidence():
     }
 
 
+def test_report_view_model_keeps_pass_result_when_optional_evidence_is_absent():
+    """Removing optional Judge data must not turn a persisted PASS into INCOMPLETE."""
+    from src.ui.reports import report_view_model
+
+    summary = report_summary()
+    summary["status"] = "PASS"
+    summary["metrics"] = {
+        "total_cases": 1,
+        "passed_cases": 1,
+        "pass_rate": 100.0,
+        "judge_average": None,
+    }
+    summary["judge_dimensions"] = {}
+    summary["tool_funnel"] = {}
+    summary["cases"] = [{
+        "case_id": "case-a",
+        "status": "PASS",
+        "judge": None,
+        "tool_evidence": [],
+    }]
+    summary["failures"] = []
+
+    view = report_view_model(summary)
+
+    assert view["status"] == "PASS"
+    assert view["cases"][0]["Status"] == "PASS"
+    assert view["cases"][0]["Judge score"] == "Not available"
+    assert view["tool_evidence"] == []
+    assert view["judge_available"] is False
+
+
+def test_report_view_model_distinguishes_missing_usage_from_persisted_zero_usage():
+    """Dropping a stored cost field must not make the UI claim it was $0.0000."""
+    from src.ui.reports import report_view_model
+
+    summary = report_summary()
+    summary.pop("tokens")
+    summary.pop("costs")
+
+    missing = report_view_model(summary)
+    explicit_zero = report_view_model({**summary, "tokens": {"agent_input_tokens": 0}, "costs": {"agent": 0.0}})
+
+    assert missing["usage_available"] is False
+    assert missing["costs"]["Agent"] is None
+    assert explicit_zero["usage_available"] is True
+    assert explicit_zero["costs"]["Agent"] == 0.0
+
+
+def test_report_history_shows_result_first_sections_in_vertical_order():
+    """Moving section render calls out of the Report/Compare tabs must change this order."""
+    from streamlit.testing.v1 import AppTest
+
+    summary = report_summary()
+    script = f"""
+from types import SimpleNamespace
+from src.ui.reports import render_reports_module
+from src.workbench_models import ReportSnapshot
+
+summary = {summary!r}
+reports = [
+    ReportSnapshot("report-new", "run-new", 1, "NEEDS ATTENTION", summary, "new.md", "2026-07-30T01:00:00+00:00"),
+    ReportSnapshot("report-old", "run-old", 1, "NEEDS ATTENTION", summary, "old.md", "2026-07-30T00:00:00+00:00"),
+]
+comparison = SimpleNamespace(
+    pass_rate_delta_shared=0.0, different_dataset_revisions=False,
+    agent_changes={{}}, judge_deltas={{}}, tool_state_deltas={{}}, token_deltas={{}},
+    cost_delta_usd=0.0, resolved_failure_ids=(), regression_ids=(),
+    unchanged_failure_ids=(), added_case_ids=(), removed_case_ids=(), shared_case_ids=(),
+)
+repository = SimpleNamespace(list_reports=lambda agent_id: reports)
+service = SimpleNamespace(compare=lambda baseline_id, current_id: comparison)
+render_reports_module(repository, "agent-1", service)
+"""
+
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    headings = [
+        str(node.value).removeprefix("## ")
+        for node in app.get("markdown")
+        if str(node.value).removeprefix("## ") in {
+            "Test Results", "Tool Evidence", "LLM Judge", "Comparison", "Usage & Cost"
+        }
+    ]
+    assert headings.index("Test Results") < headings.index("Tool Evidence")
+    assert headings.index("Tool Evidence") < headings.index("LLM Judge")
+    assert headings.index("LLM Judge") < headings.index("Comparison")
+    assert headings.index("Comparison") < headings.index("Usage & Cost")
+
+
 def test_comparison_view_uses_shared_case_delta_and_complete_change_groups():
     from src.ui.reports import comparison_view_model
 

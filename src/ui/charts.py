@@ -68,10 +68,18 @@ def tool_funnel_figure(funnel: Mapping[str, int]) -> go.Figure:
     return _layout(figure)
 
 
-def cost_figure(costs: Mapping[str, float]) -> go.Figure:
-    """Show only costs included in Evaluation Total; Dataset stays context."""
-    labels = ["Agent", "Judge"]
-    values = [float(costs.get("agent", 0.0)), float(costs.get("judge", 0.0))]
+def cost_figure(costs: Mapping[str, float | None]) -> go.Figure:
+    """Show recorded Agent/Judge costs without inventing missing zero values."""
+    values_by_label = [
+        ("Agent", costs.get("agent")),
+        ("Judge", costs.get("judge")),
+    ]
+    recorded = [
+        (label, float(value)) for label, value in values_by_label
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    ]
+    labels = [label for label, _ in recorded]
+    values = [value for _, value in recorded]
     figure = go.Figure(
         go.Bar(
             x=labels,
