@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-30
 
-**Status:** Proposed for review
+**Status:** Approved
 
 **Audience:** Product and engineering
 
@@ -124,6 +124,11 @@ production telemetry.
 
 The primary action moves the viewer to the Report. A short progress state may
 be shown, but it must finish without network credentials.
+
+The representative result contains five correct outcomes and one injected
+bypass regression. The regression executes EmployeeQueryTool after a denied
+permission decision so the evaluator can demonstrate a genuine red failure,
+while the correctly blocked unsafe cases remain green safety successes.
 
 ## Demo Report
 
