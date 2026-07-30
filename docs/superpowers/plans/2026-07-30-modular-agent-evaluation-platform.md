@@ -22,6 +22,19 @@
 - Evaluation Total is Agent Run Cost plus Judge Cost. Dataset Generation Cost is shown separately.
 - Status must always include text (`PASS`, `FAIL`, `INCOMPLETE`, `NEEDS ATTENTION`); color alone never carries meaning.
 - The formal UI has no `Reset Demo` control and no Roadmap icons or text.
+- Keep the approved product functions and Agent-owned information hierarchy, but
+  implement the visual shell and interaction language after the Eval Studio
+  reference at `http://172.16.18.154:3000/dashboard`: a fixed dark-green
+  sidebar, translucent white workspace header, pale neutral canvas, restrained
+  mint/cream ambient backgrounds, bordered white cards, compact status pills,
+  and one clearly dominant green primary action.
+- Use the reference visual tokens as defaults: canvas `#F4F6F4`, sidebar
+  `#102E28`, primary `#176B55`, text `#17201E`, border `#DCE3DF`,
+  10–15px control/card radii, Arial/Helvetica sans-serif, 34px/700 page titles,
+  and 20px card padding. Preserve textual status and accessible contrast.
+- The reference is a visual/interaction guide, not a source of product scope:
+  do not add mock login, organization switching, teams, or its fixed
+  Project/Experiment assumptions. All user-facing copy remains English.
 - Preserve unrelated working-tree changes, including `langfuse/docker-compose.yml` and `.claude/`.
 - Run tests with `.venv\Scripts\python.exe -m pytest -q --basetemp=.pytest_tmp_modular` on Windows.
 
@@ -1613,12 +1626,16 @@ selectors and still renders the old workflow.
 SQLite records in session state.
 
 `render_shell()` renders the English global navigation `Agents`, `Datasets`,
-`Reports`, `Settings` with a horizontal `st.radio`, then dispatches to one page
-renderer. Default to `Agents`.
+`Reports`, `Settings` in the fixed dark-green sidebar, then dispatches to one
+page renderer. Default to `Agents`. Match the reference shell with a compact
+brand block, highlighted active navigation row, and a translucent top workspace
+bar. Do not copy its mock identity or organization controls.
 
 - [ ] **Step 4: Implement Agent list and workspace**
 
-Render the empty state `No agents yet` with `New agent` when the repository is
+Render a clear eyebrow, 34px page title, one-sentence guidance, and right-aligned
+primary action using the reference page-header rhythm. Render the empty state
+`No agents yet` with `New agent` inside a bordered white card when the repository is
 empty. Otherwise render one compact selectable row/card per Agent with name,
 Tool count, Dataset count, and Run count. Use stable widget keys
 `select_agent_{agent_id}`. The selected workspace header shows the Agent name,
@@ -1635,6 +1652,11 @@ icon actions. `Add tool` and `Edit` open forms for all `ToolBinding` fields.
 Saving calls `AgentRegistry.revise()` and immediately selects the new revision.
 Remove creates a revision without that binding; it never mutates an old
 revision. Unknown adapter types display `UNAVAILABLE`.
+
+Tool rows, forms, and Agent summary metrics use the reference card system:
+`#FFFFFF` surfaces, `#DCE3DF` one-pixel borders, 15px card radii, 20px
+padding, compact labelled status pills, and icon actions with visible accessible
+labels/tooltips. Use `#176B55` only for primary actions and selected emphasis.
 
 - [ ] **Step 6: Reduce `app.py` to composition**
 
@@ -1791,6 +1813,12 @@ Use `ReportSnapshot.summary` only. Render:
 Use Plotly only for Judge, funnel, and cost visuals. Configure text labels on
 marks, accessible headings around charts, and theme-aware colors. Never use a
 red/green fill without visible PASS/FAIL text.
+
+Follow the same reference composition throughout Dataset, Run, Report, and
+Compare modules: pale `#F4F6F4` canvas, generous whitespace, bordered white
+sections, compact 4-up KPI cards where space permits, and inline warning cards
+using muted cream rather than full-width saturated fills. Keep the functional
+wizard stages and report content unchanged.
 
 - [ ] **Step 6: Implement Report comparison UI**
 
