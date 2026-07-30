@@ -1,17 +1,22 @@
 """Global navigation shell for the modular workbench."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import streamlit as st
 
 from src.agent_registry import AgentRegistry
 from src.demo_workspace import DEMO_AGENT_ID
+from src.workbench_models import AgentProfile, AgentRevision
 from src.workbench_repository import WorkbenchRepository
 
-from .agents import render_agents_page
-from .datasets import CandidateGenerator
-from .state import PAGES, init_ui_state
+from .agents import render_agent_home
+from .datasets import CandidateGenerator, render_datasets_module
+from .reports import render_reports_module
+from .runs import render_runs_module
+from .settings_page import SettingsStatus, render_settings_page
+from .state import PAGES, init_ui_state, navigate
 
 
 def _show_reset_confirmation() -> None:
@@ -26,26 +31,64 @@ def _cancel_demo_reset() -> None:
     st.session_state.demo_reset_confirm = False
 
 
-def _render_placeholder(page: str) -> None:
-    st.caption("EVALUATION WORKBENCH")
-    st.title(page)
-    with st.container(border=True):
-        st.subheader(f"{page} workspace")
-        st.caption("Choose an Agent to continue in its workspace.")
+def locked_agent(
+    repository: WorkbenchRepository, selected_agent_id: str | None
+) -> AgentProfile | None:
+    """Return an evaluation-ready selected Agent, or no locked context."""
+    if not selected_agent_id:
+        return None
+    try:
+        agent = repository.get_agent(selected_agent_id)
+    except KeyError:
+        return None
+    return agent if agent.current_revision > 0 else None
+
+
+def render_agent_context(agent: AgentProfile, revision: AgentRevision | None) -> None:
+    """Render downstream Agent context without making it editable."""
+    revision_number = revision.revision if revision is not None else 0
+    tool_count = len(revision.tools) if revision is not None else 0
+    st.subheader("Selected Agent")
+    st.caption(f"{agent.name} 路 Revision {revision_number} 路 {tool_count} Target Tools")
+    st.caption("Change Agent from Agent Home")
+
+
+def _default_settings_status() -> SettingsStatus:
+    return SettingsStatus(
+        llm="Not configured",
+        langfuse="Not configured",
+        database="Available",
+        demo_fixture="Available",
+    )
 
 
 def render_shell(
     registry: AgentRegistry,
     repository: WorkbenchRepository,
     *,
-    demo_trace_path: Path,
+    default_agent_id: str = DEMO_AGENT_ID,
+    runner_provider: Callable[[str], object | None] | None = None,
+    settings_status: SettingsStatus | None = None,
+    # Compatibility arguments keep the pre-Task-8 application caller runnable.
+    demo_trace_path: Path | None = None,
     runner: object | None = None,
     report_service: object | None = None,
     llm_generate: CandidateGenerator | None = None,
     langfuse_base_url: str | None = None,
 ) -> None:
     """Render the fixed global shell and dispatch to the active page."""
-    init_ui_state(default_agent_id=DEMO_AGENT_ID)
+    del demo_trace_path
+    init_ui_state(default_agent_id=default_agent_id)
+    resolve_runner = runner_provider or (lambda _agent_id: runner)
+    status = settings_status or _default_settings_status()
+    requested_page = st.session_state.active_page
+    if requested_page not in {"Agent", "Settings"} and locked_agent(
+        repository, st.session_state.selected_agent_id
+    ) is None:
+        # This must happen before the radio widget is created: Streamlit does not
+        # allow a widget's session-state key to change after instantiation.
+        navigate("Agent")
+        st.session_state.agent_context_warning = "Select an Agent to continue."
     with st.sidebar:
         st.markdown("<div class='brand-mark'>EVAL STUDIO</div>", unsafe_allow_html=True)
         st.caption("MODULAR EVALUATION")
@@ -81,15 +124,38 @@ def render_shell(
         st.caption("Local workbench · Immutable revisions")
 
     st.markdown("<div class='workspace-bar'><span>WORKSPACE</span><strong>Local evaluation environment</strong></div>", unsafe_allow_html=True)
+    pending_warning = st.session_state.pop("agent_context_warning", None)
+    if pending_warning:
+        st.warning(pending_warning)
+
     if page == "Agent":
-        render_agents_page(
-            registry,
+        render_agent_home(
+            registry, repository, default_agent_id=default_agent_id
+        )
+        return
+    if page == "Settings":
+        render_settings_page(status)
+        return
+
+    agent = locked_agent(repository, st.session_state.selected_agent_id)
+    if agent is None:  # pragma: no cover - pre-radio normalization handles this route.
+        return
+
+    revision = repository.get_current_agent_revision(agent.agent_id)
+    render_agent_context(agent, revision)
+    if page == "Dataset":
+        render_datasets_module(repository, agent.agent_id, llm_generate)
+    elif page == "Evaluation":
+        render_runs_module(
             repository,
-            demo_trace_path=demo_trace_path,
-            runner=runner,
-            report_service=report_service,
-            llm_generate=llm_generate,
+            agent.agent_id,
+            resolve_runner(agent.agent_id),
+            report_service,
+        )
+    elif page == "Report":
+        render_reports_module(
+            repository,
+            agent.agent_id,
+            report_service,
             langfuse_base_url=langfuse_base_url,
         )
-    else:
-        _render_placeholder(page)
