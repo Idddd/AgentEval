@@ -67,6 +67,34 @@ def seed_completed_run(tmp_path):
     return repo, repo.finish_run(run.run_id, RunStatus.COMPLETED)
 
 
+def test_create_keeps_missing_optional_evidence_non_blocking(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    agent = repo.create_agent("Agent", "")
+    revision = repo.create_agent_revision(agent.agent_id, {"model": "m1"}, ())
+    dataset_id = repo.create_dataset(agent.agent_id, "Dataset")
+    repo.replace_draft_cases(dataset_id, [WorkbenchTestCase("case-a", {"query": "hi"}, {})])
+    dataset_revision = repo.publish_dataset(dataset_id)
+    run = repo.create_run(revision.revision_id, dataset_revision.revision_id)
+    repo.save_case_result(
+        run.run_id,
+        CaseResult(
+            "case-a", "trace-a", "answer",
+            {"permission_compliance": 1.0, "execution_correctness": 1.0}, {},
+            (), None, (), "PASS",
+        ),
+    )
+    completed = repo.finish_run(run.run_id, RunStatus.COMPLETED)
+
+    report = ReportService(repo, tmp_path / "reports").create(completed.run_id)
+
+    assert report.status == "PASS"
+    assert report.summary["metrics"]["pass_rate"] == 100.0
+    assert report.summary["metrics"]["judge_average"] is None
+    assert report.summary["judge_dimensions"] == {}
+    assert report.summary["cases"][0]["judge"] is None
+    assert report.summary["cases"][0]["tool_evidence"] == []
+
+
 def test_create_persists_versioned_structured_report_with_separate_costs(tmp_path):
     repo, run = seed_completed_run(tmp_path)
     service = ReportService(repo, tmp_path / "reports")

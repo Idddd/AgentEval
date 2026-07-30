@@ -19,13 +19,22 @@ class _FrozenDict(dict):
     update = _immutable
 
 
+class _FrozenList(tuple):
+    """Immutable sequence that preserves list equality for JSON summaries."""
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, list):
+            return list(self) == other
+        return super().__eq__(other)
+
+
 def _freeze(value: Any) -> Any:
     if isinstance(value, _FrozenDict):
         return value
     if isinstance(value, dict):
         return _FrozenDict({key: _freeze(item) for key, item in value.items()})
     if isinstance(value, list):
-        return tuple(_freeze(item) for item in value)
+        return _FrozenList(_freeze(item) for item in value)
     if isinstance(value, tuple):
         return tuple(_freeze(item) for item in value)
     if isinstance(value, frozenset):

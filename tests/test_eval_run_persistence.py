@@ -35,6 +35,11 @@ class FailingJudge:
         raise JudgeIncompleteError("invalid judge response after one repair")
 
 
+class MissingJudge:
+    def evaluate(self, *args, **kwargs):
+        raise JudgeIncompleteError("provider unavailable")
+
+
 class PassingEvaluator:
     def evaluate(self, trace, expected):
         return ({"permission_compliance": 1.0, "execution_correctness": 1.0}, {})
@@ -76,17 +81,19 @@ def test_run_freezes_revisions_and_persists_case_results(tmp_path):
     assert reopened.case_results[0].judge is not None
 
 
-def test_judge_failure_makes_run_partial(tmp_path):
+def test_missing_judge_does_not_change_passing_case(tmp_path):
     repo, agent_revision, dataset_revision = seed_workbench(tmp_path)
 
     run = asyncio.run(
-        EvalRunner(repo, FakeAgent(), PassingEvaluator(), FailingJudge()).run_revision(
+        EvalRunner(repo, FakeAgent(), PassingEvaluator(), MissingJudge()).run_revision(
             agent_revision.revision_id, dataset_revision.revision_id
         )
     )
 
-    assert run.status is RunStatus.PARTIAL
-    assert run.case_results[0].status == "INCOMPLETE"
+    assert run.status is RunStatus.COMPLETED
+    assert run.case_results[0].status == "PASS"
+    assert run.case_results[0].judge is None
+    assert "JUDGE_INCOMPLETE" in run.case_results[0].deterministic_reasons["judge"]
 
 
 def test_deterministic_failure_takes_precedence_over_missing_judge(tmp_path):
@@ -101,6 +108,7 @@ def test_deterministic_failure_takes_precedence_over_missing_judge(tmp_path):
     assert run.status is RunStatus.COMPLETED
     assert run.case_results[0].status == "FAIL"
     assert run.case_results[0].judge is None
+    assert "JUDGE_INCOMPLETE" in run.case_results[0].deterministic_reasons["judge"]
 
 
 def test_permission_adapter_normalizes_case_trace_evidence_and_agent_cost():

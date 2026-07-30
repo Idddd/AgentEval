@@ -52,12 +52,9 @@ class ReportService:
         judge_results = [result.judge for result in results if result.judge is not None]
         dimensions = ("correctness", "relevance", "completeness", "safety")
         judge_dimensions = {
-            name: (
-                sum(judge.scores[name] for judge in judge_results) / len(judge_results)
-                if judge_results else 0.0
-            )
+            name: sum(judge.scores[name] for judge in judge_results) / len(judge_results)
             for name in dimensions
-        }
+        } if judge_results else {}
         agent_cost = sum(item.cost_usd for item in run_costs if item.category == "agent")
         judge_cost = sum(item.cost_usd for item in run_costs if item.category == "judge")
         dataset_cost = sum(item.cost_usd for item in dataset_costs)
@@ -94,7 +91,7 @@ class ReportService:
                 "pass_rate": passed / len(results) * 100 if results else 0.0,
                 "judge_average": (
                     sum(judge.average for judge in judge_results) / len(judge_results)
-                    if judge_results else 0.0
+                    if judge_results else None
                 ),
                 "verified_tools": sum(item.effect_verified is True for item in evidence),
                 "required_verifications": sum(item.verification_required for item in evidence),
@@ -129,7 +126,15 @@ class ReportService:
         ]
         version = max((item.artifact_version for item in existing), default=0) + 1
         markdown_path = self.output_dir / f"report_{run_id}_v{version}.md"
-        markdown_path.write_text(ReportGenerator.render_summary(summary), encoding="utf-8")
+        rendered_summary = summary
+        if summary["metrics"]["judge_average"] is None:
+            rendered_summary = {
+                **summary,
+                "metrics": {**summary["metrics"], "judge_average": 0.0},
+            }
+        markdown_path.write_text(
+            ReportGenerator.render_summary(rendered_summary), encoding="utf-8",
+        )
         return self.repository.save_report(run_id, quality_status, summary, markdown_path)
 
     def compare(self, baseline_report_id: str,

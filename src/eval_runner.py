@@ -96,9 +96,7 @@ class EvalRunner:
 
                 if deterministic_failed:
                     status = "FAIL"
-                elif judge_result is None:
-                    status = "INCOMPLETE"
-                elif not judge_result.passed:
+                elif judge_result is not None and not judge_result.passed:
                     status = "FAIL"
                 else:
                     status = "PASS"
