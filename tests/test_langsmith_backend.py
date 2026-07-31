@@ -17,9 +17,16 @@ class FakeLangsmithClient:
         self.runs: dict[str, SimpleNamespace] = {}
         self.feedback: list[SimpleNamespace] = []
         self.flush_count = 0
+        self.create_failures = 0
+        self.read_attempts = 0
+        self.read_failures = 0
+        self.update_failures = 0
         self._lock = threading.Lock()
 
     def create_run(self, name, inputs, run_type, **kwargs):
+        if self.create_failures:
+            self.create_failures -= 1
+            raise RuntimeError("SDK create failed")
         run_id = str(kwargs["id"])
         trace_id = str(kwargs.get("trace_id") or run_id)
         run = SimpleNamespace(
@@ -46,12 +53,19 @@ class FakeLangsmithClient:
             self.runs[run_id] = run
 
     def update_run(self, run_id, **kwargs):
+        if self.update_failures:
+            self.update_failures -= 1
+            raise RuntimeError("SDK update failed")
         run = self.runs[str(run_id)]
         for key, value in kwargs.items():
             if value is not None:
                 setattr(run, key, value)
 
     def read_run(self, run_id):
+        self.read_attempts += 1
+        if self.read_failures:
+            self.read_failures -= 1
+            raise KeyError("run is not available yet")
         return self.runs[str(run_id)]
 
     def list_runs(
@@ -188,6 +202,128 @@ def test_contexts_close_runs_when_business_operation_raises():
     assert "business failed" in child.error
 
 
+def test_span_cleanup_survives_sdk_update_failure():
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(), client=client)
+
+    with backend.tracer.start_trace(
+        "agent-run-update-error",
+        user_id="u3",
+        tags=["exp_update_error"],
+        metadata={},
+    ) as root:
+        with pytest.raises(RuntimeError, match="SDK update failed"):
+            with backend.tracer.span("failed_to_close"):
+                client.update_failures = 1
+
+        with backend.tracer.span("sibling_after_failure"):
+            pass
+
+    sibling = next(
+        run for run in client.runs.values()
+        if run.name == "sibling_after_failure"
+    )
+    assert sibling.parent_run_id == root.trace_id
+
+
+def test_span_close_does_not_replace_active_business_exception():
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(), client=client)
+
+    with backend.tracer.start_trace(
+        "agent-run-business-error",
+        user_id="u4",
+        tags=["exp_business_error"],
+        metadata={},
+    ) as root:
+        with pytest.raises(ValueError, match="business failed"):
+            with backend.tracer.span("business_failure"):
+                client.update_failures = 1
+                raise ValueError("business failed")
+
+        with backend.tracer.span("sibling_after_business_failure"):
+            pass
+
+    sibling = next(
+        run for run in client.runs.values()
+        if run.name == "sibling_after_business_failure"
+    )
+    assert sibling.parent_run_id == root.trace_id
+
+
+def test_successful_root_exit_clears_active_trace_state():
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(), client=client)
+
+    with backend.tracer.start_trace(
+        "agent-run-finished",
+        user_id="u5",
+        tags=["exp_finished"],
+        metadata={},
+    ):
+        pass
+
+    with pytest.raises(RuntimeError, match="requires an active"):
+        with backend.tracer.span("after_root_exit"):
+            pass
+
+
+def test_root_cleanup_survives_sdk_update_failure():
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(), client=client)
+
+    with pytest.raises(RuntimeError, match="SDK update failed"):
+        with backend.tracer.start_trace(
+            "agent-run-root-update-error",
+            user_id="u6",
+            tags=["exp_root_update_error"],
+            metadata={},
+        ):
+            client.update_failures = 1
+
+    with pytest.raises(RuntimeError, match="requires an active"):
+        with backend.tracer.span("after_root_update_failure"):
+            pass
+
+
+def test_root_close_does_not_replace_active_business_exception():
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(), client=client)
+
+    with pytest.raises(ValueError, match="business failed"):
+        with backend.tracer.start_trace(
+            "agent-run-root-business-error",
+            user_id="u7",
+            tags=["exp_root_business_error"],
+            metadata={},
+        ):
+            client.update_failures = 1
+            raise ValueError("business failed")
+
+    with pytest.raises(RuntimeError, match="requires an active"):
+        with backend.tracer.span("after_root_business_failure"):
+            pass
+
+
+def test_failed_root_creation_clears_active_trace_state():
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(), client=client)
+    client.create_failures = 1
+
+    with pytest.raises(RuntimeError, match="SDK create failed"):
+        with backend.tracer.start_trace(
+            "agent-run-create-error",
+            user_id="u8",
+            tags=["exp_create_error"],
+            metadata={},
+        ):
+            pass
+
+    with pytest.raises(RuntimeError, match="requires an active"):
+        with backend.tracer.span("after_root_create_failure"):
+            pass
+
+
 def test_span_stacks_are_thread_local():
     client = FakeLangsmithClient()
     backend = LangsmithBackend(_settings(), client=client)
@@ -239,3 +375,35 @@ def test_trace_url_falls_back_to_endpoint_when_sdk_cannot_build_one():
     assert store.get_trace_url("trace-123") == (
         "https://api.smith.example/runs/trace-123"
     )
+
+
+def test_get_trace_retries_until_cloud_run_is_available(monkeypatch):
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(), client=client)
+    store = LangsmithStore(_settings(), client=client)
+    monkeypatch.setattr("time.sleep", lambda delay: None)
+
+    with backend.tracer.start_trace(
+        "agent-run-delayed",
+        user_id="u9",
+        tags=["exp_delayed"],
+        metadata={},
+    ) as root:
+        pass
+
+    client.read_failures = 2
+    trace = store.get_trace(root.trace_id, retry=True)
+
+    assert trace.trace_id == root.trace_id
+    assert client.read_attempts == 3
+
+
+def test_get_trace_without_retry_reads_only_once():
+    client = FakeLangsmithClient()
+    store = LangsmithStore(_settings(), client=client)
+    client.read_failures = 2
+
+    with pytest.raises(KeyError, match="not available yet"):
+        store.get_trace("missing-trace", retry=False)
+
+    assert client.read_attempts == 1

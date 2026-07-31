@@ -7,6 +7,7 @@ same boundary usable with an in-memory fake in tests.
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -73,32 +74,41 @@ class LangsmithTracer:
         self._local.stack = []
         self._local.trace_id = run_id
         self._local.project_name = project_name
-        self._local.last_trace_id = str(run_id)
-        self._client.create_run(
-            name,
-            {},
-            "chain",
-            id=run_id,
-            trace_id=run_id,
-            project_name=project_name,
-            start_time=start_time,
-            tags=list(tags),
-            extra={"metadata": root_metadata},
-        )
-
         error: str | None = None
+        business_exception: BaseException | None = None
         try:
-            yield SimpleNamespace(trace_id=str(run_id))
-        except BaseException as exc:
-            error = f"{type(exc).__name__}: {exc}"
-            raise
-        finally:
-            self._client.update_run(
-                run_id,
-                end_time=_now(),
-                error=error,
+            self._client.create_run(
+                name,
+                {},
+                "chain",
+                id=run_id,
+                trace_id=run_id,
+                project_name=project_name,
+                start_time=start_time,
+                tags=list(tags),
+                extra={"metadata": root_metadata},
             )
+            self._local.last_trace_id = str(run_id)
+            try:
+                yield SimpleNamespace(trace_id=str(run_id))
+            except BaseException as exc:
+                business_exception = exc
+                error = f"{type(exc).__name__}: {exc}"
+                raise
+            finally:
+                try:
+                    self._client.update_run(
+                        run_id,
+                        end_time=_now(),
+                        error=error,
+                    )
+                except BaseException:
+                    if business_exception is None:
+                        raise
+        finally:
             self._local.stack = []
+            self._local.trace_id = None
+            self._local.project_name = None
 
     @contextmanager
     def span(
@@ -129,20 +139,28 @@ class LangsmithTracer:
         stack.append(run_id)
         handle = _SpanHandle()
         error: str | None = None
+        business_exception: BaseException | None = None
         try:
             yield handle
         except BaseException as exc:
+            business_exception = exc
             error = f"{type(exc).__name__}: {exc}"
             raise
         finally:
             update: dict[str, Any] = {"end_time": _now(), "error": error}
             if handle.output is not None:
                 update["outputs"] = handle.output
-            self._client.update_run(run_id, **update)
-            if stack and stack[-1] == run_id:
-                stack.pop()
-            elif run_id in stack:
-                stack.remove(run_id)
+            try:
+                try:
+                    self._client.update_run(run_id, **update)
+                except BaseException:
+                    if business_exception is None:
+                        raise
+            finally:
+                if stack and stack[-1] == run_id:
+                    stack.pop()
+                elif run_id in stack:
+                    stack.remove(run_id)
 
     def flush(self) -> None:
         flush = getattr(self._client, "flush", None)
@@ -194,7 +212,19 @@ class LangsmithStore:
         self._client = client if client is not None else _client_from(settings)
 
     def get_trace(self, trace_id: str, *, retry: bool = True) -> TraceRecord:
-        del retry
+        attempts = 20 if retry else 1
+        last_error: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                return self._get_trace_once(trace_id)
+            except Exception as exc:
+                last_error = exc
+                if attempt + 1 < attempts:
+                    time.sleep(0.5)
+        assert last_error is not None
+        raise last_error
+
+    def _get_trace_once(self, trace_id: str) -> TraceRecord:
         root = self._client.read_run(trace_id)
         root_id = str(_value(root, "id"))
         runs = list(self._client.list_runs(trace_id=trace_id))
