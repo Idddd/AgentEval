@@ -47,7 +47,7 @@ def _clean(value: str | None) -> str | None:
 
 def load_settings(probe: bool = True) -> Settings:
     """Load .env and select remote tracing after a lightweight LangSmith probe."""
-    load_dotenv(PROJECT_ROOT / ".env", override=True)
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
     s = Settings(
         openai_api_key=_clean(os.getenv("OPENAI_API_KEY")),
         anthropic_base_url=_clean(os.getenv("ANTHROPIC_BASE_URL")),
@@ -64,10 +64,12 @@ def load_settings(probe: bool = True) -> Settings:
         try:
             from langsmith import Client
 
-            client = Client(
-                api_key=s.langsmith_api_key,
-                api_url=s.langsmith_endpoint,
-            )
+            client_options = {"api_key": s.langsmith_api_key}
+            if s.langsmith_endpoint:
+                client_options["api_url"] = s.langsmith_endpoint
+            if s.langsmith_workspace_id:
+                client_options["workspace_id"] = s.langsmith_workspace_id
+            client = Client(**client_options)
             next(iter(client.list_projects(limit=1)), None)
             s.langsmith_enabled = True
         except Exception:

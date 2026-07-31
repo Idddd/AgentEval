@@ -192,8 +192,9 @@ also removes that volume.
   20 times with a 0.5-second interval.
 - Reset deletes the configured dataset, attempts to delete recorded experiment
   projects (and therefore their Runs), removes the local experiment index,
-  generated reports, and custom test requirements. The reset summary reports
-  both discovered and successfully deleted remote traces.
+  generated reports, and custom test requirements. The UI summary displays the
+  recorded trace count; the backend result separately includes
+  `traces_deleted` for confirmed remote deletions.
 
 ## Using the demo
 

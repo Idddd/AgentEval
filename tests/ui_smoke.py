@@ -3,8 +3,13 @@ through the full pipeline (Generate Dataset -> Run Evaluation -> Generate Report
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# Keep both pytest and standalone execution offline even when the checkout has
+# a configured .env. Process environment takes precedence over dotenv.
+os.environ["LANGSMITH_API_KEY"] = ""
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -23,7 +28,7 @@ def sidebar_status_text(at: AppTest) -> str:
 
 
 def test_sidebar_identifies_langsmith_without_credentials(monkeypatch) -> None:
-    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.setenv("LANGSMITH_API_KEY", "")
 
     at = AppTest.from_file("app.py").run()
 
@@ -50,6 +55,12 @@ def main() -> int:
     assert "Permission policy" in initial_text
     assert "WeatherTool" in initial_text
     assert any("Generate Dataset" in button.label for button in at.button)
+    assert [tab.label for tab in at.tabs] == [
+        "📋 Dataset",
+        "🕐 Trace Timeline",
+        "📊 Scores",
+        "📄 Report",
+    ]
 
     # Unavailable roadmap previews must not distract from usable controls.
     md_texts = " ".join(m.value for m in at.markdown)
@@ -106,6 +117,14 @@ def main() -> int:
     assert bypass[0].get_score("permission_compliance") == 0.0, \
         "demo_bypass case must score 0.0 on compliance"
 
+    # The Scores tab must expose meaningful KPIs while run data still exists.
+    metrics = [(metric.label, str(metric.value)) for metric in at.metric]
+    assert ("Total cases", "10") in metrics, f"missing case-count KPI: {metrics}"
+    assert ("Compliance pass rate", "9/10") in metrics, \
+        f"missing compliance KPI: {metrics}"
+    assert any(label == "Avg compliance" for label, _ in metrics), metrics
+    assert any(label == "Avg execution" for label, _ in metrics), metrics
+
     # Reset: two-click confirm wipes everything back to initial state
     click("Reset Demo")
     click("Confirm reset")
@@ -118,10 +137,8 @@ def main() -> int:
     except KeyError:
         pass
 
-    # Tabs render without exceptions; scores KPIs visible
+    # Tabs still render without exceptions after reset.
     assert not at.exception, f"final render failed: {at.exception}"
-    metrics = [m.label for m in at.metric]
-    print("metrics on Scores tab render:", "Total cases" in metrics or metrics)
     print("UI SMOKE OK")
     return 0
 

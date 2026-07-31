@@ -57,7 +57,36 @@ def test_load_settings_enables_langsmith_after_successful_probe(monkeypatch):
     assert client.kwargs == {
         "api_key": "lsv2_pt_test",
         "api_url": "https://smith.example.test",
+        "workspace_id": "workspace-test",
     }
+
+
+def test_blank_process_key_overrides_dotenv_and_skips_remote_probe(
+    monkeypatch, tmp_path
+):
+    """An explicit blank key must keep smoke tests offline despite .env."""
+    client_calls = []
+    (tmp_path / ".env").write_text(
+        "LANGSMITH_API_KEY=lsv2_pt_from_dotenv\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.settings.PROJECT_ROOT", tmp_path)
+    monkeypatch.setenv("LANGSMITH_API_KEY", "")
+    monkeypatch.setitem(
+        sys.modules,
+        "langsmith",
+        SimpleNamespace(
+            Client=lambda **kwargs: (
+                client_calls.append(kwargs) or FakeClient(**kwargs)
+            ),
+        ),
+    )
+
+    settings = load_settings()
+
+    assert settings.langsmith_api_key is None
+    assert settings.langsmith_enabled is False
+    assert client_calls == []
 
 
 def test_load_settings_consumes_project_iterator_before_enabling(monkeypatch):
