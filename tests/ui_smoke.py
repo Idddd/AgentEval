@@ -15,6 +15,25 @@ from src.backends.base import get_backend
 EXPERIMENT = "exp_ui_smoke"
 
 
+def sidebar_status_text(at: AppTest) -> str:
+    return " ".join(
+        status.value
+        for status in [*at.sidebar.success, *at.sidebar.warning]
+    )
+
+
+def test_sidebar_identifies_langsmith_without_credentials(monkeypatch) -> None:
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+
+    at = AppTest.from_file("app.py").run()
+
+    assert not at.exception, f"initial render failed: {at.exception}"
+    assert (
+        "Trace Backend: Local JSON (no LangSmith credentials)"
+        in sidebar_status_text(at)
+    )
+
+
 def main() -> int:
     backend, store = get_backend()
     at = AppTest.from_file("app.py", default_timeout=120)

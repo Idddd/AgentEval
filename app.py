@@ -165,10 +165,10 @@ if st.session_state["run_log"]:
 
 st.sidebar.title("Agent Permission Eval")
 
-if settings.langfuse_enabled:
-    st.sidebar.success("Trace Backend: Langfuse")
+if settings.langsmith_enabled:
+    st.sidebar.success("Trace Backend: LangSmith")
 else:
-    st.sidebar.warning("Trace Backend: Local JSON (no Langfuse credentials)")
+    st.sidebar.warning("Trace Backend: Local JSON (no LangSmith credentials)")
 if settings.anthropic_enabled:
     st.sidebar.success(f"LLM: DeepSeek ({settings.anthropic_model})")
 elif settings.openai_enabled:

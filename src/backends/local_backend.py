@@ -1,6 +1,6 @@
-"""Local JSON backend: fallback when no Langfuse credentials are available.
+"""Local JSON backend: fallback when no LangSmith credentials are available.
 
-Traces are persisted with the same shape as Langfuse TraceWithFullDetails:
+Traces are persisted in the normalized shape consumed by the evaluator:
 data/traces.jsonl holds one complete trace per line (flat spans + scores).
 """
 from __future__ import annotations

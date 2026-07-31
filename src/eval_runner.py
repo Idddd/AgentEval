@@ -48,8 +48,8 @@ class EvalRunner:
             trace_id = result["trace_id"]
             trace_ids.append(trace_id)
 
-            # 2. Flush + wait until the trace is readable (Langfuse writes are
-            #    async; local mode is readable immediately)
+            # 2. Flush + wait until the trace is readable (remote writes can
+            #    be eventually consistent; local mode is immediate)
             self.backend.tracer.flush()
             trace = self.store.get_trace(trace_id, retry=True)
 
