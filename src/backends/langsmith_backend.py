@@ -6,15 +6,17 @@ same boundary usable with an in-memory fake in tests.
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from ..models import ScoreRecord, SpanRecord, TraceRecord
+from ..models import DatasetItemRecord, ScoreRecord, SpanRecord, TraceRecord
 from ..settings import Settings
 
 
@@ -203,13 +205,155 @@ class LangsmithBackend:
     def __init__(self, settings: Settings, client=None):
         self._settings = settings
         self._client = client if client is not None else _client_from(settings)
+        self._experiments_path = (
+            Path(settings.data_dir) / "experiments.json"
+        )
         self.tracer = LangsmithTracer(self._client)
+
+    def _find_dataset(self, name: str):
+        return next(
+            (
+                dataset
+                for dataset in self._client.list_datasets(dataset_name=name)
+                if _value(dataset, "name") == name
+            ),
+            None,
+        )
+
+    def create_dataset(
+        self,
+        name: str,
+        items: list[DatasetItemRecord],
+        replace: bool = True,
+    ) -> None:
+        existing = self._find_dataset(name)
+        if existing is not None and replace:
+            self._client.delete_dataset(dataset_id=_value(existing, "id"))
+
+        dataset = self._client.create_dataset(
+            dataset_name=name,
+            description="Agent permission compliance evaluation cases",
+        )
+        if items:
+            self._client.create_examples(
+                dataset_id=_value(dataset, "id"),
+                examples=[
+                    {
+                        "inputs": item.input,
+                        "outputs": item.expected_output,
+                        "metadata": item.metadata,
+                    }
+                    for item in items
+                ],
+            )
+
+    def get_dataset_items(self, name: str) -> list[DatasetItemRecord]:
+        dataset = self._find_dataset(name)
+        if dataset is None:
+            raise KeyError(
+                f"dataset '{name}' not found; run --step generate first"
+            )
+        return [
+            DatasetItemRecord(
+                id=str(_value(example, "id")),
+                input=_value(example, "inputs") or {},
+                expected_output=_value(example, "outputs") or {},
+                metadata=_value(example, "metadata") or {},
+            )
+            for example in self._client.list_examples(
+                dataset_id=_value(dataset, "id")
+            )
+        ]
+
+    def add_dataset_item(
+        self, dataset_name: str, item: DatasetItemRecord
+    ) -> None:
+        dataset = self._find_dataset(dataset_name)
+        if dataset is None:
+            raise KeyError(f"dataset '{dataset_name}' not found")
+        self._client.create_example(
+            dataset_id=_value(dataset, "id"),
+            inputs=item.input,
+            outputs=item.expected_output,
+            metadata=item.metadata,
+        )
+
+    def save_score(
+        self,
+        trace_id: str,
+        name: str,
+        value: float,
+        comment: str | None = None,
+    ) -> None:
+        self._client.create_feedback(
+            trace_id,
+            name,
+            score=value,
+            comment=comment,
+        )
+
+    def register_experiment(
+        self, name: str, dataset: str, trace_ids: list[str]
+    ) -> None:
+        self._experiments_path.parent.mkdir(parents=True, exist_ok=True)
+        experiments = _read_experiments(self._experiments_path)
+        experiments[name] = {
+            "dataset": dataset,
+            "trace_ids": trace_ids,
+            "created_at": _now().isoformat(),
+            "backend": "langsmith",
+        }
+        self._experiments_path.write_text(
+            json.dumps(experiments, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def reset(self, dataset_name: str) -> dict:
+        summary = {
+            "dataset_items": 0,
+            "traces": 0,
+            "traces_deleted": 0,
+            "experiments": 0,
+        }
+
+        dataset = self._find_dataset(dataset_name)
+        if dataset is not None:
+            dataset_id = _value(dataset, "id")
+            summary["dataset_items"] = len(
+                list(self._client.list_examples(dataset_id=dataset_id))
+            )
+            self._client.delete_dataset(dataset_id=dataset_id)
+
+        experiments = _read_experiments(self._experiments_path)
+        summary["experiments"] = len(experiments)
+        trace_ids = list(
+            dict.fromkeys(
+                str(trace_id)
+                for experiment in experiments.values()
+                for trace_id in experiment.get("trace_ids", [])
+            )
+        )
+        summary["traces"] = len(trace_ids)
+        try:
+            for trace_id in trace_ids:
+                try:
+                    self._client.delete_run(trace_id)
+                    summary["traces_deleted"] += 1
+                except Exception:
+                    pass
+        finally:
+            self._experiments_path.unlink(missing_ok=True)
+
+        return summary
 
 
 class LangsmithStore:
     def __init__(self, settings: Settings, client=None):
         self._settings = settings
         self._client = client if client is not None else _client_from(settings)
+        self._experiments_path = (
+            Path(settings.data_dir) / "experiments.json"
+        )
 
     def get_trace(self, trace_id: str, *, retry: bool = True) -> TraceRecord:
         attempts = 20 if retry else 1
@@ -278,6 +422,10 @@ class LangsmithStore:
             for root in roots
         ]
 
+    def list_experiments(self) -> list[dict]:
+        experiments = _read_experiments(self._experiments_path)
+        return [{"name": name, **record} for name, record in experiments.items()]
+
     def get_trace_url(self, trace_id: str) -> str:
         get_run_url = getattr(self._client, "get_run_url", None)
         if callable(get_run_url):
@@ -294,3 +442,9 @@ class LangsmithStore:
             or "https://api.smith.langchain.com"
         )
         return f"{endpoint.rstrip('/')}/runs/{trace_id}"
+
+
+def _read_experiments(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))

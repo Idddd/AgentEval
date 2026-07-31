@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.backends.langsmith_backend import LangsmithBackend, LangsmithStore
+from src.models import DatasetItemRecord
 from src.settings import Settings
 
 
@@ -16,11 +17,18 @@ class FakeLangsmithClient:
     def __init__(self):
         self.runs: dict[str, SimpleNamespace] = {}
         self.feedback: list[SimpleNamespace] = []
+        self.datasets: dict[str, SimpleNamespace] = {}
+        self.examples: list[SimpleNamespace] = []
+        self.deleted_dataset_ids: list[str] = []
+        self.run_delete_attempts: list[str] = []
+        self.run_delete_failures: set[str] = set()
         self.flush_count = 0
         self.create_failures = 0
         self.read_attempts = 0
         self.read_failures = 0
         self.update_failures = 0
+        self._next_dataset_id = 1
+        self._next_example_id = 1
         self._lock = threading.Lock()
 
     def create_run(self, name, inputs, run_type, **kwargs):
@@ -92,6 +100,78 @@ class FakeLangsmithClient:
             if not wanted or str(item.run_id) in wanted
         )
 
+    def create_dataset(self, *, dataset_name, description=None):
+        del description
+        if any(dataset.name == dataset_name for dataset in self.datasets.values()):
+            raise ValueError(f"dataset '{dataset_name}' already exists")
+        dataset_id = f"dataset-{self._next_dataset_id}"
+        self._next_dataset_id += 1
+        dataset = SimpleNamespace(id=dataset_id, name=dataset_name)
+        self.datasets[dataset_id] = dataset
+        return dataset
+
+    def list_datasets(self, *, dataset_name=None, **kwargs):
+        del kwargs
+        datasets = list(self.datasets.values())
+        if dataset_name is not None:
+            datasets = [
+                dataset for dataset in datasets
+                if dataset_name in dataset.name
+            ]
+        return iter(datasets)
+
+    def delete_dataset(self, *, dataset_id):
+        dataset_id = str(dataset_id)
+        del self.datasets[dataset_id]
+        self.examples = [
+            example for example in self.examples
+            if example.dataset_id != dataset_id
+        ]
+        self.deleted_dataset_ids.append(dataset_id)
+
+    def create_examples(self, *, dataset_id, examples):
+        for example in examples:
+            self.create_example(dataset_id=dataset_id, **example)
+
+    def create_example(
+        self, *, inputs, outputs, dataset_id, metadata=None, **kwargs
+    ):
+        del kwargs
+        example = SimpleNamespace(
+            id=f"example-{self._next_example_id}",
+            dataset_id=str(dataset_id),
+            inputs=inputs,
+            outputs=outputs,
+            metadata=metadata or {},
+        )
+        self._next_example_id += 1
+        self.examples.append(example)
+        return example
+
+    def list_examples(self, *, dataset_id, **kwargs):
+        del kwargs
+        return iter(
+            example for example in self.examples
+            if example.dataset_id == str(dataset_id)
+        )
+
+    def create_feedback(self, run_id, key, *, score, comment=None):
+        item = SimpleNamespace(
+            run_id=str(run_id),
+            key=key,
+            score=score,
+            comment=comment,
+        )
+        self.feedback.append(item)
+        return item
+
+    def delete_run(self, run_id):
+        run_id = str(run_id)
+        self.run_delete_attempts.append(run_id)
+        if run_id in self.run_delete_failures:
+            raise RuntimeError("SDK delete failed")
+        self.runs.pop(run_id, None)
+
     def flush(self):
         self.flush_count += 1
 
@@ -99,13 +179,146 @@ class FakeLangsmithClient:
         return f"https://smith.example/projects/{project_name}/r/{run.id}"
 
 
-def _settings(endpoint: str = "https://api.smith.example") -> Settings:
+def _settings(
+    endpoint: str = "https://api.smith.example", *, data_dir=None
+) -> Settings:
     return Settings(
         langsmith_api_key="ls-test",
         langsmith_endpoint=endpoint,
         langsmith_workspace_id="workspace-test",
         langsmith_enabled=True,
+        **({"data_dir": data_dir} if data_dir is not None else {}),
     )
+
+
+def _dataset_item(
+    item_id: str, query: str, expected: str, scenario: str
+) -> DatasetItemRecord:
+    return DatasetItemRecord(
+        id=item_id,
+        input={"query": query},
+        expected_output={"expected": expected},
+        metadata={"scenario": scenario},
+    )
+
+
+def test_dataset_replacement_roundtrips_sdk_examples_and_matches_exact_name(
+    tmp_path,
+):
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(data_dir=tmp_path), client=client)
+    old_dataset = client.create_dataset(dataset_name="demo")
+    client.create_example(
+        dataset_id=old_dataset.id,
+        inputs={"query": "old"},
+        outputs={"expected": "old"},
+        metadata={"scenario": "old"},
+    )
+    similar_dataset = client.create_dataset(dataset_name="demo-copy")
+
+    items = [
+        _dataset_item("local-1", "first", "one", "allowed"),
+        _dataset_item("local-2", "second", "two", "denied"),
+    ]
+    backend.create_dataset("demo", items, replace=True)
+
+    assert client.deleted_dataset_ids == [old_dataset.id]
+    assert similar_dataset.id in client.datasets
+    assert [
+        (item.input, item.expected_output, item.metadata)
+        for item in backend.get_dataset_items("demo")
+    ] == [
+        ({"query": "first"}, {"expected": "one"}, {"scenario": "allowed"}),
+        ({"query": "second"}, {"expected": "two"}, {"scenario": "denied"}),
+    ]
+    assert all(
+        item.id.startswith("example-")
+        for item in backend.get_dataset_items("demo")
+    )
+    with pytest.raises(KeyError, match="missing"):
+        backend.get_dataset_items("missing")
+
+
+def test_add_dataset_item_maps_one_sdk_example(tmp_path):
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(data_dir=tmp_path), client=client)
+    backend.create_dataset(
+        "demo", [_dataset_item("local-1", "first", "one", "allowed")]
+    )
+
+    backend.add_dataset_item(
+        "demo", _dataset_item("local-2", "second", "two", "denied")
+    )
+
+    got = backend.get_dataset_items("demo")
+    assert len(got) == 2
+    assert got[1].input == {"query": "second"}
+    assert got[1].expected_output == {"expected": "two"}
+    assert got[1].metadata == {"scenario": "denied"}
+
+
+def test_save_score_maps_numeric_feedback_to_root_run(tmp_path):
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(data_dir=tmp_path), client=client)
+
+    backend.save_score(
+        "root-run-1", "permission_compliance", 1.0, comment="allowed"
+    )
+
+    assert [
+        (item.run_id, item.key, item.score, item.comment)
+        for item in client.feedback
+    ] == [
+        ("root-run-1", "permission_compliance", 1.0, "allowed"),
+    ]
+
+
+def test_experiment_registry_identifies_langsmith_project(tmp_path):
+    client = FakeLangsmithClient()
+    settings = _settings(data_dir=tmp_path)
+    backend = LangsmithBackend(settings, client=client)
+    store = LangsmithStore(settings, client=client)
+
+    backend.register_experiment("exp-1", "demo", ["root-1", "root-2"])
+
+    experiments = store.list_experiments()
+    assert len(experiments) == 1
+    assert experiments[0]["name"] == "exp-1"
+    assert experiments[0]["dataset"] == "demo"
+    assert experiments[0]["trace_ids"] == ["root-1", "root-2"]
+    assert experiments[0]["backend"] == "langsmith"
+
+
+def test_reset_deletes_exact_dataset_and_registry_despite_run_failure(tmp_path):
+    client = FakeLangsmithClient()
+    settings = _settings(data_dir=tmp_path)
+    backend = LangsmithBackend(settings, client=client)
+    store = LangsmithStore(settings, client=client)
+    backend.create_dataset(
+        "demo",
+        [
+            _dataset_item("local-1", "first", "one", "allowed"),
+            _dataset_item("local-2", "second", "two", "denied"),
+        ],
+    )
+    similar_dataset = client.create_dataset(dataset_name="demo-copy")
+    backend.register_experiment("exp-1", "demo", ["root-1", "root-2"])
+    client.run_delete_failures.add("root-2")
+
+    summary = backend.reset("demo")
+
+    assert summary == {
+        "dataset_items": 2,
+        "traces": 2,
+        "traces_deleted": 1,
+        "experiments": 1,
+    }
+    assert client.run_delete_attempts == ["root-1", "root-2"]
+    assert similar_dataset.id in client.datasets
+    assert list(client.list_datasets(dataset_name="demo")) == [
+        client.datasets[similar_dataset.id]
+    ]
+    assert store.list_experiments() == []
 
 
 def test_trace_roundtrip_preserves_nested_spans_metadata_and_feedback():
