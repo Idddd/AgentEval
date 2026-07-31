@@ -2,7 +2,7 @@
 (TraceStore).
 
 Agent business code depends only on the Protocols here and never imports
-langfuse; the two implementations (Langfuse Cloud / local JSON) are
+LangSmith; the two implementations (LangSmith Cloud / local JSON) are
 interchangeable.
 """
 from __future__ import annotations
@@ -77,7 +77,7 @@ _cached: tuple[TraceBackend, TraceStore] | None = None
 
 
 def get_backend(refresh: bool = False) -> tuple[TraceBackend, TraceStore]:
-    """Return the Langfuse or LocalJson pair based on settings.langfuse_enabled
+    """Return the LangSmith or LocalJson pair based on settings.langsmith_enabled
     (process-wide singleton)."""
     global _cached
     if _cached is not None and not refresh:
@@ -86,11 +86,11 @@ def get_backend(refresh: bool = False) -> tuple[TraceBackend, TraceStore]:
     from ..settings import load_settings
 
     settings = load_settings()
-    if settings.langfuse_enabled:
-        from .langfuse_backend import LangfuseBackend, LangfuseStore
+    if settings.langsmith_enabled:
+        from .langsmith_backend import LangsmithBackend, LangsmithStore
 
-        backend = LangfuseBackend(settings)
-        store = LangfuseStore(settings)
+        backend = LangsmithBackend(settings)
+        store = LangsmithStore(settings)
     else:
         from .local_backend import LocalJsonBackend, LocalJsonStore
 

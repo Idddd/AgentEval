@@ -16,10 +16,10 @@ class Settings:
     anthropic_base_url: str | None = None
     anthropic_auth_token: str | None = None
     anthropic_model: str = "deepseek-v4-flash"
-    langfuse_public_key: str | None = None
-    langfuse_secret_key: str | None = None
-    langfuse_host: str = "https://cloud.langfuse.com"
-    langfuse_enabled: bool = False   # result of auth_check()
+    langsmith_api_key: str | None = None
+    langsmith_endpoint: str | None = None
+    langsmith_workspace_id: str | None = None
+    langsmith_enabled: bool = False
     openai_enabled: bool = False
     anthropic_enabled: bool = False
     data_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data")
@@ -46,28 +46,32 @@ def _clean(value: str | None) -> str | None:
 
 
 def load_settings(probe: bool = True) -> Settings:
-    """Load .env; with probe=True, run a Langfuse auth_check to pick the mode."""
+    """Load .env and select remote tracing after a lightweight LangSmith probe."""
     load_dotenv(PROJECT_ROOT / ".env", override=True)
     s = Settings(
         openai_api_key=_clean(os.getenv("OPENAI_API_KEY")),
         anthropic_base_url=_clean(os.getenv("ANTHROPIC_BASE_URL")),
         anthropic_auth_token=_clean(os.getenv("ANTHROPIC_AUTH_TOKEN")),
         anthropic_model=os.getenv("ANTHROPIC_MODEL", "deepseek-v4-flash").strip(),
-        langfuse_public_key=_clean(os.getenv("LANGFUSE_PUBLIC_KEY")),
-        langfuse_secret_key=_clean(os.getenv("LANGFUSE_SECRET_KEY")),
-        langfuse_host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+        langsmith_api_key=_clean(os.getenv("LANGSMITH_API_KEY")),
+        langsmith_endpoint=_clean(os.getenv("LANGSMITH_ENDPOINT")),
+        langsmith_workspace_id=_clean(os.getenv("LANGSMITH_WORKSPACE_ID")),
     )
     s.openai_enabled = s.openai_api_key is not None
     s.anthropic_enabled = bool(s.anthropic_base_url and s.anthropic_auth_token)
 
-    if probe and s.langfuse_public_key and s.langfuse_secret_key:
+    if probe and s.langsmith_api_key:
         try:
-            from langfuse import get_client
+            from langsmith import Client
 
-            s.langfuse_enabled = bool(get_client().auth_check())
+            Client(
+                api_key=s.langsmith_api_key,
+                api_url=s.langsmith_endpoint,
+            ).list_projects(limit=1)
+            s.langsmith_enabled = True
         except Exception:
-            s.langfuse_enabled = False
+            s.langsmith_enabled = False
 
-    print(f"[mode] trace_backend={'langfuse' if s.langfuse_enabled else 'local-json'} "
+    print(f"[mode] trace_backend={'langsmith' if s.langsmith_enabled else 'local-json'} "
           f"llm={s.llm_mode}")
     return s
