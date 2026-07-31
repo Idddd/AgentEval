@@ -334,16 +334,21 @@ class LangsmithBackend:
             )
         )
         summary["traces"] = len(trace_ids)
+        deleted_trace_ids: set[str] = set()
         try:
-            for trace_id in trace_ids:
+            for project_name, experiment in experiments.items():
                 try:
-                    self._client.delete_run(trace_id)
-                    summary["traces_deleted"] += 1
+                    self._client.delete_project(project_name=project_name)
                 except Exception:
-                    pass
+                    continue
+                deleted_trace_ids.update(
+                    str(trace_id)
+                    for trace_id in experiment.get("trace_ids", [])
+                )
         finally:
             self._experiments_path.unlink(missing_ok=True)
 
+        summary["traces_deleted"] = len(deleted_trace_ids)
         return summary
 
 

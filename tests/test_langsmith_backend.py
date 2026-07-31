@@ -20,8 +20,8 @@ class FakeLangsmithClient:
         self.datasets: dict[str, SimpleNamespace] = {}
         self.examples: list[SimpleNamespace] = []
         self.deleted_dataset_ids: list[str] = []
-        self.run_delete_attempts: list[str] = []
-        self.run_delete_failures: set[str] = set()
+        self.project_delete_attempts: list[str] = []
+        self.project_delete_failures: set[str] = set()
         self.flush_count = 0
         self.create_failures = 0
         self.read_attempts = 0
@@ -165,12 +165,15 @@ class FakeLangsmithClient:
         self.feedback.append(item)
         return item
 
-    def delete_run(self, run_id):
-        run_id = str(run_id)
-        self.run_delete_attempts.append(run_id)
-        if run_id in self.run_delete_failures:
-            raise RuntimeError("SDK delete failed")
-        self.runs.pop(run_id, None)
+    def delete_project(self, *, project_name):
+        self.project_delete_attempts.append(project_name)
+        if project_name in self.project_delete_failures:
+            raise RuntimeError("SDK project delete failed")
+        self.runs = {
+            run_id: run
+            for run_id, run in self.runs.items()
+            if run.session_name != project_name
+        }
 
     def flush(self):
         self.flush_count += 1
@@ -289,7 +292,9 @@ def test_experiment_registry_identifies_langsmith_project(tmp_path):
     assert experiments[0]["backend"] == "langsmith"
 
 
-def test_reset_deletes_exact_dataset_and_registry_despite_run_failure(tmp_path):
+def test_reset_deletes_exact_dataset_and_registered_experiment_project(
+    tmp_path,
+):
     client = FakeLangsmithClient()
     settings = _settings(data_dir=tmp_path)
     backend = LangsmithBackend(settings, client=client)
@@ -303,21 +308,45 @@ def test_reset_deletes_exact_dataset_and_registry_despite_run_failure(tmp_path):
     )
     similar_dataset = client.create_dataset(dataset_name="demo-copy")
     backend.register_experiment("exp-1", "demo", ["root-1", "root-2"])
-    client.run_delete_failures.add("root-2")
 
     summary = backend.reset("demo")
 
     assert summary == {
         "dataset_items": 2,
         "traces": 2,
-        "traces_deleted": 1,
+        "traces_deleted": 2,
         "experiments": 1,
     }
-    assert client.run_delete_attempts == ["root-1", "root-2"]
+    assert client.project_delete_attempts == ["exp-1"]
     assert similar_dataset.id in client.datasets
     assert list(client.list_datasets(dataset_name="demo")) == [
         client.datasets[similar_dataset.id]
     ]
+    assert store.list_experiments() == []
+
+
+def test_reset_continues_project_cleanup_after_one_project_delete_fails(
+    tmp_path,
+):
+    client = FakeLangsmithClient()
+    settings = _settings(data_dir=tmp_path)
+    backend = LangsmithBackend(settings, client=client)
+    store = LangsmithStore(settings, client=client)
+    backend.register_experiment("exp-fails", "demo", ["root-1"])
+    backend.register_experiment(
+        "exp-succeeds", "demo", ["root-2", "root-3"]
+    )
+    client.project_delete_failures.add("exp-fails")
+
+    summary = backend.reset("demo")
+
+    assert summary == {
+        "dataset_items": 0,
+        "traces": 3,
+        "traces_deleted": 2,
+        "experiments": 2,
+    }
+    assert client.project_delete_attempts == ["exp-fails", "exp-succeeds"]
     assert store.list_experiments() == []
 
 
