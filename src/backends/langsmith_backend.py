@@ -16,8 +16,28 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from langsmith.utils import LangSmithNotFoundError
+
 from ..models import DatasetItemRecord, ScoreRecord, SpanRecord, TraceRecord
 from ..settings import Settings
+
+
+REMOTE_RESOURCE_PREFIX = "agenteval__"
+OWNER_METADATA_KEY = "agent_eval_owner"
+OWNER_METADATA_VALUE = "AgentEval"
+
+
+def _remote_resource_name(public_name: str) -> str:
+    """Map a public demo name into AgentEval's private Cloud namespace."""
+    return f"{REMOTE_RESOURCE_PREFIX}{public_name}"
+
+
+def _registry_key(backend: str, public_name: str) -> str:
+    return f"{backend}::{public_name}"
+
+
+def _public_experiment_name(registry_key: str, record: dict) -> str:
+    return str(record.get("name") or registry_key)
 
 
 def _now() -> datetime:
@@ -69,10 +89,11 @@ class LangsmithTracer:
         metadata: dict,
     ):
         run_id = uuid.uuid4()
-        project_name = tags[0] if tags else name
+        project_name = _remote_resource_name(tags[0] if tags else name)
         start_time = _now()
         root_metadata = dict(metadata)
         root_metadata["user_id"] = user_id
+        root_metadata[OWNER_METADATA_KEY] = OWNER_METADATA_VALUE
         self._local.stack = []
         self._local.trace_id = run_id
         self._local.project_name = project_name
@@ -208,14 +229,18 @@ class LangsmithBackend:
         self._experiments_path = (
             Path(settings.data_dir) / "experiments.json"
         )
+        self._feedback_session_ids: dict[str, Any] = {}
         self.tracer = LangsmithTracer(self._client)
 
     def _find_dataset(self, name: str):
+        remote_name = _remote_resource_name(name)
         return next(
             (
                 dataset
-                for dataset in self._client.list_datasets(dataset_name=name)
-                if _value(dataset, "name") == name
+                for dataset in self._client.list_datasets(
+                    dataset_name=remote_name
+                )
+                if _value(dataset, "name") == remote_name
             ),
             None,
         )
@@ -231,7 +256,7 @@ class LangsmithBackend:
             self._client.delete_dataset(dataset_id=_value(existing, "id"))
 
         dataset = self._client.create_dataset(
-            dataset_name=name,
+            dataset_name=_remote_resource_name(name),
             description="Agent permission compliance evaluation cases",
         )
         if items:
@@ -285,11 +310,17 @@ class LangsmithBackend:
         value: float,
         comment: str | None = None,
     ) -> None:
+        if trace_id not in self._feedback_session_ids:
+            root = self._client.read_run(trace_id)
+            self._feedback_session_ids[trace_id] = _value(
+                root, "session_id"
+            )
         self._client.create_feedback(
-            trace_id,
-            name,
+            run_id=trace_id,
+            key=name,
             score=value,
             comment=comment,
+            session_id=self._feedback_session_ids[trace_id],
         )
 
     def register_experiment(
@@ -297,11 +328,25 @@ class LangsmithBackend:
     ) -> None:
         self._experiments_path.parent.mkdir(parents=True, exist_ok=True)
         experiments = _read_experiments(self._experiments_path)
-        experiments[name] = {
+        owned_trace_ids: list[str] = []
+        for registry_key, experiment in list(experiments.items()):
+            if (
+                experiment.get("backend") == "langsmith"
+                and _public_experiment_name(registry_key, experiment) == name
+            ):
+                owned_trace_ids.extend(
+                    str(trace_id)
+                    for trace_id in experiment.get("trace_ids", [])
+                )
+                experiments.pop(registry_key)
+        owned_trace_ids.extend(str(trace_id) for trace_id in trace_ids)
+        experiments[_registry_key("langsmith", name)] = {
+            "name": name,
             "dataset": dataset,
-            "trace_ids": trace_ids,
+            "trace_ids": list(dict.fromkeys(owned_trace_ids)),
             "created_at": _now().isoformat(),
             "backend": "langsmith",
+            "remote_project_name": _remote_resource_name(name),
         }
         self._experiments_path.write_text(
             json.dumps(experiments, ensure_ascii=False, indent=2),
@@ -316,36 +361,90 @@ class LangsmithBackend:
             "experiments": 0,
         }
 
-        dataset = self._find_dataset(dataset_name)
+        try:
+            dataset = self._find_dataset(dataset_name)
+        except Exception:
+            dataset = None
         if dataset is not None:
             dataset_id = _value(dataset, "id")
-            summary["dataset_items"] = len(
-                list(self._client.list_examples(dataset_id=dataset_id))
-            )
-            self._client.delete_dataset(dataset_id=dataset_id)
+            dataset_item_count = 0
+            try:
+                dataset_item_count = len(
+                    list(self._client.list_examples(dataset_id=dataset_id))
+                )
+            except Exception:
+                pass
+            try:
+                self._client.delete_dataset(dataset_id=dataset_id)
+            except Exception:
+                pass
+            else:
+                summary["dataset_items"] = dataset_item_count
 
         experiments = _read_experiments(self._experiments_path)
-        summary["experiments"] = len(experiments)
-        trace_ids = list(
-            dict.fromkeys(
-                str(trace_id)
-                for experiment in experiments.values()
-                for trace_id in experiment.get("trace_ids", [])
-            )
-        )
-        summary["traces"] = len(trace_ids)
+        langsmith_experiments = {
+            registry_key: experiment
+            for registry_key, experiment in experiments.items()
+            if experiment.get("backend") == "langsmith"
+        }
+        owned_trace_ids = {
+            str(trace_id)
+            for experiment in langsmith_experiments.values()
+            for trace_id in experiment.get("trace_ids", [])
+        }
+        summary["traces"] = len(owned_trace_ids)
+        remaining = dict(experiments)
         deleted_trace_ids: set[str] = set()
-        try:
-            for project_name, experiment in experiments.items():
-                try:
-                    self._client.delete_project(project_name=project_name)
-                except Exception:
-                    continue
-                deleted_trace_ids.update(
-                    str(trace_id)
-                    for trace_id in experiment.get("trace_ids", [])
+
+        for registry_key, experiment in langsmith_experiments.items():
+            public_name = _public_experiment_name(
+                registry_key, experiment
+            )
+            expected_project_name = _remote_resource_name(public_name)
+            project_name = (
+                experiment.get("remote_project_name")
+                or expected_project_name
+            )
+            if project_name != expected_project_name:
+                continue
+            project_owned_ids = {
+                str(trace_id)
+                for trace_id in experiment.get("trace_ids", [])
+            }
+            try:
+                roots = list(
+                    self._client.list_runs(
+                        project_name=project_name,
+                        is_root=True,
+                    )
                 )
-        finally:
+            except Exception:
+                continue
+
+            root_ids = {str(_value(root, "id")) for root in roots}
+            if any(
+                _metadata(root).get(OWNER_METADATA_KEY)
+                != OWNER_METADATA_VALUE
+                or str(_value(root, "id")) not in project_owned_ids
+                for root in roots
+            ):
+                continue
+
+            try:
+                self._client.delete_project(project_name=project_name)
+            except Exception:
+                continue
+
+            remaining.pop(registry_key, None)
+            deleted_trace_ids.update(root_ids)
+            summary["experiments"] += 1
+
+        if remaining:
+            self._experiments_path.write_text(
+                json.dumps(remaining, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        else:
             self._experiments_path.unlink(missing_ok=True)
 
         summary["traces_deleted"] = len(deleted_trace_ids)
@@ -378,6 +477,7 @@ class LangsmithStore:
         root_id = str(_value(root, "id"))
         runs = list(self._client.list_runs(trace_id=trace_id))
         metadata = _metadata(root)
+        metadata.pop(OWNER_METADATA_KEY, None)
         user_id = _value(root, "user_id")
         if user_id is None:
             user_id = metadata.pop("user_id", None)
@@ -421,7 +521,15 @@ class LangsmithStore:
         )
 
     def list_traces(self, *, tag: str) -> list[TraceRecord]:
-        roots = self._client.list_runs(project_name=tag, is_root=True)
+        try:
+            roots = list(
+                self._client.list_runs(
+                    project_name=_remote_resource_name(tag),
+                    is_root=True,
+                )
+            )
+        except LangSmithNotFoundError:
+            return []
         return [
             self.get_trace(str(_value(root, "id")), retry=False)
             for root in roots
@@ -429,7 +537,13 @@ class LangsmithStore:
 
     def list_experiments(self) -> list[dict]:
         experiments = _read_experiments(self._experiments_path)
-        return [{"name": name, **record} for name, record in experiments.items()]
+        return [
+            {
+                "name": _public_experiment_name(registry_key, record),
+                **record,
+            }
+            for registry_key, record in experiments.items()
+        ]
 
     def get_trace_url(self, trace_id: str) -> str:
         get_run_url = getattr(self._client, "get_run_url", None)

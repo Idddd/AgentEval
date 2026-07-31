@@ -49,7 +49,7 @@ be renamed as part of backend work.
 ### 2.1 Runtime dependencies
 
 ```text
-langsmith
+langsmith>=0.10.14,<0.11
 openai>=1.0.0
 anthropic>=0.40.0
 pyyaml>=6.0
@@ -84,7 +84,12 @@ require explicit workspace scoping.
 `load_settings()` performs a lightweight `Client.list_projects(limit=1)`
 probe. Cloud mode is enabled only when a key exists and the probe succeeds.
 All exceptions during the probe select Local JSON; no live access is required
-for tests or the offline demo.
+for tests or the offline demo. Each entry point resolves settings once and
+passes that exact object to a refreshed backend factory, so the displayed mode
+and selected store cannot diverge after an alternating probe.
+
+Cloud mode uploads trace inputs, user IDs, custom queries, and tool outputs.
+Use synthetic, non-sensitive demo data only.
 
 ### 2.3 `config/tools.yaml`
 
@@ -124,9 +129,10 @@ the normalized records defined in `src/models.py`.
 
 - `Tracer.start_trace()` creates a root LangSmith Run with a generated UUID as
   both Run ID and trace ID.
-- The first experiment tag is used as the LangSmith project name; all supplied
-  tags remain on the root Run.
-- Root metadata is written under `extra.metadata`, with `user_id` included.
+- The first experiment tag maps to the remote project
+  `agenteval__{experiment}`; all supplied public tags remain on the root Run.
+- Root metadata is written under `extra.metadata`, with `user_id` and the
+  durable `agent_eval_owner: "AgentEval"` marker included.
 - Each `Tracer.span()` creates a child Run with the same `trace_id` and the
   active Run as `parent_run_id`.
 - Child inputs, outputs, metadata, start/end times, and errors map directly to
@@ -138,7 +144,9 @@ the normalized records defined in `src/models.py`.
 `LangsmithStore.get_trace()` reads the root Run, lists Runs sharing its trace
 ID, excludes the root from the span list, and maps child Runs into
 `SpanRecord`s. `list_traces(tag=experiment)` lists root Runs in the matching
-project and normalizes each one.
+prefixed project and normalizes each one. A lazily raised
+`LangSmithNotFoundError` for a not-yet-created project maps to an empty list;
+other read failures surface.
 
 Cloud reads are eventually consistent. `get_trace(retry=True)` attempts up to
 20 reads, waiting 0.5 seconds between attempts. `retry=False` reads once.
@@ -146,8 +154,10 @@ Local JSON writes synchronously and uses the same method contract.
 
 ### 3.2 Datasets and examples
 
-- `create_dataset(name, items, replace=True)` deletes an existing exact-name
-  dataset, creates a new dataset, then bulk-creates Examples.
+- Public dataset name `name` maps to the remote
+  `agenteval__{name}` Dataset. `create_dataset(..., replace=True)` replaces
+  only that exact prefixed Dataset, then bulk-creates Examples; an external
+  unprefixed same-name Dataset is never touched.
 - `DatasetItemRecord.input` maps to Example `inputs`.
 - `DatasetItemRecord.expected_output` maps to Example `outputs`.
 - `DatasetItemRecord.metadata` maps to Example `metadata`.
@@ -170,27 +180,36 @@ root Run:
 | numeric `value` | `score` |
 | optional explanation | `comment` |
 
-The Cloud reader requests Feedback for the root Run and maps each numeric item
-into a `ScoreRecord`. Local JSON writes the same normalized scores into the
-stored trace.
+The backend reads and caches the root Run's `session_id`, then supplies it with
+the public SDK's keyword arguments when creating Feedback. The Cloud reader
+requests Feedback for the root Run and maps each numeric item into a
+`ScoreRecord`. Local JSON writes the same normalized scores into the stored
+trace.
 
 ### 3.4 Experiment registration and reset
 
-There is no separate remote experiment record in this demo. The experiment
-name groups Runs as their project name, while `data/experiments.json` records
-the dataset name, trace IDs, creation time, and backend. Reports and the UI use
-this stable local index.
+There is no separate remote experiment record in this demo. The public
+experiment name groups Runs in `agenteval__{experiment}`, while
+`data/experiments.json` records the public name, dataset, cumulative owned root
+IDs, creation time, backend, and exact remote project name. Backend-qualified
+registry keys allow Local JSON and LangSmith entries with the same public name
+to coexist. Reports and the UI continue to expose only public names.
 
 Cloud reset:
 
-1. Count and delete the named dataset and its Examples.
-2. Read recorded experiment projects and trace IDs.
-3. Best-effort delete each recorded project, tracking successful trace
-   deletions separately.
-4. Remove `data/experiments.json` even if a remote deletion fails.
+1. Best-effort count and delete only the prefixed Dataset and its Examples.
+2. Process only registry entries whose backend is `langsmith`.
+3. Materialize every root Run in each exact prefixed project. Delete the
+   project only when every root has the AgentEval owner marker and every root
+   ID is among that registry entry's cumulative owned IDs.
+4. Isolate each project operation. A listing/deletion failure or any
+   foreign/unrecorded root retains both the remote project and registry entry.
+5. Remove only successfully cleaned LangSmith entries and preserve every
+   other-backend entry. Summaries count confirmed deletions.
 
-Local reset deletes the dataset entry, trace file, and experiment index. The
-Streamlit reset handler additionally deletes generated reports and clears
+Local reset deletes the local dataset entry and trace file, removes only
+`local-json` experiment entries, and preserves LangSmith/other-backend entries.
+The Streamlit reset handler additionally deletes generated reports and clears
 custom test requirements. Reset remains a two-click confirmation flow.
 
 ## 4. Dataset generation
@@ -318,7 +337,7 @@ streamlit run app.py
 Sidebar requirements:
 
 - Cloud badge: `Trace Backend: LangSmith`
-- Fallback badge: `Trace Backend: Local JSON (no LangSmith credentials)`
+- Fallback badge: `Trace Backend: Local JSON (LangSmith unavailable)`
 - Existing intent mode badge
 - Generate Dataset → Run Evaluation → Generate Report controls
 - Two-click Reset Demo control

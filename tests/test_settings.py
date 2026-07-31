@@ -1,12 +1,15 @@
 """LangSmith configuration and backend selection."""
 from __future__ import annotations
 
+import asyncio
 import sys
 from types import ModuleType, SimpleNamespace
 
+import main as cli_main
+
 from src.backends import base
 from src.backends.local_backend import LocalJsonBackend, LocalJsonStore
-from src.settings import load_settings
+from src.settings import Settings, load_settings
 
 
 class FakeClient:
@@ -145,3 +148,88 @@ def test_get_backend_selects_langsmith_only_when_enabled(monkeypatch):
     backend, store = base.get_backend(refresh=True)
     assert isinstance(backend, LocalJsonBackend)
     assert isinstance(store, LocalJsonStore)
+
+
+def test_get_backend_uses_supplied_settings_without_probing_again(
+    monkeypatch, tmp_path
+):
+    """A resolved mode is authoritative even if a later probe would alternate."""
+    selected_settings = []
+
+    class FakeBackend:
+        def __init__(self, settings):
+            selected_settings.append(settings)
+
+    class FakeStore:
+        def __init__(self, settings):
+            selected_settings.append(settings)
+
+    fake_module = ModuleType("src.backends.langsmith_backend")
+    fake_module.LangsmithBackend = FakeBackend
+    fake_module.LangsmithStore = FakeStore
+    monkeypatch.setitem(
+        sys.modules, "src.backends.langsmith_backend", fake_module
+    )
+
+    probe_calls = 0
+
+    def alternating_probe():
+        nonlocal probe_calls
+        probe_calls += 1
+        return Settings(
+            langsmith_enabled=probe_calls % 2 == 0,
+            data_dir=tmp_path,
+        )
+
+    monkeypatch.setattr("src.settings.load_settings", alternating_probe)
+    resolved = Settings(langsmith_enabled=True, data_dir=tmp_path)
+    base._cached = None
+
+    backend, store = base.get_backend(settings=resolved, refresh=True)
+
+    assert isinstance(backend, FakeBackend)
+    assert isinstance(store, FakeStore)
+    assert selected_settings == [resolved, resolved]
+    assert probe_calls == 0
+
+
+def test_main_builds_backend_from_its_single_resolved_settings(
+    monkeypatch, tmp_path
+):
+    settings = Settings(langsmith_enabled=False, data_dir=tmp_path)
+    backend = object()
+    store = object()
+    settings_calls = 0
+    backend_calls = []
+
+    def load_once():
+        nonlocal settings_calls
+        settings_calls += 1
+        return settings
+
+    def resolved_backend(*, settings, refresh):
+        backend_calls.append((settings, refresh))
+        return backend, store
+
+    class FakeReportGenerator:
+        def __init__(self, experiment, received_store):
+            assert experiment == "exp-atomic"
+            assert received_store is store
+
+        def generate(self, output_path):
+            assert output_path is None
+
+    monkeypatch.setattr(cli_main, "load_settings", load_once)
+    monkeypatch.setattr(cli_main, "get_backend", resolved_backend)
+    monkeypatch.setattr(cli_main, "load_tools_config", object)
+    monkeypatch.setattr(cli_main, "ReportGenerator", FakeReportGenerator)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["main.py", "--step", "report", "--experiment", "exp-atomic"],
+    )
+
+    asyncio.run(cli_main.main())
+
+    assert settings_calls == 1
+    assert backend_calls == [(settings, True)]

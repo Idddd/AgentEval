@@ -1,4 +1,4 @@
-"""Local JSON backend: fallback when no LangSmith credentials are available.
+"""Local JSON backend: fallback when LangSmith is unavailable.
 
 Traces are persisted in the normalized shape consumed by the evaluator:
 data/traces.jsonl holds one complete trace per line (flat spans + scores).
@@ -22,6 +22,14 @@ def _now() -> datetime:
 
 def _dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _registry_key(backend: str, public_name: str) -> str:
+    return f"{backend}::{public_name}"
+
+
+def _public_experiment_name(registry_key: str, record: dict) -> str:
+    return str(record.get("name") or registry_key)
 
 
 # ---------- Serialization ----------
@@ -225,7 +233,14 @@ class LocalJsonBackend:
     def register_experiment(self, name: str, dataset: str,
                             trace_ids: list[str]) -> None:
         exps = self._read_json(self._experiments_path, default={})
-        exps[name] = {
+        for registry_key, experiment in list(exps.items()):
+            if (
+                experiment.get("backend") == "local-json"
+                and _public_experiment_name(registry_key, experiment) == name
+            ):
+                exps.pop(registry_key)
+        exps[_registry_key("local-json", name)] = {
+            "name": name,
             "dataset": dataset,
             "trace_ids": trace_ids,
             "created_at": _now().isoformat(),
@@ -246,8 +261,20 @@ class LocalJsonBackend:
             self._traces_path.unlink()
 
         exps = self._read_json(self._experiments_path, default={})
-        summary["experiments"] = len(exps)
-        if self._experiments_path.exists():
+        local_experiments = {
+            name: experiment
+            for name, experiment in exps.items()
+            if experiment.get("backend") == "local-json"
+        }
+        summary["experiments"] = len(local_experiments)
+        remaining = {
+            name: experiment
+            for name, experiment in exps.items()
+            if experiment.get("backend") != "local-json"
+        }
+        if remaining:
+            self._write_json(self._experiments_path, remaining)
+        elif self._experiments_path.exists():
             self._experiments_path.unlink()
         return summary
 
@@ -291,4 +318,10 @@ class LocalJsonStore:
         if not self._experiments_path.exists():
             return []
         exps = json.loads(self._experiments_path.read_text(encoding="utf-8"))
-        return [{"name": k, **v} for k, v in exps.items()]
+        return [
+            {
+                "name": _public_experiment_name(registry_key, record),
+                **record,
+            }
+            for registry_key, record in exps.items()
+        ]

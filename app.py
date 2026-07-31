@@ -46,7 +46,7 @@ st.set_page_config(page_title="Agent Permission Compliance Eval", layout="wide")
 @st.cache_resource
 def init_runtime():
     settings = load_settings()
-    backend, store = get_backend()
+    backend, store = get_backend(settings=settings, refresh=True)
     config = load_tools_config()
     return settings, backend, store, config
 
@@ -168,7 +168,7 @@ st.sidebar.title("Agent Permission Eval")
 if settings.langsmith_enabled:
     st.sidebar.success("Trace Backend: LangSmith")
 else:
-    st.sidebar.warning("Trace Backend: Local JSON (no LangSmith credentials)")
+    st.sidebar.warning("Trace Backend: Local JSON (LangSmith unavailable)")
 if settings.anthropic_enabled:
     st.sidebar.success(f"LLM: DeepSeek ({settings.anthropic_model})")
 elif settings.openai_enabled:
@@ -238,8 +238,11 @@ else:
                 shutil.rmtree(reports_dir)
         st.session_state["reset_armed"] = False
         st.session_state["run_log"] = []
+        removed_traces = summary.get(
+            "traces_deleted", summary.get("traces", 0)
+        )
         st.toast(f"Reset done: {summary.get('dataset_items', 0)} dataset items, "
-                 f"{summary.get('traces', 0)} traces, "
+                 f"{removed_traces} traces, "
                  f"{summary.get('experiments', 0)} experiments removed",
                  icon="🗑️")
         st.rerun()

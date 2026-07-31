@@ -30,7 +30,7 @@ async def main() -> None:
     args = parser.parse_args()
 
     settings = load_settings()
-    backend, store = get_backend()
+    backend, store = get_backend(settings=settings, refresh=True)
     config = load_tools_config()
 
     if args.step in ("all", "generate"):

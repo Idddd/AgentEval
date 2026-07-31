@@ -43,11 +43,11 @@ The Cloud adapter maps the normalized model as follows:
 
 | Demo concept | LangSmith representation |
 |---|---|
-| Top-level trace | Root Run with the generated trace ID; experiment name is the project name and a tag |
+| Top-level trace | Root Run with the generated trace ID; the public experiment remains a tag while the remote project is `agenteval__{experiment}` |
 | Nested span | Child Run with `trace_id` and `parent_run_id` preserving the tree |
-| Dataset item | Example with `inputs`, `outputs`, and `metadata` |
+| Dataset item | Example in the remote `agenteval__{dataset}` Dataset, with `inputs`, `outputs`, and `metadata` |
 | Evaluator score | Feedback on the root Run (`key`, numeric `score`, optional `comment`) |
-| Experiment index | Local `data/experiments.json` entry containing dataset and trace IDs |
+| Experiment index | Local `data/experiments.json` entry containing backend, exact remote project name, dataset, and owned trace IDs |
 
 The reader reconstructs the same normalized trace tree from Runs and Feedback,
 so scoring, reports, and UI rendering behave the same in Cloud and Local JSON
@@ -115,10 +115,14 @@ selects Local JSON under `data/`; it does not disable dataset generation,
 evaluation, scores, reports, or the UI. The sidebar shows the active mode:
 
 - `Trace Backend: LangSmith`
-- `Trace Backend: Local JSON (no LangSmith credentials)`
+- `Trace Backend: Local JSON (LangSmith unavailable)`
 
 `.env` is ignored by Git. Never commit credentials; rotate any key exposed in
 logs, screenshots, chats, or tickets.
+
+> **Cloud data warning:** LangSmith Cloud receives trace inputs, user IDs,
+> custom queries, and tool outputs. Use only synthetic, non-sensitive data in
+> this demo; do not enter secrets, personal data, or production payloads.
 
 ### Credentials
 
@@ -186,15 +190,15 @@ also removes that volume.
 - `LANGSMITH_ENDPOINT` is the SDK API endpoint, not a browser project URL.
 - The app deliberately probes connectivity before choosing Cloud mode. A
   failed probe falls back for that process; correct the environment and restart.
-- Each experiment name is also the LangSmith project name used to group root
-  Runs. Reusing a name groups those runs together.
+- Public dataset and experiment names stay unchanged in the UI and CLI, while
+  AgentEval owns only remote resources with the deterministic `agenteval__`
+  prefix. Reusing an experiment name groups those runs in its prefixed project.
 - Cloud reads can lag writes. The runner flushes and retries a trace read up to
   20 times with a 0.5-second interval.
-- Reset deletes the configured dataset, attempts to delete recorded experiment
-  projects (and therefore their Runs), removes the local experiment index,
-  generated reports, and custom test requirements. The UI summary displays the
-  recorded trace count; the backend result separately includes
-  `traces_deleted` for confirmed remote deletions.
+- Reset touches only the prefixed dataset and registered LangSmith projects.
+  A project is deleted only when every root Run has AgentEval's owner marker
+  and its ID is recorded locally; otherwise the project and registry entry are
+  retained. Other-backend registry entries are preserved.
 
 ## Using the demo
 

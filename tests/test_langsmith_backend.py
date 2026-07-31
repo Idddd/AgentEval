@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 import threading
 from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
+from langsmith.utils import LangSmithNotFoundError
 
 from src.backends.langsmith_backend import LangsmithBackend, LangsmithStore
+from src.backends.local_backend import LocalJsonBackend, LocalJsonStore
 from src.models import DatasetItemRecord
 from src.settings import Settings
 
@@ -20,8 +23,14 @@ class FakeLangsmithClient:
         self.datasets: dict[str, SimpleNamespace] = {}
         self.examples: list[SimpleNamespace] = []
         self.deleted_dataset_ids: list[str] = []
+        self.dataset_list_requests: list[str | None] = []
+        self.dataset_lookup_failures = 0
+        self.example_list_failures = 0
+        self.dataset_delete_failures = 0
         self.project_delete_attempts: list[str] = []
         self.project_delete_failures: set[str] = set()
+        self.project_list_requests: list[str] = []
+        self.project_list_failures: dict[str, Exception] = {}
         self.flush_count = 0
         self.create_failures = 0
         self.read_attempts = 0
@@ -80,6 +89,8 @@ class FakeLangsmithClient:
         self, *, trace_id=None, project_name=None, is_root=None, **kwargs
     ):
         del kwargs
+        if project_name is not None:
+            self.project_list_requests.append(project_name)
         runs = list(self.runs.values())
         if trace_id is not None:
             runs = [run for run in runs if run.trace_id == str(trace_id)]
@@ -90,7 +101,14 @@ class FakeLangsmithClient:
                 run for run in runs
                 if (run.parent_run_id is None) is is_root
             ]
-        return iter(runs)
+
+        def lazy_runs():
+            failure = self.project_list_failures.get(project_name)
+            if failure is not None:
+                raise failure
+            yield from runs
+
+        return lazy_runs()
 
     def list_feedback(self, *, run_ids=None, **kwargs):
         del kwargs
@@ -112,6 +130,10 @@ class FakeLangsmithClient:
 
     def list_datasets(self, *, dataset_name=None, **kwargs):
         del kwargs
+        self.dataset_list_requests.append(dataset_name)
+        if self.dataset_lookup_failures:
+            self.dataset_lookup_failures -= 1
+            raise RuntimeError("SDK dataset lookup failed")
         datasets = list(self.datasets.values())
         if dataset_name is not None:
             datasets = [
@@ -121,6 +143,9 @@ class FakeLangsmithClient:
         return iter(datasets)
 
     def delete_dataset(self, *, dataset_id):
+        if self.dataset_delete_failures:
+            self.dataset_delete_failures -= 1
+            raise RuntimeError("SDK dataset delete failed")
         dataset_id = str(dataset_id)
         del self.datasets[dataset_id]
         self.examples = [
@@ -150,17 +175,28 @@ class FakeLangsmithClient:
 
     def list_examples(self, *, dataset_id, **kwargs):
         del kwargs
-        return iter(
+        examples = [
             example for example in self.examples
             if example.dataset_id == str(dataset_id)
-        )
+        ]
 
-    def create_feedback(self, run_id, key, *, score, comment=None):
+        def lazy_examples():
+            if self.example_list_failures:
+                self.example_list_failures -= 1
+                raise RuntimeError("SDK example list failed")
+            yield from examples
+
+        return lazy_examples()
+
+    def create_feedback(
+        self, *, run_id, key, score, comment=None, session_id
+    ):
         item = SimpleNamespace(
             run_id=str(run_id),
             key=key,
             score=score,
             comment=comment,
+            session_id=str(session_id),
         )
         self.feedback.append(item)
         return item
@@ -205,19 +241,45 @@ def _dataset_item(
     )
 
 
+def _add_root(
+    client: FakeLangsmithClient,
+    run_id: str,
+    project_name: str,
+    *,
+    owner: str | None = "AgentEval",
+) -> None:
+    metadata = {"scenario": "test"}
+    if owner is not None:
+        metadata["agent_eval_owner"] = owner
+    client.create_run(
+        "agent-run-test",
+        {},
+        "chain",
+        id=run_id,
+        trace_id=run_id,
+        project_name=project_name,
+        start_time=datetime.now(),
+        tags=[project_name.removeprefix("agenteval__")],
+        extra={"metadata": metadata},
+    )
+
+
 def test_dataset_replacement_roundtrips_sdk_examples_and_matches_exact_name(
     tmp_path,
 ):
     client = FakeLangsmithClient()
     backend = LangsmithBackend(_settings(data_dir=tmp_path), client=client)
-    old_dataset = client.create_dataset(dataset_name="demo")
+    external_dataset = client.create_dataset(dataset_name="demo")
+    old_dataset = client.create_dataset(dataset_name="agenteval__demo")
     client.create_example(
         dataset_id=old_dataset.id,
         inputs={"query": "old"},
         outputs={"expected": "old"},
         metadata={"scenario": "old"},
     )
-    similar_dataset = client.create_dataset(dataset_name="demo-copy")
+    similar_dataset = client.create_dataset(
+        dataset_name="agenteval__demo-copy"
+    )
 
     items = [
         _dataset_item("local-1", "first", "one", "allowed"),
@@ -226,7 +288,9 @@ def test_dataset_replacement_roundtrips_sdk_examples_and_matches_exact_name(
     backend.create_dataset("demo", items, replace=True)
 
     assert client.deleted_dataset_ids == [old_dataset.id]
+    assert external_dataset.id in client.datasets
     assert similar_dataset.id in client.datasets
+    assert client.dataset_list_requests[-1] == "agenteval__demo"
     assert [
         (item.input, item.expected_output, item.metadata)
         for item in backend.get_dataset_items("demo")
@@ -263,17 +327,41 @@ def test_add_dataset_item_maps_one_sdk_example(tmp_path):
 def test_save_score_maps_numeric_feedback_to_root_run(tmp_path):
     client = FakeLangsmithClient()
     backend = LangsmithBackend(_settings(data_dir=tmp_path), client=client)
+    _add_root(client, "root-run-1", "agenteval__exp-1")
 
     backend.save_score(
         "root-run-1", "permission_compliance", 1.0, comment="allowed"
     )
+    backend.save_score(
+        "root-run-1", "execution_correctness", 0.5, comment="partial"
+    )
 
     assert [
-        (item.run_id, item.key, item.score, item.comment)
+        (
+            item.run_id,
+            item.key,
+            item.score,
+            item.comment,
+            item.session_id,
+        )
         for item in client.feedback
     ] == [
-        ("root-run-1", "permission_compliance", 1.0, "allowed"),
+        (
+            "root-run-1",
+            "permission_compliance",
+            1.0,
+            "allowed",
+            "project-id",
+        ),
+        (
+            "root-run-1",
+            "execution_correctness",
+            0.5,
+            "partial",
+            "project-id",
+        ),
     ]
+    assert client.read_attempts == 1
 
 
 def test_experiment_registry_identifies_langsmith_project(tmp_path):
@@ -290,6 +378,27 @@ def test_experiment_registry_identifies_langsmith_project(tmp_path):
     assert experiments[0]["dataset"] == "demo"
     assert experiments[0]["trace_ids"] == ["root-1", "root-2"]
     assert experiments[0]["backend"] == "langsmith"
+    assert (
+        experiments[0]["remote_project_name"]
+        == "agenteval__exp-1"
+    )
+
+
+def test_reregistered_experiment_retains_all_owned_root_ids(tmp_path):
+    client = FakeLangsmithClient()
+    settings = _settings(data_dir=tmp_path)
+    backend = LangsmithBackend(settings, client=client)
+    store = LangsmithStore(settings, client=client)
+
+    backend.register_experiment("exp-reused", "demo", ["root-1"])
+    backend.register_experiment(
+        "exp-reused", "demo", ["root-2", "root-1"]
+    )
+
+    experiments = store.list_experiments()
+    assert len(experiments) == 1
+    assert experiments[0]["name"] == "exp-reused"
+    assert experiments[0]["trace_ids"] == ["root-1", "root-2"]
 
 
 def test_reset_deletes_exact_dataset_and_registered_experiment_project(
@@ -299,6 +408,7 @@ def test_reset_deletes_exact_dataset_and_registered_experiment_project(
     settings = _settings(data_dir=tmp_path)
     backend = LangsmithBackend(settings, client=client)
     store = LangsmithStore(settings, client=client)
+    external_dataset = client.create_dataset(dataset_name="demo")
     backend.create_dataset(
         "demo",
         [
@@ -306,8 +416,12 @@ def test_reset_deletes_exact_dataset_and_registered_experiment_project(
             _dataset_item("local-2", "second", "two", "denied"),
         ],
     )
-    similar_dataset = client.create_dataset(dataset_name="demo-copy")
+    similar_dataset = client.create_dataset(
+        dataset_name="agenteval__demo-copy"
+    )
     backend.register_experiment("exp-1", "demo", ["root-1", "root-2"])
+    _add_root(client, "root-1", "agenteval__exp-1")
+    _add_root(client, "root-2", "agenteval__exp-1")
 
     summary = backend.reset("demo")
 
@@ -317,10 +431,12 @@ def test_reset_deletes_exact_dataset_and_registered_experiment_project(
         "traces_deleted": 2,
         "experiments": 1,
     }
-    assert client.project_delete_attempts == ["exp-1"]
+    assert client.project_delete_attempts == ["agenteval__exp-1"]
+    assert external_dataset.id in client.datasets
     assert similar_dataset.id in client.datasets
     assert list(client.list_datasets(dataset_name="demo")) == [
-        client.datasets[similar_dataset.id]
+        client.datasets[external_dataset.id],
+        client.datasets[similar_dataset.id],
     ]
     assert store.list_experiments() == []
 
@@ -336,7 +452,10 @@ def test_reset_continues_project_cleanup_after_one_project_delete_fails(
     backend.register_experiment(
         "exp-succeeds", "demo", ["root-2", "root-3"]
     )
-    client.project_delete_failures.add("exp-fails")
+    _add_root(client, "root-1", "agenteval__exp-fails")
+    _add_root(client, "root-2", "agenteval__exp-succeeds")
+    _add_root(client, "root-3", "agenteval__exp-succeeds")
+    client.project_delete_failures.add("agenteval__exp-fails")
 
     summary = backend.reset("demo")
 
@@ -344,10 +463,222 @@ def test_reset_continues_project_cleanup_after_one_project_delete_fails(
         "dataset_items": 0,
         "traces": 3,
         "traces_deleted": 2,
-        "experiments": 2,
+        "experiments": 1,
     }
-    assert client.project_delete_attempts == ["exp-fails", "exp-succeeds"]
+    assert client.project_delete_attempts == [
+        "agenteval__exp-fails",
+        "agenteval__exp-succeeds",
+    ]
+    assert [item["name"] for item in store.list_experiments()] == [
+        "exp-fails"
+    ]
+
+
+def test_langsmith_reset_preserves_local_registry_entries(tmp_path):
+    client = FakeLangsmithClient()
+    settings = _settings(data_dir=tmp_path)
+    local_backend = LocalJsonBackend(tmp_path)
+    local_store = LocalJsonStore(tmp_path)
+    backend = LangsmithBackend(settings, client=client)
+    store = LangsmithStore(settings, client=client)
+    local_backend.register_experiment(
+        "exp-shared", "demo", ["local-root"]
+    )
+    backend.register_experiment("exp-shared", "demo", ["cloud-root"])
+    _add_root(client, "cloud-root", "agenteval__exp-shared")
+
+    summary = backend.reset("demo")
+
+    assert summary["experiments"] == 1
+    assert summary["traces"] == 1
+    assert summary["traces_deleted"] == 1
+    assert client.project_delete_attempts == ["agenteval__exp-shared"]
+    remaining = local_store.list_experiments()
+    assert len(remaining) == 1
+    assert remaining[0]["name"] == "exp-shared"
+    assert remaining[0]["trace_ids"] == ["local-root"]
+    assert remaining[0]["backend"] == "local-json"
+    assert store.list_experiments()[0]["backend"] == "local-json"
+
+
+def test_reset_keeps_project_and_registry_when_any_root_is_not_owned(
+    tmp_path,
+):
+    client = FakeLangsmithClient()
+    settings = _settings(data_dir=tmp_path)
+    backend = LangsmithBackend(settings, client=client)
+    store = LangsmithStore(settings, client=client)
+    backend.register_experiment("exp-unsafe", "demo", ["owned-root"])
+    _add_root(client, "owned-root", "agenteval__exp-unsafe")
+    _add_root(
+        client,
+        "foreign-root",
+        "agenteval__exp-unsafe",
+        owner=None,
+    )
+
+    summary = backend.reset("demo")
+
+    assert summary["experiments"] == 0
+    assert summary["traces"] == 1
+    assert summary["traces_deleted"] == 0
+    assert client.project_delete_attempts == []
+    assert {run.id for run in client.runs.values()} == {
+        "owned-root",
+        "foreign-root",
+    }
+    assert [item["name"] for item in store.list_experiments()] == [
+        "exp-unsafe"
+    ]
+
+
+def test_reset_keeps_project_when_owned_root_is_not_in_registry(tmp_path):
+    client = FakeLangsmithClient()
+    settings = _settings(data_dir=tmp_path)
+    backend = LangsmithBackend(settings, client=client)
+    store = LangsmithStore(settings, client=client)
+    backend.register_experiment("exp-shared", "demo", ["owned-root"])
+    _add_root(client, "owned-root", "agenteval__exp-shared")
+    _add_root(client, "unrecorded-root", "agenteval__exp-shared")
+
+    summary = backend.reset("demo")
+
+    assert summary["experiments"] == 0
+    assert summary["traces_deleted"] == 0
+    assert client.project_delete_attempts == []
+    assert [item["name"] for item in store.list_experiments()] == [
+        "exp-shared"
+    ]
+
+
+def test_reset_refuses_registry_project_outside_owned_namespace(tmp_path):
+    client = FakeLangsmithClient()
+    settings = _settings(data_dir=tmp_path)
+    backend = LangsmithBackend(settings, client=client)
+    store = LangsmithStore(settings, client=client)
+    backend.register_experiment("exp-collision", "demo", ["root-foreign"])
+    registry_path = tmp_path / "experiments.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    record = next(iter(registry.values()))
+    record["remote_project_name"] = "exp-collision"
+    registry_path.write_text(
+        json.dumps(registry, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    _add_root(client, "root-foreign", "exp-collision")
+
+    summary = backend.reset("demo")
+
+    assert summary["experiments"] == 0
+    assert summary["traces_deleted"] == 0
+    assert client.project_list_requests == []
+    assert client.project_delete_attempts == []
+    assert [item["name"] for item in store.list_experiments()] == [
+        "exp-collision"
+    ]
+
+
+@pytest.mark.parametrize(
+    "failure_name",
+    ["dataset_lookup_failures", "example_list_failures", "dataset_delete_failures"],
+)
+def test_dataset_cleanup_failure_does_not_block_owned_project_cleanup(
+    tmp_path, failure_name
+):
+    client = FakeLangsmithClient()
+    settings = _settings(data_dir=tmp_path)
+    backend = LangsmithBackend(settings, client=client)
+    store = LangsmithStore(settings, client=client)
+    backend.create_dataset(
+        "demo", [_dataset_item("local-1", "first", "one", "allowed")]
+    )
+    backend.register_experiment("exp-clean", "demo", ["root-clean"])
+    _add_root(client, "root-clean", "agenteval__exp-clean")
+    setattr(client, failure_name, 1)
+
+    summary = backend.reset("demo")
+
+    assert summary["dataset_items"] == 0
+    assert summary["experiments"] == 1
+    assert summary["traces"] == 1
+    assert summary["traces_deleted"] == 1
+    assert client.project_delete_attempts == ["agenteval__exp-clean"]
     assert store.list_experiments() == []
+    remote_dataset_exists = any(
+        dataset.name == "agenteval__demo"
+        for dataset in client.datasets.values()
+    )
+    assert remote_dataset_exists is (
+        failure_name != "example_list_failures"
+    )
+
+
+def test_project_listing_failure_is_isolated_and_keeps_only_failed_entry(
+    tmp_path,
+):
+    client = FakeLangsmithClient()
+    settings = _settings(data_dir=tmp_path)
+    backend = LangsmithBackend(settings, client=client)
+    store = LangsmithStore(settings, client=client)
+    backend.register_experiment("exp-list-fails", "demo", ["root-1"])
+    backend.register_experiment("exp-cleans", "demo", ["root-2"])
+    _add_root(client, "root-1", "agenteval__exp-list-fails")
+    _add_root(client, "root-2", "agenteval__exp-cleans")
+    client.project_list_failures["agenteval__exp-list-fails"] = RuntimeError(
+        "SDK project list failed"
+    )
+
+    summary = backend.reset("demo")
+
+    assert summary["experiments"] == 1
+    assert summary["traces"] == 2
+    assert summary["traces_deleted"] == 1
+    assert client.project_delete_attempts == ["agenteval__exp-cleans"]
+    assert [item["name"] for item in store.list_experiments()] == [
+        "exp-list-fails"
+    ]
+
+
+def test_list_traces_returns_empty_for_lazy_missing_cloud_project():
+    client = FakeLangsmithClient()
+    store = LangsmithStore(_settings(), client=client)
+    client.project_list_failures["agenteval__fresh-project"] = (
+        LangSmithNotFoundError("project does not exist")
+    )
+
+    assert store.list_traces(tag="fresh-project") == []
+    assert client.project_list_requests == ["agenteval__fresh-project"]
+
+
+def test_list_traces_surfaces_other_lazy_cloud_read_errors():
+    client = FakeLangsmithClient()
+    store = LangsmithStore(_settings(), client=client)
+    client.project_list_failures["agenteval__broken-project"] = RuntimeError(
+        "read failed"
+    )
+
+    with pytest.raises(RuntimeError, match="read failed"):
+        store.list_traces(tag="broken-project")
+
+
+def test_list_traces_does_not_hide_not_found_from_trace_read():
+    client = FakeLangsmithClient()
+    store = LangsmithStore(_settings(), client=client)
+    _add_root(client, "root-vanished", "agenteval__exp-vanished")
+    client.read_failures = 1
+
+    original_read_run = client.read_run
+
+    def missing_run(run_id):
+        try:
+            return original_read_run(run_id)
+        except KeyError as error:
+            raise LangSmithNotFoundError("run vanished") from error
+
+    client.read_run = missing_run
+
+    with pytest.raises(LangSmithNotFoundError, match="run vanished"):
+        store.list_traces(tag="exp-vanished")
 
 
 def test_trace_roundtrip_preserves_nested_spans_metadata_and_feedback():
@@ -389,6 +720,11 @@ def test_trace_roundtrip_preserves_nested_spans_metadata_and_feedback():
     assert trace.user_id == "u1"
     assert trace.tags == ["exp_test", "smoke"]
     assert trace.metadata == {"scenario": "allowed"}
+    assert client.runs[trace_id].session_name == "agenteval__exp_test"
+    assert (
+        client.runs[trace_id].extra["metadata"]["agent_eval_owner"]
+        == "AgentEval"
+    )
     assert trace.get_score("permission_compliance") == 1.0
     assert trace.scores[0].comment == "ok"
 
@@ -415,7 +751,7 @@ def test_trace_roundtrip_preserves_nested_spans_metadata_and_feedback():
     ]
     assert store.list_traces(tag="other") == []
     assert store.get_trace_url(trace_id) == (
-        f"https://smith.example/projects/exp_test/r/{trace_id}"
+        f"https://smith.example/projects/agenteval__exp_test/r/{trace_id}"
     )
 
 

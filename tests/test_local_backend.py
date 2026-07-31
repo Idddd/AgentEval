@@ -1,8 +1,10 @@
 """Local JSON backend: full loop of trace persistence → readback → score update."""
 from __future__ import annotations
 
+from src.backends.langsmith_backend import LangsmithBackend
 from src.backends.local_backend import LocalJsonBackend, LocalJsonStore
 from src.models import DatasetItemRecord
+from src.settings import Settings
 
 
 def test_trace_roundtrip(tmp_path):
@@ -54,3 +56,28 @@ def test_experiment_registry(tmp_path):
     exps = store.list_experiments()
     assert exps[0]["name"] == "exp1"
     assert exps[0]["trace_ids"] == ["t1", "t2"]
+    assert exps[0]["backend"] == "local-json"
+
+
+def test_local_reset_removes_only_local_registry_entries(tmp_path):
+    backend = LocalJsonBackend(tmp_path)
+    store = LocalJsonStore(tmp_path)
+    cloud_backend = LangsmithBackend(Settings(data_dir=tmp_path), client=object())
+    cloud_backend.register_experiment(
+        "exp-shared", "ds1", ["cloud-trace"]
+    )
+    backend.register_experiment("exp-shared", "ds1", ["local-trace"])
+
+    summary = backend.reset("ds1")
+
+    assert summary["experiments"] == 1
+    remaining = store.list_experiments()
+    assert len(remaining) == 1
+    assert remaining[0]["name"] == "exp-shared"
+    assert remaining[0]["dataset"] == "ds1"
+    assert remaining[0]["trace_ids"] == ["cloud-trace"]
+    assert remaining[0]["backend"] == "langsmith"
+    assert (
+        remaining[0]["remote_project_name"]
+        == "agenteval__exp-shared"
+    )

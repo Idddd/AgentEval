@@ -8,9 +8,12 @@ interchangeable.
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from typing import Iterator, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Iterator, Protocol, runtime_checkable
 
 from ..models import DatasetItemRecord, TraceRecord
+
+if TYPE_CHECKING:
+    from ..settings import Settings
 
 
 class SpanHandle(Protocol):
@@ -76,16 +79,25 @@ class TraceStore(Protocol):
 _cached: tuple[TraceBackend, TraceStore] | None = None
 
 
-def get_backend(refresh: bool = False) -> tuple[TraceBackend, TraceStore]:
+def get_backend(
+    refresh: bool = False,
+    *,
+    settings: Settings | None = None,
+) -> tuple[TraceBackend, TraceStore]:
     """Return the LangSmith or LocalJson pair based on settings.langsmith_enabled
-    (process-wide singleton)."""
+    (process-wide singleton).
+
+    Supplying already resolved settings avoids a second connectivity probe.
+    Use ``refresh=True`` when rebuilding an application runtime.
+    """
     global _cached
     if _cached is not None and not refresh:
         return _cached
 
-    from ..settings import load_settings
+    if settings is None:
+        from ..settings import load_settings
 
-    settings = load_settings()
+        settings = load_settings()
     if settings.langsmith_enabled:
         from .langsmith_backend import LangsmithBackend, LangsmithStore
 

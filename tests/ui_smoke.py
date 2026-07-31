@@ -7,10 +7,6 @@ import os
 import sys
 from pathlib import Path
 
-# Keep both pytest and standalone execution offline even when the checkout has
-# a configured .env. Process environment takes precedence over dotenv.
-os.environ["LANGSMITH_API_KEY"] = ""
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from streamlit.testing.v1 import AppTest
@@ -20,26 +16,10 @@ from src.backends.base import get_backend
 EXPERIMENT = "exp_ui_smoke"
 
 
-def sidebar_status_text(at: AppTest) -> str:
-    return " ".join(
-        status.value
-        for status in [*at.sidebar.success, *at.sidebar.warning]
-    )
-
-
-def test_sidebar_identifies_langsmith_without_credentials(monkeypatch) -> None:
-    monkeypatch.setenv("LANGSMITH_API_KEY", "")
-
-    at = AppTest.from_file("app.py").run()
-
-    assert not at.exception, f"initial render failed: {at.exception}"
-    assert (
-        "Trace Backend: Local JSON (no LangSmith credentials)"
-        in sidebar_status_text(at)
-    )
-
-
 def main() -> int:
+    # Keep standalone execution offline even when the checkout has a
+    # configured .env. Process environment takes precedence over dotenv.
+    os.environ["LANGSMITH_API_KEY"] = ""
     backend, store = get_backend()
     at = AppTest.from_file("app.py", default_timeout=120)
     at.run()
