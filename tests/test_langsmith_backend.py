@@ -36,6 +36,8 @@ class FakeLangsmithClient:
         self.create_failures = 0
         self.read_attempts = 0
         self.read_failures = 0
+        self.trace_list_attempts = 0
+        self.trace_list_root_only_attempts = 0
         self.update_failures = 0
         self._next_dataset_id = 1
         self._next_example_id = 1
@@ -101,7 +103,14 @@ class FakeLangsmithClient:
             self.project_list_requests.append(project_name)
         runs = list(self.runs.values())
         if trace_id is not None:
+            self.trace_list_attempts += 1
             runs = [run for run in runs if run.trace_id == str(trace_id)]
+            if self.trace_list_root_only_attempts:
+                self.trace_list_root_only_attempts -= 1
+                runs = [
+                    run for run in runs
+                    if run.parent_run_id is None
+                ]
         if project_name is not None:
             runs = [run for run in runs if run.session_name == project_name]
         if is_root is not None:
@@ -1017,13 +1026,62 @@ def test_get_trace_retries_until_cloud_run_is_available(monkeypatch):
         tags=["exp_delayed"],
         metadata={},
     ) as root:
-        pass
+        with backend.tracer.span("intent_analysis"):
+            pass
 
     client.read_failures = 2
     trace = store.get_trace(root.trace_id, retry=True)
 
     assert trace.trace_id == root.trace_id
     assert client.read_attempts == 3
+
+
+def test_get_trace_with_retry_waits_until_child_runs_are_visible(monkeypatch):
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(), client=client)
+    store = LangsmithStore(_settings(), client=client)
+    monkeypatch.setattr("time.sleep", lambda delay: None)
+
+    with backend.tracer.start_trace(
+        "agent-run-children-delayed",
+        user_id="u10",
+        tags=["exp_children_delayed"],
+        metadata={},
+    ) as root:
+        with backend.tracer.span("intent_analysis"):
+            pass
+
+    client.trace_list_root_only_attempts = 1
+
+    trace = store.get_trace(root.trace_id, retry=True)
+
+    assert [span.name for span in trace.spans] == ["intent_analysis"]
+    assert client.trace_list_attempts == 2
+    assert client.read_attempts == 2
+
+
+def test_get_trace_without_retry_returns_root_before_children_are_visible():
+    client = FakeLangsmithClient()
+    backend = LangsmithBackend(_settings(), client=client)
+    store = LangsmithStore(_settings(), client=client)
+
+    with backend.tracer.start_trace(
+        "agent-run-root-only",
+        user_id="u11",
+        tags=["exp_root_only"],
+        metadata={},
+    ) as root:
+        with backend.tracer.span("response_generation"):
+            pass
+
+    client.trace_list_root_only_attempts = 1
+
+    trace = store.get_trace(root.trace_id, retry=False)
+
+    assert trace.trace_id == root.trace_id
+    assert trace.spans == []
+    assert client.trace_list_attempts == 1
+    assert client.read_attempts == 1
 
 
 def test_get_trace_without_retry_reads_only_once():

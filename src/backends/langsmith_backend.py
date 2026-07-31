@@ -462,7 +462,12 @@ class LangsmithStore:
         last_error: Exception | None = None
         for attempt in range(attempts):
             try:
-                return self._get_trace_once(trace_id)
+                trace = self._get_trace_once(trace_id)
+                if retry and not trace.spans:
+                    raise RuntimeError(
+                        "LangSmith child runs are not available yet"
+                    )
+                return trace
             except Exception as exc:
                 last_error = exc
                 if attempt + 1 < attempts:
