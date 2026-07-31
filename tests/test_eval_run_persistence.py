@@ -78,14 +78,18 @@ def test_run_freezes_revisions_and_persists_case_results(tmp_path):
     assert reopened.agent_revision_id == agent_revision.revision_id
     assert reopened.dataset_revision_id == dataset_revision.revision_id
     assert len(reopened.case_results) == len(dataset_revision.cases)
-    assert reopened.case_results[0].judge is not None
+    assert reopened.case_results[0].judge is None
+
+    judged = runner.judge_run(completed.run_id)
+    assert judged.case_results[0].judge is not None
 
 
-def test_missing_judge_does_not_change_passing_case(tmp_path):
+def test_missing_judge_uses_default_fallback_for_passing_case(tmp_path):
     repo, agent_revision, dataset_revision = seed_workbench(tmp_path)
 
+    runner = EvalRunner(repo, FakeAgent(), PassingEvaluator(), MissingJudge())
     run = asyncio.run(
-        EvalRunner(repo, FakeAgent(), PassingEvaluator(), MissingJudge()).run_revision(
+        runner.run_revision(
             agent_revision.revision_id, dataset_revision.revision_id
         )
     )
@@ -93,14 +97,19 @@ def test_missing_judge_does_not_change_passing_case(tmp_path):
     assert run.status is RunStatus.COMPLETED
     assert run.case_results[0].status == "PASS"
     assert run.case_results[0].judge is None
+    run = runner.judge_run(run.run_id)
+    assert run.case_results[0].judge is not None
+    assert run.case_results[0].judge.model == "Default fallback judge"
+    assert run.case_results[0].judge.passed is True
     assert "JUDGE_INCOMPLETE" in run.case_results[0].deterministic_reasons["judge"]
 
 
-def test_deterministic_failure_takes_precedence_over_missing_judge(tmp_path):
+def test_deterministic_failure_takes_precedence_with_default_fallback_judge(tmp_path):
     repo, agent_revision, dataset_revision = seed_workbench(tmp_path)
 
+    runner = EvalRunner(repo, FakeAgent(), FailingEvaluator(), FailingJudge())
     run = asyncio.run(
-        EvalRunner(repo, FakeAgent(), FailingEvaluator(), FailingJudge()).run_revision(
+        runner.run_revision(
             agent_revision.revision_id, dataset_revision.revision_id
         )
     )
@@ -108,6 +117,10 @@ def test_deterministic_failure_takes_precedence_over_missing_judge(tmp_path):
     assert run.status is RunStatus.COMPLETED
     assert run.case_results[0].status == "FAIL"
     assert run.case_results[0].judge is None
+    run = runner.judge_run(run.run_id)
+    assert run.case_results[0].judge is not None
+    assert run.case_results[0].judge.model == "Default fallback judge"
+    assert run.case_results[0].judge.passed is False
     assert "JUDGE_INCOMPLETE" in run.case_results[0].deterministic_reasons["judge"]
 
 

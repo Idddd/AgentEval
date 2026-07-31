@@ -47,7 +47,7 @@ installed project virtual environment.
 On startup, Eval Studio creates or reuses a durable **Permission Compliance
 Agent** demo. No provider key or Langfuse connection is required.
 
-1. **Agent** — select Permission Compliance Agent, review its three Target
+1. **Agent** — select Demo Agent, review its three Target
    Tools, baseline Report, history, and trends.
 2. **Dataset** — review the six cases in **Permission Compliance Regression**;
    optionally add a case manually, paste JSON, or generate an LLM draft for

@@ -289,6 +289,21 @@ class SQLiteWorkbenchRepository:
             )
         return self._agent(row)
 
+    def rename_agent(self, agent_id: str, name: str) -> AgentProfile:
+        clean_name = name.strip()
+        if not clean_name:
+            raise ValueError("agent name is required")
+        with self._connect() as connection:
+            self._require(
+                connection.execute("SELECT 1 FROM agents WHERE agent_id = ?", (agent_id,)).fetchone(),
+                agent_id,
+            )
+            connection.execute(
+                "UPDATE agents SET name = ? WHERE agent_id = ?",
+                (clean_name, agent_id),
+            )
+        return self.get_agent(agent_id)
+
     def create_agent_revision(
         self,
         agent_id: str,
@@ -522,50 +537,86 @@ class SQLiteWorkbenchRepository:
             )
         return run
 
+    @staticmethod
+    def _write_case_result(
+        connection: sqlite3.Connection, run_id: str, result: CaseResult
+    ) -> None:
+        connection.execute(
+            "INSERT OR REPLACE INTO case_results VALUES (?, ?, ?)",
+            (run_id, result.case_id, _model_json(result)),
+        )
+        connection.execute(
+            "DELETE FROM tool_evidence WHERE run_id = ? AND case_id = ?", (run_id, result.case_id)
+        )
+        connection.execute(
+            "DELETE FROM judge_scores WHERE run_id = ? AND case_id = ?", (run_id, result.case_id)
+        )
+        connection.execute(
+            "DELETE FROM usage_costs WHERE run_id = ? AND case_id = ?", (run_id, result.case_id)
+        )
+        connection.executemany(
+            "INSERT INTO tool_evidence VALUES (?, ?, ?, ?)",
+            [
+                (run_id, result.case_id, evidence.call_id, _model_json(evidence))
+                for evidence in result.tool_evidence
+            ],
+        )
+        if result.judge is not None:
+            connection.executemany(
+                "INSERT INTO judge_scores VALUES (?, ?, ?, ?, ?)",
+                [
+                    (
+                        run_id,
+                        result.case_id,
+                        dimension,
+                        score,
+                        result.judge.reasons.get(dimension, ""),
+                    )
+                    for dimension, score in result.judge.scores.items()
+                ],
+            )
+        connection.executemany(
+            "INSERT INTO usage_costs VALUES (?, ?, ?, ?, ?)",
+            [
+                (run_id, result.case_id, cost.category, cost.model, _model_json(cost))
+                for cost in result.usage_costs
+            ],
+        )
+
     def save_case_result(self, run_id: str, result: CaseResult) -> None:
         with self._connect() as connection:
             self._require_mutable_run(connection, run_id)
-            connection.execute(
-                "INSERT OR REPLACE INTO case_results VALUES (?, ?, ?)",
-                (run_id, result.case_id, _model_json(result)),
+            self._write_case_result(connection, run_id, result)
+
+    def save_judged_case_result(self, run_id: str, result: CaseResult) -> None:
+        """Add optional Judge output without changing the completed test evidence."""
+        with self._connect() as connection:
+            self._require(
+                connection.execute(
+                    "SELECT run_id FROM eval_runs WHERE run_id = ?", (run_id,)
+                ).fetchone(),
+                run_id,
             )
-            connection.execute(
-                "DELETE FROM tool_evidence WHERE run_id = ? AND case_id = ?", (run_id, result.case_id)
+            row = self._require(
+                connection.execute(
+                    "SELECT result_json FROM case_results WHERE run_id = ? AND case_id = ?",
+                    (run_id, result.case_id),
+                ).fetchone(),
+                result.case_id,
             )
-            connection.execute(
-                "DELETE FROM judge_scores WHERE run_id = ? AND case_id = ?", (run_id, result.case_id)
+            existing = _case_result(json.loads(row["result_json"]))
+            if existing.judge is not None:
+                raise ValueError("case result already has an LLM Judge result")
+            unchanged = (
+                existing.case_id == result.case_id
+                and existing.trace_id == result.trace_id
+                and existing.response == result.response
+                and existing.deterministic_scores == result.deterministic_scores
+                and existing.tool_evidence == result.tool_evidence
             )
-            connection.execute(
-                "DELETE FROM usage_costs WHERE run_id = ? AND case_id = ?", (run_id, result.case_id)
-            )
-            connection.executemany(
-                "INSERT INTO tool_evidence VALUES (?, ?, ?, ?)",
-                [
-                    (run_id, result.case_id, evidence.call_id, _model_json(evidence))
-                    for evidence in result.tool_evidence
-                ],
-            )
-            if result.judge is not None:
-                connection.executemany(
-                    "INSERT INTO judge_scores VALUES (?, ?, ?, ?, ?)",
-                    [
-                        (
-                            run_id,
-                            result.case_id,
-                            dimension,
-                            score,
-                            result.judge.reasons.get(dimension, ""),
-                        )
-                        for dimension, score in result.judge.scores.items()
-                    ],
-                )
-            connection.executemany(
-                "INSERT INTO usage_costs VALUES (?, ?, ?, ?, ?)",
-                [
-                    (run_id, result.case_id, cost.category, cost.model, _model_json(cost))
-                    for cost in result.usage_costs
-                ],
-            )
+            if result.judge is None or not unchanged:
+                raise ValueError("post-run Judge enrichment cannot change test evidence")
+            self._write_case_result(connection, run_id, result)
 
     def finish_run(self, run_id: str, status: RunStatus) -> EvalRun:
         with self._connect() as connection:

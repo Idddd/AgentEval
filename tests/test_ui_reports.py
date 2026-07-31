@@ -91,7 +91,7 @@ def test_report_view_model_keeps_text_statuses_and_four_state_tool_evidence():
 
     view = report_view_model(report_summary())
 
-    assert [row["Status"] for row in view["cases"]] == ["PASS", "FAIL"]
+    assert [row["Status"] for row in view["cases"]] == ["✓ PASS", "✕ FAIL"]
     assert view["tool_evidence"][0]["Effect verification"] == "NOT REQUIRED"
     assert view["costs"] == {
         "Agent": 0.02,
@@ -126,7 +126,7 @@ def test_report_view_model_keeps_pass_result_when_optional_evidence_is_absent():
     view = report_view_model(summary)
 
     assert view["status"] == "PASS"
-    assert view["cases"][0]["Status"] == "PASS"
+    assert view["cases"][0]["Status"] == "✓ PASS"
     assert view["cases"][0]["Judge score"] == "Not available"
     assert view["tool_evidence"] == []
     assert view["judge_available"] is False
@@ -179,16 +179,15 @@ render_reports_module(repository, "agent-1", service)
 
     assert not app.exception
     headings = [
-        str(node.value).removeprefix("## ")
+        str(node.value).removeprefix("## ").removeprefix("#### ")
         for node in app.get("markdown")
-        if str(node.value).removeprefix("## ") in {
-            "Test Results", "Tool Evidence", "LLM Judge", "Comparison", "Usage & Cost"
-        }
     ]
-    assert headings.index("Test Results") < headings.index("Tool Evidence")
-    assert headings.index("Tool Evidence") < headings.index("LLM Judge")
-    assert headings.index("LLM Judge") < headings.index("Comparison")
-    assert headings.index("Comparison") < headings.index("Usage & Cost")
+    assert headings.index("Summary") < headings.index("Failed questions")
+    assert headings.index("Summary") < headings.index("LLM as a judge")
+    assert headings.index("LLM as a judge") < headings.index("Failed questions")
+    assert headings.index("Failed questions") < headings.index("All questions")
+    assert headings.index("All questions") < headings.index("Tool activity")
+    assert headings.index("Tool activity") < headings.index("AI scoring")
 
 
 def test_case_result_statuses_have_accessible_colors_with_literal_text():
@@ -197,7 +196,26 @@ def test_case_result_statuses_have_accessible_colors_with_literal_text():
 
     assert case_status_style("PASS") == "color: #176B55; font-weight: 700"
     assert case_status_style("FAIL") == "color: #B3261E; font-weight: 700"
+    assert case_status_style("✓ PASS") == "color: #176B55; font-weight: 700"
+    assert case_status_style("✕ FAIL") == "color: #B3261E; font-weight: 700"
     assert case_status_style("INCOMPLETE") == ""
+
+
+def test_judge_diagnosis_identifies_default_connection_fallback():
+    from src.ui.reports import judge_diagnosis
+
+    summary = report_summary()
+    summary["cases"][1]["judge"] = {
+        "model": "Default fallback judge",
+        "summary": "Default analysis found a failed permission check.",
+    }
+
+    diagnosis = judge_diagnosis(summary)
+
+    assert diagnosis["fallback"] is True
+    assert diagnosis["tone"] == "fail"
+    assert "default case analysis" in diagnosis["note"]
+    assert "case-b" in diagnosis["findings"][0]
 
 
 def test_comparison_renders_missing_cost_delta_as_not_available():
@@ -328,6 +346,7 @@ render_reports_module(SQLiteWorkbenchRepository(Path({str(db)!r})), {agent.agent
     first_text = "\n".join(str(node.value) for node in first.get("markdown") + first.get("caption"))
     second_text = "\n".join(str(node.value) for node in second.get("markdown") + second.get("caption"))
     assert report.report_id
-    assert "PASS" in first_text
+    assert "Needs review" not in first_text
     assert "Agent One" in first_text
-    assert "PASS" in second_text
+    assert "Needs review" not in second_text
+    assert "Failed questions" in first_text

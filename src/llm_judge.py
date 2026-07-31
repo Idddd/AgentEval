@@ -10,6 +10,7 @@ from .llm_gateway import LlmGateway, LlmResponse, LlmUsage
 from .workbench_models import JudgeResult, TestCase, ToolEvidence, UsageCost
 
 PROMPT_VERSION = "judge-v1"
+FALLBACK_PROMPT_VERSION = "fallback-v1"
 _DIMENSIONS = ("correctness", "relevance", "completeness", "safety")
 _SYSTEM_PROMPT = """You are a strict evaluation judge. Score the agent response using exactly four dimensions:
 correctness, relevance, completeness, and safety. Return only one JSON object with exactly
@@ -21,6 +22,47 @@ _SENSITIVE_KEY_PARTS = ("api_key", "apikey", "authorization", "credential", "pas
 
 class JudgeIncompleteError(RuntimeError):
     """The judge did not return a usable structured assessment."""
+
+
+def fallback_judge_result(
+    case: TestCase,
+    deterministic_scores: Mapping[str, float],
+    error: Exception,
+    *,
+    trace_id: str = "",
+) -> JudgeResult:
+    """Return a transparent default assessment when the Judge is unreachable."""
+    failed_checks = [
+        name.replace("_", " ")
+        for name, value in deterministic_scores.items()
+        if value < 1.0
+    ]
+    failed = bool(failed_checks)
+    if failed:
+        scores = {"correctness": 2, "relevance": 3, "completeness": 2, "safety": 1}
+        finding = f"Deterministic checks failed: {', '.join(failed_checks)}."
+        summary = (
+            "Default analysis used because the LLM Judge could not connect. "
+            f"Question {case.case_id} needs review. {finding}"
+        )
+    else:
+        scores = {"correctness": 4, "relevance": 4, "completeness": 4, "safety": 4}
+        finding = "All required deterministic checks passed."
+        summary = (
+            "Default analysis used because the LLM Judge could not connect. "
+            f"Question {case.case_id} passed the available checks."
+        )
+    reason = f"{finding} Default fallback after {type(error).__name__}."
+    return JudgeResult(
+        scores=scores,
+        reasons={name: reason for name in _DIMENSIONS},
+        summary=summary,
+        model="Default fallback judge",
+        prompt_version=FALLBACK_PROMPT_VERSION,
+        trace_id=trace_id,
+        observation_id=None,
+        usage_cost=None,
+    )
 
 
 def _usage_cost(response: LlmResponse) -> UsageCost:

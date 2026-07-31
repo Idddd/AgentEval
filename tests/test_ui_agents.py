@@ -137,7 +137,7 @@ def test_agent_home_selectbox_change_updates_selected_agent(tmp_path):
 
     assert not app.exception
     assert app.session_state["selected_agent_id"] == second.agent_id
-    assert app.title[0].value == "Second"
+    assert any("Second" in option for option in app.selectbox[0].options)
 
 
 def test_report_history_keeps_unknown_cost_and_cost_chart_omits_it(tmp_path):
@@ -167,7 +167,7 @@ def test_report_history_keeps_unknown_cost_and_cost_chart_omits_it(tmp_path):
     assert list(cost.data[0].y) == [0.02, 0.03]
 
 
-def test_agent_home_displays_unknown_latest_cost_and_hides_insufficient_cost_trend(tmp_path):
+def test_agent_home_demo_hides_cost_and_history_from_the_latest_result(tmp_path):
     repository = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
     registry = AgentRegistry(repository)
     agent = registry.create("Permission Compliance Agent", "")
@@ -188,8 +188,10 @@ def test_agent_home_displays_unknown_latest_cost_and_hides_insufficient_cost_tre
     ).run(timeout=20)
 
     assert not app.exception
-    assert next(metric for metric in app.metric if metric.label == "Evaluation cost").value == "Not available"
-    assert not any(chart.key == "agent_cost_trend" for chart in app.get("plotly_chart"))
+    assert "Evaluation cost" not in _visible_text(app)
+    assert len(app.get("plotly_chart")) == 0
+    assert "+10%" in _visible_text(app)
+    assert "Previous checks" not in _visible_text(app)
 
 
 def test_agent_home_renders_selected_agent_overview_without_nested_modules(tmp_path, monkeypatch):
@@ -210,13 +212,74 @@ def test_agent_home_renders_selected_agent_overview_without_nested_modules(tmp_p
 
     assert not app.exception
     assert len(app.selectbox) == 1
-    assert app.selectbox[0].label == "Agent"
+    assert app.selectbox[0].label == "AI assistant"
+    assert any("Demo Agent" in option for option in app.selectbox[0].options)
     text = _visible_text(app)
-    for label in ("Target Tools", "Latest Report", "Quality trend", "Cost trend", "Report history"):
+    for label in (
+        "Latest result",
+        "Last checked Jul 30, 3:01 PM",
+        "Needs review",
+        "5/6",
+        "+10%",
+    ):
         assert label in text
+    for label in (
+        "About this assistant",
+        "APP CODE",
+        "ADA",
+        "Tools",
+        "3 connected",
+    ):
+        assert label in text
+    assert any(button.label == "Manage tools" for button in app.button)
+    assert "View instructions" in {expander.label for expander in app.expander}
+    assert "Evaluation cost" not in text
+    assert "Current setup" not in text
+    assert "Previous checks" not in text
     for label in ("New agent", "Add agent", "Agent module"):
         assert label not in text
     assert "\ntest\n" not in f"\n{text}\n"
+
+
+def test_agent_home_app_code_and_tool_state_belong_to_each_agent(tmp_path):
+    repository = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    registry = AgentRegistry(repository)
+    permission = registry.create("Demo Agent", "")
+    registry.revise(permission.agent_id, {}, ())
+    support = registry.create("Support Agent", "")
+    registry.revise(support.agent_id, {}, ())
+
+    app = AppTest.from_string(
+        _render_home_script(tmp_path / "workbench.db", permission.agent_id)
+    ).run(timeout=20)
+    first_text = _visible_text(app)
+    assert "ADA" in first_text
+    assert "ADA" in app.selectbox[0].options[0]
+
+    app.selectbox[0].set_value(support.agent_id).run(timeout=20)
+    second_text = _visible_text(app)
+    assert f"APP-{support.agent_id[:4].upper()}" in second_text
+    assert "ADA" not in second_text
+    states = app.session_state["demo_agent_states"]
+    assert set(states) == {permission.agent_id, support.agent_id}
+    assert states[permission.agent_id] is not states[support.agent_id]
+
+
+def test_tool_state_is_independent_from_agent_version(tmp_path):
+    repository = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    registry = AgentRegistry(repository)
+    agent = registry.create("Demo Agent", "")
+    registry.revise(agent.agent_id, {}, ())
+
+    app = AppTest.from_string(
+        _render_home_script(tmp_path / "workbench.db", agent.agent_id)
+    ).run(timeout=20)
+
+    state = app.session_state["demo_agent_states"][agent.agent_id]
+    assert "version" not in state
+    assert repository.get_agent(agent.agent_id).current_revision == 1
+    assert "AGENT VERSION" in _visible_text(app)
+    assert "v1" in _visible_text(app)
 
 
 def test_view_report_sets_selected_report_and_opens_report_route(tmp_path):

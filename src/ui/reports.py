@@ -1,7 +1,10 @@
 """Immutable Report history, result-first visualization, and comparison UI."""
 from __future__ import annotations
 
-from collections.abc import Mapping
+import asyncio
+import inspect
+from collections.abc import Callable, Mapping
+from html import escape
 from typing import Any
 
 import streamlit as st
@@ -19,6 +22,10 @@ def _mapping(value: Any) -> Mapping[str, Any]:
 
 def _number_or_none(value: Any) -> float | None:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _run_result(value: Any) -> Any:
+    return asyncio.run(value) if inspect.isawaitable(value) else value
 
 
 def _judge_average(value: Any) -> float | None:
@@ -46,9 +53,14 @@ def report_view_model(summary: Mapping[str, Any]) -> dict[str, Any]:
         item = _mapping(case)
         status = str(item.get("status", "INCOMPLETE"))
         average = _judge_average(item.get("judge"))
+        status_label = {
+            "PASS": "✓ PASS",
+            "FAIL": "✕ FAIL",
+            "INCOMPLETE": "— INCOMPLETE",
+        }.get(status, f"— {status}")
         cases.append({
             "Case": str(item.get("case_id", "")),
-            "Status": status,
+            "Status": status_label,
             "Judge score": f"{average:.2f}" if average is not None else "Not available",
             "Trace": str(item.get("trace_id", "")),
         })
@@ -117,22 +129,6 @@ def comparison_view_model(comparison: Any) -> dict[str, Any]:
     }
 
 
-def _status_banner(status: str) -> None:
-    palettes = {
-        "PASS": ("#E4F0E9", "#176B55", "All required evaluation evidence passed."),
-        "FAIL": ("#FCE8E6", "#B3261E", "One or more cases failed evaluation."),
-        "NEEDS ATTENTION": ("#FCE8E6", "#B3261E", "Review the failed cases and evidence below."),
-        "INCOMPLETE": ("#EEF1EF", "#485B55", "Evaluation evidence is incomplete."),
-    }
-    background, color, message = palettes.get(status, palettes["INCOMPLETE"])
-    st.markdown(
-        f"<div style='background:{background};color:{color};border:1px solid #DCE3DF;"
-        "border-radius:12px;padding:14px 16px;margin-bottom:12px;'>"
-        f"<strong>{status}</strong><br>{message}</div>",
-        unsafe_allow_html=True,
-    )
-
-
 def _format_reason(value: Any) -> str:
     if isinstance(value, Mapping):
         return "; ".join(f"{key}: {item}" for key, item in value.items()) or "No reason recorded"
@@ -151,8 +147,7 @@ def render_result_kpis(view: Mapping[str, Any]) -> None:
 
 
 def render_case_results(view: Mapping[str, Any]) -> None:
-    st.markdown("#### Case results")
-    st.caption("PASS and FAIL remain literal in every stored case result.")
+    st.markdown("#### All questions")
     if view["cases"]:
         rows = pd.DataFrame(view["cases"])
         st.dataframe(rows.style.map(case_status_style, subset=["Status"]), width="stretch", hide_index=True)
@@ -162,37 +157,132 @@ def render_case_results(view: Mapping[str, Any]) -> None:
 
 def case_status_style(status: str) -> str:
     """Style literal case-result statuses without obscuring their text."""
-    if status == "PASS":
+    if "PASS" in status:
         return "color: #176B55; font-weight: 700"
-    if status == "FAIL":
+    if "FAIL" in status:
         return "color: #B3261E; font-weight: 700"
     return ""
 
 
+def judge_diagnosis(summary: Mapping[str, Any]) -> dict[str, Any]:
+    """Create a short, honest Judge diagnosis, including offline fallback results."""
+    cases = [_mapping(item) for item in summary.get("cases", ())]
+    failed = [item for item in cases if str(item.get("status")) != "PASS"]
+    judges = [_mapping(item.get("judge")) for item in cases]
+    fallback = not any(judges) or any(
+        str(judge.get("model", "")).casefold().startswith("default fallback")
+        for judge in judges
+        if judge
+    )
+    findings: list[str] = []
+    for item in failed[:3]:
+        judge = _mapping(item.get("judge"))
+        summary_text = str(judge.get("summary", "")).strip()
+        if not summary_text:
+            summary_text = _format_reason(item.get("deterministic_reasons"))
+        findings.append(f"{item.get('case_id', 'Question')}: {summary_text}")
+    if failed:
+        headline = f"{len(failed)} of {len(cases)} questions need attention."
+        tone = "fail"
+    else:
+        headline = f"All {len(cases)} questions passed the available checks."
+        tone = "pass"
+        findings.append(
+            "Responses matched the expected behavior and no permission violation was found."
+        )
+    note = (
+        "The Judge connection was unavailable, so default case analysis was used."
+        if fallback
+        else "The configured LLM Judge reviewed the responses and Tool evidence."
+    )
+    return {
+        "headline": headline,
+        "findings": findings,
+        "fallback": fallback,
+        "note": note,
+        "tone": tone,
+    }
+
+
+def render_judge_analysis(summary: Mapping[str, Any]) -> None:
+    diagnosis = judge_diagnosis(summary)
+    passed = diagnosis["tone"] == "pass"
+    background = "#F0F7F3" if passed else "#FFF2F0"
+    color = "#176B55" if passed else "#B3261E"
+    icon = "✓" if passed else "!"
+    badge = (
+        "<span style='margin-left:8px;padding:3px 7px;border-radius:999px;"
+        "background:#FBF4E4;color:#80540C;font-size:10px;font-weight:700;'>"
+        "DEFAULT ANALYSIS</span>"
+        if diagnosis["fallback"]
+        else ""
+    )
+    findings = "".join(
+        f"<li>{escape(str(finding))}</li>" for finding in diagnosis["findings"]
+    )
+    dimensions = _mapping(summary.get("judge_dimensions"))
+    score_cards = "".join(
+        "<div style='background:#FFFFFF;border:1px solid #DCE3DF;border-radius:8px;"
+        "padding:8px 10px;min-width:112px;'>"
+        f"<div style='color:#6A7D76;font-size:10px;text-transform:uppercase;'>"
+        f"{escape(name.title())}</div>"
+        f"<div style='color:#20312C;font-size:16px;font-weight:750;'>"
+        f"{float(dimensions[name]):.1f}<span style='font-size:11px;color:#6A7D76;'>/5</span>"
+        "</div></div>"
+        for name in ("correctness", "relevance", "completeness", "safety")
+        if name in dimensions
+    )
+    st.markdown("#### LLM as a judge")
+    st.markdown(
+        f"<div style='background:{background};border:1px solid {color}4D;"
+        "border-radius:14px;padding:18px;margin-bottom:18px;'>"
+        "<div style='color:#6A7D76;font-size:10px;font-weight:750;letter-spacing:.08em;"
+        "text-transform:uppercase;margin-bottom:6px;'>LLM Judge response</div>"
+        f"<div style='color:{color};font-weight:780;font-size:16px;'>"
+        f"{icon} {escape(str(diagnosis['headline']))}{badge}</div>"
+        "<div style='color:#6A7D76;font-size:11px;font-weight:700;text-transform:uppercase;"
+        "margin-top:16px;'>Reviewed inputs</div>"
+        "<div style='color:#33443F;font-size:12px;margin-top:4px;'>"
+        "Agent response · Expected output · Permission result · Tool evidence</div>"
+        "<div style='color:#6A7D76;font-size:11px;font-weight:700;text-transform:uppercase;"
+        "margin-top:16px;'>Score breakdown</div>"
+        f"<div style='display:flex;flex-wrap:wrap;gap:8px;margin-top:7px;'>{score_cards}</div>"
+        "<div style='color:#6A7D76;font-size:11px;font-weight:700;text-transform:uppercase;"
+        "margin-top:16px;'>Findings</div>"
+        f"<ul style='margin:7px 0 0;padding-left:20px;color:#33443F;font-size:13px;'>"
+        f"{findings}</ul>"
+        f"<div style='color:#587269;font-size:11px;margin-top:12px;'>"
+        f"{escape(str(diagnosis['note']))}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_failure_reasons(view: Mapping[str, Any], langfuse_base_url: str | None) -> None:
-    st.markdown("#### Failure reasons")
     if not view["failures"]:
-        st.caption("No failure reasons — every stored case passed.")
         return
+    st.markdown("#### Failed questions")
     for failure in view["failures"]:
         item = _mapping(failure)
         case_id = str(item.get("case_id", "Unknown case"))
         status = str(item.get("status", "INCOMPLETE"))
         color = "#176B55" if status == "PASS" else "#B3261E" if status == "FAIL" else "#485B55"
+        icon = "✓" if status == "PASS" else "✕" if status == "FAIL" else "—"
+        status = f"{icon} {status}"
         with st.container(border=True):
             st.markdown(
                 f"<span style='color:{color};font-weight:700'>{status}</span> · {case_id}",
                 unsafe_allow_html=True,
             )
             deterministic = item.get("deterministic_reasons", item.get("deterministic_reason_codes"))
-            st.caption(f"Deterministic: {_format_reason(deterministic)}")
-            st.caption(f"Judge: {_format_reason(item.get('judge_reasons'))}")
-            st.caption(f"Tool evidence: {_format_reason(item.get('failed_tool_states'))}")
-            trace_id = str(item.get("trace_id", ""))
-            if langfuse_base_url and trace_id:
-                st.markdown(f"[Open trace in Langfuse]({langfuse_base_url.rstrip('/')}/trace/{trace_id})")
-            elif trace_id:
-                st.caption(f"Langfuse trace: {trace_id}")
+            st.caption(_format_reason(deterministic))
+            with st.expander("More details"):
+                st.caption(f"AI review: {_format_reason(item.get('judge_reasons'))}")
+                st.caption(f"Action check: {_format_reason(item.get('failed_tool_states'))}")
+                trace_id = str(item.get("trace_id", ""))
+                if langfuse_base_url and trace_id:
+                    st.markdown(f"[View technical trace]({langfuse_base_url.rstrip('/')}/trace/{trace_id})")
+                elif trace_id:
+                    st.caption(f"Trace: {trace_id}")
 
 
 def render_tool_evidence(view: Mapping[str, Any]) -> None:
@@ -234,35 +324,49 @@ def render_usage_and_cost(view: Mapping[str, Any]) -> None:
     st.caption("Agent and Judge are included in Evaluation Total. Dataset Generation is excluded.")
 
 
-def render_report_summary(summary: Mapping[str, Any], *, langfuse_base_url: str | None = None) -> None:
-    """Render result-first Report sections from an immutable summary."""
+def render_report_summary(
+    summary: Mapping[str, Any],
+    *,
+    langfuse_base_url: str | None = None,
+    judge_action: Callable[[], None] | None = None,
+    judge_disabled: bool = False,
+    judge_key: str = "report_llm_judge",
+) -> None:
+    """Render the decision first and hide technical evidence by default."""
     view = report_view_model(summary)
     identity = _mapping(summary.get("identity"))
     agent = _mapping(identity.get("agent"))
     dataset = _mapping(identity.get("dataset"))
-    _status_banner(view["status"])
     st.caption(
-        f"{agent.get('name', 'Agent')} · Agent Revision {agent.get('revision', '—')} · "
-        f"{dataset.get('name', 'Dataset')} · Dataset Revision {dataset.get('revision', '—')}"
+        f"{agent.get('name', 'AI assistant')} · {dataset.get('name', 'Test set')}"
     )
-    st.markdown("## Test Results")
+    st.markdown("## Summary")
     render_result_kpis(view)
-    render_case_results(view)
-    render_failure_reasons(view, langfuse_base_url)
-    st.markdown("## Tool Evidence")
-    if view["tool_evidence"]:
-        render_tool_evidence(view)
-    else:
-        st.caption("Not available for this run")
-    st.markdown("## LLM Judge")
     if view["judge_available"]:
-        st.caption("Correctness, Relevance, Completeness, and Safety use the fixed Judge rubric.")
-        st.plotly_chart(
-            judge_figure(_mapping(view["judge_dimensions"])),
-            width="stretch", config={"displayModeBar": False},
-        )
-    else:
-        st.caption("Not available for this run")
+        render_judge_analysis(summary)
+    elif judge_action is not None:
+        if st.button(
+            "LLM as judge",
+            key=judge_key,
+            disabled=judge_disabled,
+        ):
+            judge_action()
+    render_failure_reasons(view, langfuse_base_url)
+    render_case_results(view)
+    with st.expander("Technical details"):
+        st.markdown("#### Tool activity")
+        if view["tool_evidence"]:
+            render_tool_evidence(view)
+        else:
+            st.caption("Not available")
+        st.markdown("#### AI scoring")
+        if view["judge_available"]:
+            st.plotly_chart(
+                judge_figure(_mapping(view["judge_dimensions"])),
+                width="stretch", config={"displayModeBar": False},
+            )
+        else:
+            st.caption("Not available")
 
 
 def _report_label(report: ReportSnapshot) -> str:
@@ -341,56 +445,81 @@ def render_comparison(comparison: Any) -> None:
 
 def render_reports_module(
     repository: WorkbenchRepository, agent_id: str, report_service: Any | None = None,
-    *, langfuse_base_url: str | None = None,
+    *, runner: Any | None = None, langfuse_base_url: str | None = None,
 ) -> None:
-    """Render selected-Agent Report history and its revision-aware comparison."""
+    """Render simple results first with optional comparison and cost details."""
     reports = repository.list_reports(agent_id)
-    st.subheader("Report history")
-    st.caption("Every entry is an immutable summary snapshot for this Agent.")
+    st.subheader("Results")
     if not reports:
         with st.container(border=True):
-            st.markdown("**No reports yet**")
-            st.caption("Run an evaluation to create the first Report snapshot.")
+            st.markdown("**No results yet**")
+            st.caption("Run a test to see the result here.")
         return
     reports_by_id = {report.report_id: report for report in reports}
     report_ids = list(reports_by_id)
+    history_key = f"report_history_{agent_id}"
+    pending_history_key = f"{history_key}_pending"
+    pending_report_id = st.session_state.pop(pending_history_key, None)
+    if pending_report_id in reports_by_id:
+        st.session_state[history_key] = pending_report_id
     selected_id = st.session_state.get("selected_report_id")
     selected_index = next((index for index, report in enumerate(reports) if report.report_id == selected_id), 0)
     selected_report_id = st.selectbox(
-        "Report", report_ids, index=selected_index, key=f"report_history_{agent_id}",
+        "Result", report_ids, index=selected_index, key=history_key,
         format_func=lambda report_id: _report_label(reports_by_id[report_id]),
     )
     selected = reports_by_id[selected_report_id]
     st.session_state["selected_report_id"] = selected.report_id
-    render_report_summary(selected.summary, langfuse_base_url=langfuse_base_url)
-    st.markdown("## Comparison")
-    if len(reports) < 2:
-        st.caption("Comparison requires at least two Reports.")
-    else:
-        baseline_ids = [report_id for report_id in report_ids if report_id != selected.report_id]
-        baseline_key = f"report_baseline_{agent_id}"
-        baseline_report_key = f"report_baseline_selected_{agent_id}"
-        if st.session_state.get(baseline_report_key) != selected.report_id:
-            st.session_state.pop(baseline_key, None)
-            st.session_state[baseline_report_key] = selected.report_id
-        selected_index = reports.index(selected)
-        preceding_index = selected_index + 1 if selected_index + 1 < len(reports) else selected_index - 1
-        default_baseline_id = reports[preceding_index].report_id
-        baseline_id = st.selectbox(
-            "Baseline", baseline_ids, index=baseline_ids.index(default_baseline_id),
-            key=baseline_key,
-            format_func=lambda report_id: _report_label(reports_by_id[report_id]),
-        )
-        baseline = reports_by_id[baseline_id]
+
+    def run_judge() -> None:
+        if runner is None or report_service is None:
+            return
         try:
-            comparison = report_service.compare(baseline.report_id, selected.report_id) if report_service is not None else _fallback_compare(repository, baseline, selected)
-        except (ImportError, KeyError, ValueError) as error:
-            st.error(f"Comparison is unavailable: {error}")
+            with st.spinner("Running LLM Judge…"):
+                judged_run = _run_result(runner.judge_run(selected.run_id))
+                judged_report = report_service.create(judged_run.run_id)
+        except Exception as error:
+            st.error(f"LLM Judge failed: {error}")
+            return
+        st.session_state["selected_report_id"] = judged_report.report_id
+        st.session_state[pending_history_key] = judged_report.report_id
+        st.rerun()
+
+    render_report_summary(
+        selected.summary,
+        langfuse_base_url=langfuse_base_url,
+        judge_action=run_judge,
+        judge_disabled=runner is None or report_service is None,
+        judge_key=f"report_llm_judge_{selected.report_id}",
+    )
+    with st.expander("Compare results"):
+        if len(reports) < 2:
+            st.caption("Run another test to compare results.")
         else:
-            render_comparison(comparison)
-    st.markdown("## Usage & Cost")
-    view = report_view_model(selected.summary)
-    if view["usage_available"]:
-        render_usage_and_cost(view)
-    else:
-        st.caption("Not available for this run")
+            baseline_ids = [report_id for report_id in report_ids if report_id != selected.report_id]
+            baseline_key = f"report_baseline_{agent_id}"
+            baseline_report_key = f"report_baseline_selected_{agent_id}"
+            if st.session_state.get(baseline_report_key) != selected.report_id:
+                st.session_state.pop(baseline_key, None)
+                st.session_state[baseline_report_key] = selected.report_id
+            selected_index = reports.index(selected)
+            preceding_index = selected_index + 1 if selected_index + 1 < len(reports) else selected_index - 1
+            default_baseline_id = reports[preceding_index].report_id
+            baseline_id = st.selectbox(
+                "Compare with", baseline_ids, index=baseline_ids.index(default_baseline_id),
+                key=baseline_key,
+                format_func=lambda report_id: _report_label(reports_by_id[report_id]),
+            )
+            baseline = reports_by_id[baseline_id]
+            try:
+                comparison = report_service.compare(baseline.report_id, selected.report_id) if report_service is not None else _fallback_compare(repository, baseline, selected)
+            except (ImportError, KeyError, ValueError) as error:
+                st.error(f"Comparison is unavailable: {error}")
+            else:
+                render_comparison(comparison)
+    with st.expander("Usage and cost"):
+        view = report_view_model(selected.summary)
+        if view["usage_available"]:
+            render_usage_and_cost(view)
+        else:
+            st.caption("Not available")

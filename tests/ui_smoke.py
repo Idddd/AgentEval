@@ -133,7 +133,7 @@ render_reports_module(SQLiteWorkbenchRepository(Path({str(repo.db_path)!r})), {f
         try:
             demo = AppTest.from_file("app.py").run(timeout=30)
             assert not demo.exception, demo.exception
-            assert "Permission Compliance Agent" in visible_text(demo)
+            assert "Demo Agent" in visible_text(demo)
             demo = next(
                 radio for radio in demo.radio if radio.key == "active_page"
             ).set_value("Evaluation").run(timeout=30)

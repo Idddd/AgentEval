@@ -3,6 +3,9 @@
 # actions such as Clear cache (and its keyboard shortcut) from viewers.
 toolbarMode = "viewer"
 
+[browser]
+gatherUsageStats = false
+
 [theme]
 base = "light"
 primaryColor = "#176B55"

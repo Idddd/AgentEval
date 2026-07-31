@@ -106,26 +106,26 @@ render_datasets_module(SQLiteWorkbenchRepository(Path({str(db)!r})), {agent.agen
     assert not app.exception
     nodes = app.get("markdown") + app.get("text") + app.get("subheader")
     text = "\n".join(str(node.value) for node in nodes)
-    assert "No cases in the current draft" in text
+    assert "No questions yet" in text
     action_keys = {
         f"dataset_add_case_{agent.agent_id}_{dataset_id}",
         f"dataset_generate_llm_{agent.agent_id}_{dataset_id}",
         f"dataset_import_json_{agent.agent_id}_{dataset_id}",
-        f"dataset_complete_coverage_{agent.agent_id}_{dataset_id}",
-        f"dataset_publish_{agent.agent_id}_{dataset_id}",
     }
     assert {button.key for button in app.button} >= action_keys
-    assert next(
-        button for button in app.button if button.key == f"dataset_publish_{agent.agent_id}_{dataset_id}"
-    ).disabled
+    assert not {
+        f"dataset_complete_coverage_{agent.agent_id}_{dataset_id}",
+        f"dataset_publish_{agent.agent_id}_{dataset_id}",
+    }.intersection({button.key for button in app.button})
 
 
-def test_dataset_add_and_publish_keep_cases_visible_with_agent_scoped_actions(tmp_path):
+def test_dataset_add_keeps_cases_visible_with_agent_scoped_actions(tmp_path):
     from streamlit.testing.v1 import AppTest
 
     db = tmp_path / "workbench.db"
     repository = SQLiteWorkbenchRepository(db)
     agent = repository.create_agent("Agent", "")
+    repository.create_agent_revision(agent.agent_id, {}, (binding("weather"),))
     dataset_id = repository.create_dataset(agent.agent_id, "Dataset")
     script = f"""
 from pathlib import Path
@@ -141,21 +141,16 @@ render_datasets_module(SQLiteWorkbenchRepository(Path({str(db)!r})), {agent.agen
         for button in app.button
         if button.key == f"dataset_add_case_{agent.agent_id}_{dataset_id}"
     ).click().run(timeout=20)
-    next(item for item in app.text_input if item.label == "Query").set_value("Created case")
-    next(item for item in app.text_area if item.label == "Expected output (JSON)").set_value(
-        '{"answer": "ok"}'
+    next(item for item in app.text_input if item.label == "Input").set_value("Created case")
+    next(button for button in app.button if button.label == "Add").click().run(timeout=20)
+
+    assert "Created case" in set(app.dataframe[0].value["Input"])
+    assert set(app.dataframe[0].value["User role"]) == {"Guest"}
+    assert all(
+        "ALLOW · EXECUTE" in value
+        for value in app.dataframe[0].value["Expected output"]
     )
-    next(button for button in app.button if button.label == "Save case").click().run(timeout=20)
-
-    assert "Created case" in "\n".join(str(node.value) for node in app.get("markdown"))
-    next(
-        button
-        for button in app.button
-        if button.key == f"dataset_publish_{agent.agent_id}_{dataset_id}"
-    ).click().run(timeout=20)
-    app.run(timeout=20)
-
-    assert "Created case" in "\n".join(str(node.value) for node in app.get("markdown"))
+    assert "Add question" not in {item.value for item in app.get("subheader")}
     assert [case.input["query"] for case in DatasetRegistry(repository).list_draft(dataset_id)] == [
         "Created case"
     ]
@@ -173,7 +168,7 @@ from pathlib import Path
 from src.sqlite_workbench import SQLiteWorkbenchRepository
 from src.ui.datasets import render_datasets_module
 
-def unavailable_generator(agent_id, cases):
+def unavailable_generator(agent_id, cases, request):
     raise RuntimeError("candidate provider unavailable")
 
 render_datasets_module(
@@ -189,12 +184,190 @@ render_datasets_module(
         if button.key == f"dataset_generate_llm_{agent.agent_id}_{dataset_id}"
     ).click().run(timeout=20)
 
-    assert "LLM generation failed: candidate provider unavailable" in "\n".join(
+    assert "Question generation failed: candidate provider unavailable" in "\n".join(
         str(node.value) for node in app.get("error")
     )
     buttons = {button.key: button for button in app.button}
     assert not buttons[f"dataset_add_case_{agent.agent_id}_{dataset_id}"].disabled
     assert not buttons[f"dataset_import_json_{agent.agent_id}_{dataset_id}"].disabled
+
+
+def test_generated_questions_are_reviewed_in_a_table_and_appended(tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    db = tmp_path / "workbench.db"
+    repository = SQLiteWorkbenchRepository(db)
+    agent = repository.create_agent("Agent", "")
+    repository.create_agent_revision(agent.agent_id, {}, (binding("weather"),))
+    dataset_id = repository.create_dataset(agent.agent_id, "Dataset")
+    DatasetRegistry(repository).add_cases(
+        dataset_id, [WorkbenchCase("existing", {"query": "Existing question"}, {})]
+    )
+    script = f'''
+from pathlib import Path
+from src.sqlite_workbench import SQLiteWorkbenchRepository
+from src.ui.datasets import render_datasets_module
+
+def generator(agent_id, cases, request):
+    return [
+        {{"query": f"Generated: {{request}}", "tool_name": "WeatherTool", "metadata": {{"scenario": "normal_low"}}}},
+        {{"query": "Generated two", "tool_name": "SystemRestartTool", "metadata": {{"scenario": "deny_no_permission"}}}},
+    ]
+
+render_datasets_module(
+    SQLiteWorkbenchRepository(Path({str(db)!r})),
+    {agent.agent_id!r},
+    generator,
+)
+'''
+    app = AppTest.from_string(script).run(timeout=20)
+    next(item for item in app.text_input if item.label == "Generation request").set_value(
+        "Cover guest permissions"
+    )
+    next(
+        button
+        for button in app.button
+        if button.key == f"dataset_generate_llm_{agent.agent_id}_{dataset_id}"
+    ).click().run(timeout=20)
+
+    assert not app.exception
+    assert "Existing question" in set(app.dataframe[0].value["Input"])
+    assert len(app.dataframe) == 2
+    assert list(app.dataframe[1].value["Input"]) == [
+        "Generated: Cover guest permissions",
+        "Generated two",
+    ]
+
+    next(button for button in app.button if button.label == "Add questions").click().run(
+        timeout=20
+    )
+    assert [case.input["query"] for case in DatasetRegistry(repository).list_draft(dataset_id)] == [
+        "Existing question",
+        "Generated: Cover guest permissions",
+        "Generated two",
+    ]
+
+
+def test_dataset_dropdown_lists_and_selects_large_collections(tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    db = tmp_path / "workbench.db"
+    repository = SQLiteWorkbenchRepository(db)
+    agent = repository.create_agent("Agent", "")
+    dataset_ids = {}
+    for index in range(45):
+        name = f"Dataset {index:02d}"
+        dataset_ids[name] = repository.create_dataset(agent.agent_id, name)
+    script = f"""
+from pathlib import Path
+from src.sqlite_workbench import SQLiteWorkbenchRepository
+from src.ui.datasets import render_datasets_module
+
+render_datasets_module(SQLiteWorkbenchRepository(Path({str(db)!r})), {agent.agent_id!r})
+"""
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    selector = next(
+        item for item in app.selectbox if item.key == f"dataset_picker_{agent.agent_id}"
+    )
+    assert len(selector.options) == 45
+    target_id = dataset_ids["Dataset 42"]
+    app = selector.set_value(target_id).run(timeout=20)
+
+    assert not app.exception
+    assert app.session_state.selected_dataset_id == target_id
+
+
+def test_dataset_case_list_renders_one_page_and_filters_large_drafts(tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    db = tmp_path / "workbench.db"
+    repository = SQLiteWorkbenchRepository(db)
+    agent = repository.create_agent("Agent", "")
+    dataset_id = repository.create_dataset(agent.agent_id, "Large Dataset")
+    DatasetRegistry(repository).add_cases(
+        dataset_id,
+        [
+            WorkbenchCase(f"case-{index}", {"query": f"Case {index:02d}"}, {})
+            for index in range(60)
+        ],
+    )
+    script = f"""
+from pathlib import Path
+from src.sqlite_workbench import SQLiteWorkbenchRepository
+from src.ui.datasets import render_datasets_module
+
+render_datasets_module(SQLiteWorkbenchRepository(Path({str(db)!r})), {agent.agent_id!r})
+"""
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    assert len(app.dataframe) == 1
+    assert len(app.dataframe[0].value) == 25
+    assert {button.label for button in app.button}.isdisjoint({"Edit", "Duplicate", "Delete"})
+    assert {
+        f"dataset_edit_selected_{agent.agent_id}_{dataset_id}",
+        f"dataset_duplicate_selected_{agent.agent_id}_{dataset_id}",
+        f"dataset_delete_selected_{agent.agent_id}_{dataset_id}",
+    } <= {button.key for button in app.button}
+    assert not next(
+        button
+        for button in app.button
+        if button.key == f"dataset_case_next_{agent.agent_id}_{dataset_id}"
+    ).disabled
+
+    app = next(
+        item
+        for item in app.text_input
+        if item.key == f"dataset_case_search_{agent.agent_id}_{dataset_id}"
+    ).set_value("Case 59").run(timeout=20)
+
+    assert not app.exception
+    queries = set(app.dataframe[0].value["Input"])
+    assert "Case 59" in queries
+    assert "Case 00" not in queries
+
+
+def test_dataset_catalog_creates_and_selects_a_new_dataset(tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    db = tmp_path / "workbench.db"
+    repository = SQLiteWorkbenchRepository(db)
+    agent = repository.create_agent("Agent", "")
+    repository.create_dataset(agent.agent_id, "Existing")
+    script = f"""
+from pathlib import Path
+from src.sqlite_workbench import SQLiteWorkbenchRepository
+from src.ui.datasets import render_datasets_module
+
+render_datasets_module(SQLiteWorkbenchRepository(Path({str(db)!r})), {agent.agent_id!r})
+"""
+    app = AppTest.from_string(script).run(timeout=20)
+    app = next(
+        button for button in app.button if button.key == f"dataset_create_{agent.agent_id}"
+    ).click().run(timeout=20)
+    next(
+        item for item in app.text_input if item.key == f"dataset_create_name_{agent.agent_id}"
+    ).set_value("Checkout regression")
+    app = next(button for button in app.button if button.label == "Create").click().run(timeout=20)
+
+    assert not app.exception
+    with repository._connect() as connection:
+        names = {
+            row["name"]
+            for row in connection.execute(
+                "SELECT name FROM datasets WHERE agent_id = ?", (agent.agent_id,)
+            ).fetchall()
+        }
+        new_dataset_ids = {
+            row["dataset_id"]
+            for row in connection.execute(
+                "SELECT dataset_id FROM datasets WHERE name = 'Checkout regression'"
+            ).fetchall()
+        }
+    assert names == {"Existing", "Checkout regression"}
+    assert app.session_state.selected_dataset_id in new_dataset_ids
 
 
 def test_evaluation_does_not_reuse_a_published_draft_for_a_different_draft_source(tmp_path):
@@ -211,32 +384,38 @@ def test_evaluation_does_not_reuse_a_published_draft_for_a_different_draft_sourc
     registry.add_cases(second_draft_id, [WorkbenchCase("second", {"query": "Second"}, {})])
     script = f"""
 from pathlib import Path
+import streamlit as st
 from src.sqlite_workbench import SQLiteWorkbenchRepository
 from src.ui.runs import render_runs_module
 
 class Runner:
     def run_revision(self, agent_revision_id, dataset_revision_id, progress):
-        raise AssertionError("The runner must not start before the selected draft is published")
+        repository = SQLiteWorkbenchRepository(Path({str(db)!r}))
+        revision = repository.get_dataset_revision(dataset_revision_id)
+        if revision.dataset_id != {second_draft_id!r}:
+            raise AssertionError("The wrong draft was published")
+        raise RuntimeError("selected draft verified")
 
+st.session_state["selected_dataset_id"] = {second_draft_id!r}
 render_runs_module(SQLiteWorkbenchRepository(Path({str(db)!r})), {agent.agent_id!r}, Runner())
 """
     app = AppTest.from_string(script).run(timeout=20)
-    dot = chr(0xB7)
-    first_label = f"Publish current draft {dot} First draft {dot} 1 cases"
-    second_label = f"Publish current draft {dot} Second draft {dot} 1 cases"
+    selected_label = next(select for select in app.selectbox if select.label == "Test set").value
+    assert selected_label.startswith("draft:")
 
-    next(select for select in app.selectbox if select.label == "Dataset source").set_value(
-        first_label
-    ).run(timeout=20)
-    next(button for button in app.button if button.key == "run_publish_dataset").click().run(timeout=20)
-    next(select for select in app.selectbox if select.label == "Dataset source").set_value(
-        second_label
-    ).run(timeout=20)
+    app = next(button for button in app.button if button.key == "run_start").click().run(timeout=20)
 
-    assert next(button for button in app.button if button.key == "run_start").disabled
+    errors = "\n".join(str(node.value) for node in app.get("error"))
+    assert "selected draft verified" in errors
+    with repository._connect() as connection:
+        published_ids = {
+            row["dataset_id"]
+            for row in connection.execute("SELECT dataset_id FROM dataset_revisions").fetchall()
+        }
+    assert published_ids == {second_draft_id}
 
 
-def test_completed_evaluation_routes_to_its_persisted_report(tmp_path):
+def test_completed_evaluation_defers_judge_then_routes_from_see_result(tmp_path):
     from streamlit.testing.v1 import AppTest
 
     db = tmp_path / "workbench.db"
@@ -275,8 +454,16 @@ render_runs_module(
     next(button for button in app.button if button.key == "run_start").click().run(timeout=20)
     report = repository.list_reports(agent.agent_id)[0]
 
-    assert app.session_state["active_page"] == "Report"
+    assert app.session_state["active_page"] == "Agent"
     assert app.session_state["selected_report_id"] == report.report_id
+    assert any(button.label == "See result" for button in app.button)
+    page_text = "\n".join(str(node.value) for node in app.get("markdown"))
+    assert "Test complete" in page_text
+    assert "LLM as a judge" not in page_text
+    assert "Needs review" not in page_text
+
+    next(button for button in app.button if button.label == "See result").click().run(timeout=20)
+    assert app.session_state["active_page"] == "Report"
 
 
 def test_evaluation_does_not_route_to_a_report_that_was_not_persisted(tmp_path):
@@ -322,7 +509,7 @@ render_runs_module(
     next(button for button in app.button if button.key == "run_start").click().run(timeout=20)
 
     assert app.session_state["active_page"] == "Agent"
-    assert "Report was not persisted for this completed run." in "\n".join(
+    assert "The result could not be saved." in "\n".join(
         str(node.value) for node in app.get("error")
     )
 
@@ -377,7 +564,7 @@ render_runs_module(
 
     assert app.session_state["active_page"] == "Agent"
     assert app.session_state["selected_run_id"] == failed_run.run_id
-    assert "Report was not persisted for this completed run." in "\n".join(
+    assert "The result could not be saved." in "\n".join(
         str(node.value) for node in app.get("error")
     )
 
@@ -442,6 +629,6 @@ render_runs_module(
     assert not app.exception
     assert app.session_state["active_page"] == "Agent"
     assert app.session_state["selected_run_id"] == completed_run.run_id
-    assert "Report was not persisted for this completed run." in "\n".join(
+    assert "The result could not be saved." in "\n".join(
         str(node.value) for node in app.get("error")
     )

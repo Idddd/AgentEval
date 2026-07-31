@@ -10,7 +10,7 @@ from .backends.base import TraceBackend, TraceStore
 from .code_evaluator import CodeEvaluator
 from .config_loader import ToolsConfig
 from .intent import IntentAnalyzer
-from .llm_judge import JudgeIncompleteError
+from .llm_judge import JudgeIncompleteError, fallback_judge_result
 from .workbench_models import CaseResult, EvalRun, RunStatus, TestCase
 from .workbench_repository import WorkbenchRepository
 
@@ -84,24 +84,7 @@ class EvalRunner:
                 )
                 usable_results += 1
                 deterministic_failed = self._required_deterministic_failure(case, scores)
-                try:
-                    judge_result = self.judge.evaluate(case, response, evidence, scores)
-                except JudgeIncompleteError as error:
-                    reasons = {**reasons, "judge": f"JUDGE_INCOMPLETE: {error}"}
-                except Exception as error:
-                    reasons = {
-                        **reasons,
-                        "judge": f"JUDGE_ERROR: {type(error).__name__}: {error}",
-                    }
-
-                if deterministic_failed:
-                    status = "FAIL"
-                elif judge_result is not None and not judge_result.passed:
-                    status = "FAIL"
-                else:
-                    status = "PASS"
-                if judge_result is not None and judge_result.usage_cost is not None:
-                    usage_costs = (*usage_costs, judge_result.usage_cost)
+                status = "FAIL" if deterministic_failed else "PASS"
             except Exception as error:
                 reasons = {
                     **reasons,
@@ -131,6 +114,82 @@ class EvalRunner:
         else:
             final_status = RunStatus.COMPLETED
         return self.repository.finish_run(run.run_id, final_status)
+
+    def judge_run(
+        self,
+        run_id: str,
+        progress: Callable[[int, int, str], None] | None = None,
+    ) -> EvalRun:
+        """Run the optional LLM Judge after a user requests it in a Report."""
+        if self._legacy:
+            raise RuntimeError("judge_run is unavailable on the deprecated CLI runner")
+        run = self.repository.get_run(run_id)
+        dataset = self.repository.get_dataset_revision(run.dataset_revision_id)
+        cases = {case.case_id: case for case in dataset.cases}
+        total = len(run.case_results)
+
+        for index, result in enumerate(run.case_results):
+            if result.judge is not None:
+                continue
+            case = cases[result.case_id]
+            if progress:
+                progress(index, total, f"[{index + 1}/{total}] {case.case_id}")
+            reasons = dict(result.deterministic_reasons)
+            try:
+                judge_result = self.judge.evaluate(
+                    case,
+                    result.response,
+                    result.tool_evidence,
+                    dict(result.deterministic_scores),
+                )
+            except JudgeIncompleteError as error:
+                reasons["judge"] = f"JUDGE_INCOMPLETE: {error}"
+                judge_result = fallback_judge_result(
+                    case,
+                    dict(result.deterministic_scores),
+                    error,
+                    trace_id=result.trace_id,
+                )
+            except Exception as error:
+                reasons["judge"] = f"JUDGE_ERROR: {type(error).__name__}: {error}"
+                judge_result = fallback_judge_result(
+                    case,
+                    dict(result.deterministic_scores),
+                    error,
+                    trace_id=result.trace_id,
+                )
+
+            deterministic_failed = self._required_deterministic_failure(
+                case, dict(result.deterministic_scores)
+            )
+            status = (
+                "FAIL"
+                if deterministic_failed or not judge_result.passed
+                else "PASS"
+            )
+            usage_costs = tuple(
+                item for item in result.usage_costs if item.category != "judge"
+            )
+            if judge_result.usage_cost is not None:
+                usage_costs = (*usage_costs, judge_result.usage_cost)
+            self.repository.save_judged_case_result(
+                run_id,
+                CaseResult(
+                    case_id=result.case_id,
+                    trace_id=result.trace_id,
+                    response=result.response,
+                    deterministic_scores=dict(result.deterministic_scores),
+                    deterministic_reasons=reasons,
+                    tool_evidence=result.tool_evidence,
+                    judge=judge_result,
+                    usage_costs=usage_costs,
+                    status=status,
+                ),
+            )
+            if progress:
+                progress(index + 1, total, f"{case.case_id}: judged")
+
+        return self.repository.get_run(run_id)
 
     async def run(self, progress: Callable[[int, int, str], None] | None = None
                   ) -> list[dict]:

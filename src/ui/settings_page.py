@@ -25,15 +25,17 @@ def _safe_status(value: str) -> str:
 
 
 def render_settings_page(status: SettingsStatus) -> None:
-    """Render only safe, read-only environment availability information."""
-    st.title("Environment status")
-    st.caption("Connection availability only. Configuration values are never displayed.")
+    """Render simple, read-only connection health for non-technical users."""
+    st.title("Connections")
+    st.caption("Optional services used while testing.")
     for label, value in (
-        ("LLM", status.llm),
-        ("Langfuse", status.langfuse),
-        ("Database", status.database),
-        ("Demo fixture", status.demo_fixture),
+        ("AI model", status.llm),
+        ("Trace viewer", status.langfuse),
+        ("Saved data", status.database),
+        ("Sample project", status.demo_fixture),
     ):
         row_label, row_value = st.columns([2, 3])
         row_label.markdown(f"**{label}**")
-        row_value.caption(_safe_status(value))
+        safe_value = _safe_status(value)
+        display = "● Ready" if safe_value in {"Connected", "Available"} else "○ Optional"
+        row_value.caption(display if safe_value != "Error (details hidden)" else "● Needs attention")

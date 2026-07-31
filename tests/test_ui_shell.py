@@ -42,7 +42,7 @@ def render_datasets_module(repository, agent_id, llm_generate):
 def render_runs_module(repository, agent_id, runner, report_service):
     st.subheader("New evaluation")
 
-def render_reports_module(repository, agent_id, report_service, *, langfuse_base_url=None):
+def render_reports_module(repository, agent_id, report_service, *, runner=None, langfuse_base_url=None):
     st.subheader("Report history")
 
 originals = (
@@ -101,15 +101,15 @@ def test_shell_dispatches_every_sidebar_destination_with_locked_agent_context(tm
         "Dataset": "Dataset draft",
         "Evaluation": "New evaluation",
         "Report": "Report history",
-        "Settings": "Environment status",
+        "Settings": "Connections",
     }
     navigation = next(radio for radio in app.radio if radio.key == "active_page")
     for page, page_text in expected.items():
         app = navigation.set_value(page).run(timeout=20)
         text = _visible_text(app)
         assert page_text in text
-        if page in {"Dataset", "Evaluation", "Report"}:
-            assert "Selected Agent" in text
+        if page in {"Evaluation", "Report"}:
+            assert "AI ASSISTANT" in text
             assert "Agent selector" not in text
         navigation = next(radio for radio in app.radio if radio.key == "active_page")
 
