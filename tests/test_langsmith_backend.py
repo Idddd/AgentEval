@@ -31,6 +31,7 @@ class FakeLangsmithClient:
         self.project_delete_failures: set[str] = set()
         self.project_list_requests: list[str] = []
         self.project_list_failures: dict[str, Exception] = {}
+        self.create_run_requests: list[dict] = []
         self.flush_count = 0
         self.create_failures = 0
         self.read_attempts = 0
@@ -45,15 +46,22 @@ class FakeLangsmithClient:
             self.create_failures -= 1
             raise RuntimeError("SDK create failed")
         run_id = str(kwargs["id"])
-        trace_id = str(kwargs.get("trace_id") or run_id)
+        parent_run_id = (
+            str(kwargs["parent_run_id"])
+            if kwargs.get("parent_run_id") is not None
+            else None
+        )
+        if kwargs.get("trace_id") is not None:
+            trace_id = str(kwargs["trace_id"])
+        elif parent_run_id is not None:
+            trace_id = self.runs[parent_run_id].trace_id
+        else:
+            trace_id = run_id
+        self.create_run_requests.append(dict(kwargs))
         run = SimpleNamespace(
             id=run_id,
             trace_id=trace_id,
-            parent_run_id=(
-                str(kwargs["parent_run_id"])
-                if kwargs.get("parent_run_id") is not None
-                else None
-            ),
+            parent_run_id=parent_run_id,
             name=name,
             inputs=inputs,
             outputs=None,
@@ -218,6 +226,17 @@ class FakeLangsmithClient:
         return f"https://smith.example/projects/{project_name}/r/{run.id}"
 
 
+class StrictBasicRunClient(FakeLangsmithClient):
+    """Reject the request shape that real LangSmith 0.10.14 Cloud rejects."""
+
+    def create_run(self, name, inputs, run_type, **kwargs):
+        if "trace_id" in kwargs and "dotted_order" not in kwargs:
+            raise ValueError(
+                "dotted_order is required when trace_id is provided"
+            )
+        return super().create_run(name, inputs, run_type, **kwargs)
+
+
 def _settings(
     endpoint: str = "https://api.smith.example", *, data_dir=None
 ) -> Settings:
@@ -256,12 +275,43 @@ def _add_root(
         {},
         "chain",
         id=run_id,
-        trace_id=run_id,
         project_name=project_name,
         start_time=datetime.now(),
         tags=[project_name.removeprefix("agenteval__")],
         extra={"metadata": metadata},
     )
+
+
+def test_tracer_uses_basic_create_shape_with_server_inferred_trace_membership():
+    client = StrictBasicRunClient()
+    backend = LangsmithBackend(_settings(), client=client)
+    store = LangsmithStore(_settings(), client=client)
+
+    with backend.tracer.start_trace(
+        "agent-run-basic",
+        user_id="u-basic",
+        tags=["exp_basic"],
+        metadata={"scenario": "allowed"},
+    ) as root:
+        with backend.tracer.span("permission_guard") as guard:
+            guard.set_output({"granted": True})
+
+    root_run = client.runs[root.trace_id]
+    child_run = next(
+        run for run in client.runs.values()
+        if run.parent_run_id == root.trace_id
+    )
+    trace = store.get_trace(root.trace_id, retry=False)
+
+    assert all(
+        "trace_id" not in request
+        for request in client.create_run_requests
+    )
+    assert root_run.trace_id == root.trace_id
+    assert child_run.trace_id == root.trace_id
+    assert child_run.parent_run_id == root.trace_id
+    assert trace.trace_id == root.trace_id
+    assert [span.name for span in trace.spans] == ["permission_guard"]
 
 
 def test_dataset_replacement_roundtrips_sdk_examples_and_matches_exact_name(
