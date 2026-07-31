@@ -64,10 +64,11 @@ def load_settings(probe: bool = True) -> Settings:
         try:
             from langsmith import Client
 
-            Client(
+            client = Client(
                 api_key=s.langsmith_api_key,
                 api_url=s.langsmith_endpoint,
-            ).list_projects(limit=1)
+            )
+            next(iter(client.list_projects(limit=1)), None)
             s.langsmith_enabled = True
         except Exception:
             s.langsmith_enabled = False

@@ -12,15 +12,26 @@ from src.settings import load_settings
 class FakeClient:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
+        self.probe_consumed = False
 
     def list_projects(self, *, limit: int):
-        assert limit == 1
-        return []
+        def projects():
+            self.probe_consumed = True
+            assert limit == 1
+            yield object()
+
+        return projects()
 
 
 class FailingClient(FakeClient):
     def list_projects(self, *, limit: int):
-        raise RuntimeError("unavailable")
+        def projects():
+            self.probe_consumed = True
+            assert limit == 1
+            raise RuntimeError("unavailable")
+            yield object()
+
+        return projects()
 
 
 def test_load_settings_enables_langsmith_after_successful_probe(monkeypatch):
@@ -47,6 +58,22 @@ def test_load_settings_enables_langsmith_after_successful_probe(monkeypatch):
         "api_key": "lsv2_pt_test",
         "api_url": "https://smith.example.test",
     }
+
+
+def test_load_settings_consumes_project_iterator_before_enabling(monkeypatch):
+    """A lazy LangSmith probe must make a request before remote mode is enabled."""
+    client = FakeClient()
+    monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_pt_test")
+    monkeypatch.setitem(
+        sys.modules,
+        "langsmith",
+        SimpleNamespace(Client=lambda **_: client),
+    )
+
+    settings = load_settings()
+
+    assert settings.langsmith_enabled is True
+    assert client.probe_consumed is True
 
 
 def test_load_settings_uses_local_mode_when_langsmith_probe_fails(monkeypatch):
