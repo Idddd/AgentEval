@@ -1,8 +1,14 @@
+import json
+import sqlite3
+
 import pytest
 
 from src.sqlite_workbench import SQLiteWorkbenchRepository
 from src.workbench_models import (
     CaseResult,
+    DatasetColumn,
+    DatasetSchema,
+    DEFAULT_DATASET_SCHEMA,
     JudgeResult,
     RunStatus,
     TestCase as WorkbenchTestCase,
@@ -58,6 +64,21 @@ def test_current_agent_revision_returns_none_for_drafts_and_the_current_snapshot
     assert repo.get_current_agent_revision(agent.agent_id) != first
     with pytest.raises(KeyError):
         repo.get_current_agent_revision("missing-agent")
+
+
+def test_create_agent_with_revision_is_atomic_on_invalid_configuration(tmp_path):
+    """A failed first Revision must never leave an unversioned Target behind."""
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+
+    with pytest.raises(ValueError, match="secret values"):
+        repo.create_agent_with_revision(
+            "Unsafe Target",
+            "",
+            {"model": "test", "api_key": "plaintext-secret"},
+            (),
+        )
+
+    assert repo.list_agents() == []
 
 
 def test_agent_ownership_is_enforced(tmp_path):
@@ -289,3 +310,115 @@ def test_collection_tag_shaped_user_dictionary_round_trips_unchanged(tmp_path):
     loaded = SQLiteWorkbenchRepository(repo.db_path).get_agent_revision(revision.revision_id)
     assert loaded.config_snapshot["payload"] == revision.config_snapshot["payload"]
     assert isinstance(loaded.config_snapshot["payload"], dict)
+
+
+def _seed_v1_dataset(db_path) -> tuple[str, str]:
+    """Create a database using only the original V1 schema (no description/schema_json)."""
+    connection = sqlite3.connect(db_path)
+    connection.executescript(
+        """
+        CREATE TABLE agents (
+          agent_id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
+          current_revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+        );
+        CREATE TABLE datasets (
+          dataset_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL,
+          name TEXT NOT NULL, current_revision INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        );
+        PRAGMA user_version = 1;
+        """
+    )
+    agent_id = "agent-legacy"
+    dataset_id = "dataset-legacy"
+    connection.execute(
+        "INSERT INTO agents VALUES (?, ?, ?, ?, ?)",
+        (agent_id, "Legacy Agent", "", 0, "2026-07-31T00:00:00+00:00"),
+    )
+    connection.execute(
+        "INSERT INTO datasets VALUES (?, ?, ?, ?, ?)",
+        (dataset_id, agent_id, "Legacy Dataset", 0, "2026-07-31T00:00:00+00:00"),
+    )
+    connection.commit()
+    connection.close()
+    return agent_id, dataset_id
+
+
+def test_legacy_database_is_migrated_with_default_schema_backfill(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    agent_id, dataset_id = _seed_v1_dataset(db_path)
+
+    repo = SQLiteWorkbenchRepository(db_path)
+
+    with repo._connect() as connection:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        description = connection.execute(
+            "SELECT description FROM datasets WHERE dataset_id = ?", (dataset_id,)
+        ).fetchone()[0]
+        schema_json = connection.execute(
+            "SELECT schema_json FROM datasets WHERE dataset_id = ?", (dataset_id,)
+        ).fetchone()[0]
+
+    assert version == 2
+    assert description == ""
+    assert json.loads(schema_json)["columns"] == json.loads(_dataset_schema_json(DEFAULT_DATASET_SCHEMA))["columns"]
+    assert repo.get_dataset_schema(dataset_id) == DEFAULT_DATASET_SCHEMA
+
+
+def _dataset_schema_json(schema: DatasetSchema) -> str:
+    from dataclasses import asdict
+    return json.dumps(asdict(schema), sort_keys=True)
+
+
+def test_create_dataset_persists_description_and_schema_and_round_trips(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    agent = repo.create_agent("Agent", "")
+    custom_schema = DatasetSchema(
+        columns=(
+            DatasetColumn("prompt", "input", "string", required=True, description="the prompt"),
+            DatasetColumn("context", "input", "json", required=False),
+            DatasetColumn("expected_label", "output", "string", required=True),
+            DatasetColumn("score", "output", "number", required=False),
+        )
+    )
+
+    dataset_id = repo.create_dataset(
+        agent.agent_id,
+        "Custom schema dataset",
+        description="Classifies prompts",
+        schema=custom_schema,
+    )
+
+    with repo._connect() as connection:
+        row = connection.execute(
+            "SELECT name, description, schema_json FROM datasets WHERE dataset_id = ?",
+            (dataset_id,),
+        ).fetchone()
+
+    assert row["name"] == "Custom schema dataset"
+    assert row["description"] == "Classifies prompts"
+    assert json.loads(row["schema_json"]) == json.loads(_dataset_schema_json(custom_schema))
+    assert repo.get_dataset_schema(dataset_id) == custom_schema
+
+
+def test_create_dataset_without_schema_falls_back_to_default(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    agent = repo.create_agent("Agent", "")
+    dataset_id = repo.create_dataset(agent.agent_id, "Default schema")
+
+    assert repo.get_dataset_schema(dataset_id) == DEFAULT_DATASET_SCHEMA
+
+
+def test_migrated_database_accepts_new_schema_driven_datasets(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    agent_id, _ = _seed_v1_dataset(db_path)
+
+    repo = SQLiteWorkbenchRepository(db_path)
+    new_schema = DatasetSchema(
+        columns=(DatasetColumn("instruction", "input", "string", required=True),)
+    )
+    new_dataset_id = repo.create_dataset(
+        agent_id, "Fresh dataset", description="post-migration", schema=new_schema
+    )
+
+    assert repo.get_dataset_schema(new_dataset_id) == new_schema

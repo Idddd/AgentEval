@@ -30,15 +30,35 @@ def test_app_starts_on_persisted_demo_agent_home(tmp_path, monkeypatch):
 
     assert not app.exception
     text = visible_text(app)
-    assert "Permission Compliance Agent" in text
-    assert "Latest Report" in text
-    assert "100.0%" in text
-    assert next(radio for radio in app.radio if radio.key == "active_page").value == "Agent"
+    assert "Target" in text
+    assert app.selectbox[0].label == "Target filter"
+    assert "Permission Compliance Agent" in list(app.dataframe[0].value["Target"])
+    assert "Latest Report" not in text
+    assert next(radio for radio in app.radio if radio.key == "active_page").value == "Target"
 
     repository = SQLiteWorkbenchRepository(db)
     agents = [agent for agent in repository.list_agents() if agent.current_revision > 0]
     assert len(agents) == 1
     assert len(repository.list_reports(agents[0].agent_id)) == 1
+
+
+def test_sidebar_entry_to_report_resets_stale_analysis_to_list(tmp_path, monkeypatch):
+    """Entering Report from another module must always open the Report homepage."""
+    app, db = build_full_app(tmp_path, monkeypatch)
+    repository = SQLiteWorkbenchRepository(db)
+    agent = next(agent for agent in repository.list_agents() if agent.current_revision > 0)
+    report = repository.list_reports(agent.agent_id)[0]
+    app.session_state.report_view = "analysis"
+    app.session_state.selected_report_id = report.report_id
+
+    app = next(radio for radio in app.radio if radio.key == "active_page").set_value(
+        "Report"
+    ).run(timeout=30)
+
+    assert not app.exception
+    assert app.session_state.report_view == "list"
+    assert "### Report" in visible_text(app)
+    assert "### Analysis" not in visible_text(app)
 
 
 def test_primary_demo_run_opens_result_first_report(tmp_path, monkeypatch):
@@ -86,6 +106,6 @@ def test_reset_returns_home_without_deleting_report_history(tmp_path, monkeypatc
     ).click().run(timeout=30)
 
     assert not app.exception
-    assert next(radio for radio in app.radio if radio.key == "active_page").value == "Agent"
+    assert next(radio for radio in app.radio if radio.key == "active_page").value == "Target"
     assert "Clear caches" not in visible_text(app)
     assert len(SQLiteWorkbenchRepository(db).list_reports(agent.agent_id)) == report_count

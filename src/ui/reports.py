@@ -7,10 +7,12 @@ from typing import Any
 import streamlit as st
 import pandas as pd
 
+from src.report_reflection import RuleBasedReportReflector, create_reflected_revision
 from src.workbench_models import ReportSnapshot
 from src.workbench_repository import WorkbenchRepository
 
 from .charts import cost_figure, judge_figure, tool_funnel_figure
+from .state import select_agent
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
@@ -242,7 +244,7 @@ def render_report_summary(summary: Mapping[str, Any], *, langfuse_base_url: str 
     dataset = _mapping(identity.get("dataset"))
     _status_banner(view["status"])
     st.caption(
-        f"{agent.get('name', 'Agent')} · Agent Revision {agent.get('revision', '—')} · "
+        f"{agent.get('name', 'Target')} · Target Revision {agent.get('revision', '—')} · "
         f"{dataset.get('name', 'Dataset')} · Dataset Revision {dataset.get('revision', '—')}"
     )
     st.markdown("## Test Results")
@@ -308,7 +310,7 @@ def render_comparison(comparison: Any) -> None:
         f"${view['Cost delta']:+.4f}" if view["Cost delta"] is not None else "Not available",
     )
     kpis[3].metric("Regressions", len(view["Regressions"]))
-    st.markdown("#### Agent configuration diff")
+    st.markdown("#### Target configuration diff")
     changes = [
         {"Setting": key, "Baseline": str(value.get("before")), "Current": str(value.get("after"))}
         for key, value in view["Agent changes"].items()
@@ -316,7 +318,7 @@ def render_comparison(comparison: Any) -> None:
     if changes:
         st.dataframe(changes, width="stretch", hide_index=True)
     else:
-        st.caption("No tracked Agent configuration changes.")
+        st.caption("No tracked Target configuration changes.")
     score, evidence, tokens = st.columns(3)
     with score:
         st.markdown("#### Judge score deltas")
@@ -343,30 +345,129 @@ def render_reports_module(
     repository: WorkbenchRepository, agent_id: str, report_service: Any | None = None,
     *, langfuse_base_url: str | None = None,
 ) -> None:
-    """Render selected-Agent Report history and its revision-aware comparison."""
+    """Render explicit Report list, detail, or Reflect analysis views."""
     reports = repository.list_reports(agent_id)
-    st.subheader("Report history")
-    st.caption("Every entry is an immutable summary snapshot for this Agent.")
+    st.session_state.setdefault("report_view", "list")
+    if st.session_state.report_view not in {"list", "detail", "analysis"}:
+        st.session_state.report_view = "list"
     if not reports:
-        with st.container(border=True):
-            st.markdown("**No reports yet**")
-            st.caption("Run an evaluation to create the first Report snapshot.")
+        st.markdown("### Report")
+        st.caption("No Reports yet. Run an Evaluation to create the first immutable Report.")
         return
     reports_by_id = {report.report_id: report for report in reports}
-    report_ids = list(reports_by_id)
     selected_id = st.session_state.get("selected_report_id")
-    selected_index = next((index for index, report in enumerate(reports) if report.report_id == selected_id), 0)
-    selected_report_id = st.selectbox(
-        "Report", report_ids, index=selected_index, key=f"report_history_{agent_id}",
-        format_func=lambda report_id: _report_label(reports_by_id[report_id]),
+    selected = reports_by_id.get(selected_id)
+
+    if st.session_state.report_view == "list" or selected is None:
+        if selected is None and st.session_state.report_view != "list":
+            st.error("The selected Report is no longer available.")
+            st.session_state.report_view = "list"
+        _render_report_list(reports)
+        return
+    if st.session_state.report_view == "analysis":
+        _render_report_analysis(repository, agent_id, selected)
+        return
+    _render_report_detail(
+        repository,
+        agent_id,
+        reports,
+        selected,
+        report_service,
+        langfuse_base_url,
     )
-    selected = reports_by_id[selected_report_id]
-    st.session_state["selected_report_id"] = selected.report_id
+
+
+def _report_rows(reports: list[ReportSnapshot]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for report in reports:
+        identity = _mapping(report.summary.get("identity"))
+        target = _mapping(identity.get("agent"))
+        dataset = _mapping(identity.get("dataset"))
+        metrics = _mapping(report.summary.get("metrics"))
+        costs = _mapping(report.summary.get("costs"))
+        rows.append(
+            {
+                "Created": report.created_at,
+                "Target revision": f"R{target.get('revision', '—')}",
+                "Dataset": dataset.get("name", "Dataset"),
+                "Dataset revision": f"R{dataset.get('revision', '—')}",
+                "Status": report.status,
+                "Pass rate": _number_or_none(metrics.get("pass_rate")),
+                "Evaluation cost": _number_or_none(costs.get("evaluation_total")),
+                "View": "View",
+            }
+        )
+    return rows
+
+
+def _show_report_list() -> None:
+    st.session_state.report_view = "list"
+
+
+def _open_report(report_ids: tuple[str, ...]) -> None:
+    click = st.session_state.get("report_list_actions")
+    if not click:
+        return
+    row = int(click["row"])
+    if 0 <= row < len(report_ids):
+        st.session_state.selected_report_id = report_ids[row]
+        st.session_state.report_view = "detail"
+
+
+def _show_report_analysis() -> None:
+    st.session_state.report_view = "analysis"
+
+
+def _show_report_detail() -> None:
+    st.session_state.report_view = "detail"
+
+
+def _render_report_list(reports: list[ReportSnapshot]) -> None:
+    st.markdown("### Report")
+    st.caption("Immutable Evaluation reports for the selected Target.")
+    st.dataframe(
+        _report_rows(reports),
+        column_config={
+            "Pass rate": st.column_config.NumberColumn(format="%.1f%%"),
+            "Evaluation cost": st.column_config.NumberColumn(format="$%.4f"),
+            "View": st.column_config.ButtonColumn(
+                "",
+                type="tertiary",
+                width="small",
+                key="report_list_actions",
+                on_click=_open_report,
+                args=(tuple(report.report_id for report in reports),),
+            ),
+        },
+        hide_index=True,
+        width="stretch",
+    )
+
+
+def _render_report_detail(
+    repository: WorkbenchRepository,
+    agent_id: str,
+    reports: list[ReportSnapshot],
+    selected: ReportSnapshot,
+    report_service: Any | None,
+    langfuse_base_url: str | None,
+) -> None:
+    st.button("Reports", icon=":material/arrow_back:", on_click=_show_report_list)
+    with st.container(horizontal=True, horizontal_alignment="distribute"):
+        st.markdown("### Report detail")
+        st.button(
+            "Reflect",
+            type="primary",
+            width="content",
+            on_click=_show_report_analysis,
+        )
     render_report_summary(selected.summary, langfuse_base_url=langfuse_base_url)
     st.markdown("## Comparison")
     if len(reports) < 2:
         st.caption("Comparison requires at least two Reports.")
     else:
+        report_ids = [report.report_id for report in reports]
+        reports_by_id = {report.report_id: report for report in reports}
         baseline_ids = [report_id for report_id in report_ids if report_id != selected.report_id]
         baseline_key = f"report_baseline_{agent_id}"
         baseline_report_key = f"report_baseline_selected_{agent_id}"
@@ -394,3 +495,89 @@ def render_reports_module(
         render_usage_and_cost(view)
     else:
         st.caption("Not available for this run")
+
+
+def _render_report_analysis(
+    repository: WorkbenchRepository,
+    agent_id: str,
+    selected: ReportSnapshot,
+) -> None:
+    st.button("Report detail", icon=":material/arrow_back:", on_click=_show_report_detail)
+    st.markdown("### Analysis")
+    try:
+        run = repository.get_run(selected.run_id)
+        revision = repository.get_agent_revision(run.agent_revision_id)
+        if run.agent_id != agent_id:
+            raise ValueError("Report does not belong to the selected Target")
+        suggestions = RuleBasedReportReflector().reflect(selected, revision)
+    except (KeyError, ValueError) as error:
+        st.error(f"Reflect analysis is unavailable: {error}")
+        return
+
+    identity = _mapping(selected.summary.get("identity"))
+    metrics = _mapping(selected.summary.get("metrics"))
+    st.caption(
+        f"Report {selected.report_id} · Target Revision {revision.revision} · "
+        f"{len(selected.summary.get('failures', ()))} failed cases · "
+        f"{float(metrics.get('pass_rate', 0.0)):.1f}% pass rate"
+    )
+    if not suggestions:
+        st.caption("No Target changes suggested.")
+        st.button("Submit", type="primary", width="content", disabled=True)
+        return
+
+    suggestion_rows = pd.DataFrame(
+        [
+            {
+                "Agree": False,
+                "Area": suggestion.area,
+                "Evidence": suggestion.evidence,
+                "Current": suggestion.current,
+                "Suggested": suggestion.suggested,
+            }
+            for suggestion in suggestions
+        ],
+        index=[suggestion.suggestion_id for suggestion in suggestions],
+    )
+    edited = st.data_editor(
+        suggestion_rows,
+        key=f"report_reflection_{selected.report_id}",
+        column_config={"Agree": st.column_config.CheckboxColumn("Agree")},
+        disabled=["Area", "Evidence", "Current", "Suggested"],
+        hide_index=True,
+        width="stretch",
+    )
+    accepted_ids = tuple(
+        suggestion.suggestion_id
+        for suggestion in suggestions
+        if bool(edited.loc[suggestion.suggestion_id, "Agree"])
+    )
+    with st.container(border=True, width=520):
+        st.markdown("**Target Revision preview**")
+        st.caption(f"Target Revision {revision.revision + 1}")
+        if accepted_ids:
+            accepted = {suggestion.suggestion_id: suggestion for suggestion in suggestions}
+            for suggestion_id in accepted_ids:
+                suggestion = accepted[suggestion_id]
+                st.caption(f"{suggestion.area} · {suggestion.suggested}")
+        else:
+            st.caption("Agree with one or more suggestions to preview changes.")
+        st.caption("Existing Model, Tools, MCP, and KB selections remain unchanged.")
+
+    if st.button(
+        "Submit",
+        key="report_reflection_submit",
+        type="primary",
+        width="content",
+        disabled=not accepted_ids,
+    ):
+        try:
+            create_reflected_revision(
+                repository, agent_id, selected.report_id, accepted_ids
+            )
+        except (KeyError, ValueError) as error:
+            st.error(str(error))
+        else:
+            select_agent(agent_id)
+            st.session_state.target_view = "detail"
+            st.rerun()

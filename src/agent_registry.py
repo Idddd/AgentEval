@@ -22,3 +22,20 @@ class AgentRegistry:
         if len(ids) != len(set(ids)):
             raise ValueError("tool IDs must be unique within an agent revision")
         return self.repository.create_agent_revision(agent_id, config_snapshot, tools)
+
+    def create_revision(
+        self,
+        name: str,
+        description: str,
+        config_snapshot: dict,
+        tools: tuple[ToolBinding, ...],
+    ) -> tuple[AgentProfile, AgentRevision]:
+        name = name.strip()
+        if not name:
+            raise ValueError("Target name is required")
+        ids = [tool.tool_id for tool in tools]
+        if len(ids) != len(set(ids)):
+            raise ValueError("tool IDs must be unique within an agent revision")
+        return self.repository.create_agent_with_revision(
+            name, description.strip(), config_snapshot, tools
+        )

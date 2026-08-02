@@ -10,6 +10,7 @@ from src.backends.local_backend import LocalTracer
 from src.tool_runtime import ToolAdapterRegistry, ToolExecutor, ToolRequest
 from src.workbench_models import (
     CaseResult,
+    DEFAULT_DATASET_SCHEMA,
     EvalRun,
     JudgeResult,
     RunStatus,
@@ -388,7 +389,12 @@ def seed_demo_workspace(
         },
         DEMO_TOOLS,
     )
-    dataset_id = repository.create_dataset(agent.agent_id, DEMO_DATASET_NAME)
+    dataset_id = repository.create_dataset(
+        agent.agent_id,
+        DEMO_DATASET_NAME,
+        description="Demonstration permission-compliance evaluation dataset",
+        schema=DEFAULT_DATASET_SCHEMA,
+    )
     repository.replace_draft_cases(dataset_id, list(DEMO_CASES))
     dataset = repository.publish_dataset(dataset_id)
     baseline_run = asyncio.run(

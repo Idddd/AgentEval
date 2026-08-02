@@ -99,27 +99,47 @@ def _quality_and_costs(repository: WorkbenchRepository, agent_id: str) -> dict[s
 
 
 def _render_run_history(repository: WorkbenchRepository, agent_id: str) -> None:
-    runs = repository.list_runs(agent_id)
-    st.markdown("#### Run history")
-    if not runs:
-        with st.container(border=True):
-            st.markdown("**No evaluation runs yet**")
-            st.caption("Complete the four-stage wizard to create the first immutable run.")
+    rows = _run_history_rows(repository, agent_id)
+    st.markdown("### Run history")
+    if not rows:
+        st.caption("No evaluation runs yet.")
         return
+    st.dataframe(
+        rows,
+        column_config={
+            "Started": st.column_config.TextColumn("Started", width="medium"),
+            "Target revision": st.column_config.TextColumn("Target revision", width="small"),
+            "Dataset revision": st.column_config.TextColumn("Dataset revision", width="small"),
+            "Status": st.column_config.TextColumn("Status", width="small"),
+            "Quality": st.column_config.TextColumn("Quality", width="small"),
+            "Cost": st.column_config.NumberColumn("Cost", format="$%.4f", width="small"),
+        },
+        hide_index=True,
+        width="stretch",
+    )
+
+
+def _run_history_rows(
+    repository: WorkbenchRepository, agent_id: str
+) -> list[dict[str, Any]]:
+    runs = repository.list_runs(agent_id)
     report_data = _quality_and_costs(repository, agent_id)
+    rows: list[dict[str, Any]] = []
     for run in runs:
         agent_revision = repository.get_agent_revision(run.agent_revision_id)
         dataset_revision = repository.get_dataset_revision(run.dataset_revision_id)
         quality, cost = report_data.get(run.run_id, ("INCOMPLETE", 0.0))
-        with st.container(border=True):
-            identity, states, amount = st.columns([3.2, 2, 1.2])
-            identity.markdown(f"**{run.started_at}**")
-            identity.caption(
-                f"Agent Revision {agent_revision.revision} · Dataset Revision {dataset_revision.revision}"
-            )
-            states.markdown(f"Run: **{run.status.value}**")
-            states.caption(f"Quality: {quality}")
-            amount.metric("Evaluation cost", f"${cost:.4f}")
+        rows.append(
+            {
+                "Started": str(run.started_at),
+                "Target revision": f"R{agent_revision.revision}",
+                "Dataset revision": f"R{dataset_revision.revision}",
+                "Status": run.status.value,
+                "Quality": quality,
+                "Cost": cost,
+            }
+        )
+    return rows
 
 
 def render_runs_module(
@@ -128,34 +148,32 @@ def render_runs_module(
     runner: Any | None = None,
     report_service: Any | None = None,
 ) -> None:
-    """Render a four-stage New Evaluation flow and durable run history."""
+    """Render compact evaluation configuration and durable run history."""
     agent_revision = repository.get_current_agent_revision(agent_id)
     datasets = _dataset_revisions(repository, agent_id)
     drafts = _draft_options(repository, agent_id)
-    st.subheader("New evaluation")
-    st.caption("Confirm immutable inputs, review evaluation settings, then start the run.")
+    st.markdown("### Evaluation")
+    st.caption("Select immutable inputs, review the evaluation context, and start a run.")
 
     if agent_revision is None:
-        st.markdown(
-            "<div style='background:#FBF4E4;border:1px solid #EADCB8;border-radius:12px;padding:14px 16px;'>"
-            "<strong>Agent Revision required</strong><br>Save an Agent configuration before starting an evaluation."
-            "</div>",
-            unsafe_allow_html=True,
+        st.warning(
+            "Save a Target configuration before starting an evaluation.",
+            icon=":material/info:",
         )
         _render_run_history(repository, agent_id)
         return
 
-    with st.container(border=True):
-        st.markdown("**1 · Confirm Agent Revision**")
-        model = agent_revision.config_snapshot.get("model", "Not specified")
-        st.markdown(f"Locked Agent Revision **{agent_revision.revision}**")
-        st.caption(f"Model: {model} · {len(agent_revision.tools)} Tool bindings")
-
     selected_dataset: DatasetRevision | None = None
-    with st.container(border=True):
-        st.markdown("**2 · Select Dataset Revision**")
+    with st.container(border=False, width=660, gap="small"):
+        st.markdown("**Configuration**")
+        model = agent_revision.config_snapshot.get("model", "Not specified")
+        st.caption(
+            f"Target R{agent_revision.revision} · {model} · "
+            f"{len(agent_revision.tools)} tool bindings"
+        )
+
         dataset_options: dict[str, tuple[str, Any]] = {
-            f"{dataset.name} · Revision {dataset.revision} · {len(dataset.cases)} cases": (
+            f"{dataset.name} · R{dataset.revision} · {len(dataset.cases)} cases": (
                 "revision",
                 dataset,
             )
@@ -171,13 +189,33 @@ def render_runs_module(
             }
         )
         if dataset_options:
+            selector_key = f"run_dataset_revision_{agent_id}"
+            requested_revision_id = st.session_state.pop(
+                "requested_dataset_revision_id", None
+            )
+            if requested_revision_id:
+                requested_label = next(
+                    (
+                        label
+                        for label, (source, value) in dataset_options.items()
+                        if source == "revision"
+                        and value.revision_id == requested_revision_id
+                    ),
+                    None,
+                )
+                if requested_label is not None:
+                    st.session_state[selector_key] = requested_label
             dataset_label = st.selectbox(
-                "Dataset source", list(dataset_options), key=f"run_dataset_revision_{agent_id}"
+                "Dataset source", list(dataset_options), key=selector_key
             )
             source, value = dataset_options[dataset_label]
             if source == "revision":
                 selected_dataset = value
-            elif st.button("Publish selected draft", key="run_publish_dataset", type="primary"):
+            elif st.button(
+                "Publish selected draft",
+                key="run_publish_dataset",
+                type="secondary",
+            ):
                 try:
                     selected_dataset = DatasetRegistry(repository).publish(value["dataset_id"])
                 except ValueError as error:
@@ -204,31 +242,22 @@ def render_runs_module(
         else:
             st.warning("Add cases to a Dataset draft before starting an evaluation.")
 
-    with st.container(border=True):
-        st.markdown("**3 · Review evaluators and cost scope**")
         evaluator_version = "v1"
         judge_model = agent_revision.config_snapshot.get("judge_model", "Not configured")
-        left, right = st.columns(2)
-        left.markdown(f"Evaluator version: **{evaluator_version}**")
-        left.caption("Required deterministic assertions and execution failures are authoritative.")
-        right.markdown(f"Judge model (optional): **{judge_model}**")
-        right.caption("Optional supporting assessment: Correctness · Relevance · Completeness · Safety")
-        st.caption("Cost categories: Agent + Judge = Evaluation Total. Dataset Generation is reported separately.")
-
-    cases = selected_dataset.cases if selected_dataset else ()
-    unavailable = unavailable_case_tools(cases, agent_revision.tools)
-    unavailable_text = ", ".join(unavailable)
-    if unavailable:
-        st.markdown(
-            "<div style='background:#FBF4E4;border:1px solid #EADCB8;border-radius:12px;padding:14px 16px;'>"
-            f"<strong>Tool evidence not currently available</strong><br>{unavailable_text}. "
-            "This is non-blocking; execution and deterministic assertion failures remain authoritative."
-            "</div>",
-            unsafe_allow_html=True,
+        st.caption(f"Evaluator {evaluator_version} · Judge {judge_model}")
+        st.caption(
+            "Deterministic assertions remain authoritative · Cost includes agent and judge usage"
         )
 
-    with st.container(border=True):
-        st.markdown("**4 · Start evaluation**")
+        cases = selected_dataset.cases if selected_dataset else ()
+        unavailable = unavailable_case_tools(cases, agent_revision.tools)
+        if unavailable:
+            st.warning(
+                f"Tool evidence unavailable: {', '.join(unavailable)}. "
+                "This does not block the run.",
+                icon=":material/info:",
+            )
+
         if runner is None:
             st.caption("The evaluation runner is not connected to this UI session.")
         start_disabled = selected_dataset is None or runner is None
@@ -237,7 +266,7 @@ def render_runs_module(
             key="run_start",
             type="primary",
             disabled=start_disabled,
-            width="stretch",
+            width="content",
         ):
             progress_bar = st.progress(0.0, text="Preparing run")
             progress_lines: list[str] = []

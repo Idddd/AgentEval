@@ -21,7 +21,13 @@ st.session_state.selected_report_id = "report-1"
 select_agent("second-agent")
 st.text(f"selected_after_select={st.session_state.selected_agent_id}")
 st.text(f"page_after_select={st.session_state.active_page}")
-st.text(f"selection_keys_after_select={any(key in st.session_state for key in (\"selected_dataset_id\", \"selected_dataset_revision_id\", \"selected_run_id\", \"selected_report_id\"))}")
+selection_keys = (
+    "selected_dataset_id",
+    "selected_dataset_revision_id",
+    "selected_run_id",
+    "selected_report_id",
+)
+st.text(f"selection_keys_after_select={any(key in st.session_state for key in selection_keys)}")
 navigate("Dataset")
 st.text(f"page_after_navigation={st.session_state.active_page}")
 reset_demo_state("demo-agent")
@@ -35,11 +41,11 @@ st.text(f"persisted_sentinel={st.session_state.persisted_sentinel}")
     assert not app.exception
     assert _text_values(app) == {
         "selected_after_select=second-agent",
-        "page_after_select=Agent",
+        "page_after_select=Target",
         "selection_keys_after_select=False",
         "page_after_navigation=Dataset",
         "selected_after_reset=demo-agent",
-        "page_after_reset=Agent",
+        "page_after_reset=Target",
         "persisted_sentinel=keep",
     }
 
@@ -60,6 +66,42 @@ with pytest.raises(ValueError):
     assert not app.exception
 
 
+def test_reflect_is_a_valid_global_route():
+    """Removing Reflect from navigation must make the requested module unreachable."""
+    script = '''\
+import streamlit as st
+from src.ui.state import init_ui_state, navigate
+
+init_ui_state()
+navigate("Reflect")
+st.text(st.session_state.active_page)
+'''
+
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    assert _text_values(app) == {"Reflect"}
+
+
+def test_leaving_target_clears_transient_create_or_detail_view():
+    """Returning to Target must not reopen stale create/detail content."""
+    script = '''\
+import streamlit as st
+from src.ui.state import init_ui_state, navigate
+
+init_ui_state("demo-agent")
+st.session_state.target_view = "create"
+navigate("Dataset")
+navigate("Target")
+st.text(st.session_state.target_view)
+'''
+
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    assert _text_values(app) == {"list"}
+
+
 @pytest.mark.parametrize("legacy_page", ("Agents", "Reports"))
 def test_init_ui_state_normalizes_stale_global_route_values(legacy_page):
     """Old browser sessions must never reach a global route removed by migration."""
@@ -75,4 +117,4 @@ st.text(st.session_state.active_page)
     app = AppTest.from_string(script).run(timeout=20)
 
     assert not app.exception
-    assert _text_values(app) == {"Agent"}
+    assert _text_values(app) == {"Target"}

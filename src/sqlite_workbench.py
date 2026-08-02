@@ -16,7 +16,10 @@ from .workbench_models import (
     AgentProfile,
     AgentRevision,
     CaseResult,
+    DatasetColumn,
     DatasetRevision,
+    DatasetSchema,
+    DEFAULT_DATASET_SCHEMA,
     EvalRun,
     JudgeResult,
     ReportSnapshot,
@@ -28,7 +31,7 @@ from .workbench_models import (
 )
 
 
-SCHEMA_V1 = """
+SCHEMA_V2 = """
 CREATE TABLE IF NOT EXISTS agents (
   agent_id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
   current_revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
@@ -45,7 +48,9 @@ CREATE TABLE IF NOT EXISTS agent_revision_tools (
 );
 CREATE TABLE IF NOT EXISTS datasets (
   dataset_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(agent_id),
-  name TEXT NOT NULL, current_revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+  name TEXT NOT NULL, current_revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  schema_json TEXT
 );
 CREATE TABLE IF NOT EXISTS dataset_draft_cases (
   dataset_id TEXT NOT NULL REFERENCES datasets(dataset_id), case_id TEXT NOT NULL,
@@ -97,7 +102,6 @@ CREATE TABLE IF NOT EXISTS reports (
   summary_json TEXT NOT NULL, markdown_path TEXT NOT NULL, created_at TEXT NOT NULL,
   UNIQUE(run_id, artifact_version)
 );
-PRAGMA user_version = 1;
 """
 
 
@@ -132,6 +136,15 @@ def _json_object(value: dict[str, Any]) -> Any:
 
 def _decode_json(value: str) -> Any:
     return json.loads(value, object_hook=_json_object)
+
+
+def _serialize_schema(schema: DatasetSchema) -> str:
+    return _json({"columns": [asdict(column) for column in schema.columns]})
+
+
+def _deserialize_schema(raw: str) -> DatasetSchema:
+    payload = _decode_json(raw)
+    return DatasetSchema(columns=tuple(DatasetColumn(**column) for column in payload["columns"]))
 
 
 _ENVIRONMENT_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -237,7 +250,29 @@ class SQLiteWorkbenchRepository:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
-            connection.executescript(SCHEMA_V1)
+            connection.executescript(SCHEMA_V2)
+            self._migrate(connection)
+
+    def _migrate(self, connection: sqlite3.Connection) -> None:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if version >= 2:
+            return
+        if version < 1:
+            # Fresh database — SCHEMA_V2 already created the new-shape datasets table.
+            connection.execute("PRAGMA user_version = 2")
+            return
+        # Legacy V1 database: datasets table lacks description/schema_json columns.
+        connection.executescript(
+            """
+            ALTER TABLE datasets ADD COLUMN description TEXT NOT NULL DEFAULT '';
+            ALTER TABLE datasets ADD COLUMN schema_json TEXT;
+            """
+        )
+        connection.execute(
+            "UPDATE datasets SET schema_json = ?",
+            (_serialize_schema(DEFAULT_DATASET_SCHEMA),),
+        )
+        connection.execute("PRAGMA user_version = 2")
 
     @property
     def db_path(self) -> Path:
@@ -275,6 +310,57 @@ class SQLiteWorkbenchRepository:
                 (agent.agent_id, agent.name, agent.description, agent.current_revision, agent.created_at),
             )
         return agent
+
+    def create_agent_with_revision(
+        self,
+        name: str,
+        description: str,
+        config_snapshot: dict,
+        tools: tuple[ToolBinding, ...],
+    ) -> tuple[AgentProfile, AgentRevision]:
+        """Create a Target profile and Revision 1 in one SQLite transaction."""
+        _validate_secret_free(config_snapshot)
+        _validate_connection_urls(config_snapshot)
+        for tool in tools:
+            _validate_secret_free(tool.adapter_config)
+            _validate_connection_urls(tool.adapter_config)
+        if len({tool.tool_id for tool in tools}) != len(tools):
+            raise ValueError("tool IDs must be unique within an agent revision")
+
+        agent = AgentProfile(_new_id(), name, description, 1, _now())
+        revision = AgentRevision(
+            _new_id(), agent.agent_id, 1, config_snapshot, tools, _now()
+        )
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "INSERT INTO agents VALUES (?, ?, ?, ?, ?)",
+                (
+                    agent.agent_id,
+                    agent.name,
+                    agent.description,
+                    agent.current_revision,
+                    agent.created_at,
+                ),
+            )
+            connection.execute(
+                "INSERT INTO agent_revisions VALUES (?, ?, ?, ?, ?)",
+                (
+                    revision.revision_id,
+                    agent.agent_id,
+                    revision.revision,
+                    _json(revision.config_snapshot),
+                    revision.created_at,
+                ),
+            )
+            connection.executemany(
+                "INSERT INTO agent_revision_tools VALUES (?, ?, ?)",
+                [
+                    (revision.revision_id, tool.tool_id, _model_json(tool))
+                    for tool in revision.tools
+                ],
+            )
+        return agent, revision
 
     def list_agents(self) -> list[AgentProfile]:
         with self._connect() as connection:
@@ -360,18 +446,56 @@ class SQLiteWorkbenchRepository:
             )
         return self.get_agent_revision(row["revision_id"])
 
-    def create_dataset(self, agent_id: str, name: str) -> str:
+    def create_dataset(
+        self,
+        agent_id: str,
+        name: str,
+        *,
+        description: str = "",
+        schema: DatasetSchema | None = None,
+    ) -> str:
         dataset_id = _new_id()
+        effective_schema = schema if schema is not None else DEFAULT_DATASET_SCHEMA
         with self._connect() as connection:
             self._require(
                 connection.execute("SELECT agent_id FROM agents WHERE agent_id = ?", (agent_id,)).fetchone(),
                 agent_id,
             )
             connection.execute(
-                "INSERT INTO datasets VALUES (?, ?, ?, ?, ?)",
-                (dataset_id, agent_id, name, 0, _now()),
+                "INSERT INTO datasets "
+                "(dataset_id, agent_id, name, current_revision, created_at, description, schema_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    dataset_id,
+                    agent_id,
+                    name,
+                    0,
+                    _now(),
+                    description,
+                    _serialize_schema(effective_schema),
+                ),
             )
         return dataset_id
+
+    def get_dataset_schema(self, dataset_id: str) -> DatasetSchema:
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute(
+                    "SELECT schema_json FROM datasets WHERE dataset_id = ?", (dataset_id,)
+                ).fetchone(),
+                dataset_id,
+            )
+        return _deserialize_schema(row["schema_json"])
+
+    def get_dataset_description(self, dataset_id: str) -> str:
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute(
+                    "SELECT description FROM datasets WHERE dataset_id = ?", (dataset_id,)
+                ).fetchone(),
+                dataset_id,
+            )
+        return row["description"]
 
     def replace_draft_cases(self, dataset_id: str, cases: list[TestCase]) -> None:
         with self._connect() as connection:

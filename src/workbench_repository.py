@@ -6,6 +6,7 @@ from .workbench_models import (
     AgentRevision,
     CaseResult,
     DatasetRevision,
+    DatasetSchema,
     EvalRun,
     ReportSnapshot,
     RunStatus,
@@ -17,6 +18,14 @@ from .workbench_models import (
 
 class WorkbenchRepository(Protocol):
     def create_agent(self, name: str, description: str) -> AgentProfile: ...
+
+    def create_agent_with_revision(
+        self,
+        name: str,
+        description: str,
+        config_snapshot: dict,
+        tools: tuple[ToolBinding, ...],
+    ) -> tuple[AgentProfile, AgentRevision]: ...
 
     def list_agents(self) -> list[AgentProfile]: ...
 
@@ -33,7 +42,18 @@ class WorkbenchRepository(Protocol):
 
     def get_current_agent_revision(self, agent_id: str) -> AgentRevision | None: ...
 
-    def create_dataset(self, agent_id: str, name: str) -> str: ...
+    def create_dataset(
+        self,
+        agent_id: str,
+        name: str,
+        *,
+        description: str = "",
+        schema: DatasetSchema | None = None,
+    ) -> str: ...
+
+    def get_dataset_schema(self, dataset_id: str) -> DatasetSchema: ...
+
+    def get_dataset_description(self, dataset_id: str) -> str: ...
 
     def replace_draft_cases(self, dataset_id: str, cases: list[TestCase]) -> None: ...
 

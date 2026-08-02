@@ -4,7 +4,11 @@ import pytest
 
 from src.workbench_models import (
     AgentRevision,
+    CREATE_FORM_TEMPLATE,
+    DEFAULT_DATASET_SCHEMA,
+    DatasetColumn,
     DatasetRevision,
+    DatasetSchema,
     JudgeResult,
     RunStatus,
     TestCase as WorkbenchTestCase,
@@ -12,6 +16,22 @@ from src.workbench_models import (
     ToolEvidence,
     UsageCost,
 )
+
+
+def test_new_dataset_template_exposes_the_three_required_schema_fields():
+    """Renaming or removing a built-in field must break new Dataset creation."""
+    assert [
+        (column.name, column.kind, column.data_type, column.required)
+        for column in CREATE_FORM_TEMPLATE.columns
+    ] == [
+        ("query", "input", "string", True),
+        ("expected_action", "output", "string", True),
+        ("header", "input", "json", False),
+    ]
+
+
+def test_default_dataset_schema_uses_the_creation_template():
+    assert DEFAULT_DATASET_SCHEMA is CREATE_FORM_TEMPLATE
 
 
 def test_agent_revision_and_tool_binding_are_immutable():
@@ -183,3 +203,132 @@ def test_judge_result_rejects_missing_extra_or_out_of_range_rubric_scores(scores
             trace_id="trace_judge",
             observation_id="obs_judge",
         )
+
+
+def _schema_with_columns(*columns: DatasetColumn) -> DatasetSchema:
+    return DatasetSchema(columns=tuple(columns))
+
+
+def test_dataset_schema_is_frozen_and_partitions_columns_by_kind():
+    schema = _schema_with_columns(
+        DatasetColumn("query", "input", "string", required=True),
+        DatasetColumn("headers", "input", "json", required=False),
+        DatasetColumn("expected_tool_called", "output", "string", required=False),
+    )
+
+    with pytest.raises(FrozenInstanceError):
+        schema.columns[0].name = "changed"
+
+    assert [c.name for c in schema.input_columns] == ["query", "headers"]
+    assert [c.name for c in schema.output_columns] == ["expected_tool_called"]
+
+
+def test_validate_case_returns_no_errors_for_conforming_case():
+    schema = _schema_with_columns(
+        DatasetColumn("query", "input", "string", required=True),
+        DatasetColumn("headers", "input", "json", required=False),
+        DatasetColumn("expected_tool_called", "output", "string", required=False),
+        DatasetColumn("expected_score", "output", "number", required=False),
+        DatasetColumn("flagged", "output", "boolean", required=False),
+    )
+    case = WorkbenchTestCase(
+        case_id="c1",
+        input={"query": "hello", "headers": {"Accept": "json"}},
+        expected_output={
+            "expected_tool_called": "search",
+            "expected_score": 3,
+            "flagged": True,
+        },
+    )
+
+    assert schema.validate_case(case) == []
+
+
+@pytest.mark.parametrize(
+    "case, expected_error_fragment",
+    [
+        (
+            WorkbenchTestCase("c", {"query": ""}, {"expected_tool_called": "x"}),
+            "query",
+        ),
+        (
+            WorkbenchTestCase("c", {"query": "hi"}, {"expected_tool_called": ""}),
+            "expected_tool_called",
+        ),
+        (
+            WorkbenchTestCase("c", {"query": 42}, {"expected_tool_called": "x"}),
+            "query",
+        ),
+        (
+            WorkbenchTestCase("c", {"query": "hi"}, {"expected_tool_called": "x", "expected_score": "high"}),
+            "expected_score",
+        ),
+        (
+            WorkbenchTestCase("c", {"query": "hi"}, {"expected_tool_called": "x", "flagged": "yes"}),
+            "flagged",
+        ),
+        (
+            WorkbenchTestCase("c", {"query": "hi", "headers": "not-json"}, {"expected_tool_called": "x"}),
+            "headers",
+        ),
+    ],
+)
+def test_validate_case_reports_missing_or_wrongly_typed_fields(case, expected_error_fragment):
+    schema = _schema_with_columns(
+        DatasetColumn("query", "input", "string", required=True),
+        DatasetColumn("headers", "input", "json", required=False),
+        DatasetColumn("expected_tool_called", "output", "string", required=True),
+        DatasetColumn("expected_score", "output", "number", required=False),
+        DatasetColumn("flagged", "output", "boolean", required=False),
+    )
+
+    errors = schema.validate_case(case)
+
+    assert errors
+    assert any(expected_error_fragment in err for err in errors)
+
+
+def test_validate_case_ignores_extra_fields_in_input_and_output():
+    schema = _schema_with_columns(
+        DatasetColumn("query", "input", "string", required=True),
+    )
+    case = WorkbenchTestCase(
+        case_id="c",
+        input={"query": "hi", "rogue_field": "ignored"},
+        expected_output={"rogue_output": ["anything"]},
+    )
+
+    assert schema.validate_case(case) == []
+
+
+def test_validate_case_treats_optional_empty_string_as_no_error():
+    schema = _schema_with_columns(
+        DatasetColumn("query", "input", "string", required=True),
+        DatasetColumn("context", "input", "string", required=False),
+    )
+    case = WorkbenchTestCase("c", {"query": "hi", "context": ""}, {})
+
+    assert schema.validate_case(case) == []
+
+
+def test_optional_json_empty_string_is_not_valid_json():
+    schema = _schema_with_columns(
+        DatasetColumn("header", "input", "json", required=False),
+    )
+    case = WorkbenchTestCase("c", {"header": ""}, {})
+
+    assert schema.validate_case(case) == [
+        "input field 'header': expected json object or array, got str"
+    ]
+
+
+def test_boolean_column_rejects_int_zero_because_bool_is_int_subclass():
+    schema = _schema_with_columns(
+        DatasetColumn("flag", "output", "boolean", required=False),
+    )
+    case = WorkbenchTestCase("c", {"query": "hi"}, {"flag": 0})
+
+    errors = schema.validate_case(case)
+
+    assert errors
+    assert any("flag" in err for err in errors)

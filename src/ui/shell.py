@@ -13,6 +13,7 @@ from src.workbench_repository import WorkbenchRepository
 from .agents import render_agent_home
 from .datasets import CandidateGenerator, render_datasets_module
 from .reports import render_reports_module
+from .reflects import render_reflect_module
 from .runs import render_runs_module
 from .settings_page import SettingsStatus, render_settings_page
 from .state import PAGES, init_ui_state, navigate
@@ -64,9 +65,9 @@ def render_agent_context(agent: AgentProfile, revision: AgentRevision | None) ->
     """Render downstream Agent context without making it editable."""
     revision_number = revision.revision if revision is not None else 0
     tool_count = len(revision.tools) if revision is not None else 0
-    st.subheader("Selected Agent")
-    st.caption(f"{agent.name} 路 Revision {revision_number} 路 {tool_count} Target Tools")
-    st.caption("Change Agent from Agent Home")
+    st.subheader("Selected Target")
+    st.caption(f"{agent.name} · Revision {revision_number} · {tool_count} Target Tools")
+    st.caption("Change Target from Target Home")
 
 
 def _default_settings_status() -> SettingsStatus:
@@ -100,14 +101,14 @@ def render_shell(
     requested_page = st.session_state.active_page
     context = (
         _locked_agent_context(repository, st.session_state.selected_agent_id)
-        if requested_page not in {"Agent", "Settings"}
+        if requested_page not in {"Target", "Reflect", "Settings"}
         else None
     )
-    if requested_page not in {"Agent", "Settings"} and context is None:
+    if requested_page not in {"Target", "Reflect", "Settings"} and context is None:
         # This must happen before the radio widget is created: Streamlit does not
         # allow a widget's session-state key to change after instantiation.
-        navigate("Agent")
-        st.session_state.agent_context_warning = "Select an Agent to continue."
+        navigate("Target")
+        st.session_state.agent_context_warning = "Select a Target to continue."
     with st.sidebar:
         st.markdown("<div class='brand-mark'>EVAL STUDIO</div>", unsafe_allow_html=True)
         st.caption("MODULAR EVALUATION")
@@ -117,6 +118,11 @@ def render_shell(
             key="active_page",
             label_visibility="collapsed",
         )
+        previous_page = st.session_state.get("last_active_page")
+        report_intent = bool(st.session_state.pop("report_navigation_intent", False))
+        if page == "Report" and previous_page != "Report" and not report_intent:
+            st.session_state.report_view = "list"
+        st.session_state.last_active_page = page
         st.markdown("<div class='sidebar-spacer'></div>", unsafe_allow_html=True)
         st.caption("DEMO CONTROLS")
         st.button(
@@ -147,13 +153,16 @@ def render_shell(
     if pending_warning:
         st.warning(pending_warning)
 
-    if page == "Agent":
+    if page == "Target":
         render_agent_home(
             registry, repository, default_agent_id=default_agent_id or ""
         )
         return
     if page == "Settings":
         render_settings_page(status)
+        return
+    if page == "Reflect":
+        render_reflect_module(repository)
         return
 
     if context is None:  # pragma: no cover - pre-radio normalization handles this route.

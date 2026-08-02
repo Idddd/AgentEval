@@ -8,6 +8,7 @@ from typing import Any
 import streamlit as st
 
 from src.agent_registry import AgentRegistry
+from src.target_catalog import TargetCatalog, TargetCatalogSnapshot
 from src.workbench_models import AgentProfile, ReportSnapshot
 from src.workbench_repository import WorkbenchRepository
 
@@ -49,7 +50,7 @@ def report_history_rows(reports: Sequence[ReportSnapshot]) -> list[dict[str, Any
             {
                 "Report ID": report.report_id,
                 "Time": report.created_at,
-                "Agent revision": agent.get("revision"),
+                "Target revision": agent.get("revision"),
                 "Dataset revision": dataset.get("revision"),
                 "Status": summary.get("status", report.status),
                 "Pass rate": current_rate,
@@ -81,7 +82,7 @@ def _tool_rows(agent_id: str, repository: WorkbenchRepository) -> list[dict[str,
 def _render_latest_report(report: ReportSnapshot | None) -> None:
     st.subheader("Latest Report")
     if report is None:
-        st.caption("No immutable Reports have been created for this Agent yet.")
+        st.caption("No immutable Reports have been created for this Target yet.")
         return
     summary = _mapping(report.summary)
     identity = _mapping(summary.get("identity"))
@@ -101,7 +102,7 @@ def _render_latest_report(report: ReportSnapshot | None) -> None:
             st.session_state.selected_report_id = report.report_id
             request_navigation("Report")
             st.rerun()
-        st.caption(f"Created {report.created_at} · Agent revision {agent.get('revision', '—')}")
+        st.caption(f"Created {report.created_at} · Target revision {agent.get('revision', '—')}")
 
 
 def _render_trends(rows: Sequence[Mapping[str, Any]]) -> None:
@@ -145,49 +146,309 @@ def _select_agent_from_home() -> None:
     select_agent(st.session_state.selected_agent_id)
 
 
-def render_agent_home(
-    registry: AgentRegistry | None,
-    repository: WorkbenchRepository,
-    *,
-    default_agent_id: str,
+_TARGET_FILTERS = (
+    "All targets",
+    "Model only",
+    "With Prompt",
+    "With Tools",
+    "With MCP",
+    "With KB",
+)
+
+
+def _target_scope(revision: Any) -> set[str]:
+    config = revision.config_snapshot
+    scopes = {"Model"}
+    if str(config.get("prompt", config.get("system_prompt", ""))).strip():
+        scopes.add("Prompt")
+    if revision.tools:
+        scopes.add("Tools")
+    if config.get("mcp_servers"):
+        scopes.add("MCP")
+    if config.get("knowledge_bases"):
+        scopes.add("KB")
+    return scopes
+
+
+def _configuration_summary(revision: Any) -> str:
+    scopes = _target_scope(revision)
+    if scopes == {"Model"}:
+        return "Model only"
+    parts = ["Model"]
+    if "Prompt" in scopes:
+        parts.append("Prompt")
+    if revision.tools:
+        parts.append(f"{len(revision.tools)} Tools")
+    mcp = revision.config_snapshot.get("mcp_servers", ())
+    if mcp:
+        parts.append(f"{len(mcp)} MCP")
+    kb = revision.config_snapshot.get("knowledge_bases", ())
+    if kb:
+        parts.append(f"{len(kb)} KB")
+    return " · ".join(parts)
+
+
+def _target_rows(
+    repository: WorkbenchRepository, scope_filter: str = "All targets"
+) -> tuple[list[dict[str, Any]], list[str]]:
+    rows: list[dict[str, Any]] = []
+    target_ids: list[str] = []
+    for agent in valid_agents(repository):
+        revision = repository.get_current_agent_revision(agent.agent_id)
+        if revision is None:
+            continue
+        scopes = _target_scope(revision)
+        matches = (
+            scope_filter == "All targets"
+            or (scope_filter == "Model only" and scopes == {"Model"})
+            or (scope_filter == "With Prompt" and "Prompt" in scopes)
+            or (scope_filter == "With Tools" and "Tools" in scopes)
+            or (scope_filter == "With MCP" and "MCP" in scopes)
+            or (scope_filter == "With KB" and "KB" in scopes)
+        )
+        if not matches:
+            continue
+        target_ids.append(agent.agent_id)
+        rows.append(
+            {
+                "Target": agent.name,
+                "Revision": f"R{revision.revision}",
+                "Configuration": _configuration_summary(revision),
+                "Updated": revision.created_at,
+                "View": "View",
+            }
+        )
+    return rows, target_ids
+
+
+def _open_target(target_ids: Sequence[str]) -> None:
+    click = st.session_state.get("target_list_actions")
+    if not click:
+        return
+    row = int(click["row"])
+    if 0 <= row < len(target_ids):
+        select_agent(target_ids[row])
+        st.session_state.target_view = "detail"
+
+
+def _show_target_list() -> None:
+    st.session_state.target_view = "list"
+
+
+def _show_target_create() -> None:
+    st.session_state.target_view = "create"
+
+
+def _render_target_list(repository: WorkbenchRepository) -> None:
+    with st.container(horizontal=True, horizontal_alignment="distribute"):
+        st.title("Target")
+        st.button(
+            "Create",
+            key="target_create_button",
+            type="primary",
+            width="content",
+            on_click=_show_target_create,
+        )
+    scope_filter = st.selectbox(
+        "Target filter", _TARGET_FILTERS, key="target_filter"
+    )
+    rows, target_ids = _target_rows(repository, scope_filter)
+    if not rows:
+        st.caption("No Targets match this filter.")
+        return
+    st.dataframe(
+        rows,
+        column_config={
+            "View": st.column_config.ButtonColumn(
+                "",
+                type="tertiary",
+                width="small",
+                key="target_list_actions",
+                on_click=_open_target,
+                args=(tuple(target_ids),),
+            )
+        },
+        hide_index=True,
+        width="stretch",
+    )
+
+
+def _catalog_labels(items: Sequence[Any]) -> dict[str, str]:
+    return {item.item_id: item.name for item in items}
+
+
+def _target_config_snapshot(
+    catalog: TargetCatalogSnapshot,
+    model_id: str,
+    prompt: str,
+    mcp_ids: list[str],
+    kb_ids: list[str],
+) -> dict[str, Any]:
+    return {
+        "model": catalog.resolve_one("models", model_id).snapshot(),
+        "prompt": prompt.strip(),
+        "mcp_servers": [item.snapshot() for item in catalog.resolve_many("mcp_servers", mcp_ids)],
+        "knowledge_bases": [
+            item.snapshot()
+            for item in catalog.resolve_many("knowledge_bases", kb_ids)
+        ],
+    }
+
+
+def _render_revision_preview(
+    name: str,
+    model_id: str | None,
+    prompt: str,
+    tool_ids: Sequence[str],
+    mcp_ids: Sequence[str],
+    kb_ids: Sequence[str],
 ) -> None:
-    """Render one persisted Agent and the immutable evidence attached to it."""
-    del registry  # Agent Home selects existing immutable Agents; it does not create them.
-    agents = valid_agents(repository)
-    st.caption("EVALUATION WORKBENCH")
-    if not agents:
-        st.title("Agent")
-        st.info("No evaluation-ready Agents are available.")
+    with st.container(border=True):
+        st.markdown("**Revision preview**")
+        st.markdown(f"### {name.strip() or 'Untitled target'}")
+        st.caption("Ready" if name.strip() and model_id else "Incomplete")
+        st.markdown(f"Model · {'Selected' if model_id else 'Required'}")
+        st.caption(f"Prompt · {'Included' if prompt.strip() else 'None'}")
+        st.caption(
+            f"Tools · {len(tool_ids)} selected  |  MCP · {len(mcp_ids)} selected  |  KB · {len(kb_ids)} selected"
+        )
+        scope = ["Model"]
+        if prompt.strip():
+            scope.append("Prompt")
+        if tool_ids:
+            scope.append("Tool use")
+        if mcp_ids:
+            scope.append("MCP access")
+        if kb_ids:
+            scope.append("Knowledge grounding")
+        st.markdown("**Evaluation scope**")
+        st.caption(" · ".join(scope))
+        st.caption("The Model and selected resources are frozen when this Revision is created.")
+
+
+def _render_target_create(
+    registry: AgentRegistry,
+    repository: WorkbenchRepository,
+    catalog_service: TargetCatalog,
+) -> None:
+    st.button("Targets", icon=":material/arrow_back:", on_click=_show_target_list)
+    st.markdown("### Create target")
+    try:
+        catalog = catalog_service.for_user("local-user")
+    except Exception as error:
+        st.error(f"Target catalog is unavailable: {error}")
         return
 
-    selected = _selected_agent(agents, default_agent_id)
-    agent_ids = [agent.agent_id for agent in agents]
-    names = {agent.agent_id: agent.name for agent in agents}
-    st.selectbox(
-        "Agent",
-        agent_ids,
-        format_func=names.__getitem__,
-        key="selected_agent_id",
-        on_change=_select_agent_from_home,
-    )
+    left, preview = st.columns([1.65, 1], gap="large")
+    with left:
+        st.markdown("### Target information")
+        st.caption("Name this evaluation subject.")
+        name = st.text_input("Name *", key="target_create_name")
+        description = st.text_input("Description", key="target_create_description")
+        st.divider()
+        st.markdown("### Model")
+        st.caption("The execution model used by this Revision.")
+        model_labels = _catalog_labels(catalog.models)
+        model_id = st.selectbox(
+            "Model *",
+            [None, *model_labels],
+            format_func=lambda value: "Select a Model" if value is None else model_labels[value],
+            key="target_create_model",
+        )
+        st.caption("A model-only Target is valid without any optional component below.")
+        st.divider()
+        st.markdown("### Prompt")
+        st.caption("Optional system instructions included in every case.")
+        prompt = st.text_area("System prompt", key="target_create_prompt", height=100)
+        st.divider()
+        st.markdown("### Resources")
+        st.caption("Select reusable capabilities available to the current user.")
+        tool_labels = _catalog_labels(catalog.tools)
+        mcp_labels = _catalog_labels(catalog.mcp_servers)
+        kb_labels = _catalog_labels(catalog.knowledge_bases)
+        tool_ids = st.multiselect(
+            "Tools", list(tool_labels), format_func=tool_labels.__getitem__, key="target_create_tools"
+        )
+        mcp_ids = st.multiselect(
+            "MCP servers", list(mcp_labels), format_func=mcp_labels.__getitem__, key="target_create_mcp"
+        )
+        kb_ids = st.multiselect(
+            "Knowledge bases", list(kb_labels), format_func=kb_labels.__getitem__, key="target_create_kb"
+        )
+        st.caption(
+            "Authentication is not stored in Target. Supply Tool, MCP, and KB "
+            "authorization through the Dataset `header` field."
+        )
+    with preview:
+        _render_revision_preview(name, model_id, prompt, tool_ids, mcp_ids, kb_ids)
 
-    selected = repository.get_agent(st.session_state.selected_agent_id)
-    revision = repository.get_current_agent_revision(selected.agent_id)
-    reports = repository.list_reports(selected.agent_id)
+    actions = st.container(horizontal=True, horizontal_alignment="right")
+    actions.button("Cancel", width="content", on_click=_show_target_list)
+    if actions.button("Create target revision", type="primary", width="content"):
+        if model_id is None:
+            st.error("Model is required")
+            return
+        try:
+            selected_tools = catalog.resolve_many("tools", tool_ids)
+            tools = tuple(
+                item.tool_binding for item in selected_tools if item.tool_binding is not None
+            )
+            config = _target_config_snapshot(catalog, model_id, prompt, mcp_ids, kb_ids)
+            agent, _revision = registry.create_revision(name, description, config, tools)
+        except ValueError as error:
+            st.error(str(error))
+        else:
+            select_agent(agent.agent_id)
+            st.session_state.target_view = "detail"
+            st.rerun()
+
+
+def _component_rows(revision: Any) -> list[dict[str, str]]:
+    config = revision.config_snapshot
+    model = config.get("model", "Not configured")
+    model_name = model.get("name", model.get("id", "Not configured")) if isinstance(model, Mapping) else str(model)
+    prompt = str(config.get("prompt", config.get("system_prompt", ""))).strip()
+    def resource_name(item: Any) -> str:
+        if isinstance(item, Mapping):
+            return str(item.get("name", item.get("id", "")))
+        return str(item)
+
+    return [
+        {"Component": "Model", "Selection": model_name, "Purpose": "Execution model"},
+        {"Component": "Prompt", "Selection": "Configured" if prompt else "None", "Purpose": "System instructions"},
+        {"Component": "Tools", "Selection": ", ".join(tool.name for tool in revision.tools) or "None", "Purpose": "Callable capabilities"},
+        {"Component": "MCP", "Selection": ", ".join(resource_name(item) for item in config.get("mcp_servers", ())) or "None", "Purpose": "External capability servers"},
+        {"Component": "KB", "Selection": ", ".join(resource_name(item) for item in config.get("knowledge_bases", ())) or "None", "Purpose": "Grounding sources"},
+    ]
+
+
+def _evaluate_target(agent_id: str) -> None:
+    select_agent(agent_id)
+    request_navigation("Evaluation")
+
+
+def _render_target_detail(repository: WorkbenchRepository, agent_id: str) -> None:
+    agent = repository.get_agent(agent_id)
+    revision = repository.get_current_agent_revision(agent_id)
+    if revision is None:
+        _show_target_list()
+        st.rerun()
+    st.button("Targets", icon=":material/arrow_back:", on_click=_show_target_list)
+    with st.container(horizontal=True, horizontal_alignment="distribute"):
+        st.markdown(f"### {agent.name}")
+        st.button(
+            "Evaluate",
+            type="primary",
+            width="content",
+            on_click=_evaluate_target,
+            args=(agent_id,),
+        )
+    st.caption(agent.description or "No description recorded.")
+    st.caption(f"Revision {revision.revision} · {_configuration_summary(revision)}")
+    st.dataframe(_component_rows(revision), hide_index=True, width="stretch")
+
+    reports = repository.list_reports(agent_id)
     rows = report_history_rows(reports)
-
-    st.title(selected.name)
-    st.caption(selected.description or "No description recorded.")
-    st.caption(
-        f"Revision {revision.revision if revision else 0} · Immutable evaluation context"
-    )
-    st.subheader("Target Tools")
-    tools = _tool_rows(selected.agent_id, repository)
-    if tools:
-        st.dataframe(tools, width="stretch", hide_index=True)
-    else:
-        st.caption("This immutable revision has no Target Tool bindings.")
-
     _render_latest_report(reports[0] if reports else None)
     _render_trends(rows)
     st.subheader("Report history")
@@ -195,6 +456,32 @@ def render_agent_home(
         st.dataframe(rows, width="stretch", hide_index=True)
     else:
         st.caption("No Reports yet.")
+
+
+def render_agent_home(
+    registry: AgentRegistry | None,
+    repository: WorkbenchRepository,
+    *,
+    default_agent_id: str,
+) -> None:
+    """Render explicit Target list, create, or detail views."""
+    del default_agent_id
+    registry = registry or AgentRegistry(repository)
+    st.session_state.setdefault("target_view", "list")
+    if st.session_state.target_view not in {"list", "create", "detail"}:
+        st.session_state.target_view = "list"
+    if st.session_state.target_view == "create":
+        _render_target_create(registry, repository, TargetCatalog())
+        return
+    if st.session_state.target_view == "detail":
+        selected_id = st.session_state.get("selected_agent_id")
+        if selected_id:
+            try:
+                _render_target_detail(repository, selected_id)
+                return
+            except KeyError:
+                st.session_state.target_view = "list"
+    _render_target_list(repository)
 
 
 def render_agents_page(

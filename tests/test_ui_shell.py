@@ -17,11 +17,11 @@ def _shell_script(
     agent_id: str,
     *,
     selected_agent_id: str | None = None,
-    active_page: str = "Agent",
+    active_page: str = "Target",
 ) -> str:
     selected = selected_agent_id if selected_agent_id is not None else agent_id
     active_page_assignment = (
-        f"st.session_state.active_page = {active_page!r}" if active_page != "Agent" else ""
+        f"st.session_state.active_page = {active_page!r}" if active_page != "Target" else ""
     )
     return f'''\
 import streamlit as st
@@ -33,8 +33,8 @@ st.session_state.selected_agent_id = {selected!r}
 {active_page_assignment}
 
 def render_agent_home(registry, repository, *, default_agent_id):
-    st.title("Agent overview")
-    st.caption("Agent selector")
+    st.title("Target overview")
+    st.caption("Target selector")
 
 def render_datasets_module(repository, agent_id, llm_generate):
     st.subheader("Dataset draft")
@@ -45,16 +45,21 @@ def render_runs_module(repository, agent_id, runner, report_service):
 def render_reports_module(repository, agent_id, report_service, *, langfuse_base_url=None):
     st.subheader("Report history")
 
+def render_reflect_module(repository):
+    st.subheader("Reflection inbox")
+
 originals = (
     shell.render_agent_home,
     shell.render_datasets_module,
     shell.render_runs_module,
     shell.render_reports_module,
+    shell.render_reflect_module,
 )
 shell.render_agent_home = render_agent_home
 shell.render_datasets_module = render_datasets_module
 shell.render_runs_module = render_runs_module
 shell.render_reports_module = render_reports_module
+shell.render_reflect_module = render_reflect_module
 try:
     shell.render_shell(None, repository, default_agent_id={agent_id!r})
 finally:
@@ -63,6 +68,7 @@ finally:
         shell.render_datasets_module,
         shell.render_runs_module,
         shell.render_reports_module,
+        shell.render_reflect_module,
     ) = originals
 '''
 
@@ -97,10 +103,11 @@ def test_shell_dispatches_every_sidebar_destination_with_locked_agent_context(tm
     app = AppTest.from_string(_shell_script(str(repository.db_path), agent.agent_id)).run(timeout=20)
 
     expected = {
-        "Agent": "Agent overview",
+        "Target": "Target overview",
         "Dataset": "Dataset draft",
         "Evaluation": "New evaluation",
         "Report": "Report history",
+        "Reflect": "Reflection inbox",
         "Settings": "Environment status",
     }
     navigation = next(radio for radio in app.radio if radio.key == "active_page")
@@ -109,15 +116,17 @@ def test_shell_dispatches_every_sidebar_destination_with_locked_agent_context(tm
         text = _visible_text(app)
         assert page_text in text
         if page in {"Dataset", "Evaluation", "Report"}:
-            assert "Selected Agent" in text
-            assert "Agent selector" not in text
+            assert "Selected Target" in text
+            assert "Target selector" not in text
+        if page == "Reflect":
+            assert "Selected Target" not in text
         navigation = next(radio for radio in app.radio if radio.key == "active_page")
 
 
 def _assert_invalid_agent_context_routes_home(app: AppTest) -> None:
     assert not app.exception
-    assert app.session_state["active_page"] == "Agent"
-    assert "Select an Agent to continue." in _visible_text(app)
+    assert app.session_state["active_page"] == "Target"
+    assert "Select a Target to continue." in _visible_text(app)
 
 
 def test_shell_returns_missing_selected_agent_to_agent_home_with_guidance(tmp_path):

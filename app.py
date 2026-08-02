@@ -28,7 +28,7 @@ from src.settings import load_settings
 from src.sqlite_workbench import SQLiteWorkbenchRepository
 from src.ui.shell import render_shell
 from src.ui.settings_page import SettingsStatus
-from src.workbench_models import TestCase
+from src.workbench_models import DatasetSchema, TestCase
 
 
 st.set_page_config(page_title="Eval Studio", page_icon="◆", layout="wide", initial_sidebar_state="auto")
@@ -183,16 +183,38 @@ def build_llm_generator(settings: Any):
     if not (settings.anthropic_enabled or settings.openai_enabled):
         return None
 
-    def generate(agent_id: str, cases: Sequence[TestCase]) -> list[dict]:
-        existing = [str(case.input.get("query", "")) for case in cases]
-        prompt = (
-            "Generate diverse Agent evaluation cases as JSON. Return a candidates array. "
-            "Each candidate must include input.query and expected_output. "
-            f"Agent ID: {agent_id}. Existing queries: {existing}"
-        )
+    def generate(agent_id: str, cases: Sequence[TestCase], schema: DatasetSchema) -> list[dict]:
+        existing = [
+            str(case.input.get(column.name, ""))
+            for column in schema.input_columns
+            for case in cases
+        ]
+        prompt = _build_candidate_prompt(agent_id, schema, existing)
         return generate_case_candidates(settings, prompt)
 
     return generate
+
+
+def _build_candidate_prompt(agent_id: str, schema: DatasetSchema, existing: list[str]) -> str:
+    input_lines = [
+        f"- {col.name} ({col.data_type}, {'required' if col.required else 'optional'})"
+        + (f": {col.description}" if col.description else "")
+        for col in schema.input_columns
+    ]
+    output_lines = [
+        f"- {col.name} ({col.data_type}, {'required' if col.required else 'optional'})"
+        + (f": {col.description}" if col.description else "")
+        for col in schema.output_columns
+    ]
+    return (
+        "Generate diverse Agent evaluation cases as JSON. "
+        'Return a JSON object with a "candidates" array.\n\n'
+        "Schema (each case MUST conform):\n"
+        "Input fields:\n" + "\n".join(input_lines) + "\n\n"
+        "Output fields:\n" + "\n".join(output_lines) + "\n\n"
+        f"Agent ID: {agent_id}.\n"
+        f"Existing values: {existing}"
+    )
 
 
 def build_runner(settings: Any, repository: SQLiteWorkbenchRepository):

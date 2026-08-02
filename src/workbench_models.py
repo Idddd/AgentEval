@@ -118,6 +118,105 @@ class TestCase:
 
 
 @dataclass(frozen=True)
+class DatasetColumn:
+    name: str
+    kind: str  # "input" | "output"
+    data_type: str  # "string" | "number" | "boolean" | "json"
+    required: bool
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", str(self.name))
+        object.__setattr__(self, "kind", str(self.kind))
+        object.__setattr__(self, "data_type", str(self.data_type))
+        object.__setattr__(self, "description", str(self.description))
+
+
+@dataclass(frozen=True)
+class DatasetSchema:
+    columns: tuple[DatasetColumn, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "columns", tuple(self.columns))
+
+    @property
+    def input_columns(self) -> tuple[DatasetColumn, ...]:
+        return tuple(c for c in self.columns if c.kind == "input")
+
+    @property
+    def output_columns(self) -> tuple[DatasetColumn, ...]:
+        return tuple(c for c in self.columns if c.kind == "output")
+
+    def validate_case(self, case: "TestCase") -> list[str]:
+        """Return error messages for fields that violate the schema; empty = valid."""
+        errors: list[str] = []
+        for column in self.columns:
+            namespace = case.input if column.kind == "input" else case.expected_output
+            if column.name not in namespace:
+                if column.required:
+                    errors.append(f"{column.kind} field '{column.name}' is required")
+                continue
+            value = namespace[column.name]
+            if isinstance(value, str) and value.strip() == "":
+                if column.required:
+                    errors.append(f"{column.kind} field '{column.name}' must not be empty")
+                    continue
+                if column.data_type == "string":
+                    continue
+            type_error = _check_column_type(column, value)
+            if type_error:
+                errors.append(f"{column.kind} field '{column.name}': {type_error}")
+        return errors
+
+
+def _check_column_type(column: DatasetColumn, value: Any) -> str | None:
+    if column.data_type == "string":
+        if not isinstance(value, str):
+            return f"expected string, got {type(value).__name__}"
+    elif column.data_type == "number":
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return f"expected number, got {type(value).__name__}"
+    elif column.data_type == "boolean":
+        if not isinstance(value, bool):
+            return f"expected boolean, got {type(value).__name__}"
+    elif column.data_type == "json":
+        if not isinstance(value, (dict, list, tuple)):
+            return f"expected json object or array, got {type(value).__name__}"
+    return None
+
+
+CREATE_FORM_TEMPLATE = DatasetSchema(
+    columns=(
+        DatasetColumn(
+            "query",
+            "input",
+            "string",
+            required=True,
+            description="User query to the agent",
+        ),
+        DatasetColumn(
+            "expected_action",
+            "output",
+            "string",
+            required=True,
+            description="Expected action or outcome from the target",
+        ),
+        DatasetColumn(
+            "header",
+            "input",
+            "json",
+            required=False,
+            description="Request header metadata",
+        ),
+    )
+)
+
+# Every creation path shares the same built-in schema. Existing persisted
+# datasets keep their stored schema and are not migrated by this default.
+DEFAULT_DATASET_SCHEMA = CREATE_FORM_TEMPLATE
+
+
+@dataclass(frozen=True)
 class DatasetRevision:
     revision_id: str
     dataset_id: str

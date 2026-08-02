@@ -8,7 +8,7 @@ from __future__ import annotations
 import streamlit as st
 
 
-PAGES = ("Agent", "Dataset", "Evaluation", "Report", "Settings")
+PAGES = ("Target", "Dataset", "Evaluation", "Report", "Reflect", "Settings")
 _PAGE_SELECTION_KEYS = (
     "selected_dataset_id",
     "selected_dataset_revision_id",
@@ -16,6 +16,8 @@ _PAGE_SELECTION_KEYS = (
     "selected_report_id",
 )
 _TRANSIENT_STATE_PREFIXES = (
+    "dataset_view_",
+    "dataset_create_",
     "dataset_editor_",
     "dataset_import_open_",
     "dataset_llm_error_",
@@ -30,7 +32,9 @@ def init_ui_state(default_agent_id: str | None = None) -> None:
     """Initialize transient route state without changing an active session."""
     defaults = {
         "selected_agent_id": default_agent_id,
-        "active_page": "Agent",
+        "active_page": "Target",
+        "target_view": "list",
+        "report_view": "list",
         "agent_dialog": None,
         "tool_editor": None,
         "demo_preview_notice": None,
@@ -43,7 +47,7 @@ def init_ui_state(default_agent_id: str | None = None) -> None:
     if pending_page in PAGES:
         st.session_state.active_page = pending_page
     if st.session_state.active_page not in PAGES:
-        st.session_state.active_page = "Agent"
+        st.session_state.active_page = "Target"
     if st.session_state.demo_reset_pending:
         reset_demo_state(default_agent_id)
 
@@ -54,6 +58,10 @@ def navigate(page: str) -> None:
         raise ValueError(f"Unknown workbench page: {page}")
     if st.session_state.get("active_page") == page:
         return
+    if page != "Target":
+        st.session_state.target_view = "list"
+    if page != "Report":
+        st.session_state.report_view = "list"
     st.session_state.active_page = page
 
 
@@ -61,6 +69,13 @@ def request_navigation(page: str) -> None:
     """Apply a route before sidebar widget construction on the next rerun."""
     if page not in PAGES:
         raise ValueError(f"Unknown workbench page: {page}")
+    if page != "Target":
+        st.session_state.target_view = "list"
+    if page != "Report":
+        st.session_state.report_view = "list"
+    elif st.session_state.get("selected_report_id"):
+        st.session_state.report_view = "detail"
+        st.session_state.report_navigation_intent = True
     st.session_state.pending_page = page
 
 
@@ -82,13 +97,13 @@ def reset_demo_state(default_agent_id: str | None = None) -> None:
     _clear_page_selections()
     _clear_transient_editor_and_review_state()
     st.session_state.selected_agent_id = default_agent_id
-    navigate("Agent")
+    navigate("Target")
     st.session_state.demo_reset_confirm = False
     st.session_state.demo_reset_pending = False
 
 
 def select_agent(agent_id: str) -> None:
-    """Open an Agent from the global Agent route with a clean page context."""
+    """Open a Target from the global Target route with a clean page context."""
     _clear_page_selections()
     st.session_state.selected_agent_id = agent_id
-    navigate("Agent")
+    navigate("Target")

@@ -1,7 +1,7 @@
 """Draft dataset service with stable case identities and validation."""
 from __future__ import annotations
 
-from .workbench_models import DatasetRevision, TestCase, UsageCost
+from .workbench_models import DatasetRevision, DatasetSchema, TestCase, UsageCost
 from .workbench_repository import WorkbenchRepository
 
 
@@ -9,8 +9,23 @@ class DatasetRegistry:
     def __init__(self, repository: WorkbenchRepository):
         self.repository = repository
 
-    def create(self, agent_id: str, name: str) -> str:
-        return self.repository.create_dataset(agent_id, name)
+    def create(
+        self,
+        agent_id: str,
+        name: str,
+        *,
+        description: str = "",
+        schema: DatasetSchema | None = None,
+    ) -> str:
+        return self.repository.create_dataset(
+            agent_id, name, description=description, schema=schema
+        )
+
+    def schema_for(self, dataset_id: str) -> DatasetSchema:
+        return self.repository.get_dataset_schema(dataset_id)
+
+    def description_for(self, dataset_id: str) -> str:
+        return self.repository.get_dataset_description(dataset_id)
 
     def list_draft(self, dataset_id: str) -> list[TestCase]:
         return self.repository.list_draft_cases(dataset_id)
@@ -45,7 +60,21 @@ class DatasetRegistry:
         case_ids = [case.case_id for case in cases]
         if len(case_ids) != len(set(case_ids)):
             raise ValueError("case IDs must be unique within a dataset draft")
-        queries = [str(case.input.get("query", "")).casefold() for case in cases]
-        if len(queries) != len(set(queries)):
-            raise ValueError("case queries must be unique within a dataset draft")
+
+        schema = self.schema_for(dataset_id)
+        for case in cases:
+            errors = schema.validate_case(case)
+            if errors:
+                raise ValueError("; ".join(errors))
+
+        if schema.input_columns:
+            first_input = schema.input_columns[0]
+            keys = [
+                str(case.input.get(first_input.name, "")).casefold() for case in cases
+            ]
+            if len(keys) != len(set(keys)):
+                raise ValueError(
+                    f"case {first_input.name} values must be unique within a dataset draft"
+                )
+
         self.repository.replace_draft_cases(dataset_id, cases)

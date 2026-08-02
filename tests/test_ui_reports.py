@@ -149,12 +149,116 @@ def test_report_view_model_distinguishes_missing_usage_from_persisted_zero_usage
     assert explicit_zero["costs"]["Agent"] == 0.0
 
 
+def test_report_home_is_one_native_table_row_per_report():
+    """Returning to the selector-first Report detail must fail this test."""
+    from streamlit.testing.v1 import AppTest
+
+    summary = report_summary()
+    script = f"""
+import streamlit as st
+from types import SimpleNamespace
+from src.ui.reports import render_reports_module
+from src.workbench_models import ReportSnapshot
+
+summary = {summary!r}
+reports = [
+    ReportSnapshot("report-new", "run-new", 1, "NEEDS ATTENTION", summary, "new.md", "2026-07-30T01:00:00+00:00"),
+    ReportSnapshot("report-old", "run-old", 1, "PASS", summary, "old.md", "2026-07-30T00:00:00+00:00"),
+]
+render_reports_module(SimpleNamespace(list_reports=lambda agent_id: reports), "agent-1")
+"""
+
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    assert len(app.dataframe) == 1
+    assert len(app.dataframe[0].value) == 2
+    assert list(app.dataframe[0].value.columns) == [
+        "Created",
+        "Target revision",
+        "Dataset",
+        "Dataset revision",
+        "Status",
+        "Pass rate",
+        "Evaluation cost",
+        "View",
+    ]
+    assert not app.selectbox
+
+
+def test_report_detail_has_back_and_reflect_actions():
+    """A selected Report must expose compact navigation without the history selector."""
+    from streamlit.testing.v1 import AppTest
+
+    summary = report_summary()
+    script = f"""
+import streamlit as st
+from types import SimpleNamespace
+from src.ui.reports import render_reports_module
+from src.workbench_models import ReportSnapshot
+
+summary = {summary!r}
+report = ReportSnapshot("report-1", "run-1", 1, "NEEDS ATTENTION", summary, "report.md", "2026-07-30T01:00:00+00:00")
+st.session_state.report_view = "detail"
+st.session_state.selected_report_id = report.report_id
+render_reports_module(SimpleNamespace(list_reports=lambda agent_id: [report]), "agent-1")
+"""
+
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    assert {button.label for button in app.button} >= {"Reports", "Reflect"}
+    assert "Test Results" in "\n".join(str(node.value) for node in app.get("markdown"))
+    assert not any(item.label == "Report" for item in app.selectbox)
+
+
+def test_reflect_analysis_lists_agree_suggestions_and_disables_empty_submit(tmp_path):
+    """Analysis must expose structured choices and never submit an empty patch."""
+    from streamlit.testing.v1 import AppTest
+
+    db = tmp_path / "workbench.db"
+    repository = SQLiteWorkbenchRepository(db)
+    agent = repository.create_agent("Target", "")
+    revision = repository.create_agent_revision(agent.agent_id, {"model": "m1", "prompt": "Answer"}, ())
+    dataset_id = repository.create_dataset(agent.agent_id, "Dataset")
+    repository.replace_draft_cases(dataset_id, [WorkbenchCase("case", {"query": "Q"}, {"expected_action": "A"})])
+    dataset = repository.publish_dataset(dataset_id)
+    run = repository.finish_run(repository.create_run(revision.revision_id, dataset.revision_id).run_id, RunStatus.COMPLETED)
+    report = repository.save_report(run.run_id, "NEEDS ATTENTION", report_summary(), tmp_path / "report.md")
+    script = f"""
+import streamlit as st
+from pathlib import Path
+from src.sqlite_workbench import SQLiteWorkbenchRepository
+from src.ui.reports import render_reports_module
+
+st.session_state.report_view = "analysis"
+st.session_state.selected_report_id = {report.report_id!r}
+render_reports_module(SQLiteWorkbenchRepository(Path({str(db)!r})), {agent.agent_id!r})
+"""
+
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    assert len(app.dataframe) == 1
+    assert list(app.dataframe[0].value.columns) == [
+        "Agree",
+        "Area",
+        "Evidence",
+        "Current",
+        "Suggested",
+    ]
+    assert next(button for button in app.button if button.label == "Submit").disabled
+    assert "Target Revision 3" not in "\n".join(str(node.value) for node in app.get("caption"))
+    assert "Target Revision 2" in "\n".join(str(node.value) for node in app.get("caption"))
+
+
 def test_report_history_shows_result_first_sections_in_vertical_order():
     """Moving section render calls out of the Report/Compare tabs must change this order."""
     from streamlit.testing.v1 import AppTest
 
     summary = report_summary()
     script = f"""
+import streamlit as st
 from types import SimpleNamespace
 from src.ui.reports import render_reports_module
 from src.workbench_models import ReportSnapshot
@@ -172,6 +276,8 @@ comparison = SimpleNamespace(
 )
 repository = SimpleNamespace(list_reports=lambda agent_id: reports)
 service = SimpleNamespace(compare=lambda baseline_id, current_id: comparison)
+st.session_state.report_view = "detail"
+st.session_state.selected_report_id = "report-new"
 render_reports_module(repository, "agent-1", service)
 """
 
@@ -228,6 +334,7 @@ def test_report_baseline_resets_when_selected_report_changes():
 
     summary = report_summary()
     script = f"""
+import streamlit as st
 from types import SimpleNamespace
 from src.ui.reports import render_reports_module
 from src.workbench_models import ReportSnapshot
@@ -247,20 +354,17 @@ comparison = SimpleNamespace(
 )
 repository = SimpleNamespace(list_reports=lambda agent_id: reports)
 service = SimpleNamespace(compare=lambda baseline_id, current_id: comparison)
+st.session_state.report_view = "detail"
+st.session_state.setdefault("selected_report_id", "newest")
 render_reports_module(repository, "agent-1", service)
 """
 
     app = AppTest.from_string(script).run(timeout=20)
-    assert app.selectbox[1].value == "middle"
-    app.selectbox[0].set_value("middle").run(timeout=20)
-    assert app.selectbox[1].value == "previous"
-    app.selectbox[1].set_value("oldest").run(timeout=20)
-    app.selectbox[0].set_value("newest").run(timeout=20)
-    assert app.selectbox[1].value == "middle"
-    app.selectbox[0].set_value("previous").run(timeout=20)
-    assert app.selectbox[1].value == "oldest"
+    assert app.selectbox[0].value == "middle"
     app.selectbox[0].set_value("oldest").run(timeout=20)
-    assert app.selectbox[1].value == "previous"
+    app.session_state.selected_report_id = "middle"
+    app.run(timeout=20)
+    assert app.selectbox[0].value == "previous"
 
 
 def test_comparison_view_uses_shared_case_delta_and_complete_change_groups():
@@ -325,9 +429,6 @@ render_reports_module(SQLiteWorkbenchRepository(Path({str(db)!r})), {agent.agent
 
     assert not first.exception
     assert not second.exception
-    first_text = "\n".join(str(node.value) for node in first.get("markdown") + first.get("caption"))
-    second_text = "\n".join(str(node.value) for node in second.get("markdown") + second.get("caption"))
     assert report.report_id
-    assert "PASS" in first_text
-    assert "Agent One" in first_text
-    assert "PASS" in second_text
+    assert first.dataframe[0].value.iloc[0]["Status"] == "PASS"
+    assert second.dataframe[0].value.iloc[0]["Status"] == "PASS"
