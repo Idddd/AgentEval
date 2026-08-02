@@ -12,7 +12,7 @@ registry:
 kind-up: registry
 	kind get clusters | grep -qx $(KIND_CLUSTER) || \
 		kind create cluster --name $(KIND_CLUSTER) --config deploy/kind/cluster.yaml
-	bash deploy/kind/registry.sh
+	bash deploy/kind/registry.sh   # per-node certs.d wiring needs the nodes to exist
 	$(KUBECTL) apply -f $(CALICO_URL)
 	$(KUBECTL) -n kube-system rollout status daemonset/calico-node --timeout=300s
 	$(KUBECTL) wait --for=condition=Ready node --all --timeout=300s
