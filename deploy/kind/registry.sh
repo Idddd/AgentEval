@@ -31,6 +31,19 @@ if kind get clusters 2>/dev/null | grep -qx "${CLUSTER}"; then
 [host."http://${REG_NAME}:5000"]
   capabilities = ["pull", "resolve"]
 EOF
+
+    # kind propagates the host's proxy env into the node. A proxy on the
+    # host's loopback is unreachable from inside the node, so registry pulls
+    # fail with proxyconnect errors unless the registry bypasses the proxy.
+    docker exec "${node}" mkdir -p /etc/systemd/system/containerd.service.d
+    docker exec -i "${node}" \
+      cp /dev/stdin /etc/systemd/system/containerd.service.d/no-proxy.conf <<EOF
+[Service]
+Environment="NO_PROXY=${REG_NAME},localhost:${REG_PORT},localhost,127.0.0.1,::1,10.96.0.0/16,10.244.0.0/16,.svc,.svc.cluster.local"
+Environment="no_proxy=${REG_NAME},localhost:${REG_PORT},localhost,127.0.0.1,::1,10.96.0.0/16,10.244.0.0/16,.svc,.svc.cluster.local"
+EOF
+    docker exec "${node}" systemctl daemon-reload
+    docker exec "${node}" systemctl restart containerd
   done
 fi
 
