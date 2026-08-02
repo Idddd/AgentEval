@@ -250,6 +250,33 @@ UI tabs:
   full pipeline, custom-case form, live console, `demo_bypass` failure
   assertion, reset flow.
 
+## Marketplace eval runs (sandboxed)
+
+External agents register with a digest-pinned manifest and are evaluated in
+an isolated Kubernetes pod; all guard/tool evidence is recorded by a
+harness-owned Tool Gateway (the agent is untrusted and has **no network
+egress** except the gateway). Design: `docs/superpowers/specs/`.
+
+```bash
+# one-time local cluster (kind + Calico + local registry + gateway)
+make kind-up
+make reference-agent          # build & push the reference agent image
+
+# start the worker, then trigger runs from the Marketplace UI page
+SANDBOX_RUNNER=k8s .venv/bin/python -m src.orchestrator
+.venv/bin/python -m streamlit run app.py    # → pages/Marketplace
+
+# k8s conformance & isolation tests (default pytest never needs a cluster)
+make test-k8s
+```
+
+The manifest format, the `agent-eval/v1` contract (`/healthz`, `/invoke`,
+gateway guard/tool calls), and the sandbox hardening are specified in
+`docs/superpowers/specs/2026-08-02-sandboxed-agent-eval-run-design.md`.
+`reference_agent/` is the executable example: it implements the contract
+with rule-based intent and reproduces the `demo_bypass` failure.
+`SANDBOX_RUNNER=fake` runs the same pipeline fully in-process for demos.
+
 ## Docs
 
 - `agent_permission_eval_spec.md` — implementation spec (kept in sync with
