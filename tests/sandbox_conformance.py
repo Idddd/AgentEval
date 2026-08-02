@@ -30,7 +30,9 @@ from src.sandbox.base import (
 )
 
 SECRET_ENV_PATTERN = re.compile(r"(_KEY|_TOKEN|_SECRET|_PASSWORD)$")
-ALLOWED_SECRET_LIKE = {"EVAL_RUN_TOKEN"}
+# EVAL_RUN_TOKEN is the contract credential; GPG_KEY is baked into the
+# official python base images and is not injected by the harness.
+ALLOWED_SECRET_LIKE = {"EVAL_RUN_TOKEN", "GPG_KEY"}
 
 
 def invoke(handle: SandboxHandle, input_text: str, timeout_s: float = 30.0) -> dict:
@@ -65,12 +67,21 @@ def check_not_ready(runner: SandboxRunner, broken_spec: SandboxSpec,
         runner.teardown(handle)
 
 
-def check_deadline_expiry(runner: SandboxRunner, short_deadline_spec: SandboxSpec) -> None:
-    assert short_deadline_spec.run_deadline_s <= 5, "test spec must expire quickly"
+def check_deadline_expiry(runner: SandboxRunner, short_deadline_spec: SandboxSpec,
+                          settle_timeout_s: int = 45) -> None:
+    """The runner must report EXPIRED after the run deadline. Enforcement is
+    asynchronous on Kubernetes (kubelet applies activeDeadlineSeconds on its
+    sync loop), so poll for the transition instead of asserting instantly."""
+    assert short_deadline_spec.run_deadline_s <= 10, "test spec must expire quickly"
     handle = runner.provision(short_deadline_spec)
     try:
         runner.wait_ready(handle, timeout_s=60)
-        time.sleep(short_deadline_spec.run_deadline_s + 1)
+        time.sleep(short_deadline_spec.run_deadline_s)
+        deadline = time.monotonic() + settle_timeout_s
+        while time.monotonic() < deadline:
+            if runner.status(handle) == SandboxStatus.EXPIRED:
+                break
+            time.sleep(1)
         assert runner.status(handle) == SandboxStatus.EXPIRED
         with pytest.raises((urllib.error.URLError, AssertionError, OSError)):
             invoke(handle, "__conformance_echo:late", timeout_s=5)

@@ -1,0 +1,57 @@
+# Tool Gateway: the only workload with provider secrets and open egress.
+# Sandbox pods may reach it solely through the NetworkPolicy allowance.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-eval-gateway
+  namespace: agent-eval-runs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-eval-gateway
+  template:
+    metadata:
+      labels:
+        app: agent-eval-gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: localhost:5001/agent-eval-gateway:dev
+          ports:
+            - containerPort: 9000
+          env:
+            - name: EVAL_GATEWAY_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-admin
+                  key: token
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 9000}
+            periodSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-eval-gateway
+  namespace: agent-eval-runs
+spec:
+  selector:
+    app: agent-eval-gateway
+  ports:
+    - port: 9000
+      targetPort: 9000

@@ -10,3 +10,4 @@ streamlit.*.log
 .worktrees/
 .superpowers/
 .env.secret
+deploy/kind/.reference-agent-image

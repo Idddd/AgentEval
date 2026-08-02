@@ -1,0 +1,37 @@
+# Default-deny for sandbox pods (label agent-eval/sandbox=true).
+# Egress is allowed ONLY to the Tool Gateway service and cluster DNS.
+# The orchestrator reaches sandboxes via API-server port-forward, which does
+# not traverse the pod network, so no ingress rule is needed.
+#
+# NOTE: enforcement requires a NetworkPolicy-capable CNI (Calico is installed
+# by `make kind-up`); the conformance suite's egress-denial test fails loudly
+# if the policy is silently ignored.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-isolation
+  namespace: agent-eval-runs
+spec:
+  podSelector:
+    matchLabels:
+      agent-eval/sandbox: "true"
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: agent-eval-gateway
+      ports:
+        - protocol: TCP
+          port: 9000
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

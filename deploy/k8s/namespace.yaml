@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agent-eval-runs
+---
+# Bound the total resources sandbox pods can consume so orphans or runaway
+# runs cannot exhaust the cluster.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sandbox-quota
+  namespace: agent-eval-runs
+spec:
+  hard:
+    pods: "10"
+    limits.cpu: "4"
+    limits.memory: 6Gi

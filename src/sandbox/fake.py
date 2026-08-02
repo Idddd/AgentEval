@@ -44,7 +44,8 @@ class FakeSandboxRunner(SandboxRunner):
         self._sandboxes: dict[str, _FakeSandbox] = {}
 
     def provision(self, spec: SandboxSpec) -> SandboxHandle:
-        factory = self._images.get(spec.image_digest)
+        # "*" registers a fallback handler for any digest (worker fake mode).
+        factory = self._images.get(spec.image_digest) or self._images.get("*")
         if factory is None:
             raise SandboxProvisionError(
                 f"Image {spec.image_digest} is not available to the fake runner")
