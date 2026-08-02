@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import urllib.error
 import urllib.request
 from typing import Callable, Mapping
@@ -60,6 +61,20 @@ def _conformance_probe(text: str, env: Mapping[str, str]) -> InvokeResponse | No
             return InvokeResponse(output="egress:ok")
         except (urllib.error.URLError, OSError) as error:
             return InvokeResponse(output=f"egress:blocked:{error}")
+    if text.startswith("__conformance_tcp:"):
+        # Raw TCP reachability probe. Used to prove NetworkPolicy enforcement
+        # against in-cluster addresses, which (unlike the internet) do not
+        # depend on the environment having outbound connectivity.
+        _, host, port = text.split(":", 2)
+        probe = socket.socket()
+        probe.settimeout(5)
+        try:
+            probe.connect((host, int(port)))
+            return InvokeResponse(output="tcp:ok")
+        except OSError as error:
+            return InvokeResponse(output=f"tcp:blocked:{error}")
+        finally:
+            probe.close()
     return None
 
 

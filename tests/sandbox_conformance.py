@@ -121,14 +121,30 @@ def check_reaping(runner: SandboxRunner, spec: SandboxSpec) -> None:
 
 
 def check_egress_denied(runner: SandboxRunner, spec: SandboxSpec,
-                        external_url: str = "https://example.com") -> None:
-    """k8s-only: the sandbox must not reach arbitrary external hosts."""
+                        external_url: str = "https://example.com",
+                        blocked_host: str = "10.96.0.1",
+                        blocked_port: int = 443) -> None:
+    """k8s-only: the sandbox must not reach anything but gateway and DNS.
+
+    The external-URL probe alone is NOT proof: in an environment without
+    outbound connectivity (proxy-only, air-gapped) it fails for reasons
+    unrelated to policy. The in-cluster probe is the real assertion — the
+    Kubernetes API service is always routable inside the cluster, so if it
+    is unreachable from the sandbox, a NetworkPolicy is genuinely enforcing
+    egress. A CNI that ignores NetworkPolicy fails this test.
+    """
     handle = runner.provision(spec)
     try:
         runner.wait_ready(handle, timeout_s=60)
         body = invoke(handle, f"__conformance_egress:{external_url}", timeout_s=60)
         assert body["output"].startswith("egress:blocked"), (
-            f"sandbox reached {external_url}; NetworkPolicy is not enforced "
-            f"(is Calico installed?): {body}")
+            f"sandbox reached {external_url}: {body}")
+
+        body = invoke(handle, f"__conformance_tcp:{blocked_host}:{blocked_port}",
+                      timeout_s=60)
+        assert body["output"].startswith("tcp:blocked"), (
+            f"sandbox reached in-cluster {blocked_host}:{blocked_port}; the "
+            f"NetworkPolicy is NOT being enforced — the CNI must support "
+            f"NetworkPolicy (install Calico; kindnet does not enforce it): {body}")
     finally:
         runner.teardown(handle)

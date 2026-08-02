@@ -1,5 +1,6 @@
 """FakeSandboxRunner runs the shared conformance suite (plan Task 3)."""
 import json
+import socket
 import urllib.error
 import urllib.request
 
@@ -30,6 +31,17 @@ def conformance_handler_factory(env):
                 return InvokeResponse(output="egress:ok")
             except (urllib.error.URLError, OSError) as error:
                 return InvokeResponse(output=f"egress:blocked:{error}")
+        if text.startswith("__conformance_tcp:"):
+            _, host, port = text.split(":", 2)
+            probe = socket.socket()
+            probe.settimeout(5)
+            try:
+                probe.connect((host, int(port)))
+                return InvokeResponse(output="tcp:ok")
+            except OSError as error:
+                return InvokeResponse(output=f"tcp:blocked:{error}")
+            finally:
+                probe.close()
         return InvokeResponse(output=f"unhandled:{text}")
 
     return handler

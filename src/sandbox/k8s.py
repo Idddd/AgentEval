@@ -156,6 +156,10 @@ class KubernetesPodRunner(SandboxRunner):
         pod = self._read_pod(handle.sandbox_id)
         if pod is None:
             return SandboxStatus.GONE
+        if pod.metadata.deletion_timestamp is not None:
+            # Deletion is graceful, so the pod object lingers while
+            # terminating; it is no longer usable, which is what GONE means.
+            return SandboxStatus.GONE
         phase = pod.status.phase
         if phase == "Failed":
             if (pod.status.reason or "") == "DeadlineExceeded":
