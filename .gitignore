@@ -9,3 +9,4 @@ reports/
 streamlit.*.log
 .worktrees/
 .superpowers/
+.env.secret

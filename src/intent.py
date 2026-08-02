@@ -81,7 +81,9 @@ class LlmIntentAnalyzer:
     def __init__(self, settings: Settings):
         from openai import OpenAI
 
-        self._client = OpenAI(api_key=settings.openai_api_key)
+        self._client = OpenAI(api_key=settings.openai_api_key,
+                              base_url=settings.openai_base_url)
+        self._model = settings.openai_model
         self._fallback = RuleIntentAnalyzer()
         self.used_fallback = False
 
@@ -89,7 +91,7 @@ class LlmIntentAnalyzer:
         tool_desc = "\n".join(f"- {t.name}: {t.description}" for t in tools.values())
         try:
             resp = self._client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self._model,
                 max_tokens=20,
                 temperature=0,
                 messages=[
@@ -151,8 +153,9 @@ def generate_case_candidates(settings: Settings, prompt: str) -> list[dict]:
         stop_reason = response.stop_reason
     elif settings.openai_enabled:
         from openai import OpenAI
-        response = OpenAI(api_key=settings.openai_api_key).chat.completions.create(
-            model="gpt-4o-mini", response_format={"type": "json_object"},
+        response = OpenAI(api_key=settings.openai_api_key,
+                          base_url=settings.openai_base_url).chat.completions.create(
+            model=settings.openai_model, response_format={"type": "json_object"},
             messages=[{"role": "system", "content": "Return JSON with a candidates array."},
                       {"role": "user", "content": prompt}])
         content = response.choices[0].message.content or "{}"

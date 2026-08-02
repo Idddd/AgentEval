@@ -80,20 +80,27 @@ the demo never hard-fails on model issues.
 one (`WRONG_TOOL`). The fixed `demo_bypass` case injects a `skip_guard` bug so
 every run demonstrates one real `MISSING_GUARD` failure (9 green, 1 red).
 
-## Configuration (.env)
+## Configuration (.env + .env.secret)
 
-Copy `.env.example` → `.env`. Everything is optional; empty values trigger
-the documented fallbacks.
+Configuration is split into two files, both gitignored:
 
-| Variable | Effect when set |
-|---|---|
-| `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` | LLM intent analysis via an Anthropic-compatible endpoint (e.g. DeepSeek `https://api.deepseek.com/anthropic`) |
-| `ANTHROPIC_MODEL` | Model for the above (default `deepseek-v4-flash`) |
-| `OPENAI_API_KEY` | LLM intent via OpenAI (used only if Anthropic vars are absent) |
-| `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` | Trace backend = Langfuse; otherwise local JSON under `data/` |
-| `LANGFUSE_HOST` | `http://localhost:3000` for self-hosted, `https://cloud.langfuse.com` for cloud |
+- Copy `.env.example` → `.env` — **non-secret** settings (endpoints, model
+  names, hosts).
+- Copy `.env.secret.example` → `.env.secret` — **secrets only** (API keys,
+  tokens). Loaded after `.env` and overrides it.
 
-`.env` is gitignored.
+Everything is optional; empty values trigger the documented fallbacks.
+
+| Variable | File | Effect when set |
+|---|---|---|
+| `ANTHROPIC_BASE_URL` | `.env` | LLM intent analysis via an Anthropic-compatible endpoint (e.g. DeepSeek `https://api.deepseek.com/anthropic`); takes priority over OpenAI |
+| `ANTHROPIC_AUTH_TOKEN` | `.env.secret` | Token for the endpoint above |
+| `ANTHROPIC_MODEL` | `.env` | Model for the above (default `deepseek-v4-flash`) |
+| `OPENAI_API_KEY` | `.env.secret` | LLM intent via OpenAI or an OpenAI-compatible endpoint (used only if Anthropic vars are absent) |
+| `OPENAI_BASE_URL` | `.env` | OpenAI-compatible endpoint override (e.g. Alibaba Cloud Model Studio `https://dashscope.aliyuncs.com/compatible-mode/v1`); empty = api.openai.com |
+| `OPENAI_MODEL` | `.env` | Model for the OpenAI-compatible endpoint (default `gpt-4o-mini`; e.g. `qwen-plus`) |
+| `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` | `.env.secret` | Trace backend = Langfuse; otherwise local JSON under `data/` |
+| `LANGFUSE_HOST` | `.env` | `http://localhost:3000` for self-hosted, `https://cloud.langfuse.com` for cloud |
 
 ### Getting your API keys
 
