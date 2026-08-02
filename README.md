@@ -270,6 +270,14 @@ SANDBOX_RUNNER=k8s .venv/bin/python -m src.orchestrator
 make test-k8s
 ```
 
+**The CNI must enforce NetworkPolicy.** `make kind-up` installs Calico
+because kind's default CNI (kindnet) silently ignores NetworkPolicy — the
+sandbox would then have unrestricted network access. `test_egress_is_denied_by_networkpolicy`
+proves enforcement by asserting the sandbox cannot reach the in-cluster
+Kubernetes API service, so a misconfigured cluster fails loudly instead of
+appearing isolated. If Calico images cannot be pulled in your environment,
+mirror them internally; do not fall back to kindnet.
+
 The manifest format, the `agent-eval/v1` contract (`/healthz`, `/invoke`,
 gateway guard/tool calls), and the sandbox hardening are specified in
 `docs/superpowers/specs/2026-08-02-sandboxed-agent-eval-run-design.md`.
