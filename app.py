@@ -162,8 +162,12 @@ def load_styles() -> None:
         [class*="st-key-trace_span_"] [data-testid="stButton"] button:hover { background:#F2F8F5 !important; }
         [class*="st-key-trace_span_"] [data-testid="stButton"] button[kind="primary"] { background:#E4F0E9 !important; color:var(--primary) !important; }
         .st-key-trace_detail_actions { justify-content:flex-start !important; gap:4px !important; }
-        .st-key-trace_detail_actions h3 { margin-right:6px; }
-        .st-key-trace_detail_actions [data-testid="stButton"] button { min-height:26px; padding:3px 8px; font-size:11px !important; border-color:transparent !important; background:transparent !important; }
+        .st-key-trace_detail_actions h3 { margin-left:8px; }
+        .st-key-trace_detail_actions [data-testid="stButton"] button { min-height:28px; padding:3px 9px; font-size:11px !important; border-radius:999px !important; }
+        .st-key-trace_mark_fail [data-testid="stButton"] button { color:#A33C36 !important; border-color:#E4AAA5 !important; background:#FFF7F6 !important; }
+        .st-key-trace_mark_fail [data-testid="stButton"] button:hover { color:#842E29 !important; border-color:#CF756D !important; background:#FCE8E6 !important; }
+        .st-key-trace_analysis [data-testid="stButton"] button { color:#176B55 !important; border-color:#9DC8B8 !important; background:#F2F8F5 !important; }
+        .st-key-trace_analysis [data-testid="stButton"] button:hover { color:#125743 !important; border-color:#6EAD96 !important; background:#E4F0E9 !important; }
         @media (max-width: 900px) {
             .block-container { padding:1rem 1rem 2rem !important; }
             [data-testid="stSidebar"] { width:224px !important; min-width:224px !important; }

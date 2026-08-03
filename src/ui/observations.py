@@ -111,17 +111,23 @@ def _render_trace_detail(
     marked_key = f"trace_marked_fail_{trace_id}"
     analysis_key = f"trace_analysis_open_{trace_id}"
     with st.container(horizontal=True, vertical_alignment="center", key="trace_detail_actions"):
-        st.markdown("### Trace Detail")
         if st.button(
             "Unmark fail" if st.session_state.get(marked_key) else "Mark fail",
             key="trace_mark_fail",
             type="tertiary",
+            icon=":material/flag:",
         ):
             st.session_state[marked_key] = not st.session_state.get(marked_key, False)
             st.rerun()
-        if st.button("Analysis", key="trace_analysis", type="tertiary"):
+        if st.button(
+            "Analysis",
+            key="trace_analysis",
+            type="tertiary",
+            icon=":material/analytics:",
+        ):
             st.session_state[analysis_key] = not st.session_state.get(analysis_key, False)
             st.rerun()
+        st.markdown("### Trace Detail")
     st.caption(detail.summary.trace_id)
     if st.session_state.get(marked_key):
         st.caption("🔴 Marked as failed for this review session")
