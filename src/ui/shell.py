@@ -14,6 +14,7 @@ from .agents import render_agent_home
 from .datasets import CandidateGenerator, render_datasets_module
 from .reports import render_reports_module
 from .reflects import render_reflect_module
+from .observations import render_observation_overview, render_trace_module
 from .runs import render_runs_module
 from .settings_page import SettingsStatus, render_settings_page
 from .state import PAGES, init_ui_state, navigate
@@ -29,6 +30,20 @@ def _request_demo_reset() -> None:
 
 def _cancel_demo_reset() -> None:
     st.session_state.demo_reset_confirm = False
+
+
+def _sidebar_destination(label: str, page: str, icon: str, *, nested: bool = False) -> None:
+    """Render a concrete sidebar destination, optionally as a child node."""
+    suffix = "_child" if nested else ""
+    target = st.container(key=f"sidebar_nav_item_{page.lower()}{suffix}")
+    target.button(
+        f"{icon}  {label}",
+        key=f"sidebar_nav_{page.lower()}",
+        width="stretch",
+        type="primary" if st.session_state.active_page == page else "secondary",
+        on_click=navigate,
+        args=(page,),
+    )
 
 
 def locked_agent(
@@ -92,6 +107,7 @@ def render_shell(
     report_service: object | None = None,
     llm_generate: CandidateGenerator | None = None,
     langfuse_base_url: str | None = None,
+    trace_provider: Callable[[str], object | None] | None = None,
 ) -> None:
     """Render the fixed global shell and dispatch to the active page."""
     del demo_trace_path
@@ -112,6 +128,19 @@ def render_shell(
     with st.sidebar:
         st.markdown("<div class='brand-mark'>EVAL STUDIO</div>", unsafe_allow_html=True)
         st.caption("MODULAR EVALUATION")
+        _sidebar_destination("Target", "Target", "◎")
+        st.markdown("<div class='sidebar-nav-heading'>EVALUATION</div>", unsafe_allow_html=True)
+        _sidebar_destination("Dataset", "Dataset", "▤", nested=True)
+        _sidebar_destination("Evaluation", "Evaluation", "◇", nested=True)
+        _sidebar_destination("Report", "Report", "▥", nested=True)
+        _sidebar_destination("Reflect", "Reflect", "↻", nested=True)
+        st.markdown("<div class='sidebar-nav-heading'>OBSERVATION</div>", unsafe_allow_html=True)
+        _sidebar_destination("Overview", "Overview", "◉", nested=True)
+        _sidebar_destination("Trace", "Trace", "⌁", nested=True)
+        _sidebar_destination("Settings", "Settings", "⚙")
+
+        # Retain one state-bearing widget for programmatic navigation and old
+        # browser sessions; CSS hides it from the visual navigation tree.
         page = st.radio(
             "Global navigation",
             PAGES,
@@ -122,6 +151,8 @@ def render_shell(
         report_intent = bool(st.session_state.pop("report_navigation_intent", False))
         if page == "Report" and previous_page != "Report" and not report_intent:
             st.session_state.report_view = "list"
+        if page == "Trace" and previous_page != "Trace":
+            st.session_state.selected_trace_id = None
         st.session_state.last_active_page = page
         st.markdown("<div class='sidebar-spacer'></div>", unsafe_allow_html=True)
         st.caption("DEMO CONTROLS")
@@ -185,3 +216,7 @@ def render_shell(
             report_service,
             langfuse_base_url=langfuse_base_url,
         )
+    elif page == "Overview":
+        render_observation_overview(repository, agent.agent_id)
+    elif page == "Trace":
+        render_trace_module(repository, agent.agent_id, trace_provider=trace_provider)

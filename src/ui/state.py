@@ -8,12 +8,13 @@ from __future__ import annotations
 import streamlit as st
 
 
-PAGES = ("Target", "Dataset", "Evaluation", "Report", "Reflect", "Settings")
+PAGES = ("Target", "Dataset", "Evaluation", "Report", "Reflect", "Overview", "Trace", "Settings")
 _PAGE_SELECTION_KEYS = (
     "selected_dataset_id",
     "selected_dataset_revision_id",
     "selected_run_id",
     "selected_report_id",
+    "selected_trace_id",
 )
 _TRANSIENT_STATE_PREFIXES = (
     "dataset_view_",

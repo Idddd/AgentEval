@@ -154,6 +154,15 @@ def test_run_results_and_reports_round_trip(tmp_path):
     assert completed.status is RunStatus.COMPLETED
     assert loaded.case_results == (result,)
     assert reopened.list_runs(agent.agent_id) == [loaded]
+    traces = reopened.list_traces(agent.agent_id)
+    assert len(traces) == 1
+    assert traces[0].trace_id == "trace-1"
+    assert traces[0].observation_count == 2
+    assert traces[0].latency_ms == 1.0
+    assert traces[0].cost_usd == 0.02
+    assert reopened.get_trace("trace-1").result == result
+    with pytest.raises(KeyError):
+        reopened.get_trace("missing-trace")
     assert dataset_revision.generation_costs[0].cost_usd == 0.01
     assert (first_report.artifact_version, second_report.artifact_version) == (1, 2)
     assert reopened.get_report(second_report.report_id).summary == {"score": 5}
