@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
-from collections.abc import Sequence
 from typing import Any
 
 import streamlit as st
@@ -20,15 +19,15 @@ from src.backends.local_backend import LocalJsonBackend, LocalJsonStore
 from src.code_evaluator import CodeEvaluator
 from src.config_loader import load_tools_config
 from src.demo_workspace import DemoEvalRunner, seed_demo_workspace
+from src.dataset_generation import DatasetCandidateService
 from src.eval_runner import EvalRunner
-from src.intent import build_intent_analyzer, generate_case_candidates
+from src.intent import build_intent_analyzer
 from src.llm_judge import LlmJudge
 from src.report_service import ReportService
-from src.settings import load_settings
+from src.settings import load_settings, save_llm_settings, test_llm_connection
 from src.sqlite_workbench import SQLiteWorkbenchRepository
 from src.ui.shell import render_shell
 from src.ui.settings_page import SettingsStatus
-from src.workbench_models import DatasetSchema, TestCase
 
 
 st.set_page_config(page_title="Eval Studio", page_icon="◆", layout="wide", initial_sidebar_state="auto")
@@ -167,6 +166,231 @@ def load_styles() -> None:
             h1 { font-size:30px !important; }
             [data-testid="stHorizontalBlock"] { gap:.65rem !important; }
         }
+
+        /* TaskLattice-aligned visual system. These rules intentionally only
+           affect presentation; the Streamlit widget structure stays intact. */
+        :root {
+            --canvas:#FAFAFA;
+            --sidebar:#FAFAFA;
+            --surface:#FAFAFA;
+            --surface-raised:#FFFFFF;
+            --primary:#4339FF;
+            --primary-hover:#3730D9;
+            --ink:#191A1B;
+            --muted:#F2F2F2;
+            --muted-ink:rgba(25,26,27,.62);
+            --border:rgba(20,22,24,.09);
+            --input-border:rgba(20,22,24,.20);
+            --signal:#008CA3;
+            --success:#16835A;
+            --danger:#B33A3A;
+            --font-sans:"PingFang SC","Noto Sans SC","Microsoft YaHei","Hanken Grotesk",Arial,sans-serif;
+            --font-heading:"Noto Serif SC","Source Han Serif SC","Songti SC",Georgia,serif;
+            --font-mono:"Chivo Mono","JetBrains Mono",Consolas,monospace;
+        }
+        html, body, [class*="stApp"] {
+            background:var(--canvas);
+            color:var(--ink);
+            font-family:var(--font-sans);
+        }
+        [data-testid="stAppViewContainer"] { background:var(--canvas); }
+        [data-testid="stHeader"] {
+            background:rgba(250,250,250,.94);
+            border-bottom:1px solid var(--border);
+            backdrop-filter:blur(12px);
+        }
+        [data-testid="stToolbar"] { right:1rem; }
+        [data-testid="stSidebar"] {
+            background:var(--sidebar);
+            border-right:1px solid var(--border);
+            width:264px !important;
+            min-width:264px !important;
+        }
+        [data-testid="stSidebar"] > div:first-child { padding-top:.35rem; }
+        [data-testid="stSidebar"] * { color:var(--ink); }
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color:var(--muted-ink); }
+        [data-testid="stSidebar"] [data-testid="stRadio"] { margin-top:.25rem; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"] {
+            gap:9px;
+            min-height:36px;
+            border-radius:6px;
+            padding:7px 10px;
+            color:var(--muted-ink);
+            font-size:13px;
+            font-weight:500;
+            transition:background .16s ease,color .16s ease,box-shadow .16s ease;
+        }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]::before {
+            width:17px;
+            color:rgba(25,26,27,.46);
+            font-family:var(--font-mono);
+            font-size:13px;
+        }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="0"])::before { content:"\\25CE"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="1"])::before { content:"\\25A6"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="2"])::before { content:"\\25B7"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="3"])::before { content:"\\25A4"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="4"])::before { content:"\\2726"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="5"])::before { content:"\\2699"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:hover { background:var(--muted); color:var(--ink); }
+        [data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
+            background:rgba(67,57,255,.055);
+            box-shadow:inset 2px 0 0 var(--primary);
+            color:var(--ink);
+            font-weight:600;
+        }
+        [data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked)::before { color:var(--primary); }
+        .block-container { max-width:1600px; padding:1.35rem 2rem 3.5rem; }
+        h1, h2, h3 { color:var(--ink); font-family:var(--font-heading) !important; font-weight:500 !important; }
+        h1 { font-size:30px !important; letter-spacing:-.025em; line-height:1.2 !important; }
+        h2 { font-size:22px !important; letter-spacing:-.015em; }
+        h3 { font-size:17px !important; }
+        p, label, [data-testid="stCaptionContainer"] { line-height:1.5; }
+        [data-testid="stCaptionContainer"] { color:var(--muted-ink); font-size:12px; }
+        hr { border-color:var(--border) !important; }
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            background:var(--surface);
+            border:1px solid rgba(20,22,24,.08);
+            border-radius:8px;
+            padding:16px;
+            box-shadow:0 1px 2px rgba(0,0,0,.025),0 1px 4px rgba(0,0,0,.02);
+        }
+        [data-testid="stButton"] button,
+        [data-testid="stFormSubmitButton"] button,
+        [data-testid="stDownloadButton"] button {
+            border-radius:6px !important;
+            border:1px solid rgba(20,22,24,.12) !important;
+            color:var(--ink) !important;
+            background:var(--surface) !important;
+            font-weight:600 !important;
+            font-size:13px !important;
+            min-height:36px;
+            padding:0 14px !important;
+            box-shadow:none !important;
+            transition:background .16s ease,border-color .16s ease,color .16s ease;
+        }
+        [data-testid="stButton"] button:hover,
+        [data-testid="stFormSubmitButton"] button:hover,
+        [data-testid="stDownloadButton"] button:hover {
+            color:var(--ink) !important;
+            border-color:rgba(20,22,24,.18) !important;
+            background:var(--muted) !important;
+        }
+        [data-testid="stButton"] button[kind="primary"],
+        [data-testid="stFormSubmitButton"] button[kind="primary"],
+        [data-testid="stDownloadButton"] button[kind="primary"] {
+            background:var(--primary) !important;
+            border-color:var(--primary) !important;
+            color:#FFF !important;
+        }
+        [data-testid="stButton"] button[kind="primary"]:hover,
+        [data-testid="stFormSubmitButton"] button[kind="primary"]:hover {
+            background:var(--primary-hover) !important;
+            border-color:var(--primary-hover) !important;
+            color:#FFF !important;
+        }
+        [data-testid="stButton"] button:disabled,
+        [data-testid="stFormSubmitButton"] button:disabled {
+            background:var(--muted) !important;
+            border-color:var(--border) !important;
+            color:rgba(25,26,27,.38) !important;
+            opacity:.72 !important;
+        }
+        [data-testid="stTextInput"] input,
+        [data-testid="stTextArea"] textarea,
+        [data-testid="stNumberInput"] input,
+        [data-baseweb="select"] > div {
+            background:var(--surface-raised) !important;
+            color:var(--ink) !important;
+            border-color:var(--input-border) !important;
+            border-radius:6px !important;
+        }
+        [data-testid="stTextInput"] input:focus,
+        [data-testid="stTextArea"] textarea:focus,
+        [data-testid="stNumberInput"] input:focus {
+            border-color:var(--primary) !important;
+            box-shadow:0 0 0 2px rgba(67,57,255,.18) !important;
+        }
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] { gap:6px; }
+        [data-testid="stMain"] [data-testid="stRadioOption"] {
+            border:1px solid var(--border);
+            border-radius:6px;
+            padding:6px 10px;
+            background:var(--surface);
+        }
+        [data-testid="stMain"] [data-testid="stRadioOption"][data-selected="true"] {
+            background:rgba(67,57,255,.055);
+            border-color:rgba(67,57,255,.24);
+            color:var(--primary);
+            font-weight:600;
+        }
+        .brand-lockup {
+            display:flex;
+            align-items:center;
+            gap:12px;
+            min-height:52px;
+            margin:-.35rem -1rem .55rem;
+            padding:.45rem 1rem .75rem;
+            border-bottom:1px solid var(--border);
+        }
+        .brand-lattice-mark { width:32px; height:32px; flex:0 0 32px; color:var(--ink); overflow:visible; }
+        .brand-lattice-lines { fill:none; stroke:currentColor; stroke-width:1.5; }
+        .brand-lattice-nodes { fill:var(--signal); stroke:var(--surface); stroke-width:1.5; }
+        .brand-copy { min-width:0; line-height:1; }
+        .brand-copy strong { display:block; font-size:15px; font-weight:600; letter-spacing:.22em; }
+        .brand-copy span { display:block; margin-top:7px; color:var(--muted-ink); font-family:var(--font-mono); font-size:9px; letter-spacing:.08em; }
+        .nav-section-label { margin:.7rem .6rem .35rem; color:rgba(25,26,27,.45); font-family:var(--font-mono); font-size:9px; font-weight:500; letter-spacing:.10em; }
+        .sidebar-spacer { height:clamp(7rem, 26vh, 18rem); }
+        [data-testid="stSidebar"] [data-testid="stButton"] button { min-height:32px; font-size:12px !important; }
+        [data-testid="stSidebar"] [data-testid="stButton"] button p { color:var(--ink) !important; }
+        .workspace-bar {
+            display:flex;
+            gap:10px;
+            align-items:center;
+            min-height:42px;
+            padding:0 0 14px;
+            margin-bottom:22px;
+            border:0;
+            border-bottom:1px solid var(--border);
+            border-radius:0;
+            background:transparent;
+            font-size:13px;
+        }
+        .workspace-bar span { color:var(--muted-ink); font-family:var(--font-mono); font-size:10px; letter-spacing:.08em; }
+        .workspace-bar strong { font-weight:500; }
+        .workspace-bar::after { content:"LOCAL"; margin-left:auto; color:var(--signal); font-family:var(--font-mono); font-size:9px; letter-spacing:.10em; }
+        .status-pill, .demo-badge {
+            display:inline-block;
+            border:1px solid rgba(67,57,255,.14);
+            border-radius:4px;
+            background:rgba(67,57,255,.055);
+            color:var(--primary);
+            font-size:10px;
+            font-weight:600;
+            letter-spacing:.045em;
+            padding:3px 7px;
+            vertical-align:middle;
+            white-space:nowrap;
+        }
+        .demo-step { border-left:2px solid rgba(67,57,255,.28); padding-left:12px; }
+        .demo-result-line { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0 18px; }
+        .demo-safe, .demo-blocked { display:inline-block; border-radius:4px; font-size:10px; font-weight:600; padding:4px 8px; }
+        .demo-safe { background:rgba(22,131,90,.08); color:var(--success); border:1px solid rgba(22,131,90,.18); }
+        .demo-blocked { background:rgba(179,58,58,.07); color:var(--danger); border:1px solid rgba(179,58,58,.18); }
+        .tool-table-heading { color:var(--muted-ink); font-family:var(--font-mono); font-size:9px; font-weight:500; letter-spacing:.06em; text-transform:uppercase; }
+        [data-testid="stDataFrame"], [data-testid="stDataEditor"] { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+        [data-testid="stMetric"] { padding:.25rem 0; }
+        [data-testid="stMetricLabel"] { color:var(--muted-ink); font-size:12px; }
+        [data-testid="stMetricValue"] { color:var(--ink); font-family:var(--font-heading); font-size:28px; font-weight:500; }
+        [data-testid="stAlert"] { border-radius:6px; border-width:1px; }
+        [data-testid="stTabs"] [data-baseweb="tab-list"] { gap:18px; border-bottom:1px solid var(--border); }
+        [data-testid="stTabs"] [data-baseweb="tab"] { height:40px; padding:0 2px; background:transparent; font-size:13px; }
+        [data-testid="stTabs"] [aria-selected="true"] { color:var(--primary); }
+        a { color:var(--primary); text-underline-offset:3px; }
+        @media (max-width:900px) {
+            [data-testid="stSidebar"] { width:240px !important; min-width:240px !important; }
+            h1 { font-size:27px !important; }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -178,43 +402,13 @@ def build_workbench(db_path: str) -> SQLiteWorkbenchRepository:
     return SQLiteWorkbenchRepository(Path(db_path))
 
 
-def build_llm_generator(settings: Any):
-    """Build a lazy candidate generator; provider errors remain inside the Dataset UI."""
-    if not (settings.anthropic_enabled or settings.openai_enabled):
-        return None
-
-    def generate(agent_id: str, cases: Sequence[TestCase], schema: DatasetSchema) -> list[dict]:
-        existing = [
-            str(case.input.get(column.name, ""))
-            for column in schema.input_columns
-            for case in cases
-        ]
-        prompt = _build_candidate_prompt(agent_id, schema, existing)
-        return generate_case_candidates(settings, prompt)
-
-    return generate
-
-
-def _build_candidate_prompt(agent_id: str, schema: DatasetSchema, existing: list[str]) -> str:
-    input_lines = [
-        f"- {col.name} ({col.data_type}, {'required' if col.required else 'optional'})"
-        + (f": {col.description}" if col.description else "")
-        for col in schema.input_columns
-    ]
-    output_lines = [
-        f"- {col.name} ({col.data_type}, {'required' if col.required else 'optional'})"
-        + (f": {col.description}" if col.description else "")
-        for col in schema.output_columns
-    ]
-    return (
-        "Generate diverse Agent evaluation cases as JSON. "
-        'Return a JSON object with a "candidates" array.\n\n'
-        "Schema (each case MUST conform):\n"
-        "Input fields:\n" + "\n".join(input_lines) + "\n\n"
-        "Output fields:\n" + "\n".join(output_lines) + "\n\n"
-        f"Agent ID: {agent_id}.\n"
-        f"Existing values: {existing}"
-    )
+def build_llm_generator(settings: Any, repository: SQLiteWorkbenchRepository):
+    """Always provide generation: configured LLM first, authored fallback otherwise."""
+    return DatasetCandidateService(
+        settings,
+        repository,
+        fallback_delay_seconds=1.6,
+    ).generate
 
 
 def build_runner(settings: Any, repository: SQLiteWorkbenchRepository):
@@ -255,7 +449,7 @@ def runner_provider(agent_id: str):
 
 
 settings_status = SettingsStatus(
-    llm=("Available" if settings.anthropic_enabled or settings.openai_enabled else "Not configured"),
+    llm=("Connected" if settings.anthropic_enabled or settings.openai_enabled else "Not configured"),
     langfuse=(
         "Available"
         if settings.langfuse_public_key and settings.langfuse_secret_key
@@ -270,8 +464,11 @@ render_shell(
     default_agent_id=demo_seed.agent_id,
     runner_provider=runner_provider,
     settings_status=settings_status,
+    settings=settings,
+    test_llm_connection=test_llm_connection,
+    save_llm_connection=save_llm_settings,
     report_service=report_service,
-    llm_generate=build_llm_generator(settings),
+    llm_generate=build_llm_generator(settings, repository),
     langfuse_base_url=(
         settings.langfuse_host
         if settings.langfuse_public_key and settings.langfuse_secret_key
