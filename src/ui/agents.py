@@ -239,6 +239,18 @@ def _show_target_create() -> None:
     st.session_state.target_view = "create"
 
 
+@st.dialog("Create target", width="large")
+def _target_create_dialog(
+    registry: AgentRegistry, repository: WorkbenchRepository
+) -> None:
+    _render_target_create(registry, repository, TargetCatalog())
+
+
+@st.dialog("Target detail", width="large")
+def _target_detail_dialog(repository: WorkbenchRepository, agent_id: str) -> None:
+    _render_target_detail(repository, agent_id)
+
+
 def _render_target_list(repository: WorkbenchRepository) -> None:
     with st.container(horizontal=True, horizontal_alignment="distribute"):
         st.title("Target")
@@ -304,27 +316,26 @@ def _render_revision_preview(
     mcp_ids: Sequence[str],
     kb_ids: Sequence[str],
 ) -> None:
-    with st.container(border=True):
-        st.markdown("**Revision preview**")
-        st.markdown(f"### {name.strip() or 'Untitled target'}")
-        st.caption("Ready" if name.strip() and model_id else "Incomplete")
-        st.markdown(f"Model · {'Selected' if model_id else 'Required'}")
-        st.caption(f"Prompt · {'Included' if prompt.strip() else 'None'}")
-        st.caption(
-            f"Tools · {len(tool_ids)} selected  |  MCP · {len(mcp_ids)} selected  |  KB · {len(kb_ids)} selected"
+    scope = ["Model"]
+    if prompt.strip():
+        scope.append("Prompt")
+    if tool_ids:
+        scope.append("Tool use")
+    if mcp_ids:
+        scope.append("MCP access")
+    if kb_ids:
+        scope.append("Knowledge grounding")
+    with st.container(border=True, key="target_revision_preview"):
+        st.caption("Revision preview")
+        identity, configuration, resources = st.columns([1.5, 1.2, 1.4])
+        identity.markdown(f"**{name.strip() or 'Untitled target'}**")
+        identity.caption("Ready to create" if name.strip() and model_id else "Name and model required")
+        configuration.caption("EVALUATION SCOPE")
+        configuration.markdown(" · ".join(scope))
+        resources.caption("RESOURCES")
+        resources.markdown(
+            f"{len(tool_ids)} Tools · {len(mcp_ids)} MCP · {len(kb_ids)} KB"
         )
-        scope = ["Model"]
-        if prompt.strip():
-            scope.append("Prompt")
-        if tool_ids:
-            scope.append("Tool use")
-        if mcp_ids:
-            scope.append("MCP access")
-        if kb_ids:
-            scope.append("Knowledge grounding")
-        st.markdown("**Evaluation scope**")
-        st.caption(" · ".join(scope))
-        st.caption("The Model and selected resources are frozen when this Revision is created.")
 
 
 def _render_target_create(
@@ -332,60 +343,65 @@ def _render_target_create(
     repository: WorkbenchRepository,
     catalog_service: TargetCatalog,
 ) -> None:
-    st.button("Targets", icon=":material/arrow_back:", on_click=_show_target_list)
-    st.markdown("### Create target")
+    with st.container(horizontal=True, vertical_alignment="center"):
+        st.button("Targets", icon=":material/arrow_back:", on_click=_show_target_list)
+        st.markdown("### Create target")
     try:
         catalog = catalog_service.for_user("local-user")
     except Exception as error:
         st.error(f"Target catalog is unavailable: {error}")
         return
 
-    left, preview = st.columns([1.65, 1], gap="large")
-    with left:
-        st.markdown("### Target information")
-        st.caption("Name this evaluation subject.")
-        name = st.text_input("Name *", key="target_create_name")
-        description = st.text_input("Description", key="target_create_description")
-        st.divider()
-        st.markdown("### Model")
-        st.caption("The execution model used by this Revision.")
-        model_labels = _catalog_labels(catalog.models)
-        model_id = st.selectbox(
-            "Model *",
-            [None, *model_labels],
-            format_func=lambda value: "Select a Model" if value is None else model_labels[value],
-            key="target_create_model",
-        )
-        st.caption("A model-only Target is valid without any optional component below.")
-        st.divider()
-        st.markdown("### Prompt")
-        st.caption("Optional system instructions included in every case.")
-        prompt = st.text_area("System prompt", key="target_create_prompt", height=100)
-        st.divider()
-        st.markdown("### Resources")
-        st.caption("Select reusable capabilities available to the current user.")
+    with st.container(width=920, key="target_create_compact"):
+        st.caption("Define the immutable subject used by evaluations.")
+        identity, execution = st.columns(2, gap="medium")
+        with identity:
+            st.markdown("**Target information**")
+            name = st.text_input("Name *", key="target_create_name")
+            description = st.text_input("Description", key="target_create_description")
+        with execution:
+            st.markdown("**Model & Prompt**")
+            model_labels = _catalog_labels(catalog.models)
+            model_id = st.selectbox(
+                "Model *",
+                [None, *model_labels],
+                format_func=lambda value: "Select a Model" if value is None else model_labels[value],
+                key="target_create_model",
+            )
+            prompt = st.text_area(
+                "System prompt (optional)", key="target_create_prompt", height=76
+            )
+
         tool_labels = _catalog_labels(catalog.tools)
         mcp_labels = _catalog_labels(catalog.mcp_servers)
         kb_labels = _catalog_labels(catalog.knowledge_bases)
-        tool_ids = st.multiselect(
-            "Tools", list(tool_labels), format_func=tool_labels.__getitem__, key="target_create_tools"
-        )
-        mcp_ids = st.multiselect(
-            "MCP servers", list(mcp_labels), format_func=mcp_labels.__getitem__, key="target_create_mcp"
-        )
-        kb_ids = st.multiselect(
-            "Knowledge bases", list(kb_labels), format_func=kb_labels.__getitem__, key="target_create_kb"
-        )
-        st.caption(
-            "Authentication is not stored in Target. Supply Tool, MCP, and KB "
-            "authorization through the Dataset `header` field."
-        )
-    with preview:
-        _render_revision_preview(name, model_id, prompt, tool_ids, mcp_ids, kb_ids)
+        st.markdown("**Resources**")
+        with st.popover(
+            "Configure",
+            icon=":material/extension:",
+            width="stretch",
+        ):
+            st.caption("Optional capabilities available to this target revision.")
+            tool_ids = st.multiselect(
+                "Tools", list(tool_labels), format_func=tool_labels.__getitem__, key="target_create_tools"
+            )
+            mcp_ids = st.multiselect(
+                "MCP servers", list(mcp_labels), format_func=mcp_labels.__getitem__, key="target_create_mcp"
+            )
+            kb_ids = st.multiselect(
+                "Knowledge bases", list(kb_labels), format_func=kb_labels.__getitem__, key="target_create_kb"
+            )
+            st.caption(
+                "Authentication is not stored in Target. Supply Tool, MCP, and KB "
+                "authorization through the Dataset `header` field."
+            )
 
-    actions = st.container(horizontal=True, horizontal_alignment="right")
-    actions.button("Cancel", width="content", on_click=_show_target_list)
-    if actions.button("Create target revision", type="primary", width="content"):
+        _render_revision_preview(name, model_id, prompt, tool_ids, mcp_ids, kb_ids)
+        actions = st.container(horizontal=True, horizontal_alignment="right")
+        actions.button("Cancel", width="content", on_click=_show_target_list)
+        create = actions.button("Create target revision", type="primary", width="content")
+
+    if create:
         if model_id is None:
             st.error("Model is required")
             return
@@ -472,13 +488,15 @@ def render_agent_home(
     if st.session_state.target_view not in {"list", "create", "detail"}:
         st.session_state.target_view = "list"
     if st.session_state.target_view == "create":
-        _render_target_create(registry, repository, TargetCatalog())
+        _render_target_list(repository)
+        _target_create_dialog(registry, repository)
         return
     if st.session_state.target_view == "detail":
         selected_id = st.session_state.get("selected_agent_id")
         if selected_id:
             try:
-                _render_target_detail(repository, selected_id)
+                _render_target_list(repository)
+                _target_detail_dialog(repository, selected_id)
                 return
             except KeyError:
                 st.session_state.target_view = "list"
