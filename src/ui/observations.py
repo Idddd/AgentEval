@@ -108,6 +108,10 @@ def _close_trace_dialog() -> None:
     st.session_state.pop("selected_span_id", None)
 
 
+def _close_trace_analysis(analysis_key: str) -> None:
+    st.session_state[analysis_key] = False
+
+
 @st.dialog("Trace detail", width="large")
 def _trace_detail_dialog(
     repository: WorkbenchRepository,
@@ -151,10 +155,14 @@ def _render_trace_detail(
             st.session_state[marked_key] = not st.session_state.get(marked_key, False)
             st.rerun()
         if st.button(
-            "Analysis",
+            "Close analysis" if st.session_state.get(analysis_key) else "Analysis",
             key="trace_analysis",
-            type="tertiary",
-            icon=":material/analytics:",
+            type="secondary" if st.session_state.get(analysis_key) else "tertiary",
+            icon=(
+                ":material/close:"
+                if st.session_state.get(analysis_key)
+                else ":material/analytics:"
+            ),
         ):
             st.session_state[analysis_key] = not st.session_state.get(
                 analysis_key, False
@@ -185,6 +193,14 @@ def _render_trace_detail(
 
     raw_trace = trace_provider(trace_id) if trace_provider else None
     if st.session_state.get(analysis_key):
+        st.button(
+            "Back to trace detail",
+            key="trace_analysis_back",
+            type="secondary",
+            icon=":material/arrow_back:",
+            on_click=_close_trace_analysis,
+            args=(analysis_key,),
+        )
         _render_trace_analysis(detail.result, raw_trace)
 
     st.subheader("Span tree")
@@ -373,3 +389,134 @@ def _render_trace_analysis(result: Any, raw_trace: object | None) -> None:
             st.markdown("**Deterministic findings**")
             for name, reason in result.deterministic_reasons.items():
                 st.caption(f"{name}: {reason}")
+
+        suggestions = _trace_improvement_suggestions(result, raw_trace)
+        st.markdown("**Recommended changes**")
+        if not suggestions:
+            st.success("No evidence-backed change is recommended for this trace.")
+            return
+        for index, suggestion in enumerate(suggestions, start=1):
+            st.markdown(f"**{index}. {suggestion['title']}**")
+            st.caption(f"Evidence · {suggestion['evidence']}")
+            st.markdown(f"Change **{suggestion['target']}**: {suggestion['change']}")
+
+
+def _trace_improvement_suggestions(
+    result: Any, raw_trace: object | None
+) -> tuple[dict[str, str], ...]:
+    """Turn persisted trace evidence into concrete, conservative changes."""
+    suggestions: list[dict[str, str]] = []
+
+    for name, reason in result.deterministic_reasons.items():
+        score = result.deterministic_scores.get(name, 1.0)
+        if not isinstance(score, (int, float)) or isinstance(score, bool) or score >= 1.0:
+            continue
+        normalized = f"{name} {reason}".lower()
+        if any(token in normalized for token in ("tool", "execution", "evidence")):
+            target = "Target tool policy"
+            change = (
+                "state when this tool must be called, validate its required arguments "
+                "before execution, and require a successful tool receipt before the final answer."
+            )
+        elif any(token in normalized for token in ("permission", "safety", "role", "unauthor")):
+            target = "Target system prompt / guard policy"
+            change = (
+                "add an explicit allow/deny rule for this case, check identity and role before "
+                "any sensitive action, and return a refusal without calling the tool when denied."
+            )
+        else:
+            target = "Target system prompt"
+            change = (
+                "add a decision rule covering this failed condition and include the expected "
+                "behavior as a short example; rerun this case as a regression test."
+            )
+        suggestions.append(
+            {
+                "title": f"Fix failed check: {name}",
+                "evidence": reason,
+                "target": target,
+                "change": change,
+            }
+        )
+
+    for item in result.tool_evidence:
+        if item.passed:
+            continue
+        if not item.executed:
+            change = (
+                f"make the trigger condition for `{item.tool_id}` explicit and require the agent "
+                "to call it before answering when that condition matches."
+            )
+        elif not item.succeeded:
+            change = (
+                f"validate `{item.tool_id}` arguments against its schema, surface the tool error "
+                "to the agent, and add a bounded retry or fallback path."
+            )
+        else:
+            change = (
+                f"capture and validate the receipt from `{item.tool_id}` before claiming success; "
+                "treat a missing or invalid receipt as a failed action."
+            )
+        suggestions.append(
+            {
+                "title": f"Repair tool path: {item.tool_id}",
+                "evidence": item.error or f"Tool evidence status is {item.effect_status}.",
+                "target": "Tool binding / execution policy",
+                "change": change,
+            }
+        )
+
+    if result.judge is not None:
+        for dimension, score in result.judge.scores.items():
+            if score >= 4:
+                continue
+            reason = result.judge.reasons.get(dimension) or result.judge.summary
+            changes = {
+                "correctness": "add the expected decision criteria and require the response to verify each criterion against tool evidence.",
+                "relevance": "instruct the agent to answer the requested action first and remove unrelated explanation.",
+                "completeness": "define a response checklist for required outcome, evidence, and next step before producing the final answer.",
+                "safety": "move authorization checks before every sensitive tool call and define an explicit safe refusal response.",
+            }
+            suggestions.append(
+                {
+                    "title": f"Improve {dimension} ({score}/5)",
+                    "evidence": reason,
+                    "target": "Target system prompt",
+                    "change": changes[dimension],
+                }
+            )
+
+    if isinstance(raw_trace, TraceRecord):
+        for span in raw_trace.spans:
+            if span.level != "ERROR" and not span.status_message:
+                continue
+            suggestions.append(
+                {
+                    "title": f"Handle span failure: {span.name}",
+                    "evidence": span.status_message or "The span completed at ERROR level.",
+                    "target": "Runtime error handling",
+                    "change": (
+                        "catch this failure at the span boundary, record a stable error code, "
+                        "and define whether to retry, fall back, or stop before composing the response."
+                    ),
+                }
+            )
+
+    if not str(result.response or "").strip():
+        suggestions.append(
+            {
+                "title": "Prevent empty final responses",
+                "evidence": "The recorded final response is empty.",
+                "target": "Agent response contract",
+                "change": "validate the final response and emit a clear failure/fallback message when no answer was generated.",
+            }
+        )
+
+    unique: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for suggestion in suggestions:
+        key = (suggestion["title"], suggestion["target"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(suggestion)
+    return tuple(unique)
