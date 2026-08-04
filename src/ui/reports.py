@@ -431,9 +431,10 @@ def _render_report_list(reports: list[ReportSnapshot]) -> None:
             "Pass rate": st.column_config.NumberColumn(format="%.1f%%"),
             "Evaluation cost": st.column_config.NumberColumn(format="$%.4f"),
             "View": st.column_config.ButtonColumn(
-                "",
-                type="tertiary",
+                "Action",
+                type="primary",
                 width="small",
+                alignment="center",
                 key="report_list_actions",
                 on_click=_open_report,
                 args=(tuple(report.report_id for report in reports),),
