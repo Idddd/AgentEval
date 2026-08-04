@@ -19,6 +19,8 @@ def test_demo_fixture_has_three_connection_types_and_six_cases():
         ("SystemRestartTool", "python"),
     ]
     assert len(DEMO_CASES) == 6
+    assert all(case.expected_output["expected_action"] for case in DEMO_CASES)
+    assert all(tool.tags and tool.metadata["dataset_generation"] for tool in DEMO_TOOLS)
     assert {case.metadata["scenario"] for case in DEMO_CASES} == {
         "public_weather",
         "hr_employee_allowed",
@@ -82,6 +84,9 @@ def test_seed_creates_one_marker_fixture_with_a_persisted_all_pass_baseline(tmp_
     baseline = repository.get_report(first.baseline_report_id)
     assert baseline.summary["metrics"]["pass_rate"] == 100.0
     assert len(repository.get_dataset_revision(first.dataset_revision_id).cases) == 6
+    revision = repository.get_agent_revision(first.agent_revision_id)
+    assert revision.config_snapshot["demo_fixture_version"] == 2
+    assert revision.config_snapshot["metadata"]["dataset_generation"]["seed_cases"]
 
     run = asyncio.run(
         DemoEvalRunner(repository, tmp_path / "traces.jsonl", inject_regression=True).run_revision(
