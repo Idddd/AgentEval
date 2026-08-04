@@ -92,7 +92,11 @@ def main() -> int:
         datasets = DatasetRegistry(repo)
         dataset_id = datasets.create(first.agent_id, "Support smoke Dataset")
         datasets.add_cases(dataset_id, [
-            TestCase("manual-case", {"query": "Check account status"}, {"expected_tool_called": "lookup"}),
+            TestCase(
+                "manual-case",
+                {"query": "Check account status"},
+                {"expected_action": "Call lookup", "expected_tool_called": "lookup"},
+            ),
         ])
         dataset_revision = datasets.publish(dataset_id)
 
@@ -121,19 +125,22 @@ render_reports_module(SQLiteWorkbenchRepository(Path({str(repo.db_path)!r})), {f
         restarted = AppTest.from_string(script).run(timeout=30)
         assert not initial.exception, initial.exception
         assert not restarted.exception, restarted.exception
+        assert set(restarted.dataframe[0].value["Status"]) == {"PASS", "NEEDS ATTENTION"}
+        restarted.session_state.selected_report_id = second_report.report_id
+        restarted.session_state.report_view = "detail"
+        restarted = restarted.run(timeout=30)
         text = visible_text(restarted)
         assert "NEEDS ATTENTION" in text
-        assert "PASS" in text
         assert "Tool Evidence" in text
         assert "Usage & Cost" in text
-        assert "Report history" in text
+        assert "Report detail" in text
 
         previous_db = os.environ.get("WORKBENCH_DB")
         os.environ["WORKBENCH_DB"] = str(repo.db_path)
         try:
             demo = AppTest.from_file("app.py").run(timeout=30)
             assert not demo.exception, demo.exception
-            assert "Permission Compliance Agent" in visible_text(demo)
+            assert "Permission Compliance Agent" in list(demo.dataframe[0].value["Target"])
             demo = next(
                 radio for radio in demo.radio if radio.key == "active_page"
             ).set_value("Evaluation").run(timeout=30)
