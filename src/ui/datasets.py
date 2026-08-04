@@ -542,7 +542,356 @@ def _case_from_review_record(
                     value = json.loads(str(value))
                 except json.JSONDecodeError as error:
                     raise ValueError(f"{column.name} must be valid JSON") from error
-        if not column.required and value…3228 tokens truncated…ol["required"] == "yes",
+        if not column.required and value in (None, ""):
+            continue
+        namespace = input_values if column.kind == "input" else expected_values
+        namespace[column.name] = value
+
+    case = TestCase(
+        draft.case_id,
+        input_values,
+        expected_values,
+        draft.reference_answer,
+        draft.tags,
+        draft.source,
+        dict(draft.metadata),
+    )
+    errors = schema.validate_case(case)
+    if errors:
+        raise ValueError("; ".join(errors))
+    return case
+
+
+def _filter_new_review_cases(
+    existing: Sequence[TestCase], candidates: Sequence[TestCase]
+) -> tuple[list[TestCase], int]:
+    existing_ids = {case.case_id for case in existing}
+    input_keys = {
+        json.dumps(dict(case.input), ensure_ascii=False, sort_keys=True, default=str).casefold()
+        for case in existing
+    }
+    selected: list[TestCase] = []
+    skipped = 0
+    for case in candidates:
+        input_key = json.dumps(
+            dict(case.input), ensure_ascii=False, sort_keys=True, default=str
+        ).casefold()
+        if case.case_id in existing_ids or input_key in input_keys:
+            skipped += 1
+            continue
+        selected.append(case)
+        existing_ids.add(case.case_id)
+        input_keys.add(input_key)
+    return selected, skipped
+
+
+def _visible_case_source(source: str) -> str:
+    if source in {"llm", "demo-fallback"}:
+        return "AI generated"
+    return {
+        "json": "JSON import",
+        "coverage": "Coverage",
+        "manual": "Manual",
+        "demo": "Demo",
+    }.get(source, source.replace("-", " ").capitalize())
+
+
+def _render_case_editor(registry: DatasetRegistry, agent_id: str, dataset_id: str) -> None:
+    editor_key = _dataset_key(agent_id, dataset_id, "dataset_editor")
+    editor = st.session_state.get(editor_key)
+    if editor is None:
+        return
+    editing = isinstance(editor, str) and editor != "new"
+    existing = next(
+        (case for case in registry.list_draft(dataset_id) if case.case_id == editor),
+        None,
+    )
+    if editing and existing is None:
+        st.session_state.pop(editor_key, None)
+        return
+    schema = registry.schema_for(dataset_id)
+    with st.container(border=False):
+        st.subheader("Edit case" if editing else "Add case")
+        with st.form(_dataset_key(agent_id, dataset_id, "dataset_case_form")):
+            input_values, expected_values, errors = _render_schema_fields(
+                schema,
+                agent_id,
+                dataset_id,
+                "case",
+                existing.input if existing else None,
+                existing.expected_output if existing else None,
+            )
+            save, cancel = st.columns(2)
+            submitted = save.form_submit_button("Save case", type="primary")
+            cancelled = cancel.form_submit_button("Cancel")
+        if cancelled:
+            st.session_state.pop(editor_key, None)
+            st.rerun()
+        if submitted:
+            try:
+                if errors:
+                    raise ValueError("; ".join(errors))
+                metadata = dict(existing.metadata) if existing else {}
+                if existing:
+                    registry.replace_case(
+                        dataset_id,
+                        TestCase(
+                            existing.case_id,
+                            input_values,
+                            expected_values,
+                            existing.reference_answer,
+                            existing.tags,
+                            existing.source,
+                            metadata,
+                        ),
+                    )
+                else:
+                    registry.add_cases(
+                        dataset_id,
+                        [TestCase(uuid.uuid4().hex, input_values, expected_values)],
+                    )
+            except ValueError as error:
+                st.error(str(error))
+            else:
+                st.session_state.pop(editor_key, None)
+                st.rerun()
+
+
+def _render_create_form(registry: DatasetRegistry, agent_id: str) -> None:
+    """Render the inline create-dataset form and retain draft columns in session state."""
+    columns_key = _create_key(agent_id, "columns")
+    if columns_key not in st.session_state:
+        st.session_state[columns_key] = _initial_create_columns()
+    columns: list[dict[str, str]] = st.session_state[columns_key]
+
+    with st.container(border=False, width=660, gap="small"):
+        st.markdown("### Create dataset")
+        st.caption("Define the Dataset and the fields every evaluation case must contain.")
+
+        st.markdown("**Basic information**")
+        name = st.text_input(
+            "Name *", max_chars=50, key=_create_key(agent_id, "name"), width="stretch"
+        )
+        description = st.text_area(
+            "Description",
+            max_chars=200,
+            height=72,
+            key=_create_key(agent_id, "description"),
+            width="stretch",
+        )
+
+        st.markdown("**Columns**")
+        st.caption("Built-in fields are locked. Add only fields needed by your evaluator.")
+        for column in columns:
+            col_id = column["_id"]
+            locked = column.get("_locked") == "yes"
+            if locked:
+                required = "required" if column["required"] == "yes" else "optional"
+                st.markdown(
+                    f"`{column['name']}` &nbsp; {column['kind']} / "
+                    f"{column['data_type']} &nbsp; · &nbsp; {required}"
+                )
+                continue
+
+            with st.container(
+                border=False,
+                horizontal=True,
+                vertical_alignment="bottom",
+                gap="small",
+            ):
+                st.text_input(
+                    "Name *",
+                    value=column["name"],
+                    max_chars=50,
+                    key=_create_key(agent_id, f"col_{col_id}_name"),
+                    on_change=_sync_column_field,
+                    args=(agent_id, col_id, "name", columns),
+                    width=145,
+                )
+                kind_options = list(_COLUMN_KINDS)
+                st.selectbox(
+                    "Kind",
+                    options=kind_options,
+                    index=(
+                        kind_options.index(column["kind"])
+                        if column["kind"] in kind_options
+                        else 0
+                    ),
+                    key=_create_key(agent_id, f"col_{col_id}_kind"),
+                    on_change=_sync_column_field,
+                    args=(agent_id, col_id, "kind", columns),
+                    width=90,
+                )
+                type_options = list(_DATA_TYPES)
+                st.selectbox(
+                    "Type",
+                    options=type_options,
+                    index=(
+                        type_options.index(column["data_type"])
+                        if column["data_type"] in type_options
+                        else 0
+                    ),
+                    key=_create_key(agent_id, f"col_{col_id}_type"),
+                    on_change=_sync_column_field,
+                    args=(agent_id, col_id, "data_type", columns),
+                    width=90,
+                )
+                required_options = list(_REQUIRED_CHOICES)
+                st.selectbox(
+                    "Required",
+                    options=required_options,
+                    index=(
+                        required_options.index(column["required"])
+                        if column["required"] in required_options
+                        else 0
+                    ),
+                    key=_create_key(agent_id, f"col_{col_id}_required"),
+                    on_change=_sync_column_field,
+                    args=(agent_id, col_id, "required", columns),
+                    width=90,
+                )
+                with st.popover("More", icon=":material/more_horiz:"):
+                    st.text_input(
+                        "Description",
+                        value=column["description"],
+                        max_chars=200,
+                        key=_create_key(agent_id, f"col_{col_id}_desc"),
+                        on_change=_sync_column_field,
+                        args=(agent_id, col_id, "description", columns),
+                    )
+                    with st.container(horizontal=True):
+                        if st.button(
+                            "Duplicate",
+                            key=_create_key(agent_id, f"col_{col_id}_dup"),
+                            type="tertiary",
+                        ):
+                            clone = _new_column_dict(
+                                DatasetColumn(
+                                    name=column["name"],
+                                    kind=column["kind"],
+                                    data_type=column["data_type"],
+                                    required=column["required"] == "yes",
+                                    description=column["description"],
+                                ),
+                                locked=False,
+                            )
+                            clone["name"] = _dedupe_column_name(clone["name"], columns)
+                            columns.insert(columns.index(column) + 1, clone)
+                            st.rerun()
+                        if st.button(
+                            "Delete",
+                            key=_create_key(agent_id, f"col_{col_id}_del"),
+                            type="tertiary",
+                        ):
+                            columns[:] = [c for c in columns if c["_id"] != col_id]
+                            st.rerun()
+
+        if st.button(
+            "+ Add column", key=_create_key(agent_id, "add_column"), type="tertiary"
+        ):
+            columns.append(_new_column_dict())
+            st.rerun()
+
+        with st.container(horizontal=True):
+            submit = st.button(
+                "Create dataset",
+                key=_create_key(agent_id, "submit"),
+                type="primary",
+            )
+            cancel = st.button(
+                "Cancel", key=_create_key(agent_id, "cancel"), type="tertiary"
+            )
+        if submit:
+            error = _validate_create_form(name, columns)
+            if error:
+                st.error(error)
+            else:
+                schema = _build_schema_from_columns(columns)
+                dataset_id = registry.create(
+                    agent_id,
+                    name.strip(),
+                    description=description.strip(),
+                    schema=schema,
+                )
+                st.session_state[f"dataset_select_{agent_id}"] = (
+                    f"{name.strip()} · draft · revision 0"
+                )
+                st.session_state.selected_dataset_id = dataset_id
+                _set_dataset_view(agent_id, "draft")
+                st.session_state.pop(columns_key, None)
+                st.session_state["dataset_newly_created"] = dataset_id
+                st.success("Dataset created.")
+                st.rerun()
+        if cancel:
+            _set_dataset_view(agent_id, "list")
+            st.session_state.pop(columns_key, None)
+            st.rerun()
+
+
+def _sync_column_field(
+    agent_id: str,
+    col_id: str,
+    field: str,
+    columns: list[dict[str, str]],
+) -> None:
+    """Pull the latest widget value for one column field into the draft columns."""
+    widget_key = _create_key(agent_id, f"col_{col_id}_{_field_to_key_suffix(field)}")
+    column = next((c for c in columns if c["_id"] == col_id), None)
+    if column is not None and widget_key in st.session_state:
+        column[field] = st.session_state[widget_key]
+
+
+def _field_to_key_suffix(field: str) -> str:
+    return {
+        "kind": "kind",
+        "name": "name",
+        "data_type": "type",
+        "required": "required",
+        "description": "desc",
+    }[field]
+
+
+def _dedupe_column_name(base: str, columns: list[dict[str, str]]) -> str:
+    existing = {col["name"] for col in columns}
+    candidate = f"{base or 'column'}_copy"
+    counter = 1
+    while candidate in existing:
+        counter += 1
+        candidate = f"{base or 'column'}_copy_{counter}"
+    return candidate
+
+
+def _validate_create_form(name: str, columns: list[dict[str, str]]) -> str | None:
+    if not name.strip():
+        return "Name is required."
+    if not any(col.get("name", "").strip() for col in columns):
+        return "Each column requires a name."
+    seen: set[str] = set()
+    for col in columns:
+        col_name = col.get("name", "").strip()
+        if not col_name:
+            return "Each column requires a name."
+        if not _COLUMN_NAME_PATTERN.fullmatch(col_name):
+            return (
+                f"Column '{col_name}' must start with a letter and contain only "
+                "letters, digits, or underscores."
+            )
+        if col_name.casefold() in seen:
+            return f"Column names must be unique (duplicate: '{col_name}')."
+        seen.add(col_name.casefold())
+    if not any(col.get("kind") == "input" for col in columns):
+        return "At least one input column is required."
+    return None
+
+
+def _build_schema_from_columns(columns: list[dict[str, str]]) -> DatasetSchema:
+    return DatasetSchema(
+        columns=tuple(
+            DatasetColumn(
+                name=col["name"].strip(),
+                kind=col["kind"],
+                data_type=col["data_type"],
+                required=col["required"] == "yes",
                 description=col.get("description", "").strip(),
             )
             for col in columns
