@@ -28,6 +28,47 @@ def test_span_rows_preserve_parent_child_order_and_orphans():
     assert _span_latency(child) is None
 
 
+def test_trace_analysis_turns_failed_evidence_into_concrete_changes():
+    from datetime import datetime, timezone
+
+    from src.models import SpanRecord, TraceRecord
+    from src.ui.observations import _trace_improvement_suggestions
+    from src.workbench_models import CaseResult, ToolEvidence
+
+    evidence = ToolEvidence(
+        "call-1", "employee_lookup", True, True, False, None, False,
+        {"employee": "1"}, {"employee": "1"}, None, "timeout",
+        "trace-1", "span-tool", None, None, None, None,
+    )
+    result = CaseResult(
+        "case-1", "trace-1", "answer", {"execution": 0.0},
+        {"execution": "Required tool execution failed"}, (evidence,), None, (), "FAIL",
+    )
+    trace = TraceRecord(
+        "trace-1", "Evaluation", spans=[
+            SpanRecord(
+                "span-tool", None, "employee_lookup", datetime.now(timezone.utc),
+                level="ERROR", status_message="provider timeout",
+            )
+        ],
+    )
+
+    suggestions = _trace_improvement_suggestions(result, trace)
+
+    assert any(item["target"] == "Target tool policy" for item in suggestions)
+    assert any("arguments against its schema" in item["change"] for item in suggestions)
+    assert any(item["target"] == "Runtime error handling" for item in suggestions)
+
+
+def test_trace_analysis_does_not_invent_changes_for_clean_trace():
+    from src.ui.observations import _trace_improvement_suggestions
+    from src.workbench_models import CaseResult
+
+    result = CaseResult("case-1", "trace-1", "answer", {"execution": 1.0}, {}, (), None, (), "PASS")
+
+    assert _trace_improvement_suggestions(result, None) == ()
+
+
 def _visible(app: AppTest, kind: str) -> str:
     return "\n".join(str(node.value) for node in app.get(kind))
 
