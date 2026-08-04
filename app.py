@@ -61,6 +61,10 @@ def load_styles() -> None:
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="1"])::before { content:"▤"; }
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="2"])::before { content:"▥"; }
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="3"])::before { content:"⚙"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="4"])::before { content:"↻"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="5"])::before { content:"◉"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="6"])::before { content:"⌁"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="7"])::before { content:"⚙"; }
         [data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) { background:rgba(255,255,255,.14); font-weight:700; }
         .block-container { max-width:1280px; padding-top:1.7rem; padding-bottom:3rem; }
         h1 { color:var(--ink); font-size:34px !important; font-weight:700 !important; letter-spacing:-.035em; }
@@ -231,7 +235,9 @@ def load_styles() -> None:
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="2"])::before { content:"\\25B7"; }
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="3"])::before { content:"\\25A4"; }
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="4"])::before { content:"\\2726"; }
-        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="5"])::before { content:"\\2699"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="5"])::before { content:"\\25C9"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="6"])::before { content:"\\2301"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="7"])::before { content:"\\2699"; }
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:hover { background:var(--muted); color:var(--ink); }
         [data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
             background:rgba(67,57,255,.055);
@@ -386,6 +392,57 @@ def load_styles() -> None:
         [data-testid="stTabs"] [data-baseweb="tab-list"] { gap:18px; border-bottom:1px solid var(--border); }
         [data-testid="stTabs"] [data-baseweb="tab"] { height:40px; padding:0 2px; background:transparent; font-size:13px; }
         [data-testid="stTabs"] [aria-selected="true"] { color:var(--primary); }
+        .trace-waterfall-header {
+            display:grid;
+            grid-template-columns:4.2fr 5.8fr 1.2fr;
+            gap:1rem;
+            padding:4px 8px 6px;
+            border-bottom:1px solid var(--border);
+            color:var(--muted-ink);
+            font-family:var(--font-mono);
+            font-size:9px;
+            font-weight:500;
+            letter-spacing:.08em;
+        }
+        .trace-waterfall-track {
+            position:relative;
+            height:8px;
+            overflow:hidden;
+            border-radius:3px;
+            background:var(--muted);
+        }
+        .trace-waterfall-track span {
+            position:absolute;
+            top:0;
+            bottom:0;
+            min-width:3px;
+            border-radius:3px;
+        }
+        [class*="st-key-trace_span_"] [data-testid="stButton"] button {
+            justify-content:flex-start;
+            min-height:32px;
+            border-color:transparent !important;
+            background:transparent !important;
+            font-weight:500 !important;
+        }
+        [class*="st-key-trace_span_"] [data-testid="stButton"] button:hover {
+            background:var(--muted) !important;
+        }
+        [class*="st-key-trace_span_"] [data-testid="stButton"] button[kind="primary"] {
+            background:rgba(67,57,255,.07) !important;
+            color:var(--primary) !important;
+        }
+        .st-key-trace_detail_actions {
+            justify-content:flex-start !important;
+            gap:4px !important;
+        }
+        .st-key-trace_detail_actions h3 { margin-left:8px; }
+        .st-key-trace_detail_actions [data-testid="stButton"] button {
+            min-height:28px;
+            padding:3px 9px;
+            border-radius:6px !important;
+            font-size:11px !important;
+        }
         a { color:var(--primary); text-underline-offset:3px; }
         @media (max-width:900px) {
             [data-testid="stSidebar"] { width:240px !important; min-width:240px !important; }
@@ -441,11 +498,25 @@ demo_trace_path = settings.data_dir / "demo-tool-traces.jsonl"
 demo_seed = seed_demo_workspace(repository, report_service, demo_trace_path)
 demo_runner = DemoEvalRunner(repository, demo_trace_path, inject_regression=True)
 configured_runner = build_runner(settings, repository)
+trace_stores = (
+    LocalJsonStore(settings.data_dir, traces_path=demo_trace_path),
+    LocalJsonStore(settings.data_dir),
+)
 
 
 def runner_provider(agent_id: str):
     """Resolve the dependency-free Demo runner before optional provider runners."""
     return demo_runner if agent_id == demo_seed.agent_id else configured_runner
+
+
+def trace_provider(trace_id: str):
+    """Resolve raw spans from demo and configured local trace stores."""
+    for store in trace_stores:
+        try:
+            return store.get_trace(trace_id, retry=False)
+        except KeyError:
+            continue
+    return None
 
 
 settings_status = SettingsStatus(
@@ -474,4 +545,5 @@ render_shell(
         if settings.langfuse_public_key and settings.langfuse_secret_key
         else None
     ),
+    trace_provider=trace_provider,
 )

@@ -13,6 +13,7 @@ from src.workbench_repository import WorkbenchRepository
 
 from .agents import render_agent_home
 from .datasets import CandidateGenerator, render_datasets_module
+from .observations import render_observation_overview, render_trace_module
 from .reports import render_reports_module
 from .reflects import render_reflect_module
 from .runs import render_runs_module
@@ -96,6 +97,7 @@ def render_shell(
     report_service: object | None = None,
     llm_generate: CandidateGenerator | None = None,
     langfuse_base_url: str | None = None,
+    trace_provider: Callable[[str], object | None] | None = None,
 ) -> None:
     """Render the fixed global shell and dispatch to the active page."""
     del demo_trace_path
@@ -148,6 +150,8 @@ def render_shell(
         report_intent = bool(st.session_state.pop("report_navigation_intent", False))
         if page == "Report" and previous_page != "Report" and not report_intent:
             st.session_state.report_view = "list"
+        if page == "Trace" and previous_page != "Trace":
+            st.session_state.selected_trace_id = None
         st.session_state.last_active_page = page
         st.markdown("<div class='sidebar-spacer'></div>", unsafe_allow_html=True)
         st.markdown("<div class='nav-section-label'>DEMO CONTROLS</div>", unsafe_allow_html=True)
@@ -215,4 +219,12 @@ def render_shell(
             agent.agent_id,
             report_service,
             langfuse_base_url=langfuse_base_url,
+        )
+    elif page == "Overview":
+        render_observation_overview(repository, agent.agent_id)
+    elif page == "Trace":
+        render_trace_module(
+            repository,
+            agent.agent_id,
+            trace_provider=trace_provider,
         )
