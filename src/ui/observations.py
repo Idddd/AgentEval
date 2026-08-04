@@ -41,11 +41,6 @@ def render_trace_module(
     trace_provider: Callable[[str], object | None] | None = None,
 ) -> None:
     """Render the Target-scoped trace index or the selected trace detail."""
-    selected = st.session_state.get("selected_trace_id")
-    if selected:
-        _render_trace_detail(repository, agent_id, selected, trace_provider)
-        return
-
     st.markdown("### Traces")
     st.caption("Case-level traces captured by evaluation runs.")
     traces = repository.list_traces(agent_id)
@@ -94,6 +89,9 @@ def render_trace_module(
         hide_index=True,
         width="stretch",
     )
+    selected = st.session_state.get("selected_trace_id")
+    if selected:
+        _trace_detail_dialog(repository, agent_id, selected, trace_provider)
 
 
 def _open_trace(trace_ids: tuple[str, ...]) -> None:
@@ -103,6 +101,21 @@ def _open_trace(trace_ids: tuple[str, ...]) -> None:
     row = int(click["row"])
     if 0 <= row < len(trace_ids):
         st.session_state.selected_trace_id = trace_ids[row]
+
+
+def _close_trace_dialog() -> None:
+    st.session_state.selected_trace_id = None
+    st.session_state.pop("selected_span_id", None)
+
+
+@st.dialog("Trace detail", width="large")
+def _trace_detail_dialog(
+    repository: WorkbenchRepository,
+    agent_id: str,
+    trace_id: str,
+    trace_provider: Callable[[str], object | None] | None,
+) -> None:
+    _render_trace_detail(repository, agent_id, trace_id, trace_provider)
 
 
 def _render_trace_detail(
@@ -121,10 +134,6 @@ def _render_trace_detail(
         st.session_state.selected_trace_id = None
         st.error("This trace does not belong to the selected Target.")
         return
-
-    if st.button("← Back to traces", key="trace_back"):
-        st.session_state.selected_trace_id = None
-        st.rerun()
 
     marked_key = f"trace_marked_fail_{trace_id}"
     analysis_key = f"trace_analysis_open_{trace_id}"
@@ -151,7 +160,13 @@ def _render_trace_detail(
                 analysis_key, False
             )
             st.rerun()
-        st.markdown("### Trace Detail")
+        st.button(
+            "Close",
+            key="trace_dialog_close",
+            type="tertiary",
+            icon=":material/close:",
+            on_click=_close_trace_dialog,
+        )
 
     st.caption(detail.summary.trace_id)
     if st.session_state.get(marked_key):

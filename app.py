@@ -23,6 +23,7 @@ from src.dataset_generation import DatasetCandidateService
 from src.eval_runner import EvalRunner
 from src.intent import build_intent_analyzer
 from src.llm_judge import LlmJudge
+from src.langfuse_evaluators import list_langfuse_evaluators
 from src.report_service import ReportService
 from src.settings import load_settings, save_llm_settings, test_llm_connection
 from src.sqlite_workbench import SQLiteWorkbenchRepository
@@ -60,11 +61,10 @@ def load_styles() -> None:
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="0"])::before { content:"◎"; }
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="1"])::before { content:"▤"; }
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="2"])::before { content:"▥"; }
-        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="3"])::before { content:"⚙"; }
-        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="4"])::before { content:"↻"; }
-        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="5"])::before { content:"◉"; }
-        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="6"])::before { content:"⌁"; }
-        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="7"])::before { content:"⚙"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="3"])::before { content:"◉"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="4"])::before { content:"⌁"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="5"])::before { content:"⚙"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="4"]) { margin-left:18px; width:calc(100% - 18px); font-size:12px; }
         [data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) { background:rgba(255,255,255,.14); font-weight:700; }
         .block-container { max-width:1280px; padding-top:1.7rem; padding-bottom:3rem; }
         h1 { color:var(--ink); font-size:34px !important; font-weight:700 !important; letter-spacing:-.035em; }
@@ -233,11 +233,9 @@ def load_styles() -> None:
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="0"])::before { content:"\\25CE"; }
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="1"])::before { content:"\\25A6"; }
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="2"])::before { content:"\\25B7"; }
-        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="3"])::before { content:"\\25A4"; }
-        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="4"])::before { content:"\\2726"; }
-        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="5"])::before { content:"\\25C9"; }
-        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="6"])::before { content:"\\2301"; }
-        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="7"])::before { content:"\\2699"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="3"])::before { content:"\\25C9"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="4"])::before { content:"\\2301"; }
+        [data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input[value="5"])::before { content:"\\2699"; }
         [data-testid="stSidebar"] [data-testid="stRadioOption"]:hover { background:var(--muted); color:var(--ink); }
         [data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
             background:rgba(67,57,255,.055);
@@ -443,6 +441,17 @@ def load_styles() -> None:
             border-radius:6px !important;
             font-size:11px !important;
         }
+        [data-testid="stDialog"] [role="dialog"] { max-width:min(1120px, 94vw); }
+        [data-testid="stDialog"] [data-testid="stDialogBody"] { padding-top:.35rem; }
+        .st-key-target_create_compact > [data-testid="stVerticalBlock"] { gap:.7rem; }
+        .st-key-target_create_compact [data-testid="stTextInput"],
+        .st-key-target_create_compact [data-testid="stTextArea"],
+        .st-key-target_create_compact [data-testid="stSelectbox"] { margin-bottom:0; }
+        .st-key-target_revision_preview [data-testid="stVerticalBlockBorderWrapper"] {
+            padding:12px 14px;
+            box-shadow:none;
+        }
+        .st-key-target_revision_preview p { margin-bottom:0; }
         a { color:var(--primary); text-underline-offset:3px; }
         @media (max-width:900px) {
             [data-testid="stSidebar"] { width:240px !important; min-width:240px !important; }
@@ -519,6 +528,11 @@ def trace_provider(trace_id: str):
     return None
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def evaluator_provider():
+    return list_langfuse_evaluators(settings)
+
+
 settings_status = SettingsStatus(
     llm=("Connected" if settings.anthropic_enabled or settings.openai_enabled else "Not configured"),
     langfuse=(
@@ -529,6 +543,7 @@ settings_status = SettingsStatus(
     database="Available",
     demo_fixture="Available",
 )
+st.session_state["langfuse_evaluator_provider"] = evaluator_provider
 render_shell(
     AgentRegistry(repository),
     repository,

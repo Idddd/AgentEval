@@ -85,8 +85,10 @@ def _run_result(value: Any) -> EvalRun:
     return value
 
 
-def _quality_and_costs(repository: WorkbenchRepository, agent_id: str) -> dict[str, tuple[str, float]]:
-    result: dict[str, tuple[str, float]] = {}
+def _quality_and_costs(
+    repository: WorkbenchRepository, agent_id: str
+) -> dict[str, tuple[str, float, str]]:
+    result: dict[str, tuple[str, float, str]] = {}
     for report in repository.list_reports(agent_id):
         if report.run_id in result:
             continue
@@ -94,6 +96,7 @@ def _quality_and_costs(repository: WorkbenchRepository, agent_id: str) -> dict[s
         result[report.run_id] = (
             str(report.summary.get("status", report.status)),
             float(costs.get("evaluation_total", 0.0)),
+            report.report_id,
         )
     return result
 
@@ -104,6 +107,9 @@ def _render_run_history(repository: WorkbenchRepository, agent_id: str) -> None:
     if not rows:
         st.caption("No evaluation runs yet.")
         return
+    report_ids = tuple(str(row.pop("_report_id", "")) for row in rows)
+    for row, report_id in zip(rows, report_ids, strict=True):
+        row["View"] = "View" if report_id else ""
     st.dataframe(
         rows,
         column_config={
@@ -113,6 +119,14 @@ def _render_run_history(repository: WorkbenchRepository, agent_id: str) -> None:
             "Status": st.column_config.TextColumn("Status", width="small"),
             "Quality": st.column_config.TextColumn("Quality", width="small"),
             "Cost": st.column_config.NumberColumn("Cost", format="$%.4f", width="small"),
+            "View": st.column_config.ButtonColumn(
+                "",
+                type="tertiary",
+                width="small",
+                key="evaluation_report_actions",
+                on_click=_open_evaluation_report,
+                args=(report_ids,),
+            ),
         },
         hide_index=True,
         width="stretch",
@@ -128,7 +142,7 @@ def _run_history_rows(
     for run in runs:
         agent_revision = repository.get_agent_revision(run.agent_revision_id)
         dataset_revision = repository.get_dataset_revision(run.dataset_revision_id)
-        quality, cost = report_data.get(run.run_id, ("INCOMPLETE", 0.0))
+        quality, cost, report_id = report_data.get(run.run_id, ("INCOMPLETE", 0.0, ""))
         rows.append(
             {
                 "Started": str(run.started_at),
@@ -137,9 +151,21 @@ def _run_history_rows(
                 "Status": run.status.value,
                 "Quality": quality,
                 "Cost": cost,
+                "_report_id": report_id,
             }
         )
     return rows
+
+
+def _open_evaluation_report(report_ids: tuple[str, ...]) -> None:
+    click = st.session_state.get("evaluation_report_actions")
+    if not click:
+        return
+    row = int(click["row"])
+    if 0 <= row < len(report_ids) and report_ids[row]:
+        st.session_state.evaluation_dialog_open = False
+        st.session_state.selected_report_id = report_ids[row]
+        st.session_state.report_view = "detail"
 
 
 def render_runs_module(
@@ -147,11 +173,34 @@ def render_runs_module(
     agent_id: str,
     runner: Any | None = None,
     report_service: Any | None = None,
+    *,
+    _dialog_content: bool = False,
+    evaluator_provider: Any | None = None,
 ) -> None:
     """Render compact evaluation configuration and durable run history."""
     agent_revision = repository.get_current_agent_revision(agent_id)
+    evaluator_provider = evaluator_provider or st.session_state.get(
+        "langfuse_evaluator_provider"
+    )
     datasets = _dataset_revisions(repository, agent_id)
     drafts = _draft_options(repository, agent_id)
+
+    if not _dialog_content:
+        with st.container(horizontal=True, horizontal_alignment="distribute"):
+            st.markdown("### Evaluation")
+            st.button(
+                "New evaluation",
+                type="primary",
+                icon=":material/play_arrow:",
+                on_click=_open_evaluation_dialog,
+            )
+        st.caption("Immutable evaluation runs for the selected Target.")
+        if st.session_state.get("evaluation_dialog_open"):
+            _evaluation_dialog(
+                repository, agent_id, runner, report_service, evaluator_provider
+            )
+        return
+
     st.markdown("### Evaluation")
     st.caption("Select immutable inputs, review the evaluation context, and start a run.")
 
@@ -242,7 +291,41 @@ def render_runs_module(
         else:
             st.warning("Add cases to a Dataset draft before starting an evaluation.")
 
-        evaluator_version = "v1"
+        evaluator_source = st.segmented_control(
+            "Evaluator source",
+            ["Built-in", "Langfuse"],
+            default="Built-in",
+            key=f"run_evaluator_source_{agent_id}",
+            width="content",
+        )
+        selected_evaluators: list[str] = []
+        if evaluator_source == "Langfuse":
+            try:
+                available_evaluators = list(evaluator_provider()) if evaluator_provider else []
+            except Exception as error:
+                available_evaluators = []
+                st.warning(f"Langfuse evaluators are unavailable: {error}")
+            labels = {
+                item.evaluator_id: (
+                    f"{item.name} · {item.evaluator_type}"
+                    + (f" · v{item.version}" if item.version is not None else "")
+                )
+                for item in available_evaluators
+            }
+            selected_evaluators = st.multiselect(
+                "Evaluators",
+                list(labels),
+                format_func=labels.__getitem__,
+                key=f"run_langfuse_evaluators_{agent_id}",
+                placeholder="Select Langfuse evaluators",
+            )
+            if not available_evaluators:
+                st.caption("No Langfuse evaluators are available for this project.")
+        evaluator_version = (
+            f"Langfuse · {len(selected_evaluators)} selected"
+            if evaluator_source == "Langfuse"
+            else "Built-in v1"
+        )
         judge_model = agent_revision.config_snapshot.get("judge_model", "Not configured")
         st.caption(f"Evaluator {evaluator_version} · Judge {judge_model}")
         st.caption(
@@ -260,7 +343,11 @@ def render_runs_module(
 
         if runner is None:
             st.caption("The evaluation runner is not connected to this UI session.")
-        start_disabled = selected_dataset is None or runner is None
+        start_disabled = (
+            selected_dataset is None
+            or runner is None
+            or (evaluator_source == "Langfuse" and not selected_evaluators)
+        )
         if st.button(
             "Start evaluation",
             key="run_start",
@@ -317,4 +404,35 @@ def render_runs_module(
                 if can_rerun:
                     st.rerun()
 
-    _render_run_history(repository, agent_id)
+
+
+def _open_evaluation_dialog() -> None:
+    st.session_state.evaluation_dialog_open = True
+
+
+def _close_evaluation_dialog() -> None:
+    st.session_state.evaluation_dialog_open = False
+
+
+@st.dialog("New evaluation", width="large")
+def _evaluation_dialog(
+    repository: WorkbenchRepository,
+    agent_id: str,
+    runner: Any | None,
+    report_service: Any | None,
+    evaluator_provider: Any | None,
+) -> None:
+    st.button(
+        "Close",
+        type="tertiary",
+        icon=":material/close:",
+        on_click=_close_evaluation_dialog,
+    )
+    render_runs_module(
+        repository,
+        agent_id,
+        runner,
+        report_service,
+        _dialog_content=True,
+        evaluator_provider=evaluator_provider,
+    )

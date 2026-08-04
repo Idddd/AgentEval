@@ -1131,6 +1131,7 @@ def _dataset_history(
 def _open_report(report_id: str) -> None:
     st.session_state.selected_report_id = report_id
     request_navigation("Report")
+    st.rerun(scope="app")
 
 
 def _evaluate_dataset_revision(revision_id: str) -> None:
@@ -1142,6 +1143,8 @@ def render_datasets_module(
     repository: WorkbenchRepository,
     agent_id: str,
     llm_generate: CandidateGenerator | None = None,
+    *,
+    _dialog_content: bool = False,
 ) -> None:
     """Render the durable draft for one Agent; every case begins user-added."""
     registry = DatasetRegistry(repository)
@@ -1151,6 +1154,11 @@ def render_datasets_module(
     if st.session_state[view_key] not in _DATASET_VIEWS:
         st.session_state[view_key] = "list"
     view = str(st.session_state[view_key])
+
+    if view != "list" and not _dialog_content:
+        _render_dataset_list(agent_id, rows)
+        _dataset_dialog(repository, agent_id, llm_generate)
+        return
 
     if view == "create":
         _render_create_form(registry, agent_id)
@@ -1179,42 +1187,57 @@ def render_datasets_module(
 
     dataset_id = str(selected_row["dataset_id"])
     cases = registry.list_draft(dataset_id)
-    st.button(
-        "Datasets",
-        key=f"dataset_back_{agent_id}",
-        on_click=_set_dataset_view,
-        args=(agent_id, "list"),
-        icon=":material/arrow_back:",
-        type="tertiary",
-    )
-    st.markdown(f"### {selected_row['name']}")
+    add_case = generate = import_json = complete_coverage = False
     revision_number = int(selected_row.get("current_revision") or 0)
     draft_count = int(selected_row.get("draft_cases") or 0)
     published = f"Published R{revision_number}" if revision_number else "Not published"
-    st.caption(f"{published} · Draft has {draft_count} cases")
     revision_id = selected_row.get("current_revision_id")
-    with st.container(horizontal=True, vertical_alignment="center"):
-        if revision_id:
+    with st.container(horizontal=True, horizontal_alignment="distribute", vertical_alignment="center"):
+        with st.container(horizontal=True, vertical_alignment="center"):
             st.button(
-                "Evaluate",
-                key=f"dataset_evaluate_{agent_id}_{dataset_id}",
-                type="primary",
-                on_click=_evaluate_dataset_revision,
-                args=(str(revision_id),),
-                icon=":material/play_arrow:",
+                "",
+                key=f"dataset_back_{agent_id}",
+                on_click=_set_dataset_view,
+                args=(agent_id, "list"),
+                icon=":material/arrow_back:",
+                type="tertiary",
+                help="Back to datasets",
             )
-        if st.button(
-            "Publish",
-            key=_dataset_key(agent_id, dataset_id, "dataset_publish"),
-            disabled=not cases,
-            icon=":material/publish:",
-        ):
-            revision = registry.publish(dataset_id)
-            st.success(
-                f"Published Dataset Revision {revision.revision} with "
-                f"{len(revision.cases)} case(s)."
-            )
-            st.rerun()
+            st.markdown(f"### {selected_row['name']}")
+        with st.container(horizontal=True, vertical_alignment="center"):
+            if view == "draft":
+                add_case = st.button(
+                    "Add case",
+                    key=_dataset_key(agent_id, dataset_id, "dataset_add_case"),
+                    type="tertiary",
+                    icon=":material/add:",
+                )
+                with st.popover("More", icon=":material/more_horiz:"):
+                    generate = st.button(
+                        "Generate", key=_dataset_key(agent_id, dataset_id, "dataset_generate_llm"),
+                        type="tertiary", icon=":material/auto_awesome:", width="stretch",
+                    )
+                    import_json = st.button(
+                        "Import JSON", key=_dataset_key(agent_id, dataset_id, "dataset_import_json"),
+                        type="tertiary", icon=":material/upload_file:", width="stretch",
+                    )
+                    complete_coverage = st.button(
+                        "Complete coverage", key=_dataset_key(agent_id, dataset_id, "dataset_complete_coverage"),
+                        type="tertiary", icon=":material/checklist:", width="stretch",
+                    )
+            if revision_id:
+                st.button(
+                    "Evaluate", key=f"dataset_evaluate_{agent_id}_{dataset_id}", type="primary",
+                    on_click=_evaluate_dataset_revision, args=(str(revision_id),), icon=":material/play_arrow:",
+                )
+            if st.button(
+                "Publish", key=_dataset_key(agent_id, dataset_id, "dataset_publish"),
+                disabled=not cases, icon=":material/publish:",
+            ):
+                revision = registry.publish(dataset_id)
+                st.success(f"Published Dataset Revision {revision.revision} with {len(revision.cases)} case(s).")
+                st.rerun()
+    st.caption(f"{published} · Draft has {draft_count} cases")
     _render_dataset_local_navigation(agent_id, view)
 
     if view == "schema":
@@ -1267,31 +1290,6 @@ def render_datasets_module(
 
     st.caption(f"{len(cases)} cases · Editable draft; publish to create an immutable revision.")
 
-    with st.container(horizontal=True, vertical_alignment="center"):
-        add_case = st.button(
-            "Add",
-            key=_dataset_key(agent_id, dataset_id, "dataset_add_case"),
-            type="tertiary",
-            icon=":material/add:",
-        )
-        generate = st.button(
-            "Generate",
-            key=_dataset_key(agent_id, dataset_id, "dataset_generate_llm"),
-            type="tertiary",
-            icon=":material/auto_awesome:",
-        )
-        import_json = st.button(
-            "Import JSON",
-            key=_dataset_key(agent_id, dataset_id, "dataset_import_json"),
-            type="tertiary",
-            icon=":material/upload_file:",
-        )
-        complete_coverage = st.button(
-            "Complete coverage",
-            key=_dataset_key(agent_id, dataset_id, "dataset_complete_coverage"),
-            type="tertiary",
-            icon=":material/checklist:",
-        )
     if add_case:
         st.session_state[_dataset_key(agent_id, dataset_id, "dataset_editor")] = "new"
         st.rerun()
@@ -1398,3 +1396,17 @@ def render_datasets_module(
         _render_case_table(registry, agent_id, dataset_id, current_schema, cases)
 
     _render_review(registry, agent_id, dataset_id)
+
+
+@st.dialog("Dataset", width="large")
+def _dataset_dialog(
+    repository: WorkbenchRepository,
+    agent_id: str,
+    llm_generate: CandidateGenerator | None,
+) -> None:
+    render_datasets_module(
+        repository,
+        agent_id,
+        llm_generate,
+        _dialog_content=True,
+    )

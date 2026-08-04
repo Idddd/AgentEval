@@ -15,7 +15,7 @@ from .agents import render_agent_home
 from .datasets import CandidateGenerator, render_datasets_module
 from .observations import render_observation_overview, render_trace_module
 from .reports import render_reports_module
-from .reflects import render_reflect_module
+from .reflects import render_reflect_module  # compatibility export for old callers
 from .runs import render_runs_module
 from .settings_page import SettingsStatus, render_settings_page
 from .state import PAGES, init_ui_state, navigate
@@ -107,10 +107,10 @@ def render_shell(
     requested_page = st.session_state.active_page
     context = (
         _locked_agent_context(repository, st.session_state.selected_agent_id)
-        if requested_page not in {"Target", "Reflect", "Settings"}
+        if requested_page not in {"Target", "Settings"}
         else None
     )
-    if requested_page not in {"Target", "Reflect", "Settings"} and context is None:
+    if requested_page not in {"Target", "Settings"} and context is None:
         # This must happen before the radio widget is created: Streamlit does not
         # allow a widget's session-state key to change after instantiation.
         navigate("Target")
@@ -148,7 +148,8 @@ def render_shell(
         )
         previous_page = st.session_state.get("last_active_page")
         report_intent = bool(st.session_state.pop("report_navigation_intent", False))
-        if page == "Report" and previous_page != "Report" and not report_intent:
+        if page == "Evaluation" and previous_page != "Evaluation" and not report_intent:
+            st.session_state.selected_report_id = None
             st.session_state.report_view = "list"
         if page == "Trace" and previous_page != "Trace":
             st.session_state.selected_trace_id = None
@@ -196,10 +197,6 @@ def render_shell(
             save_connection=save_llm_connection,
         )
         return
-    if page == "Reflect":
-        render_reflect_module(repository)
-        return
-
     if context is None:  # pragma: no cover - pre-radio normalization handles this route.
         return
     agent, revision = context
@@ -213,12 +210,13 @@ def render_shell(
             resolve_runner(agent.agent_id),
             report_service,
         )
-    elif page == "Report":
         render_reports_module(
             repository,
             agent.agent_id,
             report_service,
             langfuse_base_url=langfuse_base_url,
+            show_list=True,
+            list_title="Evaluation history",
         )
     elif page == "Overview":
         render_observation_overview(repository, agent.agent_id)

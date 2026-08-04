@@ -12,8 +12,6 @@ PAGES = (
     "Target",
     "Dataset",
     "Evaluation",
-    "Report",
-    "Reflect",
     "Overview",
     "Trace",
     "Settings",
@@ -54,8 +52,12 @@ def init_ui_state(default_agent_id: str | None = None) -> None:
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
     pending_page = st.session_state.pop("pending_page", None)
+    if pending_page in {"Reflect", "Report"}:
+        pending_page = "Evaluation"
     if pending_page in PAGES:
         st.session_state.active_page = pending_page
+    if st.session_state.active_page in {"Reflect", "Report"}:
+        st.session_state.active_page = "Evaluation"
     if st.session_state.active_page not in PAGES:
         st.session_state.active_page = "Target"
     if st.session_state.demo_reset_pending:
@@ -64,24 +66,43 @@ def init_ui_state(default_agent_id: str | None = None) -> None:
 
 def navigate(page: str) -> None:
     """Select a valid global workbench route."""
+    report_intent = page in {"Reflect", "Report"}
+    if report_intent:
+        page = "Evaluation"
     if page not in PAGES:
         raise ValueError(f"Unknown workbench page: {page}")
     if st.session_state.get("active_page") == page:
         return
     if page != "Target":
         st.session_state.target_view = "list"
-    if page != "Report":
+    if not report_intent:
         st.session_state.report_view = "list"
+    if page != "Dataset":
+        for key in tuple(st.session_state):
+            if key.startswith("dataset_view_"):
+                st.session_state[key] = "list"
+    if page != "Evaluation":
+        st.session_state.evaluation_dialog_open = False
     st.session_state.active_page = page
 
 
 def request_navigation(page: str) -> None:
     """Apply a route before sidebar widget construction on the next rerun."""
+    report_intent = page in {"Reflect", "Report"}
+    if report_intent:
+        page = "Evaluation"
+        st.session_state.evaluation_dialog_open = False
     if page not in PAGES:
         raise ValueError(f"Unknown workbench page: {page}")
     if page != "Target":
         st.session_state.target_view = "list"
-    if page != "Report":
+    if page != "Dataset":
+        for key in tuple(st.session_state):
+            if key.startswith("dataset_view_"):
+                st.session_state[key] = "list"
+    if page != "Evaluation":
+        st.session_state.evaluation_dialog_open = False
+    if not report_intent:
         st.session_state.report_view = "list"
     elif st.session_state.get("selected_report_id"):
         st.session_state.report_view = "detail"
