@@ -1,6 +1,8 @@
 """Draft dataset service with stable case identities and validation."""
 from __future__ import annotations
 
+import json
+
 from .workbench_models import DatasetRevision, DatasetSchema, TestCase, UsageCost
 from .workbench_repository import WorkbenchRepository
 
@@ -68,13 +70,16 @@ class DatasetRegistry:
                 raise ValueError("; ".join(errors))
 
         if schema.input_columns:
-            first_input = schema.input_columns[0]
             keys = [
-                str(case.input.get(first_input.name, "")).casefold() for case in cases
+                json.dumps(
+                    dict(case.input),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=str,
+                ).casefold()
+                for case in cases
             ]
             if len(keys) != len(set(keys)):
-                raise ValueError(
-                    f"case {first_input.name} values must be unique within a dataset draft"
-                )
+                raise ValueError("case inputs must be unique within a dataset draft")
 
         self.repository.replace_draft_cases(dataset_id, cases)
