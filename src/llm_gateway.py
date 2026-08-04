@@ -67,11 +67,15 @@ class AnthropicGateway:
     """Adapter for Anthropic and Anthropic-compatible messages endpoints."""
 
     def __init__(self, model: str, *, client: Any | None = None,
-                 base_url: str | None = None, api_key: str | None = None):
+                 base_url: str | None = None, api_key: str | None = None,
+                 timeout: float | None = None):
         if client is None:
             import anthropic
 
-            client = anthropic.Anthropic(base_url=base_url, api_key=api_key)
+            kwargs: dict[str, Any] = {"base_url": base_url, "api_key": api_key}
+            if timeout is not None:
+                kwargs["timeout"] = timeout
+            client = anthropic.Anthropic(**kwargs)
         self.model = model
         self._client = client
 
@@ -111,11 +115,17 @@ class OpenAIGateway:
     """Adapter for the OpenAI chat-completions API."""
 
     def __init__(self, model: str, *, client: Any | None = None,
-                 api_key: str | None = None):
+                 base_url: str | None = None, api_key: str | None = None,
+                 timeout: float | None = None):
         if client is None:
             from openai import OpenAI
 
-            client = OpenAI(api_key=api_key)
+            kwargs: dict[str, Any] = {"api_key": api_key}
+            if base_url is not None:
+                kwargs["base_url"] = base_url
+            if timeout is not None:
+                kwargs["timeout"] = timeout
+            client = OpenAI(**kwargs)
         self.model = model
         self._client = client
 
