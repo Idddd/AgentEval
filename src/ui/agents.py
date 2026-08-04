@@ -260,9 +260,10 @@ def _render_target_list(repository: WorkbenchRepository) -> None:
         rows,
         column_config={
             "View": st.column_config.ButtonColumn(
-                "",
-                type="tertiary",
+                "Action",
+                type="primary",
                 width="small",
+                alignment="center",
                 key="target_list_actions",
                 on_click=_open_target,
                 args=(tuple(target_ids),),
