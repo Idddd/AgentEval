@@ -77,6 +77,8 @@ class ToolBinding:
     test_requirements: tuple[str, ...]
     verification_required: bool
     enabled: bool
+    tags: tuple[str, ...] = ()
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "adapter_config", _freeze(self.adapter_config))
@@ -84,6 +86,8 @@ class ToolBinding:
         object.__setattr__(self, "output_schema", _freeze(self.output_schema))
         object.__setattr__(self, "permission", _freeze(self.permission))
         object.__setattr__(self, "test_requirements", _freeze(self.test_requirements))
+        object.__setattr__(self, "tags", _freeze(self.tags))
+        object.__setattr__(self, "metadata", _freeze(self.metadata))
 
 
 @dataclass(frozen=True)
@@ -362,3 +366,26 @@ class ReportSnapshot:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "summary", _freeze(self.summary))
+
+
+@dataclass(frozen=True)
+class TraceSummary:
+    """A persisted evaluation trace row suitable for observation indexes."""
+
+    trace_id: str
+    run_id: str
+    case_id: str
+    agent_id: str
+    status: str
+    started_at: str
+    latency_ms: float | None
+    observation_count: int
+    cost_usd: float
+
+
+@dataclass(frozen=True)
+class TraceDetail:
+    """A trace plus its durable evaluation observations."""
+
+    summary: TraceSummary
+    result: CaseResult

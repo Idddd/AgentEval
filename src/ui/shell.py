@@ -7,13 +7,15 @@ from pathlib import Path
 import streamlit as st
 
 from src.agent_registry import AgentRegistry
+from src.settings import LlmConnectionDraft, LlmConnectionTestResult, Settings
 from src.workbench_models import AgentProfile, AgentRevision
 from src.workbench_repository import WorkbenchRepository
 
 from .agents import render_agent_home
 from .datasets import CandidateGenerator, render_datasets_module
+from .observations import render_observation_overview, render_trace_module
 from .reports import render_reports_module
-from .reflects import render_reflect_module
+from .reflects import render_reflect_module  # compatibility export for old callers
 from .runs import render_runs_module
 from .settings_page import SettingsStatus, render_settings_page
 from .state import PAGES, init_ui_state, navigate
@@ -86,12 +88,16 @@ def render_shell(
     default_agent_id: str | None = None,
     runner_provider: Callable[[str], object | None] | None = None,
     settings_status: SettingsStatus | None = None,
+    settings: Settings | None = None,
+    test_llm_connection: Callable[[LlmConnectionDraft], LlmConnectionTestResult] | None = None,
+    save_llm_connection: Callable[[LlmConnectionDraft], None] | None = None,
     # Compatibility arguments keep the pre-Task-8 application caller runnable.
     demo_trace_path: Path | None = None,
     runner: object | None = None,
     report_service: object | None = None,
     llm_generate: CandidateGenerator | None = None,
     langfuse_base_url: str | None = None,
+    trace_provider: Callable[[str], object | None] | None = None,
 ) -> None:
     """Render the fixed global shell and dispatch to the active page."""
     del demo_trace_path
@@ -101,17 +107,39 @@ def render_shell(
     requested_page = st.session_state.active_page
     context = (
         _locked_agent_context(repository, st.session_state.selected_agent_id)
-        if requested_page not in {"Target", "Reflect", "Settings"}
+        if requested_page not in {"Target", "Settings"}
         else None
     )
-    if requested_page not in {"Target", "Reflect", "Settings"} and context is None:
+    if requested_page not in {"Target", "Settings"} and context is None:
         # This must happen before the radio widget is created: Streamlit does not
         # allow a widget's session-state key to change after instantiation.
         navigate("Target")
         st.session_state.agent_context_warning = "Select a Target to continue."
     with st.sidebar:
-        st.markdown("<div class='brand-mark'>EVAL STUDIO</div>", unsafe_allow_html=True)
-        st.caption("MODULAR EVALUATION")
+        st.markdown(
+            """
+            <div class="brand-lockup">
+              <svg aria-hidden="true" class="brand-lattice-mark" viewBox="0 0 64 64">
+                <g class="brand-lattice-lines">
+                  <path d="M8 10h48L32 56 8 10Z" />
+                  <path d="M32 10v46M16 30h32M8 10l40 20M56 10 16 30M16 30l16 26M48 30 32 56" />
+                </g>
+                <g class="brand-lattice-nodes">
+                  <circle cx="8" cy="10" r="3.5" />
+                  <circle cx="32" cy="10" r="3.5" />
+                  <circle cx="56" cy="10" r="3.5" />
+                  <circle cx="16" cy="30" r="3.5" />
+                  <circle cx="32" cy="30" r="3.5" />
+                  <circle cx="48" cy="30" r="3.5" />
+                  <circle cx="32" cy="56" r="3.5" />
+                </g>
+              </svg>
+              <div class="brand-copy"><strong>EVAL</strong><span>Eval Studio</span></div>
+            </div>
+            <div class="nav-section-label">EVALUATION CONTROL</div>
+            """,
+            unsafe_allow_html=True,
+        )
         page = st.radio(
             "Global navigation",
             PAGES,
@@ -120,11 +148,14 @@ def render_shell(
         )
         previous_page = st.session_state.get("last_active_page")
         report_intent = bool(st.session_state.pop("report_navigation_intent", False))
-        if page == "Report" and previous_page != "Report" and not report_intent:
+        if page == "Evaluation" and previous_page != "Evaluation" and not report_intent:
+            st.session_state.selected_report_id = None
             st.session_state.report_view = "list"
+        if page == "Trace" and previous_page != "Trace":
+            st.session_state.selected_trace_id = None
         st.session_state.last_active_page = page
         st.markdown("<div class='sidebar-spacer'></div>", unsafe_allow_html=True)
-        st.caption("DEMO CONTROLS")
+        st.markdown("<div class='nav-section-label'>DEMO CONTROLS</div>", unsafe_allow_html=True)
         st.button(
             "Reset demo",
             key="reset_demo",
@@ -146,9 +177,9 @@ def render_shell(
                 width="stretch",
                 on_click=_cancel_demo_reset,
             )
-        st.caption("Local workbench · Immutable revisions")
+        st.caption("Local project · Immutable revisions")
 
-    st.markdown("<div class='workspace-bar'><span>WORKSPACE</span><strong>Local evaluation environment</strong></div>", unsafe_allow_html=True)
+    st.markdown("<div class='workspace-bar'><span>LOCAL PROJECT</span><strong>Evaluation workbench</strong></div>", unsafe_allow_html=True)
     pending_warning = st.session_state.pop("agent_context_warning", None)
     if pending_warning:
         st.warning(pending_warning)
@@ -159,12 +190,13 @@ def render_shell(
         )
         return
     if page == "Settings":
-        render_settings_page(status)
+        render_settings_page(
+            status,
+            settings,
+            test_connection=test_llm_connection,
+            save_connection=save_llm_connection,
+        )
         return
-    if page == "Reflect":
-        render_reflect_module(repository)
-        return
-
     if context is None:  # pragma: no cover - pre-radio normalization handles this route.
         return
     agent, revision = context
@@ -178,10 +210,19 @@ def render_shell(
             resolve_runner(agent.agent_id),
             report_service,
         )
-    elif page == "Report":
         render_reports_module(
             repository,
             agent.agent_id,
             report_service,
             langfuse_base_url=langfuse_base_url,
+            show_list=True,
+            list_title="Evaluation history",
+        )
+    elif page == "Overview":
+        render_observation_overview(repository, agent.agent_id)
+    elif page == "Trace":
+        render_trace_module(
+            repository,
+            agent.agent_id,
+            trace_provider=trace_provider,
         )

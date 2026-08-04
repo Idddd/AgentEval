@@ -1,7 +1,12 @@
 import pytest
 
-from src.ui.datasets import _case_from_mapping, parse_imported_cases
-from src.workbench_models import DatasetColumn, DatasetSchema
+from src.ui.datasets import (
+    _case_from_mapping,
+    _case_from_review_record,
+    _filter_new_review_cases,
+    parse_imported_cases,
+)
+from src.workbench_models import DatasetColumn, DatasetSchema, TestCase as WorkbenchTestCase
 
 
 def _schema() -> DatasetSchema:
@@ -106,6 +111,53 @@ def test_case_from_mapping_rejects_non_object_input():
 
     with pytest.raises(ValueError, match="input"):
         _case_from_mapping({"input": "not-an-object"}, schema=schema, source="llm")
+
+
+def test_case_from_review_record_routes_values_and_preserves_provenance():
+    schema = _schema()
+    draft = WorkbenchTestCase(
+        "generated-1",
+        {"query": "original"},
+        {"expected_tool_called": "search"},
+        tags=("generated",),
+        source="demo-fallback",
+        metadata={"provenance": {"tool_id": "search"}},
+    )
+
+    case = _case_from_review_record(
+        {
+            "query": "edited",
+            "headers": '{"Accept": "application/json"}',
+            "expected_tool_called": "",
+            "expected_score": 4.5,
+        },
+        schema,
+        draft,
+    )
+
+    assert case.case_id == "generated-1"
+    assert case.input == {
+        "query": "edited",
+        "headers": {"Accept": "application/json"},
+    }
+    assert case.expected_output == {"expected_score": 4.5}
+    assert case.tags == ("generated",)
+    assert case.source == "demo-fallback"
+    assert case.metadata == {"provenance": {"tool_id": "search"}}
+
+
+def test_filter_new_review_cases_skips_existing_and_repeated_inputs():
+    existing = [WorkbenchTestCase("existing", {"query": "same"}, {})]
+    candidates = [
+        WorkbenchTestCase("generated-1", {"query": "same"}, {}),
+        WorkbenchTestCase("generated-2", {"query": "new"}, {}),
+        WorkbenchTestCase("generated-3", {"query": "new"}, {}),
+    ]
+
+    selected, skipped = _filter_new_review_cases(existing, candidates)
+
+    assert [case.case_id for case in selected] == ["generated-2"]
+    assert skipped == 2
 
 
 def test_parse_imported_cases_returns_test_cases_for_valid_payload():

@@ -7,11 +7,11 @@ from typing import Any
 import plotly.graph_objects as go
 
 
-PRIMARY = "#176B55"
-PRIMARY_LIGHT = "#A9D3C1"
-CREAM = "#EADCB8"
-INK = "#17201E"
-GRID = "#DCE3DF"
+PRIMARY = "#4339FF"
+PRIMARY_LIGHT = "#9B94FF"
+CREAM = "#24A6B8"
+INK = "#191A1B"
+GRID = "rgba(20, 22, 24, 0.09)"
 
 
 def _layout(figure: go.Figure, *, height: int = 270) -> go.Figure:
@@ -20,7 +20,11 @@ def _layout(figure: go.Figure, *, height: int = 270) -> go.Figure:
         margin=dict(l=8, r=18, t=12, b=16),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Arial, Helvetica, sans-serif", color=INK, size=12),
+        font=dict(
+            family="PingFang SC, Noto Sans SC, Microsoft YaHei, Hanken Grotesk, Arial, sans-serif",
+            color=INK,
+            size=12,
+        ),
         showlegend=False,
     )
     return figure
@@ -57,7 +61,7 @@ def tool_funnel_figure(funnel: Mapping[str, int]) -> go.Figure:
         go.Bar(
             x=labels,
             y=values,
-            marker_color=[PRIMARY, "#34826D", "#6AA38F", "#A9D3C1"],
+            marker_color=[PRIMARY, "#5B46FF", "#7B70FF", PRIMARY_LIGHT],
             text=[str(value) for value in values],
             textposition="outside",
             cliponaxis=False,

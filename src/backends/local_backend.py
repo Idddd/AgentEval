@@ -307,9 +307,11 @@ class LocalJsonBackend:
 
 
 class LocalJsonStore:
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, *, traces_path: Path | None = None):
         self.data_dir = Path(data_dir)
-        self._traces_path = self.data_dir / "traces.jsonl"
+        self._traces_path = (
+            Path(traces_path) if traces_path else self.data_dir / "traces.jsonl"
+        )
         self._experiments_path = self.data_dir / "experiments.json"
 
     def _all_traces(self) -> list[TraceRecord]:

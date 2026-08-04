@@ -12,6 +12,8 @@ from .workbench_models import (
     RunStatus,
     TestCase,
     ToolBinding,
+    TraceDetail,
+    TraceSummary,
     UsageCost,
 )
 
@@ -78,6 +80,10 @@ class WorkbenchRepository(Protocol):
     def get_run(self, run_id: str) -> EvalRun: ...
 
     def list_runs(self, agent_id: str) -> list[EvalRun]: ...
+
+    def list_traces(self, agent_id: str) -> list[TraceSummary]: ...
+
+    def get_trace(self, trace_id: str) -> TraceDetail: ...
 
     def save_report(
         self,

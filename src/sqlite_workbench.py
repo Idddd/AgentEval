@@ -27,6 +27,8 @@ from .workbench_models import (
     TestCase,
     ToolBinding,
     ToolEvidence,
+    TraceDetail,
+    TraceSummary,
     UsageCost,
 )
 
@@ -726,6 +728,56 @@ class SQLiteWorkbenchRepository:
                 "SELECT run_id FROM eval_runs WHERE agent_id = ? ORDER BY started_at DESC, run_id DESC", (agent_id,)
             ).fetchall()
         return [self.get_run(row["run_id"]) for row in run_ids]
+
+    @staticmethod
+    def _trace_summary(row: sqlite3.Row, result: CaseResult) -> TraceSummary:
+        latencies = [
+            item.latency_ms
+            for item in result.tool_evidence
+            if item.latency_ms is not None
+        ]
+        return TraceSummary(
+            trace_id=result.trace_id,
+            run_id=row["run_id"],
+            case_id=result.case_id,
+            agent_id=row["agent_id"],
+            status=result.status,
+            started_at=row["started_at"],
+            latency_ms=sum(latencies) if latencies else None,
+            observation_count=len(result.tool_evidence) + (1 if result.judge else 0),
+            cost_usd=sum(item.cost_usd for item in result.usage_costs),
+        )
+
+    def list_traces(self, agent_id: str) -> list[TraceSummary]:
+        """List durable case traces for one Target, newest run first."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT r.run_id, r.agent_id, r.started_at, c.result_json
+                   FROM case_results c JOIN eval_runs r ON r.run_id = c.run_id
+                   WHERE r.agent_id = ?
+                   ORDER BY r.started_at DESC, r.run_id DESC, c.case_id""",
+                (agent_id,),
+            ).fetchall()
+        summaries: list[TraceSummary] = []
+        for row in rows:
+            result = _case_result(_decode_json(row["result_json"]))
+            if result.trace_id:
+                summaries.append(self._trace_summary(row, result))
+        return summaries
+
+    def get_trace(self, trace_id: str) -> TraceDetail:
+        """Load one persisted trace and its case-level observations."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT r.run_id, r.agent_id, r.started_at, c.result_json
+                   FROM case_results c JOIN eval_runs r ON r.run_id = c.run_id
+                   WHERE json_extract(c.result_json, '$.trace_id') = ?
+                   ORDER BY r.started_at DESC LIMIT 1""",
+                (trace_id,),
+            ).fetchone()
+        row = self._require(row, trace_id)
+        result = _case_result(_decode_json(row["result_json"]))
+        return TraceDetail(self._trace_summary(row, result), result)
 
     def save_report(
         self, run_id: str, status: str, summary: dict, markdown_path: Path

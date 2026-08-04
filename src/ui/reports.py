@@ -343,38 +343,39 @@ def render_comparison(comparison: Any) -> None:
 
 def render_reports_module(
     repository: WorkbenchRepository, agent_id: str, report_service: Any | None = None,
-    *, langfuse_base_url: str | None = None,
+    *,
+    langfuse_base_url: str | None = None,
+    show_list: bool = True,
+    list_title: str = "Report",
 ) -> None:
-    """Render explicit Report list, detail, or Reflect analysis views."""
+    """Render the Report index with result and reflection in one dialog."""
     reports = repository.list_reports(agent_id)
     st.session_state.setdefault("report_view", "list")
     if st.session_state.report_view not in {"list", "detail", "analysis"}:
         st.session_state.report_view = "list"
     if not reports:
-        st.markdown("### Report")
-        st.caption("No Reports yet. Run an Evaluation to create the first immutable Report.")
+        if show_list:
+            st.markdown(f"### {list_title}")
+            st.caption("No Reports yet. Run an Evaluation to create the first immutable Report.")
         return
     reports_by_id = {report.report_id: report for report in reports}
     selected_id = st.session_state.get("selected_report_id")
     selected = reports_by_id.get(selected_id)
 
-    if st.session_state.report_view == "list" or selected is None:
-        if selected is None and st.session_state.report_view != "list":
-            st.error("The selected Report is no longer available.")
-            st.session_state.report_view = "list"
-        _render_report_list(reports)
-        return
-    if st.session_state.report_view == "analysis":
-        _render_report_analysis(repository, agent_id, selected)
-        return
-    _render_report_detail(
-        repository,
-        agent_id,
-        reports,
-        selected,
-        report_service,
-        langfuse_base_url,
-    )
+    if selected is None and st.session_state.report_view != "list":
+        st.error("The selected Report is no longer available.")
+        st.session_state.report_view = "list"
+    if show_list:
+        _render_report_list(reports, title=list_title)
+    if selected is not None:
+        _report_dialog(
+            repository,
+            agent_id,
+            reports,
+            selected,
+            report_service,
+            langfuse_base_url,
+        )
 
 
 def _report_rows(reports: list[ReportSnapshot]) -> list[dict[str, Any]]:
@@ -422,8 +423,15 @@ def _show_report_detail() -> None:
     st.session_state.report_view = "detail"
 
 
-def _render_report_list(reports: list[ReportSnapshot]) -> None:
-    st.markdown("### Report")
+def _close_report_dialog() -> None:
+    st.session_state.selected_report_id = None
+    st.session_state.report_view = "list"
+
+
+def _render_report_list(
+    reports: list[ReportSnapshot], *, title: str = "Report"
+) -> None:
+    st.markdown(f"### {title}")
     st.caption("Immutable Evaluation reports for the selected Target.")
     st.dataframe(
         _report_rows(reports),
@@ -431,9 +439,10 @@ def _render_report_list(reports: list[ReportSnapshot]) -> None:
             "Pass rate": st.column_config.NumberColumn(format="%.1f%%"),
             "Evaluation cost": st.column_config.NumberColumn(format="$%.4f"),
             "View": st.column_config.ButtonColumn(
-                "",
-                type="tertiary",
+                "Action",
+                type="primary",
                 width="small",
+                alignment="center",
                 key="report_list_actions",
                 on_click=_open_report,
                 args=(tuple(report.report_id for report in reports),),
@@ -444,6 +453,36 @@ def _render_report_list(reports: list[ReportSnapshot]) -> None:
     )
 
 
+@st.dialog("Report", width="large")
+def _report_dialog(
+    repository: WorkbenchRepository,
+    agent_id: str,
+    reports: list[ReportSnapshot],
+    selected: ReportSnapshot,
+    report_service: Any | None,
+    langfuse_base_url: str | None,
+) -> None:
+    with st.container(horizontal=True, horizontal_alignment="right"):
+        st.button(
+            "Close",
+            type="tertiary",
+            icon=":material/close:",
+            on_click=_close_report_dialog,
+        )
+    result_tab, reflect_tab = st.tabs(["Result", "Reflect & improve"])
+    with result_tab:
+        _render_report_detail(
+            repository,
+            agent_id,
+            reports,
+            selected,
+            report_service,
+            langfuse_base_url,
+        )
+    with reflect_tab:
+        _render_report_analysis(repository, agent_id, selected)
+
+
 def _render_report_detail(
     repository: WorkbenchRepository,
     agent_id: str,
@@ -452,15 +491,7 @@ def _render_report_detail(
     report_service: Any | None,
     langfuse_base_url: str | None,
 ) -> None:
-    st.button("Reports", icon=":material/arrow_back:", on_click=_show_report_list)
-    with st.container(horizontal=True, horizontal_alignment="distribute"):
-        st.markdown("### Report detail")
-        st.button(
-            "Reflect",
-            type="primary",
-            width="content",
-            on_click=_show_report_analysis,
-        )
+    st.markdown("### Result")
     render_report_summary(selected.summary, langfuse_base_url=langfuse_base_url)
     st.markdown("## Comparison")
     if len(reports) < 2:
@@ -502,15 +533,14 @@ def _render_report_analysis(
     agent_id: str,
     selected: ReportSnapshot,
 ) -> None:
-    st.button("Report detail", icon=":material/arrow_back:", on_click=_show_report_detail)
-    st.markdown("### Analysis")
+    st.markdown("### Reflect & improve")
     try:
         run = repository.get_run(selected.run_id)
         revision = repository.get_agent_revision(run.agent_revision_id)
         if run.agent_id != agent_id:
             raise ValueError("Report does not belong to the selected Target")
         suggestions = RuleBasedReportReflector().reflect(selected, revision)
-    except (KeyError, ValueError) as error:
+    except (AttributeError, KeyError, ValueError) as error:
         st.error(f"Reflect analysis is unavailable: {error}")
         return
 

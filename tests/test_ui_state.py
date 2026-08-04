@@ -83,6 +83,23 @@ st.text(st.session_state.active_page)
     assert _text_values(app) == {"Reflect"}
 
 
+@pytest.mark.parametrize("page", ("Overview", "Trace"))
+def test_observation_pages_are_valid_global_routes(page):
+    script = f'''\
+import streamlit as st
+from src.ui.state import init_ui_state, navigate
+
+init_ui_state()
+navigate({page!r})
+st.text(st.session_state.active_page)
+'''
+
+    app = AppTest.from_string(script).run(timeout=20)
+
+    assert not app.exception
+    assert _text_values(app) == {page}
+
+
 def test_leaving_target_clears_transient_create_or_detail_view():
     """Returning to Target must not reopen stale create/detail content."""
     script = '''\

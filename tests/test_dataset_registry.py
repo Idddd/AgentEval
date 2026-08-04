@@ -26,7 +26,7 @@ def test_dataset_draft_is_empty_until_cases_are_explicitly_added(tmp_path):
     assert [case.case_id for case in datasets.list_draft(dataset_id)] == ["c1"]
 
 
-def test_case_mutations_reject_duplicate_ids_and_queries(tmp_path):
+def test_case_mutations_reject_duplicate_ids_and_full_inputs(tmp_path):
     repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
     agent = AgentRegistry(repo).create("Agent", "")
     datasets = DatasetRegistry(repo)
@@ -41,10 +41,20 @@ def test_case_mutations_reject_duplicate_ids_and_queries(tmp_path):
             dataset_id,
             [TestCase("one", {"query": "Other"}, {"expected_action": "reply"})],
         )
-    with pytest.raises(ValueError, match="query values must be unique"):
+    datasets.add_cases(
+        dataset_id,
+        [
+            TestCase(
+                "two",
+                {"query": "hello", "header": {"user_role": "guest"}},
+                {"expected_action": "reply"},
+            )
+        ],
+    )
+    with pytest.raises(ValueError, match="case inputs must be unique"):
         datasets.add_cases(
             dataset_id,
-            [TestCase("two", {"query": "hello"}, {"expected_action": "reply"})],
+            [TestCase("three", {"query": "Hello"}, {"expected_action": "reply"})],
         )
 
 
@@ -165,7 +175,7 @@ def test_replace_case_validates_against_schema(tmp_path):
         )
 
 
-def test_add_cases_uniqueness_uses_first_input_column_for_custom_schema(tmp_path):
+def test_add_cases_uniqueness_uses_full_input_for_custom_schema(tmp_path):
     repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
     agent = AgentRegistry(repo).create("Agent", "")
     datasets = DatasetRegistry(repo)
@@ -178,5 +188,5 @@ def test_add_cases_uniqueness_uses_first_input_column_for_custom_schema(tmp_path
     )
     datasets.add_cases(dataset_id, [TestCase("c1", {"prompt": "Hi"}, {})])
 
-    with pytest.raises(ValueError, match="prompt values must be unique"):
+    with pytest.raises(ValueError, match="case inputs must be unique"):
         datasets.add_cases(dataset_id, [TestCase("c2", {"prompt": "hi"}, {})])

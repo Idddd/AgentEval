@@ -74,7 +74,9 @@ class AnthropicIntentAnalyzer:
 class LlmIntentAnalyzer:
     def __init__(self, settings: Settings, gateway: LlmGateway | None = None):
         self._gateway = gateway or OpenAIGateway(
-            settings.openai_model, api_key=settings.openai_api_key,
+            settings.openai_model,
+            base_url=settings.openai_base_url,
+            api_key=settings.openai_api_key,
         )
         self._fallback = RuleIntentAnalyzer()
         self.used_fallback = False
@@ -131,7 +133,11 @@ def build_llm_gateway(settings: Settings) -> LlmGateway:
         return AnthropicGateway(settings.anthropic_model, base_url=settings.anthropic_base_url,
                                 api_key=settings.anthropic_auth_token)
     if settings.openai_enabled:
-        return OpenAIGateway(settings.openai_model, api_key=settings.openai_api_key)
+        return OpenAIGateway(
+            settings.openai_model,
+            base_url=settings.openai_base_url,
+            api_key=settings.openai_api_key,
+        )
     raise RuntimeError("Configure an LLM before generating draft cases")
 
 

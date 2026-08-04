@@ -154,10 +154,32 @@ def test_run_results_and_reports_round_trip(tmp_path):
     assert completed.status is RunStatus.COMPLETED
     assert loaded.case_results == (result,)
     assert reopened.list_runs(agent.agent_id) == [loaded]
+    traces = reopened.list_traces(agent.agent_id)
+    assert len(traces) == 1
+    assert traces[0].trace_id == "trace-1"
+    assert traces[0].run_id == run.run_id
+    assert traces[0].case_id == "case-1"
+    assert traces[0].agent_id == agent.agent_id
+    assert traces[0].status == "PASS"
+    assert traces[0].observation_count == 2
+    assert traces[0].latency_ms == 1.0
+    assert traces[0].cost_usd == 0.02
+    assert reopened.get_trace("trace-1").result == result
+    with pytest.raises(KeyError):
+        reopened.get_trace("missing-trace")
     assert dataset_revision.generation_costs[0].cost_usd == 0.01
     assert (first_report.artifact_version, second_report.artifact_version) == (1, 2)
     assert reopened.get_report(second_report.report_id).summary == {"score": 5}
     assert reopened.list_reports(agent.agent_id) == [second_report, first_report]
+
+
+def test_list_traces_is_scoped_to_agent(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "workbench.db")
+    first = repo.create_agent("First", "")
+    second = repo.create_agent("Second", "")
+
+    assert repo.list_traces(first.agent_id) == []
+    assert repo.list_traces(second.agent_id) == []
 
 
 def test_rejects_raw_secret_values_but_accepts_secret_references(tmp_path):

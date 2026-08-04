@@ -48,20 +48,36 @@ def render_reports_module(repository, agent_id, report_service, *, langfuse_base
 def render_reflect_module(repository):
     st.subheader("Reflection inbox")
 
+def render_observation_overview(repository, agent_id):
+    st.subheader("Observation metrics")
+
+def render_trace_module(repository, agent_id, *, trace_provider=None):
+    st.subheader("Trace explorer")
+    st.caption(f"Raw trace provider: {{trace_provider is not None}}")
+
 originals = (
     shell.render_agent_home,
     shell.render_datasets_module,
     shell.render_runs_module,
     shell.render_reports_module,
     shell.render_reflect_module,
+    shell.render_observation_overview,
+    shell.render_trace_module,
 )
 shell.render_agent_home = render_agent_home
 shell.render_datasets_module = render_datasets_module
 shell.render_runs_module = render_runs_module
 shell.render_reports_module = render_reports_module
 shell.render_reflect_module = render_reflect_module
+shell.render_observation_overview = render_observation_overview
+shell.render_trace_module = render_trace_module
 try:
-    shell.render_shell(None, repository, default_agent_id={agent_id!r})
+    shell.render_shell(
+        None,
+        repository,
+        default_agent_id={agent_id!r},
+        trace_provider=lambda trace_id: None,
+    )
 finally:
     (
         shell.render_agent_home,
@@ -69,6 +85,8 @@ finally:
         shell.render_runs_module,
         shell.render_reports_module,
         shell.render_reflect_module,
+        shell.render_observation_overview,
+        shell.render_trace_module,
     ) = originals
 '''
 
@@ -108,6 +126,8 @@ def test_shell_dispatches_every_sidebar_destination_with_locked_agent_context(tm
         "Evaluation": "New evaluation",
         "Report": "Report history",
         "Reflect": "Reflection inbox",
+        "Overview": "Observation metrics",
+        "Trace": "Trace explorer",
         "Settings": "Environment status",
     }
     navigation = next(radio for radio in app.radio if radio.key == "active_page")
@@ -115,9 +135,11 @@ def test_shell_dispatches_every_sidebar_destination_with_locked_agent_context(tm
         app = navigation.set_value(page).run(timeout=20)
         text = _visible_text(app)
         assert page_text in text
-        if page in {"Dataset", "Evaluation", "Report"}:
+        if page in {"Dataset", "Evaluation", "Report", "Overview", "Trace"}:
             assert "Selected Target" in text
             assert "Target selector" not in text
+        if page == "Trace":
+            assert "Raw trace provider: True" in text
         if page == "Reflect":
             assert "Selected Target" not in text
         navigation = next(radio for radio in app.radio if radio.key == "active_page")
