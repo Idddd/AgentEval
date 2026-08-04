@@ -33,6 +33,21 @@ def test_trace_roundtrip(tmp_path):
     assert store.list_traces(tag="other") == []
 
 
+def test_store_can_read_an_explicit_trace_file(tmp_path):
+    backend = LocalJsonBackend(tmp_path)
+    with backend.tracer.start_trace(
+        "explicit-path", user_id="u1", tags=[], metadata={}
+    ):
+        trace_id = backend.tracer.last_trace_id()
+
+    store = LocalJsonStore(
+        tmp_path / "unused-data-dir",
+        traces_path=tmp_path / "traces.jsonl",
+    )
+
+    assert store.get_trace(trace_id).name == "explicit-path"
+
+
 def test_typed_tool_and_generation_roundtrip(tmp_path):
     """Typed observations and their cost data survive local persistence."""
     backend = LocalJsonBackend(tmp_path)
