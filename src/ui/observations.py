@@ -108,6 +108,10 @@ def _close_trace_dialog() -> None:
     st.session_state.pop("selected_span_id", None)
 
 
+def _close_trace_analysis(analysis_key: str) -> None:
+    st.session_state[analysis_key] = False
+
+
 @st.dialog("Trace detail", width="large")
 def _trace_detail_dialog(
     repository: WorkbenchRepository,
@@ -151,10 +155,14 @@ def _render_trace_detail(
             st.session_state[marked_key] = not st.session_state.get(marked_key, False)
             st.rerun()
         if st.button(
-            "Analysis",
+            "Close analysis" if st.session_state.get(analysis_key) else "Analysis",
             key="trace_analysis",
-            type="tertiary",
-            icon=":material/analytics:",
+            type="secondary" if st.session_state.get(analysis_key) else "tertiary",
+            icon=(
+                ":material/close:"
+                if st.session_state.get(analysis_key)
+                else ":material/analytics:"
+            ),
         ):
             st.session_state[analysis_key] = not st.session_state.get(
                 analysis_key, False
@@ -185,6 +193,14 @@ def _render_trace_detail(
 
     raw_trace = trace_provider(trace_id) if trace_provider else None
     if st.session_state.get(analysis_key):
+        st.button(
+            "Back to trace detail",
+            key="trace_analysis_back",
+            type="secondary",
+            icon=":material/arrow_back:",
+            on_click=_close_trace_analysis,
+            args=(analysis_key,),
+        )
         _render_trace_analysis(detail.result, raw_trace)
 
     st.subheader("Span tree")
