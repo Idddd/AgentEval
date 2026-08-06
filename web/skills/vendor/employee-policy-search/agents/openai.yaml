@@ -1,0 +1,4 @@
+interface:
+  display_name: "Employee Policy Search"
+  short_description: "Answer questions from approved employee policies"
+  default_prompt: "Use $employee-policy-search to answer this employee policy question with evidence."

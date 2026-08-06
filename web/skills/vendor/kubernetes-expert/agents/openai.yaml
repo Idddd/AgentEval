@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kubernetes Expert"
+  short_description: "Diagnose Kubernetes workloads and manifests safely"
+  default_prompt: "Use $kubernetes-expert to diagnose this Kubernetes issue from read-only evidence."

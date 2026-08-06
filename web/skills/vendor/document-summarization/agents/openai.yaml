@@ -1,0 +1,4 @@
+interface:
+  display_name: "Document Summarization"
+  short_description: "Produce accurate, audience-aware document summaries"
+  default_prompt: "Use $document-summarization to summarize this document for the specified audience."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Citation Builder"
+  short_description: "Turn evidence into traceable normalized citations"
+  default_prompt: "Use $citation-builder to attach verifiable citations to these claims."

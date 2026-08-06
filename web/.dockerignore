@@ -1,0 +1,17 @@
+.git
+node_modules
+**/node_modules
+**/dist
+!skills/vendor/dist
+!skills/vendor/dist/**
+!dist/control-plane-chart
+!dist/control-plane-chart/**
+**/.output
+**/.tanstack
+coverage
+docs
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example

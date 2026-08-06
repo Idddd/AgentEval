@@ -1,0 +1,5 @@
+import type { ProviderConnectionDraft } from "@tasklattice/contracts";
+import { ProviderFormSection, ProviderTextField } from "./fields";
+import type { ProviderConfiguratorProps } from "./types";
+type Draft = Extract<ProviderConnectionDraft, { provider: "baidu-qianfan" }>;
+export function BaiduQianfanProvider({ disabled, errors, onChange, value }: ProviderConfiguratorProps<Draft>) { return <ProviderFormSection title="Qianfan connection"><ProviderTextField id="qianfan-endpoint" label="OpenAI-compatible endpoint" type="url" required value={value.config.endpoint} disabled={disabled} error={errors.endpoint} onChange={(endpoint) => onChange({ ...value, config: { ...value.config, endpoint } })} /><ProviderTextField id="qianfan-appid" label="App ID (optional)" value={value.config.appId ?? ""} disabled={disabled} onChange={(appId) => onChange({ ...value, config: { ...value.config, appId: appId || undefined } })} /><ProviderTextField id="qianfan-key" label="API key" type="password" required value={value.credentials.apiKey} disabled={disabled} error={errors.apiKey} onChange={(apiKey) => onChange({ ...value, credentials: { apiKey } })} /></ProviderFormSection>; }

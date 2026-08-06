@@ -1,0 +1,4 @@
+interface:
+  display_name: "Infrastructure Change Review"
+  short_description: "Review infrastructure changes for operational risk"
+  default_prompt: "Use $infrastructure-change-review to assess this infrastructure change before deployment."

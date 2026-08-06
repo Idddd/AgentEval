@@ -1,0 +1,4 @@
+interface:
+  display_name: "Onboarding Guidance"
+  short_description: "Build role-aware new-hire onboarding plans"
+  default_prompt: "Use $onboarding-guidance to create a safe onboarding checklist for this new hire."

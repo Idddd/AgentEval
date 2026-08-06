@@ -1,0 +1,13 @@
+import { Link } from "@tanstack/react-router";
+import { FlaskConical, Plus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useCurrentProjectId } from "@/hooks/use-project";
+import { EvaluationStatusBadge } from "../evaluation-status";
+import { useEvaluationState } from "../mock-provider";
+import { evaluationListRows } from "./run-view-model";
+
+export function EvaluationList() {
+  const projectId = useCurrentProjectId(); const rows = evaluationListRows(useEvaluationState());
+  return <div className="space-y-4"><div className="flex items-center justify-between"><div><h2 className="font-medium">Evaluation history</h2><p className="text-sm text-muted-foreground">Every run is pinned to immutable Target and Dataset revisions.</p></div><Button asChild><Link to="/$projectId/evaluations/new" params={{ projectId }}><Plus /> New Evaluation</Link></Button></div><div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[1000px] text-left text-sm"><thead className="border-b bg-muted/40 text-xs text-muted-foreground"><tr>{['Created', 'Target', 'Dataset', 'Status', 'Pass rate', 'Duration', 'Cost', ''].map((item) => <th key={item} className="px-4 py-3 font-medium">{item}</th>)}</tr></thead><tbody className="divide-y">{rows.map((row) => <tr key={row.id} className="hover:bg-muted/20"><td className="px-4 py-3 text-muted-foreground">{new Date(row.createdAt).toLocaleString()}</td><td className="px-4 py-3"><p className="font-medium">{row.targetName}</p><Badge variant="outline">Revision {row.targetRevision}</Badge></td><td className="px-4 py-3"><p>{row.datasetName}</p><span className="font-mono text-xs text-muted-foreground">r{row.datasetRevision}</span></td><td className="px-4 py-3"><EvaluationStatusBadge status={row.status} /></td><td className="px-4 py-3 font-mono">{row.passRate === undefined ? "—" : `${row.passRate}%`}</td><td className="px-4 py-3 font-mono">{row.durationMs ? `${(row.durationMs / 1000).toFixed(1)}s` : "—"}</td><td className="px-4 py-3 font-mono">{row.costUsd === undefined ? "—" : `$${row.costUsd.toFixed(4)}`}</td><td className="px-4 py-3 text-right"><Button asChild size="sm" variant="ghost"><Link to="/$projectId/evaluations/runs/$runId" params={{ projectId, runId: row.id }}>{row.status === "RUNNING" ? "Resume" : "View"}</Link></Button></td></tr>)}</tbody></table>{!rows.length ? <div className="grid place-items-center py-14 text-center"><FlaskConical className="mb-3 size-8 text-muted-foreground" /><p className="text-sm text-muted-foreground">No Evaluations yet.</p></div> : null}</div></div>;
+}

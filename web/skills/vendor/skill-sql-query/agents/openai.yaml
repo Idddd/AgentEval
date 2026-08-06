@@ -1,0 +1,4 @@
+interface:
+  display_name: "SQL Query"
+  short_description: "Generate governed read-only SQL and results"
+  default_prompt: "Use $skill-sql-query to answer this reporting question with a safe read-only query."

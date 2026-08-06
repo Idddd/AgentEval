@@ -1,0 +1,5 @@
+import type { ProviderConnectionDraft } from "@tasklattice/contracts";
+import { ProviderFormSection, ProviderTextField } from "./fields";
+import type { ProviderConfiguratorProps } from "./types";
+type Draft = Extract<ProviderConnectionDraft, { provider: "qwen" }>;
+export function QwenProvider({ disabled, errors, onChange, value }: ProviderConfiguratorProps<Draft>) { return <ProviderFormSection title="DashScope credentials" description={`Endpoint region: ${value.config.region === "cn" ? "Mainland China" : "International"}. TaskLattice selected this endpoint from the compliance boundary.`}><ProviderTextField id="qwen-endpoint" label="API endpoint" type="url" required value={value.config.endpoint} disabled={disabled} error={errors.endpoint} onChange={(endpoint) => onChange({ ...value, config: { ...value.config, endpoint } })} /><ProviderTextField id="qwen-key" label="API key" type="password" required value={value.credentials.apiKey} disabled={disabled} error={errors.apiKey} onChange={(apiKey) => onChange({ ...value, credentials: { apiKey } })} /></ProviderFormSection>; }
