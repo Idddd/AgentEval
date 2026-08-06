@@ -62,6 +62,19 @@ class AgentProfile:
     description: str
     current_revision: int
     created_at: str
+    updated_at: str = ""
+
+
+@dataclass(frozen=True)
+class DatasetProfile:
+    dataset_id: str
+    agent_id: str
+    name: str
+    current_revision: int
+    created_at: str
+    updated_at: str
+    description: str
+    schema_json: str | None = None
 
 
 @dataclass(frozen=True)
@@ -352,6 +365,8 @@ class EvalRun:
     completed_at: str | None
     evaluator_version: str
     case_results: tuple[CaseResult, ...] = ()
+    created_at: str | None = None
+    stage: str | None = None
 
 
 @dataclass(frozen=True)

@@ -5,6 +5,7 @@ from .workbench_models import (
     AgentProfile,
     AgentRevision,
     CaseResult,
+    DatasetProfile,
     DatasetRevision,
     DatasetSchema,
     EvalRun,
@@ -19,7 +20,15 @@ from .workbench_models import (
 
 
 class WorkbenchRepository(Protocol):
-    def create_agent(self, name: str, description: str) -> AgentProfile: ...
+    def create_agent(
+        self,
+        name: str,
+        description: str,
+        *,
+        agent_id: str | None = None,
+        created_at: str | None = None,
+        updated_at: str | None = None,
+    ) -> AgentProfile: ...
 
     def create_agent_with_revision(
         self,
@@ -27,6 +36,11 @@ class WorkbenchRepository(Protocol):
         description: str,
         config_snapshot: dict,
         tools: tuple[ToolBinding, ...],
+        *,
+        agent_id: str | None = None,
+        revision_id: str | None = None,
+        created_at: str | None = None,
+        updated_at: str | None = None,
     ) -> tuple[AgentProfile, AgentRevision]: ...
 
     def list_agents(self) -> list[AgentProfile]: ...
@@ -38,11 +52,16 @@ class WorkbenchRepository(Protocol):
         agent_id: str,
         config_snapshot: dict,
         tools: tuple[ToolBinding, ...],
+        *,
+        revision_id: str | None = None,
+        created_at: str | None = None,
     ) -> AgentRevision: ...
 
     def get_agent_revision(self, revision_id: str) -> AgentRevision: ...
 
     def get_current_agent_revision(self, agent_id: str) -> AgentRevision | None: ...
+
+    def list_agent_revisions(self, agent_id: str) -> list[AgentRevision]: ...
 
     def create_dataset(
         self,
@@ -51,7 +70,18 @@ class WorkbenchRepository(Protocol):
         *,
         description: str = "",
         schema: DatasetSchema | None = None,
+        dataset_id: str | None = None,
+        created_at: str | None = None,
+        updated_at: str | None = None,
     ) -> str: ...
+
+    def get_dataset(self, dataset_id: str) -> DatasetProfile: ...
+
+    def list_datasets(self, agent_id: str) -> list[DatasetProfile]: ...
+
+    def list_dataset_revisions(self, dataset_id: str) -> list[DatasetRevision]: ...
+
+    def get_current_dataset_revision(self, dataset_id: str) -> DatasetRevision | None: ...
 
     def get_dataset_schema(self, dataset_id: str) -> DatasetSchema: ...
 
@@ -63,7 +93,13 @@ class WorkbenchRepository(Protocol):
 
     def add_dataset_generation_cost(self, dataset_id: str, cost: UsageCost) -> None: ...
 
-    def publish_dataset(self, dataset_id: str) -> DatasetRevision: ...
+    def publish_dataset(
+        self,
+        dataset_id: str,
+        *,
+        revision_id: str | None = None,
+        created_at: str | None = None,
+    ) -> DatasetRevision: ...
 
     def get_dataset_revision(self, revision_id: str) -> DatasetRevision: ...
 
@@ -71,11 +107,22 @@ class WorkbenchRepository(Protocol):
         self,
         agent_revision_id: str,
         dataset_revision_id: str,
+        *,
+        run_id: str | None = None,
+        created_at: str | None = None,
+        started_at: str | None = None,
+        stage: str | None = None,
     ) -> EvalRun: ...
 
     def save_case_result(self, run_id: str, result: CaseResult) -> None: ...
 
-    def finish_run(self, run_id: str, status: RunStatus) -> EvalRun: ...
+    def finish_run(
+        self,
+        run_id: str,
+        status: RunStatus,
+        *,
+        completed_at: str | None = None,
+    ) -> EvalRun: ...
 
     def get_run(self, run_id: str) -> EvalRun: ...
 
@@ -91,6 +138,9 @@ class WorkbenchRepository(Protocol):
         status: str,
         summary: dict,
         markdown_path: Path,
+        *,
+        report_id: str | None = None,
+        created_at: str | None = None,
     ) -> ReportSnapshot: ...
 
     def get_report(self, report_id: str) -> ReportSnapshot: ...

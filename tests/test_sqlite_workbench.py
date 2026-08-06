@@ -381,7 +381,7 @@ def test_legacy_database_is_migrated_with_default_schema_backfill(tmp_path):
             "SELECT schema_json FROM datasets WHERE dataset_id = ?", (dataset_id,)
         ).fetchone()[0]
 
-    assert version == 2
+    assert version == 3
     assert description == ""
     assert json.loads(schema_json)["columns"] == json.loads(_dataset_schema_json(DEFAULT_DATASET_SCHEMA))["columns"]
     assert repo.get_dataset_schema(dataset_id) == DEFAULT_DATASET_SCHEMA
@@ -444,3 +444,65 @@ def test_migrated_database_accepts_new_schema_driven_datasets(tmp_path):
     )
 
     assert repo.get_dataset_schema(new_dataset_id) == new_schema
+
+
+def test_v3_columns_and_timestamps(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "wb.db")
+    agent, revision = repo.create_agent_with_revision(
+        "Target A",
+        "desc",
+        {"model_id": "deepseek-chat"},
+        (),
+        agent_id="target-a",
+        revision_id="target-a-r1",
+        created_at="2026-07-28T08:00:00.000Z",
+        updated_at="2026-08-04T05:50:00.000Z",
+    )
+    assert agent.agent_id == "target-a"
+    assert agent.updated_at == "2026-08-04T05:50:00.000Z"
+    assert revision.revision_id == "target-a-r1"
+    reopened = SQLiteWorkbenchRepository(tmp_path / "wb.db")
+    assert reopened.get_agent("target-a").updated_at == "2026-08-04T05:50:00.000Z"
+
+
+def test_dataset_profile_and_revision_listing(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "wb.db")
+    agent, _revision = repo.create_agent_with_revision("A", "d", {}, ())
+    dataset_id = repo.create_dataset(agent.agent_id, "Ds")
+    profile = repo.get_dataset(dataset_id)
+    assert profile.name == "Ds"
+    assert repo.list_datasets(agent.agent_id) == [profile]
+    assert repo.get_current_dataset_revision(dataset_id) is None
+    revision = repo.publish_dataset(dataset_id)
+    assert repo.list_dataset_revisions(dataset_id) == [revision]
+    assert repo.get_current_dataset_revision(dataset_id) == revision
+
+
+def test_run_created_at_stage_and_report_stage_transition(tmp_path):
+    repo = SQLiteWorkbenchRepository(tmp_path / "wb.db")
+    agent, _revision = repo.create_agent_with_revision("A", "d", {}, ())
+    dataset_id = repo.create_dataset(agent.agent_id, "Ds")
+    dataset_revision = repo.publish_dataset(dataset_id)
+    agent_revision = repo.get_current_agent_revision(agent.agent_id)
+    run = repo.create_run(
+        agent_revision.revision_id,
+        dataset_revision.revision_id,
+        run_id="run-1",
+        created_at="2026-08-04T05:45:00.000Z",
+        started_at="2026-08-04T05:45:05.000Z",
+        stage="reflect",
+    )
+    assert run.created_at == "2026-08-04T05:45:00.000Z"
+    assert run.stage == "reflect"
+    repo.save_report(
+        run.run_id,
+        "PASS",
+        {"metrics": {}},
+        tmp_path / "r.md",
+        report_id="report-1",
+        created_at="2026-08-04T05:45:18.000Z",
+    )
+    assert repo.get_run("run-1").stage == "reflect"  # seeded stage preserved
+    other = repo.create_run(agent_revision.revision_id, dataset_revision.revision_id)
+    repo.save_report(other.run_id, "PASS", {"metrics": {}}, tmp_path / "r2.md")
+    assert repo.get_run(other.run_id).stage == "report"

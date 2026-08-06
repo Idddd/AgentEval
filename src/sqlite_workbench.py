@@ -17,6 +17,7 @@ from .workbench_models import (
     AgentRevision,
     CaseResult,
     DatasetColumn,
+    DatasetProfile,
     DatasetRevision,
     DatasetSchema,
     DEFAULT_DATASET_SCHEMA,
@@ -33,10 +34,11 @@ from .workbench_models import (
 )
 
 
-SCHEMA_V2 = """
+SCHEMA_V3 = """
 CREATE TABLE IF NOT EXISTS agents (
   agent_id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
-  current_revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+  current_revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS agent_revisions (
   revision_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(agent_id),
@@ -52,7 +54,8 @@ CREATE TABLE IF NOT EXISTS datasets (
   dataset_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(agent_id),
   name TEXT NOT NULL, current_revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
-  schema_json TEXT
+  schema_json TEXT,
+  updated_at TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS dataset_draft_cases (
   dataset_id TEXT NOT NULL REFERENCES datasets(dataset_id), case_id TEXT NOT NULL,
@@ -79,7 +82,7 @@ CREATE TABLE IF NOT EXISTS eval_runs (
   agent_revision_id TEXT NOT NULL REFERENCES agent_revisions(revision_id),
   dataset_revision_id TEXT NOT NULL REFERENCES dataset_revisions(revision_id),
   status TEXT NOT NULL, started_at TEXT NOT NULL, completed_at TEXT,
-  evaluator_version TEXT NOT NULL
+  evaluator_version TEXT NOT NULL, created_at TEXT, stage TEXT
 );
 CREATE TABLE IF NOT EXISTS case_results (
   run_id TEXT NOT NULL REFERENCES eval_runs(run_id), case_id TEXT NOT NULL,
@@ -109,6 +112,10 @@ CREATE TABLE IF NOT EXISTS reports (
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _now_or(value: str | None) -> str:
+    return value if value is not None else _now()
 
 
 def _new_id() -> str:
@@ -252,16 +259,33 @@ class SQLiteWorkbenchRepository:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
-            connection.executescript(SCHEMA_V2)
+            connection.executescript(SCHEMA_V3)
             self._migrate(connection)
 
     def _migrate(self, connection: sqlite3.Connection) -> None:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version >= 2:
+        if version >= 3:
+            return
+        if version == 2:
+            connection.executescript(
+                """
+                ALTER TABLE agents ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+                ALTER TABLE datasets ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+                ALTER TABLE eval_runs ADD COLUMN created_at TEXT;
+                ALTER TABLE eval_runs ADD COLUMN stage TEXT;
+                """
+            )
+            connection.execute(
+                "UPDATE agents SET updated_at = created_at WHERE updated_at = ''"
+            )
+            connection.execute(
+                "UPDATE datasets SET updated_at = created_at WHERE updated_at = ''"
+            )
+            connection.execute("PRAGMA user_version = 3")
             return
         if version < 1:
-            # Fresh database — SCHEMA_V2 already created the new-shape datasets table.
-            connection.execute("PRAGMA user_version = 2")
+            # Fresh database — SCHEMA_V3 already created the new-shape tables.
+            connection.execute("PRAGMA user_version = 3")
             return
         # Legacy V1 database: datasets table lacks description/schema_json columns.
         connection.executescript(
@@ -274,7 +298,19 @@ class SQLiteWorkbenchRepository:
             "UPDATE datasets SET schema_json = ?",
             (_serialize_schema(DEFAULT_DATASET_SCHEMA),),
         )
-        connection.execute("PRAGMA user_version = 2")
+        connection.executescript(
+            """
+            ALTER TABLE agents ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+            ALTER TABLE datasets ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+            """
+        )
+        connection.execute(
+            "UPDATE agents SET updated_at = created_at WHERE updated_at = ''"
+        )
+        connection.execute(
+            "UPDATE datasets SET updated_at = created_at WHERE updated_at = ''"
+        )
+        connection.execute("PRAGMA user_version = 3")
 
     @property
     def db_path(self) -> Path:
@@ -304,12 +340,34 @@ class SQLiteWorkbenchRepository:
     def _agent(row: sqlite3.Row) -> AgentProfile:
         return AgentProfile(**dict(row))
 
-    def create_agent(self, name: str, description: str) -> AgentProfile:
-        agent = AgentProfile(_new_id(), name, description, 0, _now())
+    @staticmethod
+    def _dataset(row: sqlite3.Row) -> DatasetProfile:
+        return DatasetProfile(**dict(row))
+
+    def create_agent(
+        self,
+        name: str,
+        description: str,
+        *,
+        agent_id: str | None = None,
+        created_at: str | None = None,
+        updated_at: str | None = None,
+    ) -> AgentProfile:
+        created = _now_or(created_at)
+        agent = AgentProfile(
+            agent_id or _new_id(), name, description, 0, created, _now_or(updated_at) or created
+        )
         with self._connect() as connection:
             connection.execute(
-                "INSERT INTO agents VALUES (?, ?, ?, ?, ?)",
-                (agent.agent_id, agent.name, agent.description, agent.current_revision, agent.created_at),
+                "INSERT INTO agents VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    agent.agent_id,
+                    agent.name,
+                    agent.description,
+                    agent.current_revision,
+                    agent.created_at,
+                    agent.updated_at,
+                ),
             )
         return agent
 
@@ -319,6 +377,11 @@ class SQLiteWorkbenchRepository:
         description: str,
         config_snapshot: dict,
         tools: tuple[ToolBinding, ...],
+        *,
+        agent_id: str | None = None,
+        revision_id: str | None = None,
+        created_at: str | None = None,
+        updated_at: str | None = None,
     ) -> tuple[AgentProfile, AgentRevision]:
         """Create a Target profile and Revision 1 in one SQLite transaction."""
         _validate_secret_free(config_snapshot)
@@ -329,20 +392,24 @@ class SQLiteWorkbenchRepository:
         if len({tool.tool_id for tool in tools}) != len(tools):
             raise ValueError("tool IDs must be unique within an agent revision")
 
-        agent = AgentProfile(_new_id(), name, description, 1, _now())
+        created = _now_or(created_at)
+        agent = AgentProfile(
+            agent_id or _new_id(), name, description, 1, created, _now_or(updated_at) or created
+        )
         revision = AgentRevision(
-            _new_id(), agent.agent_id, 1, config_snapshot, tools, _now()
+            revision_id or _new_id(), agent.agent_id, 1, config_snapshot, tools, created
         )
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
-                "INSERT INTO agents VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO agents VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     agent.agent_id,
                     agent.name,
                     agent.description,
                     agent.current_revision,
                     agent.created_at,
+                    agent.updated_at,
                 ),
             )
             connection.execute(
@@ -382,9 +449,12 @@ class SQLiteWorkbenchRepository:
         agent_id: str,
         config_snapshot: dict,
         tools: tuple[ToolBinding, ...],
+        *,
+        revision_id: str | None = None,
+        created_at: str | None = None,
     ) -> AgentRevision:
-        revision_id = _new_id()
-        created_at = _now()
+        revision_id = revision_id or _new_id()
+        created_at = _now_or(created_at)
         _validate_secret_free(config_snapshot)
         _validate_connection_urls(config_snapshot)
         for tool in tools:
@@ -411,7 +481,19 @@ class SQLiteWorkbenchRepository:
                 "UPDATE agents SET current_revision = ? WHERE agent_id = ?",
                 (revision_number, agent_id),
             )
+            connection.execute(
+                "UPDATE agents SET updated_at = ? WHERE agent_id = ?",
+                (_now(), agent_id),
+            )
         return snapshot
+
+    def list_agent_revisions(self, agent_id: str) -> list[AgentRevision]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT revision_id FROM agent_revisions WHERE agent_id = ? ORDER BY created_at, revision_id",
+                (agent_id,),
+            ).fetchall()
+        return [self.get_agent_revision(row["revision_id"]) for row in rows]
 
     def get_agent_revision(self, revision_id: str) -> AgentRevision:
         with self._connect() as connection:
@@ -455,9 +537,14 @@ class SQLiteWorkbenchRepository:
         *,
         description: str = "",
         schema: DatasetSchema | None = None,
+        dataset_id: str | None = None,
+        created_at: str | None = None,
+        updated_at: str | None = None,
     ) -> str:
-        dataset_id = _new_id()
+        dataset_id = dataset_id or _new_id()
         effective_schema = schema if schema is not None else DEFAULT_DATASET_SCHEMA
+        created = _now_or(created_at)
+        updated = _now_or(updated_at) or created
         with self._connect() as connection:
             self._require(
                 connection.execute("SELECT agent_id FROM agents WHERE agent_id = ?", (agent_id,)).fetchone(),
@@ -465,19 +552,54 @@ class SQLiteWorkbenchRepository:
             )
             connection.execute(
                 "INSERT INTO datasets "
-                "(dataset_id, agent_id, name, current_revision, created_at, description, schema_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(dataset_id, agent_id, name, current_revision, created_at, description, schema_json, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     dataset_id,
                     agent_id,
                     name,
                     0,
-                    _now(),
+                    created,
                     description,
                     _serialize_schema(effective_schema),
+                    updated,
                 ),
             )
         return dataset_id
+
+    def get_dataset(self, dataset_id: str) -> DatasetProfile:
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute("SELECT * FROM datasets WHERE dataset_id = ?", (dataset_id,)).fetchone(),
+                dataset_id,
+            )
+        return self._dataset(row)
+
+    def list_datasets(self, agent_id: str) -> list[DatasetProfile]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM datasets WHERE agent_id = ? ORDER BY created_at, dataset_id", (agent_id,)
+            ).fetchall()
+        return [self._dataset(row) for row in rows]
+
+    def list_dataset_revisions(self, dataset_id: str) -> list[DatasetRevision]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT revision_id FROM dataset_revisions WHERE dataset_id = ? ORDER BY created_at, revision_id",
+                (dataset_id,),
+            ).fetchall()
+        return [self.get_dataset_revision(row["revision_id"]) for row in rows]
+
+    def get_current_dataset_revision(self, dataset_id: str) -> DatasetRevision | None:
+        dataset = self.get_dataset(dataset_id)
+        if dataset.current_revision == 0:
+            return None
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT revision_id FROM dataset_revisions WHERE dataset_id = ? AND revision = ?",
+                (dataset_id, dataset.current_revision),
+            ).fetchone()
+        return self.get_dataset_revision(row["revision_id"]) if row else None
 
     def get_dataset_schema(self, dataset_id: str) -> DatasetSchema:
         with self._connect() as connection:
@@ -510,6 +632,10 @@ class SQLiteWorkbenchRepository:
                 "INSERT INTO dataset_draft_cases VALUES (?, ?, ?, ?)",
                 [(dataset_id, case.case_id, position, _model_json(case)) for position, case in enumerate(cases)],
             )
+            connection.execute(
+                "UPDATE datasets SET updated_at = ? WHERE dataset_id = ?",
+                (_now(), dataset_id),
+            )
 
     def list_draft_cases(self, dataset_id: str) -> list[TestCase]:
         with self._connect() as connection:
@@ -534,9 +660,15 @@ class SQLiteWorkbenchRepository:
                 (dataset_id, _new_id(), _model_json(cost)),
             )
 
-    def publish_dataset(self, dataset_id: str) -> DatasetRevision:
-        revision_id = _new_id()
-        created_at = _now()
+    def publish_dataset(
+        self,
+        dataset_id: str,
+        *,
+        revision_id: str | None = None,
+        created_at: str | None = None,
+    ) -> DatasetRevision:
+        revision_id = revision_id or _new_id()
+        created_at = _now_or(created_at)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             dataset = self._require(
@@ -567,6 +699,10 @@ class SQLiteWorkbenchRepository:
             connection.execute(
                 "UPDATE datasets SET current_revision = ? WHERE dataset_id = ?",
                 (revision_number, dataset_id),
+            )
+            connection.execute(
+                "UPDATE datasets SET updated_at = ? WHERE dataset_id = ?",
+                (_now(), dataset_id),
             )
         return DatasetRevision(
             revision_id,
@@ -607,7 +743,16 @@ class SQLiteWorkbenchRepository:
             generation_costs=tuple(_usage_cost(cost) for cost in _decode_json(row["generation_costs_json"])),
         )
 
-    def create_run(self, agent_revision_id: str, dataset_revision_id: str) -> EvalRun:
+    def create_run(
+        self,
+        agent_revision_id: str,
+        dataset_revision_id: str,
+        *,
+        run_id: str | None = None,
+        created_at: str | None = None,
+        started_at: str | None = None,
+        stage: str | None = None,
+    ) -> EvalRun:
         with self._connect() as connection:
             agent_revision = self._require(
                 connection.execute(
@@ -623,18 +768,21 @@ class SQLiteWorkbenchRepository:
             )
             if agent_revision["agent_id"] != dataset_revision["agent_id"]:
                 raise ValueError("agent revision and dataset revision belong to different agents")
+            started = _now_or(started_at)
             run = EvalRun(
-                _new_id(),
-                agent_revision["agent_id"],
-                agent_revision_id,
-                dataset_revision_id,
-                RunStatus.QUEUED,
-                _now(),
-                None,
-                "v1",
+                run_id=run_id or _new_id(),
+                agent_id=agent_revision["agent_id"],
+                agent_revision_id=agent_revision_id,
+                dataset_revision_id=dataset_revision_id,
+                status=RunStatus.QUEUED,
+                started_at=started,
+                completed_at=None,
+                evaluator_version="v1",
+                created_at=created_at or started,
+                stage=stage or "evaluate",
             )
             connection.execute(
-                "INSERT INTO eval_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO eval_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run.run_id,
                     run.agent_id,
@@ -644,6 +792,8 @@ class SQLiteWorkbenchRepository:
                     run.started_at,
                     run.completed_at,
                     run.evaluator_version,
+                    run.created_at,
+                    run.stage,
                 ),
             )
         return run
@@ -693,12 +843,18 @@ class SQLiteWorkbenchRepository:
                 ],
             )
 
-    def finish_run(self, run_id: str, status: RunStatus) -> EvalRun:
+    def finish_run(
+        self,
+        run_id: str,
+        status: RunStatus,
+        *,
+        completed_at: str | None = None,
+    ) -> EvalRun:
         with self._connect() as connection:
             self._require_mutable_run(connection, run_id)
             connection.execute(
                 "UPDATE eval_runs SET status = ?, completed_at = ? WHERE run_id = ?",
-                (status.value, _now(), run_id),
+                (status.value, _now_or(completed_at), run_id),
             )
         return self.get_run(run_id)
 
@@ -719,6 +875,8 @@ class SQLiteWorkbenchRepository:
             started_at=row["started_at"],
             completed_at=row["completed_at"],
             evaluator_version=row["evaluator_version"],
+            created_at=row["created_at"],
+            stage=row["stage"],
             case_results=tuple(_case_result(_decode_json(result_row["result_json"])) for result_row in result_rows),
         )
 
@@ -780,9 +938,18 @@ class SQLiteWorkbenchRepository:
         return TraceDetail(self._trace_summary(row, result), result)
 
     def save_report(
-        self, run_id: str, status: str, summary: dict, markdown_path: Path
+        self,
+        run_id: str,
+        status: str,
+        summary: dict,
+        markdown_path: Path,
+        *,
+        report_id: str | None = None,
+        created_at: str | None = None,
     ) -> ReportSnapshot:
-        report = ReportSnapshot(_new_id(), run_id, 0, status, summary, str(markdown_path), _now())
+        report = ReportSnapshot(
+            report_id or _new_id(), run_id, 0, status, summary, str(markdown_path), _now_or(created_at)
+        )
         with self._connect() as connection:
             self._require(
                 connection.execute("SELECT run_id FROM eval_runs WHERE run_id = ?", (run_id,)).fetchone(), run_id
@@ -812,6 +979,14 @@ class SQLiteWorkbenchRepository:
                     report.created_at,
                 ),
             )
+            current_stage = connection.execute(
+                "SELECT stage FROM eval_runs WHERE run_id = ?", (run_id,)
+            ).fetchone()["stage"]
+            if current_stage in (None, "evaluate"):
+                connection.execute(
+                    "UPDATE eval_runs SET stage = ? WHERE run_id = ?",
+                    ("report", run_id),
+                )
         return report
 
     def get_report(self, report_id: str) -> ReportSnapshot:
