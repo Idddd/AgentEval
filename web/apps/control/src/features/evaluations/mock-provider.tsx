@@ -5,11 +5,8 @@ import {
   useMemo,
   useSyncExternalStore,
 } from "react";
-import { cloneEvaluationFixtures } from "./fixture-validation";
-import {
-  createEvaluationStore,
-  type EvaluationStore,
-} from "./mock-store";
+import { createApiEvaluationStore } from "./api-store";
+import type { EvaluationStore } from "./mock-store";
 import type { EvaluationState } from "./model";
 
 const EvaluationStoreContext = createContext<EvaluationStore | null>(null);
@@ -22,7 +19,7 @@ export function EvaluationMockProvider({
   children: ReactNode;
 }) {
   const store = useMemo(
-    () => createEvaluationStore(cloneEvaluationFixtures()),
+    () => createApiEvaluationStore({}),
     [projectId],
   );
   return (
