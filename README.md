@@ -109,6 +109,62 @@ command are passed to the next command.
 prints a deprecation message and imports the legacy Agent before routing its
 work through the stable records.
 
+## Web UI (merged console)
+
+AgentEval also ships the advanced TaskLattice console UI (vendored under
+`web/`) wired to the real Python/SQLite backend. The Evaluations module shows
+the same demo data as its frontend fixtures, and every Evaluation operation
+(Targets, Datasets, Runs, Reports) persists through the FastAPI service
+(`src/api/`) into `data/web-workbench.db`. Operations the backend does not
+implement yet (for example Reflections) fall back to the frontend mock and
+never show an error page.
+
+Prerequisites: Python 3.12 venv with the updated `requirements.txt`, Node.js
+22+, npm, and Docker Desktop (for the console shell database).
+
+1. Install the Python requirements and the web dependencies once:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   cd web
+   npm ci
+   ```
+
+2. Start the console shell database (projects/auth), create it once if needed:
+
+   ```powershell
+   docker run -d --name tasklattice-dev-postgres --restart unless-stopped `
+     -e POSTGRES_USER=tasklattice -e POSTGRES_PASSWORD=development `
+     -e POSTGRES_DB=tasklattice -p 5432:5432 postgres:17-alpine
+   ```
+
+3. Start everything with the provided script (Postgres + API + UI):
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File start-dev.ps1
+   ```
+
+   Or start the two servers manually in separate terminals:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m uvicorn src.api.main:app --port 8000
+   # separate terminal
+   cd web
+   $env:PORT = "18082"
+   npm run dev:control
+   ```
+
+   Open `http://127.0.0.1:18082` and log in with `admin` / `admin`. The
+   Evaluation pages live at `/individual/evaluations`.
+
+   The web API uses its own SQLite file by default
+   (`data/web-workbench.db`, env `WORKBENCH_WEB_DB`) so its seeded demo graph
+   never mixes with the Streamlit workbench database. Point both at the same
+   file via environment variables if you want them to share data.
+
+Streamlit (`app.py`) and the CLI (`main.py`) are unchanged and remain
+alternative entry points.
+
 ## Docker (optional)
 
 ```powershell
