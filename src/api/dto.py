@@ -18,6 +18,17 @@ from src.workbench_models import (
 )
 
 
+def _plain(value: Any) -> Any:
+    """Recursively convert workbench frozen collections to plain JSON types."""
+    if isinstance(value, dict):
+        return {str(key): _plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted(_plain(item) for item in value)
+    return value
+
+
 def dataset_schema_to_ui(schema: DatasetSchema) -> list[dict]:
     role_map = {"input": "INPUT", "output": "EXPECTED"}
     type_map = {"string": "STRING", "json": "JSON", "number": "NUMBER", "boolean": "BOOLEAN"}
@@ -48,16 +59,16 @@ def ui_schema_to_dataset_schema(items: list[dict]) -> DatasetSchema:
 
 
 def case_to_ui_case(case: TestCase) -> dict:
-    expected = dict(case.expected_output)
+    expected = _plain(case.expected_output)
     return {
         "id": case.case_id,
-        "input": dict(case.input),
+        "input": _plain(case.input),
         "expected": {
             "outcome": expected.get("outcome", "ALLOW"),
             "tool": expected.get("tool"),
             "reason": expected.get("reason", ""),
         },
-        "source": str(case.source).upper(),
+        "source": _plain(case.source).upper(),
     }
 
 
@@ -133,11 +144,12 @@ def revision_schema(revision: DatasetRevision) -> DatasetSchema:
 
 
 def dataset_revision_to_dto(revision: DatasetRevision) -> dict:
+    schema = revision.schema or revision_schema(revision)
     return {
         "id": revision.revision_id,
         "datasetId": revision.dataset_id,
         "revision": revision.revision,
-        "schema": dataset_schema_to_ui(revision_schema(revision)),
+        "schema": dataset_schema_to_ui(schema),
         "cases": [case_to_ui_case(case) for case in revision.cases],
         "createdAt": revision.created_at,
     }
@@ -234,7 +246,7 @@ def _expected_case(dataset_revision: DatasetRevision, case_id: str) -> dict | No
 
 
 def report_to_dto(report: ReportSnapshot, run: EvalRun) -> dict:
-    summary = report.summary
+    summary = _plain(report.summary)
     metrics = summary.get("metrics")
     costs = summary.get("costs")
     if metrics is None:

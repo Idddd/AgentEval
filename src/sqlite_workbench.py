@@ -481,10 +481,11 @@ class SQLiteWorkbenchRepository:
                 "UPDATE agents SET current_revision = ? WHERE agent_id = ?",
                 (revision_number, agent_id),
             )
-            connection.execute(
-                "UPDATE agents SET updated_at = ? WHERE agent_id = ?",
-                (_now(), agent_id),
-            )
+            if created_at is None:
+                connection.execute(
+                    "UPDATE agents SET updated_at = ? WHERE agent_id = ?",
+                    (_now(), agent_id),
+                )
         return snapshot
 
     def list_agent_revisions(self, agent_id: str) -> list[AgentRevision]:
@@ -504,7 +505,7 @@ class SQLiteWorkbenchRepository:
                 revision_id,
             )
             tool_rows = connection.execute(
-                "SELECT tool_json FROM agent_revision_tools WHERE revision_id = ? ORDER BY tool_id",
+                "SELECT tool_json FROM agent_revision_tools WHERE revision_id = ? ORDER BY rowid",
                 (revision_id,),
             ).fetchall()
         return AgentRevision(
@@ -621,7 +622,13 @@ class SQLiteWorkbenchRepository:
             )
         return row["description"]
 
-    def replace_draft_cases(self, dataset_id: str, cases: list[TestCase]) -> None:
+    def replace_draft_cases(
+        self,
+        dataset_id: str,
+        cases: list[TestCase],
+        *,
+        touch_updated_at: bool = True,
+    ) -> None:
         with self._connect() as connection:
             self._require(
                 connection.execute("SELECT dataset_id FROM datasets WHERE dataset_id = ?", (dataset_id,)).fetchone(),
@@ -632,10 +639,11 @@ class SQLiteWorkbenchRepository:
                 "INSERT INTO dataset_draft_cases VALUES (?, ?, ?, ?)",
                 [(dataset_id, case.case_id, position, _model_json(case)) for position, case in enumerate(cases)],
             )
-            connection.execute(
-                "UPDATE datasets SET updated_at = ? WHERE dataset_id = ?",
-                (_now(), dataset_id),
-            )
+            if touch_updated_at:
+                connection.execute(
+                    "UPDATE datasets SET updated_at = ? WHERE dataset_id = ?",
+                    (_now(), dataset_id),
+                )
 
     def list_draft_cases(self, dataset_id: str) -> list[TestCase]:
         with self._connect() as connection:
@@ -700,10 +708,11 @@ class SQLiteWorkbenchRepository:
                 "UPDATE datasets SET current_revision = ? WHERE dataset_id = ?",
                 (revision_number, dataset_id),
             )
-            connection.execute(
-                "UPDATE datasets SET updated_at = ? WHERE dataset_id = ?",
-                (_now(), dataset_id),
-            )
+            if created_at is None:
+                connection.execute(
+                    "UPDATE datasets SET updated_at = ? WHERE dataset_id = ?",
+                    (_now(), dataset_id),
+                )
         return DatasetRevision(
             revision_id,
             dataset_id,
@@ -713,6 +722,7 @@ class SQLiteWorkbenchRepository:
             tuple(TestCase(**_decode_json(case_row["case_json"])) for case_row in case_rows),
             created_at,
             costs,
+            _deserialize_schema(dataset["schema_json"]) if dataset["schema_json"] else None,
         )
 
     def get_dataset_revision(self, revision_id: str) -> DatasetRevision:
@@ -732,6 +742,9 @@ class SQLiteWorkbenchRepository:
                 "SELECT case_json FROM dataset_revision_cases WHERE revision_id = ? ORDER BY position",
                 (revision_id,),
             ).fetchall()
+            schema_raw = connection.execute(
+                "SELECT schema_json FROM datasets WHERE dataset_id = ?", (row["dataset_id"],)
+            ).fetchone()["schema_json"]
         return DatasetRevision(
             revision_id=row["revision_id"],
             dataset_id=row["dataset_id"],
@@ -741,6 +754,7 @@ class SQLiteWorkbenchRepository:
             cases=tuple(TestCase(**_decode_json(case_row["case_json"])) for case_row in case_rows),
             created_at=row["created_at"],
             generation_costs=tuple(_usage_cost(cost) for cost in _decode_json(row["generation_costs_json"])),
+            schema=_deserialize_schema(schema_raw) if schema_raw else None,
         )
 
     def create_run(

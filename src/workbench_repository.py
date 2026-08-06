@@ -87,7 +87,13 @@ class WorkbenchRepository(Protocol):
 
     def get_dataset_description(self, dataset_id: str) -> str: ...
 
-    def replace_draft_cases(self, dataset_id: str, cases: list[TestCase]) -> None: ...
+    def replace_draft_cases(
+        self,
+        dataset_id: str,
+        cases: list[TestCase],
+        *,
+        touch_updated_at: bool = True,
+    ) -> None: ...
 
     def list_draft_cases(self, dataset_id: str) -> list[TestCase]: ...
 

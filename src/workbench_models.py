@@ -243,6 +243,7 @@ class DatasetRevision:
     cases: tuple[TestCase, ...]
     created_at: str
     generation_costs: tuple[UsageCost, ...] = ()
+    schema: "DatasetSchema | None" = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "cases", tuple(self.cases))
