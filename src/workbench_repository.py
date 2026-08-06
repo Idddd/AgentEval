@@ -87,6 +87,14 @@ class WorkbenchRepository(Protocol):
 
     def get_dataset_description(self, dataset_id: str) -> str: ...
 
+    def update_dataset_metadata(
+        self,
+        dataset_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> DatasetProfile: ...
+
     def replace_draft_cases(
         self,
         dataset_id: str,

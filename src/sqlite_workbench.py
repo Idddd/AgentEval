@@ -622,6 +622,38 @@ class SQLiteWorkbenchRepository:
             )
         return row["description"]
 
+    def update_dataset_metadata(
+        self,
+        dataset_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> DatasetProfile:
+        with self._connect() as connection:
+            self._require(
+                connection.execute(
+                    "SELECT dataset_id FROM datasets WHERE dataset_id = ?", (dataset_id,)
+                ).fetchone(),
+                dataset_id,
+            )
+            updates = []
+            values = []
+            if name is not None:
+                updates.append("name = ?")
+                values.append(name)
+            if description is not None:
+                updates.append("description = ?")
+                values.append(description)
+            if updates:
+                updates.append("updated_at = ?")
+                values.append(_now())
+                values.append(dataset_id)
+                connection.execute(
+                    f"UPDATE datasets SET {', '.join(updates)} WHERE dataset_id = ?",
+                    values,
+                )
+        return self.get_dataset(dataset_id)
+
     def replace_draft_cases(
         self,
         dataset_id: str,
