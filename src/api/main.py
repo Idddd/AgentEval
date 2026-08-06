@@ -1,6 +1,8 @@
 """Web UI evaluation API (real AgentEval backend with demo fallback markers)."""
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -29,6 +31,10 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=501, content={"error": "not implemented", "demo": True}
         )
+
+    @app.exception_handler(sqlite3.IntegrityError)
+    async def _conflict(_request: Request, exc: sqlite3.IntegrityError) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"error": f"conflict: {exc}"})
 
     return app
 

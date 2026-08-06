@@ -145,3 +145,18 @@ def test_dataset_draft_metadata_update(tmp_path, monkeypatch):
     ).json()
     assert updated["name"] == "After"
     assert updated["description"] == "new"
+
+
+def test_duplicate_target_id_returns_409(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    response = client.post(
+        "/api/v1/evaluations/targets",
+        json={
+            "id": "target-permission-compliance",
+            "name": "Duplicate",
+            "description": "",
+            "model": {"id": "m", "name": "M"},
+            "systemPrompt": "",
+        },
+    )
+    assert response.status_code == 409

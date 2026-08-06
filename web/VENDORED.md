@@ -32,6 +32,11 @@ Python/SQLite backend.
   (same `EvaluationStore` interface as the old mock store). Backend operations
   that return 501 keep their local mock result; the page must never error on a
   501.
+- The console's nitro server owns the `/api` namespace, so a vite proxy alone
+  is not enough. `apps/control/server/routes/api/v1/evaluations/[...path].ts`
+  reverse-proxies the Evaluations API to the AgentEval Python backend
+  (`EVAL_API_URL`, default `http://127.0.0.1:8000`). This works in dev and in
+  the built output.
 
 ## Run
 
