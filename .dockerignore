@@ -9,3 +9,9 @@ __pycache__
 data
 reports
 streamlit.*.log
+web/node_modules
+web/apps/*/node_modules
+web/apps/*/dist
+web/apps/*/.output
+web/apps/*/.tanstack
+web/.env

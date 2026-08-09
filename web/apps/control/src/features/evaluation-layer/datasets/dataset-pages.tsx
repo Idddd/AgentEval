@@ -114,7 +114,7 @@ const GENERATED_CASES: StagedCase[] = [
   },
 ];
 
-function DatasetEditor({ open, onOpenChange }: { open: boolean; onOpenChange(open: boolean): void }) {
+export function DatasetEditor({ open, onOpenChange }: { open: boolean; onOpenChange(open: boolean): void }) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
   const [name, setName] = useState('');
@@ -265,7 +265,15 @@ export function EvaluationDatasetList() {
   );
 }
 
-export function EvaluationDatasetDetail({ datasetId }: { datasetId: string }) {
+export function EvaluationDatasetDetail({
+  datasetId,
+  onEvaluate,
+  embedded = false,
+}: {
+  datasetId: string;
+  onEvaluate?(): void;
+  embedded?: boolean;
+}) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
   const projectId = useCurrentProjectId();
@@ -351,13 +359,21 @@ export function EvaluationDatasetDetail({ datasetId }: { datasetId: string }) {
   };
   const evaluate = () => {
     store.selectActiveDataset(dataset.id);
+    if (onEvaluate) {
+      onEvaluate();
+      return;
+    }
     void navigate({ to: '/$projectId/evaluation/runs/new', params: { projectId } });
+  };
+  const publishDraft = () => {
+    const result = store.publishDatasetRevision(dataset.id);
+    setNotice(result.ok ? `Published immutable Dataset revision ${result.value.revisionId}.` : result.error);
   };
   return (
     <div className='space-y-6'>
       <div className='flex flex-wrap items-start justify-between gap-3'>
         <div><h2 className='text-2xl font-semibold'>{dataset.name}</h2><p className='mt-1 text-sm text-muted-foreground'>{dataset.description}</p><p className='mt-1 text-xs text-muted-foreground'>{current?.status === 'PUBLISHED' ? `Published R${current.revision}` : 'Not published'} · Draft has {draft?.cases.length ?? 0} cases</p></div>
-        <div className='flex flex-wrap gap-2'><Button variant='outline' disabled={generating} onClick={addEmptyRow}><Plus className='size-4' />Add case</Button><Button variant='outline' disabled={generating} onClick={generate}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate'}</Button><Button variant='outline' disabled={generating} onClick={() => setImportOpen(true)}><Upload className='size-4' />Import JSON</Button>{current?.status === 'PUBLISHED' ? <Button onClick={evaluate}>Evaluate</Button> : null}</div>
+        <div className='flex flex-wrap gap-2'><Button variant='outline' disabled={generating} onClick={addEmptyRow}><Plus className='size-4' />Add case</Button><Button variant='outline' disabled={generating} onClick={generate}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate'}</Button><Button variant='outline' disabled={generating} onClick={() => setImportOpen(true)}><Upload className='size-4' />Import JSON</Button><Button variant='outline' disabled={generating || !draft?.cases.length} onClick={publishDraft}>Publish draft</Button>{current?.status === 'PUBLISHED' ? <Button onClick={evaluate}>Evaluate</Button> : null}</div>
       </div>
       {notice ? <p className='rounded-lg border bg-muted/20 px-4 py-3 text-sm'>{notice}</p> : null}
       <Tabs defaultValue='draft'>
@@ -406,13 +422,13 @@ export function EvaluationDatasetDetail({ datasetId }: { datasetId: string }) {
           </EvaluationSection>
         </TabsContent>
         <TabsContent value='schema' className='pt-4'><EvaluationSection title='Schema'>{schema.map((column) => <div key={column.name} className='border-b py-3 last:border-b-0'><p className='font-medium'>{column.name} · {column.kind} · {column.dataType} · {column.required ? 'Required' : 'Optional'}</p>{column.description ? <p className='mt-1 text-sm text-muted-foreground'>{column.description}</p> : null}</div>)}</EvaluationSection></TabsContent>
-        <TabsContent value='history' className='pt-4'><EvaluationSection title='Evaluation history' description='Runs for every published revision of this Dataset.'>{runs.length ? <EvaluationTable><thead><tr><th>Run</th><th>Revision</th><th>Started</th><th>Status</th><th>Pass rate</th><th>Cost</th><th>Report</th></tr></thead><tbody>{runs.map((run) => {
+        <TabsContent value='history' className='pt-4'><EvaluationSection title='Evaluation history' description='Runs for every published revision of this Dataset.'>{runs.length ? <EvaluationTable><thead><tr><th>Evaluation</th><th>Revision</th><th>Started</th><th>Status</th><th>Pass rate</th><th>Cost</th><th>Report</th></tr></thead><tbody>{runs.map((run, index) => {
           const revision = state.datasetRevisions.find((item) => item.id === run.datasetRevisionId);
           const done = run.results.filter((item) => item.status !== 'PENDING');
           const traces = new Set(done.map((item) => item.traceId).filter(Boolean));
           const cost = state.traces.filter((item) => traces.has(item.id)).reduce((sum, item) => sum + traceCost(item), 0);
           const report = state.reports.find((item) => item.runId === run.id);
-          return <tr key={run.id}><td><Button asChild size='sm' variant='outline'><Link className='font-mono text-xs' to='/$projectId/evaluation/runs/$runId' params={{ projectId, runId: run.id }}>{run.id}</Link></Button></td><td>{revision ? `R${revision.revision}` : '—'}</td><td>{new Date(run.startedAt).toLocaleString()}</td><td><EvaluationLayerStatusBadge status={run.status} /></td><td>{done.length ? `${(done.filter((item) => item.status === 'PASS').length / done.length * 100).toFixed(1)}%` : '—'}</td><td>{formatCost(cost)}</td><td>{report ? <Button asChild size='sm' variant='outline'><Link to='/$projectId/evaluation/reports/$reportId' params={{ projectId, reportId: report.id }}>Report</Link></Button> : '—'}</td></tr>;
+          return <tr key={run.id}><td>{embedded ? `Evaluation ${runs.length - index}` : <Button asChild size='sm' variant='outline'><Link className='font-mono text-xs' to='/$projectId/evaluation/runs/$runId' params={{ projectId, runId: run.id }}>{run.id}</Link></Button>}</td><td>{revision ? `R${revision.revision}` : '—'}</td><td>{new Date(run.startedAt).toLocaleString()}</td><td><EvaluationLayerStatusBadge status={run.status} /></td><td>{done.length ? `${(done.filter((item) => item.status === 'PASS').length / done.length * 100).toFixed(1)}%` : '—'}</td><td>{formatCost(cost)}</td><td>{report ? embedded ? 'Ready' : <Button asChild size='sm' variant='outline'><Link to='/$projectId/evaluation/reports/$reportId' params={{ projectId, reportId: report.id }}>Report</Link></Button> : '—'}</td></tr>;
         })}</tbody></EvaluationTable> : <p className='text-sm text-muted-foreground'>This Dataset has not been evaluated yet.</p>}</EvaluationSection></TabsContent>
       </Tabs>
       <CaseEditor key={caseEditor.item?.id ?? 'new'} datasetId={dataset.id} schema={schema} {...(caseEditor.item ? { datasetCase: caseEditor.item } : {})} open={caseEditor.open} onOpenChange={(open) => setCaseEditor({ open })} />

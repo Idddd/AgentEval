@@ -70,7 +70,7 @@ export function EvaluationRunList() {
   );
 }
 
-export function EvaluationRunSetup() {
+export function EvaluationRunSetup({ onRunCreated }: { onRunCreated?(runId: string): void } = {}) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
   const projectId = useCurrentProjectId();
@@ -119,6 +119,10 @@ export function EvaluationRunSetup() {
       : [...selectedLangfuse];
     const result = store.createRun({ targetRevisionId: targetRevision.id, datasetRevisionId: selectedRevisionId, evaluatorIds });
     if (!result.ok) return setMessage(result.error);
+    if (onRunCreated) {
+      onRunCreated(result.value.runId);
+      return;
+    }
     // Navigate to the run detail so the execution terminal streams case by case.
     void navigate({ to: '/$projectId/evaluation/runs/$runId', params: { projectId, runId: result.value.runId } });
   };
@@ -181,7 +185,7 @@ function ExecutionTerminal({ entries }: { entries: EvaluationLayerLogEntry[] }) 
   );
 }
 
-export function EvaluationRunDetail({ runId }: { runId: string }) {
+export function EvaluationRunDetail({ runId, embedded = false }: { runId: string; embedded?: boolean }) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
   const projectId = useCurrentProjectId();
@@ -198,6 +202,7 @@ export function EvaluationRunDetail({ runId }: { runId: string }) {
   }, [autoRun, run, pending, store]);
   if (!run) return <EmptyState icon={FlaskConical} title='Evaluation not found' description='This mock Evaluation does not exist.' action={<Button asChild variant='outline'><Link to='/$projectId/evaluation/runs' params={{ projectId }}>Back to Evaluation</Link></Button>} />;
   const target = state.targets.find((item) => item.id === run.targetId)!;
+  const targetRevision = state.targetRevisions.find((item) => item.id === run.targetRevisionId);
   const dataset = state.datasets.find((item) => item.id === run.datasetId)!;
   const datasetRevision = state.datasetRevisions.find((item) => item.id === run.datasetRevisionId)!;
   const stats = runStats(state, run.id);
@@ -208,14 +213,14 @@ export function EvaluationRunDetail({ runId }: { runId: string }) {
     .sort((a, b) => a.at.localeCompare(b.at));
   return (
     <div className='space-y-6'>
-      <div className='flex flex-wrap items-start justify-between gap-3'><div><h2 className='font-mono text-xl font-semibold'>{run.id}</h2><p className='mt-1 text-sm text-muted-foreground'>{target.name} · {dataset.name}</p></div>{pending ? <div className='flex items-center gap-4'><Label className='flex items-center gap-2 text-sm'><input type='checkbox' checked={autoRun} onChange={(event) => setAutoRun(event.target.checked)} />Auto run</Label><Button onClick={() => store.advanceRun(run.id)}><Play className='size-4' />Run next Case</Button></div> : report ? <Button asChild><Link to='/$projectId/evaluation/reports/$reportId' params={{ projectId, reportId: report.id }}>Open Report<ArrowRight className='size-4' /></Link></Button> : null}</div>
-      <KeyValueGrid items={[['Target revision', run.targetRevisionId], ['Dataset revision', run.datasetRevisionId], ['Evaluators', run.evaluatorIds.join(', ')], ['Judge model', state.settings.model], ['Started', new Date(run.startedAt).toLocaleString()], ['Status', <EvaluationLayerStatusBadge status={run.status} />]]} />
+      <div className='flex flex-wrap items-start justify-between gap-3'><div><h2 className='text-xl font-semibold'>{embedded ? 'Evaluation execution' : run.id}</h2><p className='mt-1 text-sm text-muted-foreground'>{target.name} · {dataset.name}</p></div>{pending ? <div className='flex items-center gap-4'><Label className='flex items-center gap-2 text-sm'><input type='checkbox' checked={autoRun} onChange={(event) => setAutoRun(event.target.checked)} />Auto run</Label><Button onClick={() => store.advanceRun(run.id)}><Play className='size-4' />Run next Case</Button></div> : report && !embedded ? <Button asChild><Link to='/$projectId/evaluation/reports/$reportId' params={{ projectId, reportId: report.id }}>Open Report<ArrowRight className='size-4' /></Link></Button> : null}</div>
+      <KeyValueGrid items={[['Target revision', targetRevision ? `R${targetRevision.revision}` : '—'], ['Dataset revision', datasetRevision ? `R${datasetRevision.revision}` : '—'], ['Evaluators', run.evaluatorIds.join(', ')], ['Judge model', state.settings.model], ['Started', new Date(run.startedAt).toLocaleString()], ['Status', <EvaluationLayerStatusBadge status={run.status} />]]} />
       <div className='grid gap-4 md:grid-cols-3'><EvaluationMetric label='Progress' value={`${stats.done.length}/${run.results.length}`} detail={<Progress value={(stats.done.length / Math.max(run.results.length, 1)) * 100} />} /><EvaluationMetric label='Pass rate' value={rate(stats.passRate)} /><EvaluationMetric label='Evaluation cost' value={formatCost(stats.cost)} /></div>
       <EvaluationSection title='Execution log' description='Structured mock log streamed while Cases execute; kept after the run completes.'>
         <ExecutionTerminal entries={logs} />
       </EvaluationSection>
       {currentCase ? <EvaluationSection title='Current Case'><div className='grid gap-4 lg:grid-cols-2'><div><p className='mb-2 text-xs text-muted-foreground'>Input</p><JsonPreview value={currentCase.input} /></div><div><p className='mb-2 text-xs text-muted-foreground'>Expected output</p><JsonPreview value={currentCase.expectedOutput} /></div></div></EvaluationSection> : <EmptyState icon={CheckCircle2} title='Evaluation complete' description='All Cases have deterministic results and the Report is ready.' />}
-      <EvaluationSection title='Case progress'><EvaluationTable><thead><tr><th>Case</th><th>Status</th><th>Response</th><th>Trace</th></tr></thead><tbody>{run.results.map((result) => <tr key={result.caseId}><td>{result.caseId}</td><td><EvaluationLayerStatusBadge status={result.status} /></td><td>{result.response ?? 'Waiting'}</td><td>{result.traceId ? <Button asChild size='sm' variant='outline'><Link className='font-mono text-xs' to='/$projectId/evaluation/traces/$traceId' params={{ projectId, traceId: result.traceId }}>{result.traceId}</Link></Button> : 'Not available'}</td></tr>)}</tbody></EvaluationTable></EvaluationSection>
+      <EvaluationSection title='Case progress'><EvaluationTable><thead><tr><th>Case</th><th>Status</th><th>Response</th><th>Trace</th></tr></thead><tbody>{run.results.map((result) => <tr key={result.caseId}><td>{result.caseId}</td><td><EvaluationLayerStatusBadge status={result.status} /></td><td>{result.response ?? 'Waiting'}</td><td>{result.traceId ? embedded ? 'Available' : <Button asChild size='sm' variant='outline'><Link className='font-mono text-xs' to='/$projectId/evaluation/traces/$traceId' params={{ projectId, traceId: result.traceId }}>{result.traceId}</Link></Button> : 'Not available'}</td></tr>)}</tbody></EvaluationTable></EvaluationSection>
     </div>
   );
 }

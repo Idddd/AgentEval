@@ -6,6 +6,7 @@ import sqlite3
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from .deps import get_repository
 from .routers import datasets, reflections, reports, runs, state, targets
 
 
@@ -17,6 +18,11 @@ def create_app() -> FastAPI:
     app.include_router(runs.router)
     app.include_router(reports.router)
     app.include_router(reflections.router)
+
+    @app.get("/healthz", include_in_schema=False)
+    async def _health(request: Request) -> dict[str, str]:
+        get_repository(request)
+        return {"status": "ok"}
 
     @app.exception_handler(KeyError)
     async def _not_found(_request: Request, exc: KeyError) -> JSONResponse:

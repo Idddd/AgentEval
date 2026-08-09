@@ -1,100 +1,78 @@
-# Eval Studio
+# AgentEval
 
-Eval Studio is a local workbench for evaluating Agents against versioned
-Datasets. It keeps Agents, Dataset Revisions, evaluation Runs, and Reports in
-SQLite so that a result can be reopened and compared after restarting the app.
+AgentEval is a local workbench for evaluating Agents against versioned test
+cases. The TALI control console is the project's only Web UI; the Python code
+provides the evaluation API, CLI, adapters, and SQLite persistence.
 
-## Local startup
+## Runtime architecture
 
-Prerequisites: Python 3.12+, Docker Desktop (only for local Langfuse), and an
-installed project virtual environment.
+| Service | Default address | Storage | Purpose |
+| --- | --- | --- | --- |
+| TALI Web | `http://127.0.0.1:18082` | PostgreSQL | Authentication, projects, and the control-console shell |
+| AgentEval API | `http://127.0.0.1:8000` | `data/web-workbench.db` | Targets, datasets, runs, reports, and demo fixtures |
+| AgentEval CLI | local process | `data/workbench.db` | Scripted evaluation and report workflows |
 
-1. Copy the environment template and configure the providers you want to use.
+The TALI server reverse-proxies `/api/v1/evaluations/*` to the Python API.
+PostgreSQL and the AgentEval SQLite databases have separate responsibilities
+and should not be pointed at the same file or volume.
 
-   ```powershell
-   Copy-Item .env.example .env
-   ```
+## Quick start with Docker
 
-   Set either DeepSeek's Anthropic-compatible values
-   (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_MODEL`) or
-   `OPENAI_API_KEY`. Configure `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
-   and `LANGFUSE_HOST` when trace links should open in Langfuse. Empty provider
-   keys keep the workbench usable with its local/demo adapters.
+Prerequisites: Docker Desktop.
 
-2. Optionally start the local Langfuse stack.
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
+```
 
-   ```powershell
-   Copy-Item langfuse\.env.example langfuse\.env
-   docker compose -f langfuse/docker-compose.yml up -d
-   ```
+Open `http://127.0.0.1:18082` and sign in with `admin` / `admin`. The API is
+available at `http://127.0.0.1:8000/docs`.
 
-   Langfuse is available at `http://localhost:3000`. Its Web and MinIO ports
-   are bound to loopback for local use. Copy the local Langfuse credentials from
-   `langfuse/.env.example` into `.env` and set `LANGFUSE_HOST=http://localhost:3000`.
+Docker Compose starts PostgreSQL, the AgentEval FastAPI service, and the TALI
+Web service. The Web container applies Prisma migrations before it starts.
 
-3. Start Eval Studio.
+## Local development
 
-   ```powershell
-   .\.venv\Scripts\python.exe -m streamlit run app.py --server.address 0.0.0.0 --server.port 8501 --server.headless true
-   ```
+Prerequisites: Python 3.12+, Node.js 22+, npm, Docker Desktop, and a project
+virtual environment.
 
-   Open `http://localhost:8501`. Other users on the same LAN can open
-   `http://<this-computer-LAN-IP>:8501` when Windows Firewall allows port
-   `8501`.
+Install dependencies once:
 
-## Demo flow
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Set-Location web
+npm ci
+Set-Location ..
+```
 
-On startup, Eval Studio creates or reuses a durable **Permission Compliance
-Agent** demo. No provider key or Langfuse connection is required.
+Start PostgreSQL, the API, and the TALI development server:
 
-1. **Agent** — select Permission Compliance Agent, review its three Target
-   Tools, baseline Report, history, and trends.
-2. **Dataset** — review the six cases in **Permission Compliance Regression**;
-   optionally add a case manually, paste JSON, or generate an LLM draft for
-   user review.
-3. **Evaluation** — confirm the locked Agent/Dataset revisions and run the
-   local deterministic evaluation.
-4. **Report** — inspect Test Results first, followed by Tool Evidence, LLM
-   Judge, historical Comparison, and finally Usage & Cost.
-5. **Reset demo** — return to Agent Home without deleting Dataset revisions,
-   Runs, or Report history.
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
+```
 
-The sample Report contains five correct outcomes and one intentionally injected
-permission-bypass regression, making `PASS`, correctly blocked safety behavior,
-and a genuine `FAIL` easy to distinguish.
+The script resolves paths from its own location, creates or reuses the local
+`tasklattice-dev-postgres` container, applies database migrations, starts the
+API on port `8000`, and runs TALI on port `18082`.
 
-The small **Reset demo** control at the bottom of the sidebar restores only the
-presentation state. It does not clear Streamlit caches or delete SQLite data.
-Reports remain available after browser refreshes and app restarts, and two or
-more Reports can be compared from the same Agent context.
+## TALI evaluation demo
 
-## Extended product flow
+The current sidebar exposes the fixture-backed Evaluation demo:
 
-1. Create/import an Agent through the CLI, then select it on Agent Home.
-2. Configure its Tools and save an immutable Agent Revision through the CLI.
-3. Open Dataset for that Agent, add/import/generate cases, then publish a
-   Dataset Revision.
-4. Run an evaluation for one Agent Revision and one Dataset Revision.
-5. Reopen the resulting Report at any time, then compare it with another
-   Report. Comparisons call out configuration changes and shared-case deltas.
+- Agent: `/individual/evaluation/targets`
+- Test Case: `/individual/evaluation/datasets`
+- Evaluation: `/individual/evaluation/runs`
+- Overview: `/individual/evaluation/overview`
+- Settings: `/individual/evaluation/settings`
 
-Costs remain separate so a Report makes the trade-offs clear:
-
-- **Agent cost**: model usage while the Agent answers cases.
-- **Judge cost**: model usage while the Judge scores answers.
-- **Dataset cost**: model usage while cases are generated.
-- **Evaluation total**: Agent plus Judge cost; Dataset generation is reported
-  separately because it is not spent on every evaluation run.
-
-LLM Dataset generation is optional. If the provider is unavailable, manual
-case entry and JSON import remain available. Judge and Tool evidence are also
-optional Report sections: when absent they display `Not available` and do not
-change an otherwise passing Test Result.
+This demo uses an in-memory store and deterministic simulation. Edits reset
+when the page reloads. The API-backed evaluation store remains available for
+the ongoing persistence integration, including the real SQLite API and demo
+fallback behavior.
 
 ## CLI
 
-The stable-ID CLI is useful for scripted local demos. IDs printed by each
-command are passed to the next command.
+IDs printed by each command are passed to the next command:
 
 ```powershell
 .\.venv\Scripts\python.exe main.py agents list
@@ -106,91 +84,40 @@ command are passed to the next command.
 ```
 
 `main.py --step ...` remains temporarily for the original demo automation. It
-prints a deprecation message and imports the legacy Agent before routing its
-work through the stable records.
+prints a deprecation message and routes the work through the stable records.
 
-## Web UI (merged console)
-
-AgentEval also ships the advanced TaskLattice console UI (vendored under
-`web/`) wired to the real Python/SQLite backend. The Evaluations module shows
-the same demo data as its frontend fixtures, and every Evaluation operation
-(Targets, Datasets, Runs, Reports) persists through the FastAPI service
-(`src/api/`) into `data/web-workbench.db`. Operations the backend does not
-implement yet (for example Reflections) fall back to the frontend mock and
-never show an error page.
-
-Prerequisites: Python 3.12 venv with the updated `requirements.txt`, Node.js
-22+, npm, and Docker Desktop (for the console shell database).
-
-1. Install the Python requirements and the web dependencies once:
-
-   ```powershell
-   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-   cd web
-   npm ci
-   ```
-
-2. Start the console shell database (projects/auth), create it once if needed:
-
-   ```powershell
-   docker run -d --name tasklattice-dev-postgres --restart unless-stopped `
-     -e POSTGRES_USER=tasklattice -e POSTGRES_PASSWORD=development `
-     -e POSTGRES_DB=tasklattice -p 5432:5432 postgres:17-alpine
-   ```
-
-3. Start everything with the provided script (Postgres + API + UI):
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File start-dev.ps1
-   ```
-
-   Or start the two servers manually in separate terminals:
-
-   ```powershell
-   .\.venv\Scripts\python.exe -m uvicorn src.api.main:app --port 8000
-   # separate terminal
-   cd web
-   $env:PORT = "18082"
-   npm run dev:control
-   ```
-
-   Open `http://127.0.0.1:18082` and log in with `admin` / `admin`. The
-   Evaluation pages live at `/individual/evaluations`.
-
-   The web API uses its own SQLite file by default
-   (`data/web-workbench.db`, env `WORKBENCH_WEB_DB`) so its seeded demo graph
-   never mixes with the Streamlit workbench database. Point both at the same
-   file via environment variables if you want them to share data.
-
-Streamlit (`app.py`) and the CLI (`main.py`) are unchanged and remain
-alternative entry points.
-
-## Docker (optional)
+## Optional Langfuse stack
 
 ```powershell
-Copy-Item .env.example .env
-docker compose up --build
+Copy-Item langfuse\.env.example langfuse\.env
+docker compose -f langfuse\docker-compose.yml up -d
 ```
 
-Docker Compose sets `WORKBENCH_DB=/app/data/workbench.db`; the
-`agent-eval-data` named volume persists that SQLite database across `docker
-compose down` and the next `docker compose up`. Do not use `down -v` unless you
-intend to delete the local workbench data.
-
-## Stopping local services
-
-Stop both stacks while keeping their volumes:
-
-```powershell
-docker compose down
-docker compose -f langfuse/docker-compose.yml down
-```
+Langfuse is available at `http://localhost:3000`. Configure
+`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and `LANGFUSE_HOST` in `.env` when
+trace links should open in Langfuse.
 
 ## Verification
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q --basetemp=.pytest_tmp_modular
-.\.venv\Scripts\python.exe tests\ui_smoke.py
+
+Set-Location web
+npm.cmd run build --workspace "@tasklattice/contracts"
+node node_modules\typescript\bin\tsc -p apps\control\tsconfig.json --noEmit
+npm.cmd test --workspace "@tasklattice/control"
+npm.cmd run build:control
+Set-Location ..
+
 docker compose config
-docker compose -f langfuse\docker-compose.yml config
 ```
+
+## Stopping services
+
+```powershell
+docker compose down
+docker compose -f langfuse\docker-compose.yml down
+```
+
+Volumes are retained across `docker compose down`. Do not add `-v` unless you
+intend to delete the local PostgreSQL and AgentEval data.

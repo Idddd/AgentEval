@@ -14,6 +14,12 @@ def _client(tmp_path, monkeypatch):
     return TestClient(create_app())
 
 
+def test_healthz(tmp_path, monkeypatch):
+    response = _client(tmp_path, monkeypatch).get("/healthz")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_state_matches_fixtures(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     fixtures = load_demo_fixtures(FIXTURES_PATH)

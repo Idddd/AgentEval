@@ -6,7 +6,7 @@
 
 这个项目的迁移成本低于从一个完整 Langfuse 平台重新实现所有能力，原因是：
 
-- 当前 Streamlit 主流程已经使用本地 JSON 保存 Trace，使用 SQLite 保存 Evaluation Workbench 数据。
+- Python 评测流程已经使用本地 JSON 保存 Trace，使用 SQLite 保存 Evaluation Workbench 数据；当前 Web 前端为 TALI。
 - Trace、Backend 和 Store 已有接口抽象，UI 和评测逻辑不直接依赖 Langfuse 数据对象。
 - 项目已经有自研的确定性 `CodeEvaluator` 和 `LlmJudge`。
 - 当前从 Langfuse 查询到的 Evaluator 只用于页面选择，尚未接入 `EvalRunner` 的实际执行流程。
@@ -17,15 +17,16 @@
 
 ## 2. 当前 Langfuse 依赖
 
-项目依赖 `langfuse>=3.0,<4.0`，主要相关代码如下：
+项目依赖 `langfuse>=3.0,<4.0`，当前主要相关代码如下：
 
 - `src/settings.py`：Langfuse 地址、密钥以及连接检查。
 - `src/backends/base.py`：后端无关的 `Tracer`、`TraceBackend` 和 `TraceStore` 接口。
 - `src/backends/langfuse_backend.py`：Langfuse SDK 实现。
 - `src/langfuse_evaluators.py`：查询 Langfuse Evaluator 列表。
-- `src/ui/runs.py`：New Evaluation 页面中的 Evaluator 选择。
-- `src/ui/reports.py`：生成“Open trace in Langfuse”链接。
-- `src/ui/settings_page.py`：显示 Langfuse 连接状态。
+
+已退役的 Streamlit 前端曾通过 `src/ui/runs.py`、`src/ui/reports.py` 和
+`src/ui/settings_page.py` 提供 Evaluator 选择、外部 Trace 链接与连接状态；
+这些文件已随旧 UI 一并删除，不再属于当前运行时依赖。
 
 ### 2.1 使用的 SDK 和 API
 
@@ -46,13 +47,13 @@ Evaluator 列表依赖的是 Langfuse `unstable` API，这意味着接口兼容�
 
 ## 3. 当前运行时的真实依赖程度
 
-当前 `app.py` 使用 `load_settings(probe=False)`，并在构造 Runner 时显式使用：
+被移除的旧 UI 入口曾使用 `load_settings(probe=False)`，并在构造 Runner 时显式使用：
 
 - `LocalJsonBackend`
 - `LocalJsonStore`
 - SQLite Workbench Repository
 
-所以当前模块化 Streamlit UI 的 Evaluation 执行结果并不以 Langfuse 作为主要存储。Langfuse 目前主要提供以下可选能力：
+所以 Python Evaluation 执行结果并不以 Langfuse 作为主要存储；TALI 前端通过 AgentEval API 访问持久数据。Langfuse 目前主要提供以下可选能力：
 
 1. 查询并展示 Langfuse Evaluator 列表。
 2. 显示 Langfuse 配置或连接状态。
@@ -327,4 +328,3 @@ Langfuse 自托管不是一个简单数据库服务。其完整架构包含 Post
 - [Langfuse Evaluator API Changelog](https://langfuse.com/changelog/2026-04-15-llm-as-a-judge-api)
 - [Langfuse Public API](https://langfuse.com/docs/api-and-data-platform/features/public-api)
 - [Langfuse ClickHouse Infrastructure](https://langfuse.com/self-hosting/deployment/infrastructure/clickhouse)
-

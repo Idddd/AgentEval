@@ -77,6 +77,12 @@ describe("getHeaderBreadcrumbItems", () => {
 
   it("labels the isolated Evaluation layer and its detail routes", () => {
     expect(
+      getHeaderBreadcrumbItems("/individual/evaluation/catalog"),
+    ).toEqual([
+      { href: "/individual/evaluation", label: "Evaluation" },
+      { href: "/individual/evaluation/catalog", label: "Eval" },
+    ]);
+    expect(
       getHeaderBreadcrumbItems(
         "/individual/evaluation/targets/demo-permission-compliance",
       ),

@@ -78,6 +78,7 @@ type ProjectRoute =
   | "/$projectId/cost"
   | "/$projectId/traces"
   | "/$projectId/evaluations"
+  | "/$projectId/evaluation/catalog"
   | "/$projectId/evaluation/targets"
   | "/$projectId/evaluation/datasets"
   | "/$projectId/evaluation/runs"
@@ -166,6 +167,7 @@ export const projectNavGroups: Array<{
   {
     label: "Evaluation",
     items: [
+      { icon: CheckCircle2, label: "Eval", to: "/$projectId/evaluation/catalog", roles: SECURITY_EVAL_ROLES },
       { icon: Target, label: "Agent", to: "/$projectId/evaluation/targets", roles: SECURITY_EVAL_ROLES },
       { icon: Database, label: "Test Case", to: "/$projectId/evaluation/datasets", roles: SECURITY_EVAL_ROLES },
       { icon: FlaskConical, label: "Evaluation", to: "/$projectId/evaluation/runs", roles: SECURITY_EVAL_ROLES },

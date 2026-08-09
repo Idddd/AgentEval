@@ -5,7 +5,7 @@ __pycache__/
 .env
 .env.cloudflare
 data/
-reports/
+/reports/
 *.db-wal
 *.db-shm
 *-wal

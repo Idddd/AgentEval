@@ -127,7 +127,7 @@ function resourcePicker({
   );
 }
 
-function TargetEditor({
+export function TargetEditor({
   open,
   onOpenChange,
   targetId,
@@ -343,7 +343,15 @@ export function EvaluationTargetList() {
   );
 }
 
-export function EvaluationTargetDetail({ targetId }: { targetId: string }) {
+export function EvaluationTargetDetail({
+  targetId,
+  onEvaluate,
+  embedded = false,
+}: {
+  targetId: string;
+  onEvaluate?(): void;
+  embedded?: boolean;
+}) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
   const projectId = useCurrentProjectId();
@@ -379,6 +387,10 @@ export function EvaluationTargetDetail({ targetId }: { targetId: string }) {
           : [['Model', current.model], ['Revision', `R${current.revision}`], ['Prompt', current.prompt?.trim() ? 'Configured' : 'None']];
   const evaluate = () => {
     store.selectActiveTarget(target.id);
+    if (onEvaluate) {
+      onEvaluate();
+      return;
+    }
     void navigate({ to: '/$projectId/evaluation/runs/new', params: { projectId } });
   };
   return (
@@ -415,7 +427,7 @@ export function EvaluationTargetDetail({ targetId }: { targetId: string }) {
               ['Evaluation cost', formatCost(latest.metrics.cost)],
               ['Created', new Date(latest.report.createdAt).toLocaleString()],
             ]} />
-            <Button asChild className='md:col-start-4'><Link to='/$projectId/evaluation/reports/$reportId' params={{ projectId, reportId: latest.report.id }}>View report</Link></Button>
+            {!embedded ? <Button asChild className='md:col-start-4'><Link to='/$projectId/evaluation/reports/$reportId' params={{ projectId, reportId: latest.report.id }}>View report</Link></Button> : null}
           </div>
         ) : <p className='text-sm text-muted-foreground'>No immutable Reports have been created for this Target yet.</p>}
       </EvaluationSection>
@@ -424,7 +436,7 @@ export function EvaluationTargetDetail({ targetId }: { targetId: string }) {
         <EvaluationSection title='Cost trend'>{reportRows.length < 2 ? <p className='text-sm text-muted-foreground'>At least two Reports with evaluation cost are required to show a cost trend.</p> : <div className='grid gap-3 sm:grid-cols-2'>{reportRows.map((row) => <EvaluationMetric key={row.report.id} label={new Date(row.report.createdAt).toLocaleDateString()} value={formatCost(row.metrics.cost)} />)}</div>}</EvaluationSection>
       </div>
       <EvaluationSection title='Report history'>
-        {reportRows.length ? <EvaluationTable><thead><tr><th>Report ID</th><th>Time</th><th>Target revision</th><th>Dataset revision</th><th>Status</th><th>Pass rate</th><th>Pass rate delta</th><th>Cost</th></tr></thead><tbody>{reportRows.map((row) => <tr key={row.report.id}><td><Button asChild size='sm' variant='outline'><Link className='font-mono text-xs' to='/$projectId/evaluation/reports/$reportId' params={{ projectId, reportId: row.report.id }}>{row.report.id}</Link></Button></td><td>{new Date(row.report.createdAt).toLocaleString()}</td><td>{row.targetRevision ? `R${row.targetRevision.revision}` : '—'}</td><td>{row.datasetRevision ? `R${row.datasetRevision.revision}` : '—'}</td><td>{row.report.status}</td><td>{rate(row.metrics.passRate)}</td><td>{row.delta === undefined ? '—' : `${row.delta >= 0 ? '+' : ''}${(row.delta * 100).toFixed(1)} pp`}</td><td>{formatCost(row.metrics.cost)}</td></tr>)}</tbody></EvaluationTable> : <p className='text-sm text-muted-foreground'>No Reports yet.</p>}
+        {reportRows.length ? <EvaluationTable><thead><tr><th>Report</th><th>Time</th><th>Target revision</th><th>Dataset revision</th><th>Status</th><th>Pass rate</th><th>Pass rate delta</th><th>Cost</th></tr></thead><tbody>{reportRows.map((row, index) => <tr key={row.report.id}><td>{embedded ? `Report ${reportRows.length - index}` : <Button asChild size='sm' variant='outline'><Link className='font-mono text-xs' to='/$projectId/evaluation/reports/$reportId' params={{ projectId, reportId: row.report.id }}>{row.report.id}</Link></Button>}</td><td>{new Date(row.report.createdAt).toLocaleString()}</td><td>{row.targetRevision ? `R${row.targetRevision.revision}` : '—'}</td><td>{row.datasetRevision ? `R${row.datasetRevision.revision}` : '—'}</td><td>{row.report.status}</td><td>{rate(row.metrics.passRate)}</td><td>{row.delta === undefined ? '—' : `${row.delta >= 0 ? '+' : ''}${(row.delta * 100).toFixed(1)} pp`}</td><td>{formatCost(row.metrics.cost)}</td></tr>)}</tbody></EvaluationTable> : <p className='text-sm text-muted-foreground'>No Reports yet.</p>}
       </EvaluationSection>
       <TargetEditor open={editorOpen} onOpenChange={setEditorOpen} targetId={target.id} />
     </div>

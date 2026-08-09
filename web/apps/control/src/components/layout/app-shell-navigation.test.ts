@@ -15,7 +15,7 @@ describe("Evaluation navigation", () => {
       projectNavGroups
         .find((group) => group.label === "Evaluation")
         ?.items.map((item) => item.label),
-    ).toEqual(["Agent", "Test Case", "Evaluation"]);
+    ).toEqual(["Eval", "Agent", "Test Case", "Evaluation"]);
     expect(
       projectNavGroups
         .find((group) => group.label === "Observer")
@@ -25,10 +25,12 @@ describe("Evaluation navigation", () => {
 
   it("keeps active state scoped to the selected Evaluation child", () => {
     const group = projectNavGroups.find((item) => item.label === "Evaluation")!;
-    const target = group.items[0]!;
-    const dataset = group.items[1]!;
+    const catalog = group.items[0]!;
+    const target = group.items[1]!;
+    const dataset = group.items[2]!;
     expect(itemIsActive(target, "/individual/evaluation/targets/demo", "individual")).toBe(true);
     expect(itemIsActive(dataset, "/individual/evaluation/targets/demo", "individual")).toBe(false);
+    expect(itemIsActive(catalog, "/individual/evaluation/targets/demo", "individual")).toBe(false);
   });
 });
 
@@ -66,7 +68,7 @@ describe("Role-based navigation whitelist", () => {
   it("gives ADA and ISS risk-assessment, behavior, and traceability surfaces", () => {
     for (const role of ["ada", "iss"] as const) {
       expect(visibleLabels("Agentic", role)).toEqual(["Skills", "MCP Servers"]);
-      expect(visibleLabels("Evaluation", role)).toEqual(["Agent", "Test Case", "Evaluation"]);
+      expect(visibleLabels("Evaluation", role)).toEqual(["Eval", "Agent", "Test Case", "Evaluation"]);
       expect(visibleLabels("Security", role)).toEqual(["Audit Logs"]);
       expect(visibleLabels("Observer", role)).toEqual(["Traces", "Overview"]);
     }
@@ -81,7 +83,7 @@ describe("Role-based navigation whitelist", () => {
       "Knowledge Base",
       "Memory",
     ]);
-    expect(visibleLabels("Evaluation", "frt")).toEqual(["Agent", "Test Case", "Evaluation"]);
+    expect(visibleLabels("Evaluation", "frt")).toEqual(["Eval", "Agent", "Test Case", "Evaluation"]);
     expect(visibleLabels("Security", "frt")).toEqual([
       "Access Policies",
       "Runtime Policies",

@@ -1,0 +1,19 @@
+import { useMemo, useState } from "react";
+import { CheckCircle2, GitBranchPlus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEvaluationState, useEvaluationStore } from "../mock-provider";
+import { reflectionView } from "./report-view-model";
+
+export function ReflectionEditor({ reportId }: { reportId: string }) {
+  const state = useEvaluationState(); const store = useEvaluationStore(); const view = reflectionView(state, reportId); const [selected, setSelected] = useState<string[]>([]); const [error, setError] = useState("");
+  const preview = useMemo(() => view?.reflection.suggestions.filter((item) => selected.includes(item.id)) ?? [], [selected, view]);
+  if (!view) return <Card><CardHeader><CardTitle>Reflection</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">Reflection is not available for this Report.</p></CardContent></Card>;
+  const reflection = view.reflection;
+  if (reflection.status !== "PENDING") return <Card className="border-emerald-300"><CardHeader><CardTitle className="flex items-center gap-2 text-emerald-700"><CheckCircle2 className="size-5" /> Reflection complete</CardTitle></CardHeader><CardContent><p className="text-sm">Status: <Badge variant="outline">{reflection.status}</Badge></p>{reflection.resultingTargetRevisionId ? <p className="mt-3 font-mono text-xs text-muted-foreground">New Target Revision: {reflection.resultingTargetRevisionId}</p> : <p className="mt-3 text-sm text-muted-foreground">The workflow was finished without configuration changes.</p>}</CardContent></Card>;
+  function toggle(id: string) { setSelected((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]); }
+  function submit() { const result = store.submitReflection(reportId, selected); if (!result.ok) setError(result.error); }
+  function finish() { const result = store.finishReflectionWithoutChanges(reportId); if (!result.ok) setError(result.error); }
+  return <Card><CardHeader><CardTitle>Reflection</CardTitle></CardHeader><CardContent className="space-y-5"><p className="text-sm text-muted-foreground">Select evidence-backed improvements. Submitting creates a new immutable Target Revision.</p><div className="space-y-3">{reflection.suggestions.map((suggestion) => <label key={suggestion.id} className="flex cursor-pointer gap-3 rounded-md border p-4 hover:bg-muted/20"><input type="checkbox" checked={selected.includes(suggestion.id)} onChange={() => toggle(suggestion.id)} className="mt-1 size-4" /><span><span className="flex items-center gap-2 font-medium"><Badge variant="outline">{suggestion.area}</Badge>{suggestion.suggested}</span><span className="mt-2 block text-xs text-muted-foreground">Evidence: {suggestion.evidence}</span><span className="mt-1 block text-xs"><strong>Current:</strong> {suggestion.current}</span></span></label>)}</div><div className="rounded-md border bg-muted/20 p-4"><p className="flex items-center gap-2 font-medium"><GitBranchPlus className="size-4" /> Target Revision preview</p><p className="mt-2 text-sm text-muted-foreground">Source r{view.sourceRevision.revision} · {preview.length ? `${preview.length} accepted change${preview.length === 1 ? '' : 's'}` : "No changes selected"}</p>{preview.map((item) => <p key={item.id} className="mt-2 text-xs">• {item.suggested}</p>)}</div>{error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button variant="outline" onClick={finish}>Finish without changes</Button><Button onClick={submit} disabled={!selected.length}>Submit changes</Button></div></CardContent></Card>;
+}

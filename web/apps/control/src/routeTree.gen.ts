@@ -30,6 +30,7 @@ import { Route as ProjectIdAgentGardenIndexRouteImport } from './routes/$project
 import { Route as ProjectIdAgentGardenAgentIdRouteImport } from './routes/$projectId/agent-garden/$agentId'
 import { Route as ProjectIdAuditLogsIndexRouteImport } from './routes/$projectId/audit-logs/index'
 import { Route as ProjectIdEvaluationIndexRouteImport } from './routes/$projectId/evaluation/index'
+import { Route as ProjectIdEvaluationCatalogRouteImport } from './routes/$projectId/evaluation/catalog'
 import { Route as ProjectIdEvaluationOverviewRouteImport } from './routes/$projectId/evaluation/overview'
 import { Route as ProjectIdEvaluationSettingsRouteImport } from './routes/$projectId/evaluation/settings'
 import { Route as ProjectIdEvaluationsIndexRouteImport } from './routes/$projectId/evaluations/index'
@@ -164,6 +165,12 @@ const ProjectIdEvaluationIndexRoute =
   ProjectIdEvaluationIndexRouteImport.update({
     id: '/',
     path: '/',
+    getParentRoute: () => ProjectIdEvaluationRoute,
+  } as any)
+const ProjectIdEvaluationCatalogRoute =
+  ProjectIdEvaluationCatalogRouteImport.update({
+    id: '/catalog',
+    path: '/catalog',
     getParentRoute: () => ProjectIdEvaluationRoute,
   } as any)
 const ProjectIdEvaluationOverviewRoute =
@@ -324,6 +331,7 @@ export interface FileRoutesByFullPath {
   '/$projectId/': typeof ProjectIdIndexRoute
   '/$projectId/access-policies/$policyId': typeof ProjectIdAccessPoliciesPolicyIdRoute
   '/$projectId/agent-garden/$agentId': typeof ProjectIdAgentGardenAgentIdRoute
+  '/$projectId/evaluation/catalog': typeof ProjectIdEvaluationCatalogRoute
   '/$projectId/evaluation/overview': typeof ProjectIdEvaluationOverviewRoute
   '/$projectId/evaluation/settings': typeof ProjectIdEvaluationSettingsRoute
   '/$projectId/evaluations/new': typeof ProjectIdEvaluationsNewRoute
@@ -370,6 +378,7 @@ export interface FileRoutesByTo {
   '/$projectId': typeof ProjectIdIndexRoute
   '/$projectId/access-policies/$policyId': typeof ProjectIdAccessPoliciesPolicyIdRoute
   '/$projectId/agent-garden/$agentId': typeof ProjectIdAgentGardenAgentIdRoute
+  '/$projectId/evaluation/catalog': typeof ProjectIdEvaluationCatalogRoute
   '/$projectId/evaluation/overview': typeof ProjectIdEvaluationOverviewRoute
   '/$projectId/evaluation/settings': typeof ProjectIdEvaluationSettingsRoute
   '/$projectId/evaluations/new': typeof ProjectIdEvaluationsNewRoute
@@ -418,6 +427,7 @@ export interface FileRoutesById {
   '/$projectId/': typeof ProjectIdIndexRoute
   '/$projectId/access-policies/$policyId': typeof ProjectIdAccessPoliciesPolicyIdRoute
   '/$projectId/agent-garden/$agentId': typeof ProjectIdAgentGardenAgentIdRoute
+  '/$projectId/evaluation/catalog': typeof ProjectIdEvaluationCatalogRoute
   '/$projectId/evaluation/overview': typeof ProjectIdEvaluationOverviewRoute
   '/$projectId/evaluation/settings': typeof ProjectIdEvaluationSettingsRoute
   '/$projectId/evaluations/new': typeof ProjectIdEvaluationsNewRoute
@@ -467,6 +477,7 @@ export interface FileRouteTypes {
     | '/$projectId/'
     | '/$projectId/access-policies/$policyId'
     | '/$projectId/agent-garden/$agentId'
+    | '/$projectId/evaluation/catalog'
     | '/$projectId/evaluation/overview'
     | '/$projectId/evaluation/settings'
     | '/$projectId/evaluations/new'
@@ -513,6 +524,7 @@ export interface FileRouteTypes {
     | '/$projectId'
     | '/$projectId/access-policies/$policyId'
     | '/$projectId/agent-garden/$agentId'
+    | '/$projectId/evaluation/catalog'
     | '/$projectId/evaluation/overview'
     | '/$projectId/evaluation/settings'
     | '/$projectId/evaluations/new'
@@ -560,6 +572,7 @@ export interface FileRouteTypes {
     | '/$projectId/'
     | '/$projectId/access-policies/$policyId'
     | '/$projectId/agent-garden/$agentId'
+    | '/$projectId/evaluation/catalog'
     | '/$projectId/evaluation/overview'
     | '/$projectId/evaluation/settings'
     | '/$projectId/evaluations/new'
@@ -774,6 +787,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectIdEvaluationIndexRouteImport
       parentRoute: typeof ProjectIdEvaluationRoute
     }
+    '/$projectId/evaluation/catalog': {
+      id: '/$projectId/evaluation/catalog'
+      path: '/catalog'
+      fullPath: '/$projectId/evaluation/catalog'
+      preLoaderRoute: typeof ProjectIdEvaluationCatalogRouteImport
+      parentRoute: typeof ProjectIdEvaluationRoute
+    }
     '/$projectId/evaluation/overview': {
       id: '/$projectId/evaluation/overview'
       path: '/overview'
@@ -946,6 +966,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface ProjectIdEvaluationRouteChildren {
+  ProjectIdEvaluationCatalogRoute: typeof ProjectIdEvaluationCatalogRoute
   ProjectIdEvaluationOverviewRoute: typeof ProjectIdEvaluationOverviewRoute
   ProjectIdEvaluationSettingsRoute: typeof ProjectIdEvaluationSettingsRoute
   ProjectIdEvaluationIndexRoute: typeof ProjectIdEvaluationIndexRoute
@@ -962,6 +983,7 @@ interface ProjectIdEvaluationRouteChildren {
 }
 
 const ProjectIdEvaluationRouteChildren: ProjectIdEvaluationRouteChildren = {
+  ProjectIdEvaluationCatalogRoute: ProjectIdEvaluationCatalogRoute,
   ProjectIdEvaluationOverviewRoute: ProjectIdEvaluationOverviewRoute,
   ProjectIdEvaluationSettingsRoute: ProjectIdEvaluationSettingsRoute,
   ProjectIdEvaluationIndexRoute: ProjectIdEvaluationIndexRoute,
