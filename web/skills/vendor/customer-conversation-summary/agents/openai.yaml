@@ -1,0 +1,4 @@
+interface:
+  display_name: "Customer Conversation Summary"
+  short_description: "Create precise support handoff summaries"
+  default_prompt: "Use $customer-conversation-summary to prepare a privacy-aware support handoff."

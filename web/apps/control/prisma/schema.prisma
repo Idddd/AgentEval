@@ -1,0 +1,721 @@
+generator client {
+  provider   = "prisma-client"
+  output     = "../server/generated/prisma"
+  engineType = "client"
+  runtime    = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["tasklattice"]
+}
+
+enum ProjectRole {
+  admin
+  member
+
+  @@map("project_role")
+  @@schema("tasklattice")
+}
+
+enum IdentityType {
+  local
+  oidc
+
+  @@map("identity_type")
+  @@schema("tasklattice")
+}
+
+enum SystemRole {
+  user
+  super_administrator
+
+  @@map("system_role")
+  @@schema("tasklattice")
+}
+
+enum UserStatus {
+  active
+  disabled
+
+  @@map("user_status")
+  @@schema("tasklattice")
+}
+
+enum McpDiscoveryStatus {
+  HEALTHY
+  PERMISSION_REQUIRED
+  UNCHECKED
+  UNAVAILABLE
+
+  @@map("mcp_discovery_status")
+  @@schema("tasklattice")
+}
+
+model User {
+  id          String     @id
+  username    String     @unique
+  email       String     @unique
+  displayName String     @map("display_name")
+  city        String?
+  timezone    String     @default("UTC")
+  theme       String     @default("system")
+  systemRole  SystemRole @default(user) @map("system_role")
+  status      UserStatus @default(active)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdProjects Project[]           @relation("ProjectCreator")
+  identities      UserIdentity[]
+  memberships     ProjectMember[]
+  invitations     ProjectInvitation[] @relation("InvitationCreator")
+
+  @@map("users")
+  @@schema("tasklattice")
+}
+
+model UserIdentity {
+  id        String       @id
+  userId    String       @map("user_id")
+  type      IdentityType
+  issuer    String
+  subject   String
+  username  String?
+  email     String?
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credential LocalCredential?
+
+  @@unique([issuer, subject])
+  @@unique([type, username])
+  @@index([userId])
+  @@map("user_identities")
+  @@schema("tasklattice")
+}
+
+model LocalCredential {
+  identityId   String   @id @map("identity_id")
+  passwordHash String   @map("password_hash")
+  changedAt    DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  identity UserIdentity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@map("local_credentials")
+  @@schema("tasklattice")
+}
+
+model Project {
+  id        String    @id
+  name      String    @unique(map: "projects_name_key")
+  type      String
+  avatar    String?
+  createdBy String    @map("created_by")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+  deletedBy String?   @map("deleted_by")
+
+  creator                         User                                        @relation("ProjectCreator", fields: [createdBy], references: [id])
+  humanMembers                    ProjectMember[]
+  invitations                     ProjectInvitation[]
+  agents                          AgentRecord[]
+  agentCatalogEntries             AgentCatalogRecord[]
+  agentConnections                AgentConnectionRecord[]
+  providerAccounts                ProviderAccountRecord[]
+  modelDeployments                ModelDeploymentRecord[]
+  inferenceGateways               InferenceGatewayRecord[]
+  modelRoutings                   ModelRoutingRecord[]
+  modelRoutingBindings            ModelRoutingBindingRecord[]
+  modelRoutingAudit               ModelRoutingAuditRecord[]
+  sandboxPolicies                 SandboxPolicyRecord[]
+  accessPolicies                  AccessPolicyRecord[]
+  accessPolicyVersions            AccessPolicyVersionRecord[]
+  instanceAccessPolicyBindings     AgentInstanceAccessPolicyBindingRecord[]
+  skills                          SkillRecord[]
+  mcpServers                      McpServerRecord[]
+  knowledgeSources                KnowledgeSourceRecord[]
+  specializations                 AgentSpecializationRecord[]
+  costAttributions                CostAttributionMappingRecord[]
+  modelEndpointMaps               ModelEndpointMappingRecord[]
+  usageFacts                      ModelUsageFactRecord[]
+  usageObservations               ModelUsageFactObservation[]
+  usageDaily                      ModelUsageDailyRecord[]
+  costSyncCheckpoints             CostSyncCheckpointRecord[]
+  auditLogs                       AuditLogRecord[]
+  quota                           ProjectQuotaRecord?
+
+  @@map("projects")
+  @@schema("tasklattice")
+}
+
+model ProjectQuotaRecord {
+  projectId                    String    @id @map("project_id")
+  hardBudgetUsd                Decimal?  @map("hard_budget_usd") @db.Decimal(18, 6)
+  budgetDuration               String?   @map("budget_duration")
+  tpmLimit                     BigInt?   @map("tpm_limit")
+  maxInstances                 Int?      @map("max_instances")
+  maxMcpIntegrations           Int?      @map("max_mcp_integrations")
+  maxKnowledgeBaseIntegrations Int?      @map("max_knowledge_base_integrations")
+  litellmTeamId                String?   @map("litellm_team_id")
+  syncStatus                   String    @default("pending") @map("sync_status")
+  lastSyncedAt                 DateTime? @map("last_synced_at") @db.Timestamptz(6)
+  lastSyncError                String?   @map("last_sync_error")
+  updatedBy                    String?   @map("updated_by")
+  revision                     Int       @default(1)
+  createdAt                    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_quotas")
+  @@schema("tasklattice")
+}
+
+model AuditLogRecord {
+  recordId              String   @id @default(uuid()) @map("record_id")
+  projectId             String?  @map("project_id")
+  id                    String
+  occurredAt            DateTime @map("occurred_at") @db.Timestamptz(6)
+  actorType              String   @map("actor_type")
+  actorId                String   @map("actor_id")
+  actorName              String   @map("actor_name")
+  actorEmail             String?  @map("actor_email")
+  authorizationRole     String   @map("authorization_role")
+  authorizationDecision String   @map("authorization_decision")
+  action                 String
+  verb                   String
+  objectType             String   @map("object_type")
+  objectId               String   @map("object_id")
+  objectName             String   @map("object_name")
+  outcome                String
+  summary                String
+  requestId              String   @map("request_id")
+  httpMethod             String   @map("http_method")
+  route                  String
+  ipAddress              String   @map("ip_address")
+  userAgent              String   @map("user_agent")
+  parameters             Json?
+  requestBody            Json?    @map("request_body")
+  traceId                String?   @map("trace_id")
+  spanId                 String?   @map("span_id")
+  metadata               Json?
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, id])
+  @@index([occurredAt(sort: Desc)])
+  @@index([projectId, occurredAt(sort: Desc)])
+  @@index([projectId, actorId, occurredAt(sort: Desc)])
+  @@index([projectId, action, occurredAt(sort: Desc)])
+  @@index([projectId, traceId])
+  @@map("audit_logs")
+  @@schema("tasklattice")
+}
+
+model ProjectMember {
+  projectId String      @map("project_id")
+  userId    String      @map("user_id")
+  role      ProjectRole
+  joinedAt  DateTime    @default(now()) @map("joined_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@map("project_members")
+  @@schema("tasklattice")
+}
+
+model ProjectInvitation {
+  id        String      @id
+  projectId String      @map("project_id")
+  email     String
+  role      ProjectRole
+  invitedBy String      @map("invited_by")
+  status    String      @default("pending")
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  inviter User    @relation("InvitationCreator", fields: [invitedBy], references: [id])
+
+  @@unique([projectId, email])
+  @@map("project_invitations")
+  @@schema("tasklattice")
+}
+
+model AgentRecord {
+  projectId String   @map("project_id")
+  id        String
+  payload   Json
+  createdAt DateTime @map("created_at") @db.Timestamptz(6)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  outboundAgentConnections AgentConnectionRecord[] @relation("CoordinatorAgentConnections")
+  accessPolicyBindings       AgentInstanceAccessPolicyBindingRecord[]
+
+  @@id([projectId, id])
+  @@map("agents")
+  @@schema("tasklattice")
+}
+
+model AgentCatalogRecord {
+  projectId String   @map("project_id")
+  id        String
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project     Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connections AgentConnectionRecord[]
+
+  @@id([projectId, id])
+  @@index([projectId, updatedAt(sort: Desc)], map: "agent_catalog_updated_idx")
+  @@map("agent_catalog")
+  @@schema("tasklattice")
+}
+
+model AgentConnectionRecord {
+  projectId             String   @map("project_id")
+  id                    String
+  coordinatorInstanceId String   @map("coordinator_instance_id")
+  connectedAgentId      String   @map("connected_agent_id")
+  payload               Json
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project          Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  coordinator      AgentRecord        @relation("CoordinatorAgentConnections", fields: [projectId, coordinatorInstanceId], references: [projectId, id], onDelete: Cascade)
+  connectedAgent   AgentCatalogRecord @relation(fields: [projectId, connectedAgentId], references: [projectId, id], onDelete: Restrict)
+
+  @@id([projectId, id])
+  @@unique([projectId, coordinatorInstanceId, connectedAgentId], map: "agent_connections_unique_binding")
+  @@index([projectId, connectedAgentId], map: "agent_connections_connected_idx")
+  @@map("agent_connections")
+  @@schema("tasklattice")
+}
+
+model ProviderAccountRecord {
+  projectId         String                  @map("project_id")
+  id                String
+  payload           Json
+  credentialPayload String                  @map("credential_payload")
+  createdAt         DateTime                @map("created_at") @db.Timestamptz(6)
+  project           Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  modelDeployments  ModelDeploymentRecord[]
+
+  @@id([projectId, id])
+  @@map("provider_accounts")
+  @@schema("tasklattice")
+}
+
+model ModelDeploymentRecord {
+  projectId         String                @map("project_id")
+  id                String
+  providerAccountId String                @map("provider_account_id")
+  payload           Json
+  createdAt         DateTime              @map("created_at") @db.Timestamptz(6)
+  project           Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  providerAccount   ProviderAccountRecord @relation(fields: [projectId, providerAccountId], references: [projectId, id], onDelete: Cascade)
+
+  @@id([projectId, id])
+  @@map("model_deployments")
+  @@schema("tasklattice")
+}
+
+model InferenceGatewayRecord {
+  projectId String   @map("project_id")
+  id        String
+  payload   Json
+  createdAt DateTime @map("created_at") @db.Timestamptz(6)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, id])
+  @@map("inference_gateways")
+  @@schema("tasklattice")
+}
+
+model ModelRoutingRecord {
+  projectId String                      @map("project_id")
+  id        String
+  payload   Json
+  createdAt DateTime                    @map("created_at") @db.Timestamptz(6)
+  project   Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  bindings  ModelRoutingBindingRecord[]
+
+  @@id([projectId, id])
+  @@map("model_routings")
+  @@schema("tasklattice")
+}
+
+model ModelRoutingBindingRecord {
+  projectId      String             @map("project_id")
+  id             String
+  modelRoutingId String             @map("model_routing_id")
+  agentId        String             @map("agent_id")
+  payload        Json
+  createdAt      DateTime           @map("created_at") @db.Timestamptz(6)
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  modelRouting   ModelRoutingRecord @relation(fields: [projectId, modelRoutingId], references: [projectId, id], onDelete: Cascade)
+
+  @@id([projectId, id])
+  @@index([projectId, agentId, createdAt(sort: Desc)], map: "model_routing_bindings_agent_idx")
+  @@index([projectId, modelRoutingId, createdAt(sort: Desc)], map: "model_routing_bindings_routing_idx")
+  @@map("model_routing_bindings")
+  @@schema("tasklattice")
+}
+
+model ModelRoutingAuditRecord {
+  projectId      String   @map("project_id")
+  eventId        String   @map("event_id")
+  modelRoutingId String   @map("model_routing_id")
+  payload        Json
+  createdAt      DateTime @map("created_at") @db.Timestamptz(6)
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, eventId])
+  @@index([projectId, modelRoutingId, createdAt(sort: Desc)], map: "model_routing_audit_routing_idx")
+  @@map("model_routing_audit")
+  @@schema("tasklattice")
+}
+
+model SandboxPolicyRecord {
+  projectId String   @map("project_id")
+  id        String
+  payload   Json
+  createdAt DateTime @map("created_at") @db.Timestamptz(6)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, id])
+  @@map("sandbox_policies")
+  @@schema("tasklattice")
+}
+
+model AccessPolicyRecord {
+  projectId String   @map("project_id")
+  id        String
+  payload   Json
+  createdAt DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @db.Timestamptz(6)
+
+  project  Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions         AccessPolicyVersionRecord[]
+  instanceBindings AgentInstanceAccessPolicyBindingRecord[]
+
+  @@id([projectId, id])
+  @@index([projectId, updatedAt(sort: Desc)], map: "access_policies_updated_idx")
+  @@map("access_policies")
+  @@schema("tasklattice")
+}
+
+model AgentInstanceAccessPolicyBindingRecord {
+  projectId     String   @map("project_id")
+  instanceId    String   @map("instance_id")
+  accessPolicyId String   @map("access_policy_id")
+  boundAt       DateTime @default(now()) @map("bound_at") @db.Timestamptz(6)
+  boundBy       String   @map("bound_by")
+
+  project      Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  instance     AgentRecord        @relation(fields: [projectId, instanceId], references: [projectId, id], onDelete: Cascade)
+  accessPolicy AccessPolicyRecord @relation(fields: [projectId, accessPolicyId], references: [projectId, id], onDelete: Restrict)
+
+  @@id([projectId, instanceId, accessPolicyId])
+  @@index([projectId, accessPolicyId], map: "instance_access_policy_policy_idx")
+  @@map("agent_instance_access_policy_bindings")
+  @@schema("tasklattice")
+}
+
+model AccessPolicyVersionRecord {
+  projectId String   @map("project_id")
+  policyId  String   @map("policy_id")
+  revision  Int
+  payload   Json
+  createdAt DateTime @map("created_at") @db.Timestamptz(6)
+
+  project Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  policy  AccessPolicyRecord @relation(fields: [projectId, policyId], references: [projectId, id], onDelete: Cascade)
+
+  @@id([projectId, policyId, revision])
+  @@index([projectId, policyId, createdAt(sort: Desc)], map: "access_policy_versions_created_idx")
+  @@map("access_policy_versions")
+  @@schema("tasklattice")
+}
+
+model SkillArtifactRecord {
+  id                    String   @id
+  skillId               String   @map("skill_id")
+  version               String
+  digest                String   @unique
+  archiveFormat         String   @map("archive_format")
+  contentType           String   @map("content_type")
+  archive               Bytes    @db.ByteA
+  compressedSizeBytes   Int      @map("compressed_size_bytes")
+  unpackedSizeBytes     Int      @map("unpacked_size_bytes")
+  fileCount             Int      @map("file_count")
+  manifest              Json
+  sourcePath            String   @map("source_path")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([skillId, version])
+  @@index([skillId])
+  @@map("skill_artifacts")
+  @@schema("tasklattice")
+}
+
+model SkillRecord {
+  projectId String   @map("project_id")
+  id        String
+  payload   Json
+  sortOrder Int      @default(1000) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, id])
+  @@map("skills")
+  @@schema("tasklattice")
+}
+
+model McpServerRecord {
+  projectId             String             @map("project_id")
+  id                    String
+  litellmServerId       String             @unique @map("litellm_server_id")
+  payload               Json
+  discoveryStatus       McpDiscoveryStatus @default(UNCHECKED) @map("discovery_status")
+  lastDiscoveryAttemptAt DateTime?          @map("last_discovery_attempt_at") @db.Timestamptz(6)
+  lastDiscoveredAt      DateTime?           @map("last_discovered_at") @db.Timestamptz(6)
+  lastDiscoveryError    String?             @map("last_discovery_error")
+  sortOrder             Int                @default(1000) @map("sort_order")
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project               Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tools                 McpToolRecord[]
+
+  @@id([projectId, id])
+  @@map("mcp_servers")
+  @@schema("tasklattice")
+}
+
+model McpToolRecord {
+  projectId    String   @map("project_id")
+  mcpServerId  String   @map("mcp_server_id")
+  name         String
+  title        String?
+  description  String?
+  inputSchema  Json     @map("input_schema")
+  outputSchema Json?    @map("output_schema")
+  annotations  Json?
+  discoveredAt DateTime @map("discovered_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  server       McpServerRecord @relation(fields: [projectId, mcpServerId], references: [projectId, id], onDelete: Cascade)
+
+  @@id([projectId, mcpServerId, name])
+  @@index([projectId, mcpServerId])
+  @@map("mcp_tools")
+  @@schema("tasklattice")
+}
+
+model KnowledgeSourceRecord {
+  projectId String   @map("project_id")
+  id        String
+  payload   Json
+  sortOrder Int      @default(1000) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, id])
+  @@map("knowledge_sources")
+  @@schema("tasklattice")
+}
+
+model AgentSpecializationRecord {
+  projectId String   @map("project_id")
+  id        String
+  payload   Json
+  sortOrder Int      @default(1000) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, id])
+  @@map("agent_specializations")
+  @@schema("tasklattice")
+}
+
+model CostAttributionMappingRecord {
+  projectId           String    @map("project_id")
+  id                  String
+  environmentId       String    @map("environment_id")
+  instanceId          String    @map("instance_id")
+  instanceName        String    @map("instance_name")
+  liteLLMVirtualKeyId String?   @map("litellm_virtual_key_id")
+  hashedToken         String?   @map("hashed_token")
+  virtualKeyAlias     String    @map("virtual_key_alias")
+  liteLLMUserId       String?   @map("litellm_user_id")
+  liteLLMTeamId       String?   @map("litellm_team_id")
+  providerAccountId   String?   @map("provider_account_id")
+  validFrom           DateTime  @map("valid_from") @db.Timestamptz(6)
+  validTo             DateTime? @map("valid_to") @db.Timestamptz(6)
+  createdAt           DateTime  @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @map("updated_at") @db.Timestamptz(6)
+  project             Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, id])
+  @@index([projectId, liteLLMVirtualKeyId, validFrom, validTo], map: "cost_attribution_key_time_idx")
+  @@index([projectId, hashedToken, validFrom, validTo], map: "cost_attribution_hash_time_idx")
+  @@index([projectId, liteLLMUserId, validFrom, validTo], map: "cost_attribution_user_time_idx")
+  @@map("cost_attribution_mapping")
+  @@schema("tasklattice")
+}
+
+model ModelEndpointMappingRecord {
+  projectId           String    @map("project_id")
+  id                  String
+  modelEndpointId     String    @map("model_endpoint_id")
+  modelEndpointName   String    @map("model_endpoint_name")
+  liteLLMModelName    String?   @map("litellm_model_name")
+  liteLLMModelGroup   String?   @map("litellm_model_group")
+  liteLLMModelId      String?   @map("litellm_model_id")
+  provider            String
+  providerAccountId   String    @map("provider_account_id")
+  providerAccountName String    @map("provider_account_name")
+  validFrom           DateTime  @map("valid_from") @db.Timestamptz(6)
+  validTo             DateTime? @map("valid_to") @db.Timestamptz(6)
+  createdAt           DateTime  @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @map("updated_at") @db.Timestamptz(6)
+  project             Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, id])
+  @@index([projectId, liteLLMModelName, validFrom, validTo], map: "model_endpoint_name_time_idx")
+  @@index([projectId, liteLLMModelGroup, validFrom, validTo], map: "model_endpoint_group_time_idx")
+  @@index([projectId, liteLLMModelId, validFrom, validTo], map: "model_endpoint_id_time_idx")
+  @@map("model_endpoint_mapping")
+  @@schema("tasklattice")
+}
+
+model ModelUsageFactRecord {
+  projectId                String    @map("project_id")
+  eventId                  String    @map("event_id")
+  requestId                String    @map("request_id")
+  requestStartTime         DateTime  @map("request_start_time") @db.Timestamptz(6)
+  firstTokenTime           DateTime? @map("first_token_time") @db.Timestamptz(6)
+  responseEndTime          DateTime? @map("response_end_time") @db.Timestamptz(6)
+  usageDate                DateTime  @map("usage_date") @db.Date
+  usageHour                Int       @map("usage_hour") @db.SmallInt
+  environmentId            String    @map("environment_id")
+  instanceId               String?   @map("instance_id")
+  instanceName             String?   @map("instance_name")
+  modelEndpointId          String?   @map("model_endpoint_id")
+  modelEndpointName        String?   @map("model_endpoint_name")
+  providerAccountId        String?   @map("provider_account_id")
+  providerAccountName      String?   @map("provider_account_name")
+  virtualKeyId             String?   @map("virtual_key_id")
+  virtualKeyAlias          String?   @map("virtual_key_alias")
+  liteLLMUserId            String?   @map("litellm_user_id")
+  liteLLMTeamId            String?   @map("litellm_team_id")
+  organizationId           String?   @map("organization_id")
+  endUserId                String?   @map("end_user_id")
+  requestedModel           String    @map("requested_model")
+  resolvedModel            String    @map("resolved_model")
+  modelGroup               String    @map("model_group")
+  provider                 String
+  callType                 String    @map("call_type")
+  promptTokens             BigInt    @map("prompt_tokens")
+  completionTokens         BigInt    @map("completion_tokens")
+  totalTokens              BigInt    @map("total_tokens")
+  cachedInputTokens        BigInt    @map("cached_input_tokens")
+  cacheCreationInputTokens BigInt    @map("cache_creation_input_tokens")
+  reasoningTokens          BigInt    @map("reasoning_tokens")
+  promptCostUsd            Decimal?  @map("prompt_cost_usd")
+  completionCostUsd        Decimal?  @map("completion_cost_usd")
+  totalCostUsd             Decimal?  @map("total_cost_usd")
+  providerReportedCostUsd  Decimal?  @map("provider_reported_cost_usd")
+  liteLLMCalculatedCostUsd Decimal?  @map("litellm_calculated_cost_usd")
+  costStatus               String    @map("cost_status")
+  costSource               String    @map("cost_source")
+  priceVersion             String    @map("price_version")
+  successCount             Int       @map("success_count") @db.SmallInt
+  failureCount             Int       @map("failure_count") @db.SmallInt
+  latencyMs                Int?      @map("latency_ms")
+  timeToFirstTokenMs       Int?      @map("time_to_first_token_ms")
+  httpStatusCode           Int?      @map("http_status_code")
+  errorType                String?   @map("error_type")
+  retryCount               Int       @map("retry_count")
+  cacheHit                 Boolean   @map("cache_hit")
+  fallbackUsed             Boolean   @map("fallback_used")
+  status                   String
+  tags                     Json      @default("[]")
+  metadata                 Json      @default("{}")
+  sourceRecordHash         String    @map("source_record_hash")
+  correctionOfEventId      String?   @map("correction_of_event_id")
+  createdAt                DateTime  @map("created_at") @db.Timestamptz(6)
+  project                  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, eventId])
+  @@unique([projectId, requestId])
+  @@index([projectId, requestStartTime], map: "model_usage_fact_time_idx")
+  @@map("model_usage_fact")
+  @@schema("tasklattice")
+}
+
+model ModelUsageFactObservation {
+  id               BigInt   @id @default(autoincrement())
+  projectId        String   @map("project_id")
+  eventId          String   @map("event_id")
+  requestId        String   @map("request_id")
+  observedAt       DateTime @map("observed_at") @db.Timestamptz(6)
+  reason           String
+  sourceRecordHash String   @map("source_record_hash")
+  payload          Json
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, eventId])
+  @@map("model_usage_fact_observation")
+  @@schema("tasklattice")
+}
+
+model ModelUsageDailyRecord {
+  projectId          String   @map("project_id")
+  usageDate          DateTime @map("usage_date") @db.Date
+  timezone           String
+  environmentId      String   @map("environment_id")
+  groupType          String   @map("group_type")
+  groupId            String   @map("group_id")
+  groupName          String   @map("group_name")
+  spendUsd           Decimal  @map("spend_usd")
+  promptTokens       BigInt   @map("prompt_tokens")
+  completionTokens   BigInt   @map("completion_tokens")
+  totalTokens        BigInt   @map("total_tokens")
+  requests           BigInt
+  successfulRequests BigInt   @map("successful_requests")
+  failedRequests     BigInt   @map("failed_requests")
+  activeObjectCount  Int      @map("active_object_count")
+  firstRequestAt     DateTime @map("first_request_at") @db.Timestamptz(6)
+  lastRequestAt      DateTime @map("last_request_at") @db.Timestamptz(6)
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, usageDate, timezone, environmentId, groupType, groupId])
+  @@map("model_usage_daily")
+  @@schema("tasklattice")
+}
+
+model CostSyncCheckpointRecord {
+  projectId             String    @map("project_id")
+  source                String
+  cursor                String?   @map("cursor_value")
+  lastSuccessfulEndTime DateTime? @map("last_successful_end_time") @db.Timestamptz(6)
+  lastSyncAt            DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  syncLagSeconds        Int?      @map("sync_lag_seconds")
+  processedRecords      BigInt    @default(0) @map("processed_records")
+  failedRecords         BigInt    @default(0) @map("failed_records")
+  duplicateRecords      BigInt    @default(0) @map("duplicate_records")
+  lateArrivingRecords   BigInt    @default(0) @map("late_arriving_records")
+  sourceSpendUsd        Decimal   @default(0) @map("source_spend_usd")
+  project               Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, source])
+  @@map("cost_sync_checkpoint")
+  @@schema("tasklattice")
+}

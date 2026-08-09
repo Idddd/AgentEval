@@ -1,0 +1,4 @@
+interface:
+  display_name: "Knowledge Answering"
+  short_description: "Answer from approved knowledge with citations"
+  default_prompt: "Use $knowledge-answering to answer this question from the approved knowledge provided."

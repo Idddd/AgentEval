@@ -1,0 +1,32 @@
+TaskLattice {{ .Chart.AppVersion }} has been installed in {{ .Release.Namespace }}.
+
+Wait for the core workloads:
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "tasklattice.componentName" (dict "root" . "component" "control") }} --timeout=5m
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "tasklattice.componentName" (dict "root" . "component" "runner") }} --timeout=5m
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "tasklattice.componentName" (dict "root" . "component" "litellm") }} --timeout=5m
+
+Control service:
+  kubectl -n {{ .Release.Namespace }} get service {{ include "tasklattice.componentName" (dict "root" . "component" "control") }}
+
+{{- if and .Values.openshift.enabled .Values.openshift.routes.control.enabled }}
+OpenShift Control route:
+  oc -n {{ .Release.Namespace }} get route {{ include "tasklattice.componentName" (dict "root" . "component" "control") }}
+
+Static workloads use their image-defined non-root IDs through the anyuid SCC.
+OpenShell sandbox pods are bound to the privileged SCC by this release.
+Use this profile only in a dedicated, trusted OpenShift project.
+{{- end }}
+
+{{- if .Values.exampleMcp.enabled }}
+Example MCP endpoint for Project registration:
+  http://{{ include "tasklattice.componentName" (dict "root" . "component" "example-mcp") }}:{{ .Values.exampleMcp.service.port }}/mcp
+Basic authentication:
+  Username: {{ .Values.exampleMcp.auth.username }}
+  Password: {{ .Values.exampleMcp.auth.password }}
+LiteLLM auth-value Secret reference:
+  k8s://{{ .Release.Namespace }}/{{ include "tasklattice.componentName" (dict "root" . "component" "example-mcp") }}-auth#auth-value
+{{- end }}
+
+The default credentials are admin/admin and the default OpenShell endpoint is
+plaintext and unauthenticated. Change secrets.* and configure trusted ingress,
+TLS, and authentication before exposing this deployment outside a local cluster.

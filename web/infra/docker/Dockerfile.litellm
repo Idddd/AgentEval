@@ -1,0 +1,14 @@
+# The v1.86.2 database variant is public on LiteLLM's Docker Hub registry.
+# The equivalent GHCR database tag currently rejects anonymous pulls.
+FROM litellm/litellm-database:v1.86.2
+
+USER root
+RUN apk add --no-cache libatomic \
+    && chown -R 65532:65532 /app/.venv/lib/python3.13/site-packages/prisma
+
+# LiteLLM 1.86.x rewrites static UI routes on first import. Do that while the
+# image is writable so the non-root runtime can serve extensionless /ui routes.
+RUN litellm --version
+
+USER 65532:65532
+RUN prisma generate --schema /app/.venv/lib/python3.13/site-packages/prisma/schema.prisma

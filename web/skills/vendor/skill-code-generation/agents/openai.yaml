@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Generation"
+  short_description: "Create scoped code changes with verification"
+  default_prompt: "Use $skill-code-generation to implement this scoped change and verify it."

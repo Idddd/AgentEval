@@ -1,0 +1,15 @@
+{{- if .Values.resourceDefaults.enabled }}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "tasklattice.fullname" . }}-container-resources
+  labels:
+    {{- include "tasklattice.labels" . | nindent 4 }}
+spec:
+  limits:
+    - type: Container
+      default:
+        {{- toYaml .Values.resourceDefaults.default | nindent 8 }}
+      defaultRequest:
+        {{- toYaml .Values.resourceDefaults.defaultRequest | nindent 8 }}
+{{- end }}

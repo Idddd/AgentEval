@@ -1,0 +1,46 @@
+schema_version = 1
+
+[server]
+# Required only when OIDC is enabled. Local authentication and Kubernetes
+# Service exposure do not need a canonical browser URL.
+public_url = "http://192.168.139.2"
+internal_url = "http://tasklattice-control"
+
+[database]
+url = "postgresql://tasklattice:CHANGE_ME@postgresql:5432/tasklattice"
+
+[auth]
+session_signing_key = "CHANGE_TO_A_LONG_RANDOM_VALUE"
+
+[auth.local]
+enabled = true
+initial_super_admin_username = "admin"
+initial_super_admin_password_hash = "$2b$12$REPLACE_WITH_A_REAL_BCRYPT_HASH"
+
+[auth.oidc]
+enabled = false
+display_name = "Keycloak SSO"
+issuer = "http://keycloak:8080/realms/tasklattice"
+client_id = "tasklattice-control-plane"
+client_secret = "CHANGE_ME"
+
+[runner]
+url = "http://tasklattice-runner:9090"
+token = "CHANGE_ME"
+
+[litellm]
+url = "http://tasklattice-litellm:4000"
+master_key = "CHANGE_ME"
+
+[smtp]
+# SMTP is required for sending invitations to users who do not already have a
+# TaskLattice account. server.public_url must be browser-accessible when enabled.
+enabled = false
+host = "smtp.example.com"
+port = 587
+secure = false
+username = "tasklattice@example.com"
+password = "CHANGE_ME"
+from_address = "tasklattice@example.com"
+from_name = "TaskLattice"
+reply_to = "support@example.com"

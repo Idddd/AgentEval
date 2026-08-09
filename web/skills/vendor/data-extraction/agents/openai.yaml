@@ -1,0 +1,4 @@
+interface:
+  display_name: "Data Extraction"
+  short_description: "Extract validated structured data from documents"
+  default_prompt: "Use $data-extraction to extract this document into the requested schema."

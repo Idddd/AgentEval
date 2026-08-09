@@ -1,0 +1,289 @@
+# Contributing
+
+Thank you for contributing to TaskLattice. This guide covers source builds,
+tests, local Kubernetes deployment, and the checks expected before submitting
+a change. Released deployments should use the latest published Release Chart
+and its exact immutable Release version as described in the root README.
+
+## Before submitting a change
+
+Run the checks relevant to your change. The complete repository validation is:
+
+```sh
+npm test
+npm run typecheck
+npm run build
+helm lint charts/tasklattice
+helm lint charts/tasklattice --values charts/tasklattice/values-dev.yaml
+```
+
+Keep generated credentials, `.env`, local databases, and provider keys out of
+Git. Update documentation and tests together with behavior changes.
+
+## Image convention
+
+Local development uses the same canonical repositories as a Release and only
+changes the tag to the permanent `dev` value:
+
+```text
+ghcr.io/sn0rt/tasklattice-control:dev
+ghcr.io/sn0rt/tasklattice-openshell-runner:dev
+ghcr.io/sn0rt/tasklattice-litellm:dev
+ghcr.io/sn0rt/tasklattice-nemoclaw-sandbox:dev
+ghcr.io/sn0rt/tasklattice-nemoclaw-hermes-sandbox:dev
+```
+
+These images are built into the local Docker store. The Release workflow does
+not publish the `dev` tag. Local integration tests can additionally build
+`ghcr.io/sn0rt/tasklattice-example-mcp:dev`; it is test-only and is not one of
+the five released images.
+
+## Prerequisites
+
+- Git and outbound access to GitHub, Docker Hub, GHCR, and npm.
+- Node.js 22 or newer and npm.
+- Docker with BuildKit support.
+- Kubernetes 1.29 or newer with a default `ReadWriteOnce` StorageClass.
+- Helm and `kubectl`.
+- Kind CLI when using a Kind cluster.
+- At least 4 CPU and 8 GiB memory for one Agent Sandbox.
+
+Verify the toolchain and target cluster:
+
+```sh
+node --version
+npm --version
+docker version
+kubectl version --client
+helm version --short
+kubectl config current-context
+kubectl get nodes
+```
+
+The deploy script uses `KUBE_CONTEXT` when supplied, then the current kubectl
+context, and finally an available `orbstack` context.
+
+## Install and validate the source tree
+
+```sh
+git clone git@github.com:Sn0rt/TaskLattice.git
+cd TaskLattice
+npm ci
+npm test
+npm run typecheck
+```
+
+The Kubernetes deployment does not read `.env`. Create it only for host-mode
+development:
+
+```sh
+cp .env.example .env
+```
+
+Never commit `.env`.
+
+## Build the local images
+
+Build the complete local image set: the five released images plus the
+test-only Example MCP image:
+
+```sh
+npm run images:build
+```
+
+The OpenClaw and Hermes builds clone pinned NVIDIA NemoClaw revisions, build an
+upstream image, and pass it through a TaskLattice-owned wrapper Dockerfile.
+Hermes builds its pinned base locally when the upstream GHCR base is
+unavailable.
+
+Confirm the resulting images:
+
+```sh
+docker image inspect ghcr.io/sn0rt/tasklattice-control:dev
+docker image inspect ghcr.io/sn0rt/tasklattice-openshell-runner:dev
+docker image inspect ghcr.io/sn0rt/tasklattice-litellm:dev
+docker image inspect ghcr.io/sn0rt/tasklattice-nemoclaw-sandbox:dev
+docker image inspect ghcr.io/sn0rt/tasklattice-nemoclaw-hermes-sandbox:dev
+docker image inspect ghcr.io/sn0rt/tasklattice-example-mcp:dev
+```
+
+Individual build commands are available for shorter loops:
+
+```sh
+npm run images:build:control
+npm run images:build:runner
+npm run images:build:litellm
+npm run images:build:example-mcp
+npm run images:build:sandbox:openclaw
+npm run images:build:sandbox:hermes
+```
+
+## Deploy with Helm
+
+The development values install TaskLattice, LiteLLM, PostgreSQL, OpenShell, and
+the Agent Sandbox controller as one Helm release:
+
+```sh
+KUBE_CONTEXT=orbstack npm run helm:deploy:dev
+```
+
+The deploy script:
+
+- verifies that all five `:dev` images exist locally;
+- loads them into Kind when the context name starts with `kind-`;
+- installs `charts/tasklattice` with `values-dev.yaml`;
+- changes `global.rolloutRevision` so rebuilt mutable images create new Pods;
+- waits for the complete release to become ready.
+
+Verify the workloads:
+
+```sh
+kubectl -n tasklattice-sandboxes rollout status deployment/tasklattice-control --timeout=300s
+kubectl -n tasklattice-sandboxes rollout status deployment/tasklattice-runner --timeout=300s
+kubectl -n tasklattice-sandboxes rollout status deployment/tasklattice-litellm --timeout=300s
+kubectl -n tasklattice-sandboxes rollout status statefulset/tasklattice-postgresql --timeout=300s
+kubectl -n tasklattice-sandboxes rollout status statefulset/tasklattice-openshell --timeout=300s
+kubectl -n agent-sandbox-system rollout status deployment/agent-sandbox-controller --timeout=300s
+```
+
+On OrbStack, open `http://localhost` and sign in with `admin / admin`. The
+LiteLLM development UI uses `admin / tasklattice-local-admin`.
+
+The development values disable OpenShell TLS and allow unauthenticated gateway
+clients. Use them only on a trusted local cluster.
+
+## End-to-end runtime validation
+
+After registering a Provider, creating a ready default Model Routing, and
+reviewing the automatically configured deny-all `Default` Access Policy,
+validate the runtime flow through the Control console:
+
+1. Create an Instance with one or more Active Access Policies and confirm it
+   reaches `READY`.
+2. OpenShell publishes the Agent UI and its routed endpoint returns HTTP 200.
+3. The terminal connects to the same-name Sandbox Pod.
+4. `/etc/hostname` matches the Instance `sandboxName`.
+5. The pinned Agent runtime and `/usr/local/bin/nemoclaw-start` are available.
+6. The in-sandbox gateway health endpoint responds.
+7. Deleting the Instance removes its API resource, HTTP endpoint, and runtime.
+
+The legacy `npm run validate:core` helper has not yet been migrated to the
+current Project-scoped Instance and Access Policy contracts. Do not use it as
+a release gate until that migration is complete.
+
+Useful runtime inspection commands:
+
+```sh
+kubectl -n tasklattice-sandboxes get sandboxes,pods,pvc
+kubectl -n tasklattice-sandboxes logs deployment/tasklattice-runner --tail=200
+kubectl -n tasklattice-sandboxes logs statefulset/tasklattice-openshell --tail=200
+```
+
+## Host-only API and UI development
+
+Use the fixture runner when changing API or UI contracts without an Agent Pod.
+
+Terminal 1:
+
+```sh
+NEMOCLAW_RUNNER_MODE=fixture npm run dev:runner
+```
+
+Terminal 2:
+
+```sh
+docker run --rm --name tasklattice-dev-postgres \
+  -e POSTGRES_PASSWORD=tasklattice \
+  -e POSTGRES_DB=tasklattice \
+  -p 5432:5432 postgres:17-alpine
+```
+
+Terminal 3:
+
+```sh
+cp control.example.toml control.toml
+# Set database.url to:
+# postgresql://postgres:tasklattice@127.0.0.1:5432/tasklattice
+export TASKLATTICE_CONFIG="$PWD/control.toml"
+npm run db:migrate --workspace @tasklattice/control
+PORT=18080 npm run dev:control
+```
+
+The control console is then available at `http://127.0.0.1:18080`.
+
+## Rebuild and roll out
+
+Rebuild the affected image and rerun the Helm deployment:
+
+```sh
+npm run images:build:control
+KUBE_CONTEXT=orbstack npm run helm:deploy:dev
+```
+
+The same pattern applies to runner and LiteLLM changes. Rebuilding an Agent
+sandbox image affects newly created Sandboxes; recreate an existing development
+Instance when testing a new OpenClaw or Hermes image.
+
+## Kind smoke test
+
+The smoke test builds control, runner, and LiteLLM, loads the images into an
+existing Kind cluster, installs the development Chart, and waits for the static
+control-plane Pods:
+
+```sh
+kind create cluster --name tasklattice-ci
+bash scripts/helm-kind-smoke.sh
+```
+
+OpenClaw and Hermes images are referenced as `:dev` but are not built by this
+smoke test because they are pulled only when an Instance is created.
+
+## Cleanup
+
+Delete active Instances before removing the local release:
+
+```sh
+KUBE_CONTEXT=orbstack npm run helm:delete:dev
+```
+
+Review retained StatefulSet PVCs, Sandbox resources, CRDs, and workspace PVCs
+before removing any persistent local data.
+
+## Troubleshooting
+
+### Kubernetes context is unavailable
+
+Set an explicit context and ensure its API is running:
+
+```sh
+KUBE_CONTEXT=orbstack npm run helm:deploy:dev
+```
+
+### A `dev` image cannot be pulled
+
+Confirm the exact image exists in Docker. A non-shared Kubernetes runtime must
+load the same fully qualified image name into every node:
+
+```sh
+docker image inspect ghcr.io/sn0rt/tasklattice-nemoclaw-sandbox:dev
+docker image inspect ghcr.io/sn0rt/tasklattice-nemoclaw-hermes-sandbox:dev
+```
+
+The deploy script loads all five images automatically for Kind. Other local
+cluster implementations must provide an equivalent image-loading mechanism.
+
+### The UI still shows an old build
+
+Rerun `npm run helm:deploy:dev`. The command changes the rollout revision on
+the control, runner, and LiteLLM Pod templates even though their image tag
+remains `dev`.
+
+### An Agent Sandbox fails
+
+Inspect the Sandbox, runner, and OpenShell gateway:
+
+```sh
+kubectl -n tasklattice-sandboxes get sandboxes,pods,pvc
+kubectl -n tasklattice-sandboxes logs deployment/tasklattice-runner --tail=200
+kubectl -n tasklattice-sandboxes logs statefulset/tasklattice-openshell --tail=200
+```

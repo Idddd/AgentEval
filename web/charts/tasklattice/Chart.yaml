@@ -1,0 +1,21 @@
+apiVersion: v2
+name: tasklattice
+description: TaskLattice control plane, model gateway, and OpenShell agent runtime
+type: application
+version: 0.0.0-dev
+appVersion: dev
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/Sn0rt/TaskLattice
+sources:
+  - https://github.com/Sn0rt/TaskLattice
+dependencies:
+  - name: helm-chart
+    alias: openshell
+    version: 0.0.82
+    repository: oci://ghcr.io/nvidia/openshell
+    condition: openshell.enabled
+  - name: agent-sandbox
+    alias: agentSandbox
+    version: 0.1.0
+    repository: file://../../.helm-dependencies/agent-sandbox
+    condition: agentSandbox.enabled

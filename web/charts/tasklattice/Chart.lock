@@ -1,0 +1,9 @@
+dependencies:
+- name: helm-chart
+  repository: oci://ghcr.io/nvidia/openshell
+  version: 0.0.82
+- name: agent-sandbox
+  repository: file://../../.helm-dependencies/agent-sandbox
+  version: 0.1.0
+digest: sha256:ca43b979b7ea6e25f5ff5c9b13826a1476c3115203f43c740d6ee583b23a2f6e
+generated: "2026-07-30T12:15:44.778554+08:00"

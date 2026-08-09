@@ -1,0 +1,5 @@
+import type { ProviderConnectionDraft } from "@tasklattice/contracts";
+import { ProviderFormSection, ProviderTextField } from "./fields";
+import type { ProviderConfiguratorProps } from "./types";
+type Draft = Extract<ProviderConnectionDraft, { provider: "custom-openai-compatible" }>;
+export function CustomOpenAIProvider({ disabled, errors, onChange, value }: ProviderConfiguratorProps<Draft>) { return <ProviderFormSection title="Custom OpenAI-compatible endpoint"><ProviderTextField id="custom-openai-endpoint" label="Base URL" type="url" required placeholder="https://gateway.example.com/v1" value={value.config.endpoint} disabled={disabled} error={errors.endpoint} onChange={(endpoint) => onChange({ ...value, config: { endpoint } })} /><ProviderTextField id="custom-openai-key" label="API key (optional)" type="password" value={value.credentials.apiKey ?? ""} disabled={disabled} onChange={(apiKey) => onChange({ ...value, credentials: { apiKey: apiKey || undefined } })} /></ProviderFormSection>; }
