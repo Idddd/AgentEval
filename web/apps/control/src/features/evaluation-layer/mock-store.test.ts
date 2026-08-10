@@ -167,6 +167,69 @@ describe("EvaluationLayerStore", () => {
     expect(trace.deterministicScores.instruction_compliance).toBe(1);
   });
 
+  it('evaluates and approves the current Guardrail revision', () => {
+    let sequence = 0;
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: () => `guardrail-${sequence++}`,
+      now: () => '2026-08-10T09:30:00.000Z',
+      random: () => 0.5,
+    });
+    const revision = store.getState().targetRevisions.find(
+      (item) => item.targetId === 'demo-pii-guardrail',
+    )!;
+    const datasetRevision = store.getState().datasetRevisions.find(
+      (item) => item.targetId === 'demo-pii-guardrail' && item.status === 'PUBLISHED',
+    )!;
+
+    const created = store.createRun({
+      targetRevisionId: revision.id,
+      datasetRevisionId: datasetRevision.id,
+      evaluatorIds: ['permission-compliance'],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    let complete = false;
+    while (!complete) {
+      const advanced = store.advanceRun(created.value.runId);
+      expect(advanced.ok).toBe(true);
+      if (!advanced.ok) return;
+      complete = advanced.value.complete;
+    }
+
+    const state = store.getState();
+    const run = state.runs.find((item) => item.id === created.value.runId)!;
+    const report = state.reports.find((item) => item.runId === run.id)!;
+    const traces = state.traces.filter((item) => item.runId === run.id);
+    expect(run.results.map((item) => item.status)).toEqual([
+      'PASS',
+      'PASS',
+      'PASS',
+      'PASS',
+    ]);
+    expect(traces.map((item) => item.deterministicReasons.actual_decision)).toEqual([
+      'ALLOW',
+      'BLOCK',
+      'REDACT',
+      'BLOCK',
+    ]);
+    expect(report.summary).toBe('All Guardrail decisions matched the expected policy.');
+
+    expect(store.decideGuardrailApproval(report.id, 'APPROVED')).toEqual({
+      ok: true,
+      value: { approvalId: expect.any(String) },
+    });
+    expect(store.getState().guardrailApprovals).toEqual([
+      expect.objectContaining({
+        reportId: report.id,
+        targetRevisionId: revision.id,
+        status: 'APPROVED',
+        actor: 'Local Administrator',
+        decidedAt: '2026-08-10T09:30:00.000Z',
+      }),
+    ]);
+  });
+
   it('stores Dataset schema, completes Tool coverage and shares Dataset context', () => {
     let sequence = 0;
     const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {

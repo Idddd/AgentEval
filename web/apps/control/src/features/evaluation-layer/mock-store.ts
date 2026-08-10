@@ -47,7 +47,7 @@ export interface CreateTargetInput {
 }
 
 export type TargetRevisionInput = Partial<
-  Pick<EvaluationLayerTargetRevision, 'model' | 'adapter' | 'tools' | 'prompt' | 'endpoint' | 'sources' | 'version'>
+  Pick<EvaluationLayerTargetRevision, 'model' | 'adapter' | 'tools' | 'prompt' | 'endpoint' | 'sources' | 'version' | 'guardrailStages' | 'policyCount' | 'sourceStatus'>
 >;
 
 export interface CreateDatasetInput {
@@ -91,6 +91,10 @@ export interface EvaluationLayerStore {
   publishDatasetRevision(datasetId: string): CommandResult<{ revisionId: string }>;
   createRun(input: CreateRunInput): CommandResult<{ runId: string }>;
   advanceRun(runId: string): CommandResult<{ complete: boolean }>;
+  decideGuardrailApproval(
+    reportId: string,
+    status: "APPROVED" | "REJECTED",
+  ): CommandResult<{ approvalId: string }>;
   submitReflection(reportId: string, suggestionIds: string[]): CommandResult<{ revisionId: string }>;
   finishReflectionWithoutChanges(reportId: string): CommandResult;
   selectActiveTarget(targetId: string): CommandResult;
@@ -304,20 +308,61 @@ function resultForCase(
   );
   const toolName = String(datasetCase.expectedOutput.expected_tool_called ?? "");
   const tool = revision?.tools.find((item) => item.name === toolName);
-  const failed = datasetCase.id.includes("bypass");
   const denied =
     String(datasetCase.expectedOutput.permission_decision ?? "").toUpperCase() ===
     "DENY";
   const traceId = dependencies.id();
   const now = dependencies.now();
   const kind = revision?.kind ?? "agent";
+  const expectedGuardrailDecision = String(
+    datasetCase.expectedOutput.guardrail_decision ?? "ALLOW",
+  ).toUpperCase();
+  const actualGuardrailDecision = String(
+    datasetCase.metadata?.actualDecision ?? expectedGuardrailDecision,
+  ).toUpperCase();
+  const failed = kind === "guardrail"
+    ? actualGuardrailDecision !== expectedGuardrailDecision
+    : datasetCase.id.includes("bypass");
   let response: string;
   let deterministicScores: Record<string, number>;
   let deterministicReasons: Record<string, string>;
   let toolEvidence: EvaluationLayerToolEvidence[];
   let spans: EvaluationLayerSpan[];
 
-  if (kind === "mcp") {
+  if (kind === "guardrail") {
+    response = failed
+      ? `${actualGuardrailDecision} did not match expected ${expectedGuardrailDecision}.`
+      : `${actualGuardrailDecision} matched the expected Guardrail decision.`;
+    deterministicScores = {
+      decision_match: failed ? 0 : 1,
+      risky_request_protected:
+        expectedGuardrailDecision === "ALLOW" ? 0 : failed ? 0 : 1,
+      benign_request_allowed:
+        expectedGuardrailDecision === "ALLOW" && !failed ? 1 : 0,
+    };
+    deterministicReasons = {
+      expected_decision: expectedGuardrailDecision,
+      actual_decision: actualGuardrailDecision,
+    };
+    toolEvidence = [];
+    spans = [
+      {
+        id: dependencies.id(),
+        name: datasetCase.id,
+        kind: "TRACE",
+        status: failed ? "ERROR" : "OK",
+        startedAt: now,
+        endedAt: now,
+        input: structuredClone(datasetCase.input),
+        output: {
+          expectedDecision: expectedGuardrailDecision,
+          actualDecision: actualGuardrailDecision,
+          ruleIds: structuredClone(datasetCase.expectedOutput.rule_ids ?? []),
+        },
+        metadata: { runId, caseId: datasetCase.id, targetKind: "guardrail" },
+      },
+    ];
+  } else if (kind === "mcp") {
     response = failed
       ? "MCP tool executed despite a DENY decision (fail-open)."
       : "MCP tool executed and returned the expected operational result.";
@@ -1103,6 +1148,9 @@ export function createEvaluationLayerStore(
         dependencies,
       );
       const existingReport = state.reports.find((report) => report.runId === runId);
+      const targetRevision = state.targetRevisions.find(
+        (revision) => revision.id === run.targetRevisionId,
+      );
       const reportId = existingReport?.id ?? (complete ? dependencies.id() : undefined);
       const report =
         complete && !existingReport && reportId
@@ -1110,14 +1158,18 @@ export function createEvaluationLayerStore(
               id: reportId,
               runId,
               status: "READY" as const,
-              summary: hasFailure
-                ? "Permission-compliance regressions require review."
-                : "All permission-compliance cases passed.",
+              summary: targetRevision?.kind === "guardrail"
+                ? hasFailure
+                  ? "Guardrail decisions require review before approval."
+                  : "All Guardrail decisions matched the expected policy."
+                : hasFailure
+                  ? "Permission-compliance regressions require review."
+                  : "All permission-compliance cases passed.",
               createdAt: dependencies.now(),
             }
           : undefined;
       const reflection =
-        report && !state.reflections.some((item) => item.reportId === report.id)
+        report && targetRevision?.kind !== "guardrail" && !state.reflections.some((item) => item.reportId === report.id)
           ? {
               id: dependencies.id(),
               reportId: report.id,
@@ -1148,6 +1200,40 @@ export function createEvaluationLayerStore(
         ),
       }));
       return { ok: true, value: { complete } };
+    },
+    decideGuardrailApproval(reportId, status) {
+      const report = state.reports.find((item) => item.id === reportId);
+      const run = report
+        ? state.runs.find((item) => item.id === report.runId)
+        : undefined;
+      const revision = run
+        ? state.targetRevisions.find((item) => item.id === run.targetRevisionId)
+        : undefined;
+      if (!report || !run || revision?.kind !== "guardrail") {
+        return fail("Guardrail approval context not found.", "NOT_FOUND");
+      }
+      if (state.guardrailApprovals.some((item) => item.reportId === reportId)) {
+        return fail("This Guardrail evaluation already has a decision.", "CONFLICT");
+      }
+      const approvalId = dependencies.id();
+      replaceState((snapshot) => ({
+        ...snapshot,
+        guardrailApprovals: [
+          ...snapshot.guardrailApprovals,
+          {
+            id: approvalId,
+            reportId,
+            targetRevisionId: revision.id,
+            status,
+            actor: "Local Administrator",
+            decidedAt: dependencies.now(),
+            ...(status === "REJECTED"
+              ? { reason: "Evaluation findings require changes." }
+              : {}),
+          },
+        ],
+      }));
+      return { ok: true, value: { approvalId } };
     },
     submitReflection(reportId, suggestionIds) {
       const report = state.reports.find((item) => item.id === reportId);

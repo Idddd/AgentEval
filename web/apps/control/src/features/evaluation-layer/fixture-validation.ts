@@ -23,7 +23,7 @@ export function validateEvaluationLayerState(state: EvaluationLayerState): strin
     requireReference(`targets.${target.id}.currentRevisionId`, target.currentRevisionId, targetRevisionIds);
     const revision = state.targetRevisions.find((item) => item.id === target.currentRevisionId);
     if (revision?.targetId !== target.id) errors.push(`targets.${target.id}.currentRevisionId: ${target.currentRevisionId}`);
-    if (!["agent", "mcp", "kb", "skill"].includes(target.kind)) {
+    if (!["agent", "mcp", "kb", "skill", "guardrail"].includes(target.kind)) {
       errors.push(`targets.${target.id}.kind: ${target.kind}`);
     }
     if (revision?.kind !== target.kind) {
@@ -76,6 +76,10 @@ export function validateEvaluationLayerState(state: EvaluationLayerState): strin
     }
   }
   for (const report of state.reports) requireReference(`reports.${report.id}.runId`, report.runId, runIds);
+  for (const approval of state.guardrailApprovals) {
+    requireReference(`guardrailApprovals.${approval.id}.reportId`, approval.reportId, reportIds);
+    requireReference(`guardrailApprovals.${approval.id}.targetRevisionId`, approval.targetRevisionId, targetRevisionIds);
+  }
   for (const reflection of state.reflections) {
     requireReference(`reflections.${reflection.id}.reportId`, reflection.reportId, reportIds);
     requireReference(`reflections.${reflection.id}.targetId`, reflection.targetId, targetIds);

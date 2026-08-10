@@ -20,6 +20,7 @@ import {
   Plus,
   Search,
   ShieldAlert,
+  ShieldCheck,
   Workflow,
   Wrench,
   XCircle,
@@ -48,6 +49,7 @@ import {
 } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCurrentProjectId } from '@/hooks/use-project';
+import { useEffectiveProjectRole } from '@/hooks/use-project-permissions';
 import { cn } from '@/lib/utils';
 import type { EvaluationLayerTargetKind } from '../model';
 import { useEvaluationLayerState, useEvaluationLayerStore } from '../mock-provider';
@@ -63,10 +65,12 @@ import {
   formatCost,
   formatRelativeTime,
 } from '../shared/evaluation-ui';
-import { EvaluationTargetDetail, TargetEditor } from '../targets/target-pages';
+import { EvaluationTargetDetail } from '../targets/target-pages';
 import { traceCost } from '../traces/trace-view-model';
 import {
+  workspaceNextStep,
   workspaceRows,
+  type WorkspaceNextStep,
   type WorkspaceRow,
   type WorkspaceStage,
 } from './workspace-view-model';
@@ -84,11 +88,11 @@ const KIND_META: Record<
   mcp: { label: 'MCP Server', icon: Wrench, className: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300' },
   kb: { label: 'Knowledge Base', icon: Database, className: 'border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300' },
   skill: { label: 'Skill', icon: FileText, className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
+  guardrail: { label: 'Guardrail', icon: ShieldCheck, className: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300' },
 };
 
 const STAGE_META: Record<WorkspaceStage, { label: string; className: string }> = {
   NOT_EVALUATED: { label: 'Not evaluated', className: 'border-border bg-muted/55 text-muted-foreground' },
-  BUILDING_DATASET: { label: 'Dataset draft', className: 'border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300' },
   RUNNING: { label: 'Running', className: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300' },
   COMPLETED: { label: 'Completed', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
   FAILED: { label: 'Failed', className: 'border-destructive/30 bg-destructive/10 text-destructive' },
@@ -98,7 +102,6 @@ const STAGE_META: Record<WorkspaceStage, { label: string; className: string }> =
 const STAGE_ORDER: StageFilter[] = [
   'ALL',
   'NOT_EVALUATED',
-  'BUILDING_DATASET',
   'RUNNING',
   'COMPLETED',
   'FAILED',
@@ -126,6 +129,7 @@ function configurationSummary(row: WorkspaceRow) {
   if (revision.kind === 'skill') return `v${revision.version ?? '?'}${revision.prompt?.trim() ? ' · Instructions' : ''}`;
   if (revision.kind === 'mcp') return `${revision.tools.length} tool${revision.tools.length === 1 ? '' : 's'} · ${revision.endpoint ?? 'No endpoint'}`;
   if (revision.kind === 'kb') return `${revision.sources?.length ?? 0} source${(revision.sources?.length ?? 0) === 1 ? '' : 's'}`;
+  if (revision.kind === 'guardrail') return `v${revision.version ?? '?'} · ${revision.policyCount ?? 0} policies · ${revision.guardrailStages?.join(' / ') ?? 'No stages'}`;
   const parts = [revision.model ?? 'No model'];
   if (revision.prompt?.trim()) parts.push('Prompt');
   if (revision.tools.length) parts.push(`${revision.tools.length} tools`);
@@ -149,28 +153,46 @@ function datasetLifecycleDetail(row: WorkspaceRow) {
 }
 
 function resultActionLabel(row: WorkspaceRow) {
+  if (!row.publishedRevision) return row.draftRevision ? 'Publish Test Cases' : 'Prepare Test Cases';
   if (row.stage === 'FAILED') return 'Retry required';
   if (row.stage === 'NEEDS_RE_EVALUATION') return 'Re-evaluation required';
   if (row.stage === 'RUNNING') return 'Evaluation in progress';
-  if (row.stage === 'BUILDING_DATASET') return 'Publish Test Cases';
   if (row.stage === 'NOT_EVALUATED') return 'Start evaluation';
   if (row.risk.kind === 'FINDINGS') return 'Review required';
+  if (row.approvalStatus === 'PENDING') return 'Ready for approval';
+  if (row.approvalStatus === 'APPROVED') return 'Revision approved';
+  if (row.approvalStatus === 'REJECTED') return 'Revision rejected';
   return 'No findings';
 }
 
-function LifecycleNode({
+function reportReason(row: WorkspaceRow) {
+  const finding = row.latestRun?.results.find(
+    (result) => result.status === 'FAIL' || result.status === 'ERROR',
+  );
+  if (finding?.response) return finding.response;
+  if (row.latestRun?.status === 'FAILED') return 'The evaluation did not complete successfully.';
+  if (row.isStale) return 'The Target or Dataset changed after this evaluation.';
+  if (row.latestReport) return 'All evaluated Cases passed.';
+  return 'Complete an evaluation to produce a result.';
+}
+
+export function LifecycleNode({
   label,
   value,
   detail,
   tone,
+  recommended = false,
+  onClick,
 }: {
   label: string;
   value: string;
   detail: string;
   tone: 'done' | 'active' | 'waiting' | 'failed';
+  recommended?: boolean;
+  onClick?: () => void;
 }) {
-  return (
-    <div className='relative min-w-0 pl-8'>
+  const content = (
+    <>
       <span className={cn(
         'absolute left-0 top-0 grid size-5 place-items-center rounded-full border bg-background text-[10px]',
         tone === 'done' && 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
@@ -183,6 +205,65 @@ function LifecycleNode({
       <p className='text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground'>{label}</p>
       <p className='mt-0.5 truncate text-xs font-semibold text-foreground'>{value}</p>
       <p className='mt-0.5 truncate text-[10px] text-muted-foreground'>{detail}</p>
+      {recommended ? <ArrowRight className='absolute right-2 top-1/2 size-4 -translate-y-1/2 text-cyan-600 dark:text-cyan-300' /> : null}
+    </>
+  );
+  const className = cn(
+    'relative min-w-0 rounded-md py-1 pl-8 text-left',
+    onClick && 'pr-8 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+    recommended && 'bg-cyan-500/10 ring-1 ring-cyan-500/40',
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type='button'
+        className={className}
+        aria-label={`Open ${label}: ${value}`}
+        aria-current={recommended ? 'step' : undefined}
+        onClick={onClick}
+      >
+        {content}
+      </button>
+    );
+  }
+  return <div className={className}>{content}</div>;
+}
+
+function datasetCountSummary(row: WorkspaceRow) {
+  const count = (row.publishedRevision ?? row.draftRevision)?.cases.length ?? 0;
+  return `${count} ${count === 1 ? 'case' : 'cases'}`;
+}
+
+function compactResult(row: WorkspaceRow) {
+  const run = row.latestRun;
+  if (!run) return 'Not evaluated';
+  if (run.status === 'QUEUED' || run.status === 'RUNNING') return 'In progress';
+  if (run.status === 'FAILED') return 'Failed';
+  return run.results.some(
+    (result) => result.status === 'FAIL' || result.status === 'ERROR',
+  )
+    ? 'Findings'
+    : 'Passed';
+}
+
+export function NextStepCallout({
+  step,
+  onNavigate,
+}: {
+  step: WorkspaceNextStep;
+  onNavigate(tab: WorkspaceNextStep['tab']): void;
+}) {
+  return (
+    <div className='flex flex-col gap-3 rounded-lg border border-cyan-500/40 bg-cyan-500/10 p-4 sm:flex-row sm:items-center sm:justify-between'>
+      <div className='min-w-0'>
+        <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-700 dark:text-cyan-300'>Next step</p>
+        <p className='mt-1 font-semibold text-foreground'>{step.label}</p>
+        <p className='mt-1 text-xs text-muted-foreground'>{step.description}</p>
+      </div>
+      <Button className='shrink-0' onClick={() => onNavigate(step.tab)}>
+        {step.label}<ArrowRight />
+      </Button>
     </div>
   );
 }
@@ -190,7 +271,7 @@ function LifecycleNode({
 function lifecycleTones(row: WorkspaceRow) {
   return {
     revision: 'done' as const,
-    dataset: row.selectedDataset ? (row.stage === 'BUILDING_DATASET' ? 'active' as const : 'done' as const) : 'waiting' as const,
+    dataset: row.selectedDataset ? (row.publishedRevision ? 'done' as const : 'active' as const) : 'waiting' as const,
     run: row.stage === 'RUNNING' ? 'active' as const : row.stage === 'FAILED' ? 'failed' as const : row.latestRun ? 'done' as const : 'waiting' as const,
     result: row.stage === 'COMPLETED' || row.stage === 'NEEDS_RE_EVALUATION' ? 'done' as const : row.stage === 'FAILED' ? 'failed' as const : 'waiting' as const,
   };
@@ -249,10 +330,20 @@ function CatalogCard({ row, onOpen }: { row: WorkspaceRow; onOpen(row: Workspace
   );
 }
 
-function CatalogList({ rows, onOpen }: { rows: WorkspaceRow[]; onOpen(row: WorkspaceRow): void }) {
+export function CatalogList({
+  rows,
+  kind,
+  onKindChange,
+  onOpen,
+}: {
+  rows: WorkspaceRow[];
+  kind: KindFilter;
+  onKindChange(kind: KindFilter): void;
+  onOpen(row: WorkspaceRow): void;
+}) {
   return (
     <EvaluationTable>
-      <thead><tr><th>Evaluation target</th><th>Type</th><th>Revision</th><th>Dataset</th><th>Evaluation</th><th>Latest result</th><th>Updated</th><th /></tr></thead>
+      <thead><tr><th>Evaluation target</th><th><select aria-label='Type' className='h-8 min-w-28 rounded-md border bg-background px-2 text-xs font-medium text-foreground' value={kind} onChange={(event) => onKindChange(event.target.value as KindFilter)}><option value='all'>All types</option>{Object.entries(KIND_META).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</select></th><th>Revision</th><th>Dataset</th><th>Evaluation</th><th>Latest result</th><th>Updated</th><th /></tr></thead>
       <tbody>{rows.map((row) => (
         <tr
           key={row.target.id}
@@ -270,9 +361,9 @@ function CatalogList({ rows, onOpen }: { rows: WorkspaceRow[]; onOpen(row: Works
           <td><div className='flex min-w-56 items-center gap-3'><KindMark kind={row.target.kind} /><div className='min-w-0'><p className='truncate font-medium text-foreground'>{row.target.name}</p><p className='truncate text-xs text-muted-foreground'>{row.target.id}</p></div></div></td>
           <td>{KIND_META[row.target.kind].label}</td>
           <td>R{row.currentRevision?.revision ?? '—'}</td>
-          <td className='max-w-64'><p className='truncate'>{datasetSummary(row)}</p></td>
+          <td>{datasetCountSummary(row)}</td>
           <td><div className='grid min-w-36 gap-1.5'><StageBadge stage={row.stage} />{row.stage === 'RUNNING' ? <Progress value={row.progress} /> : null}</div></td>
-          <td className={row.risk.kind === 'FINDINGS' ? 'font-medium text-destructive' : ''}>{row.result}</td>
+          <td className={row.risk.kind === 'FINDINGS' ? 'font-medium text-destructive' : ''}>{compactResult(row)}</td>
           <td>{formatRelativeTime(row.updatedAt)}</td>
           <td><Button size='sm' variant='outline' onClick={(event) => { event.stopPropagation(); onOpen(row); }}>View<ArrowRight /></Button></td>
         </tr>
@@ -310,31 +401,41 @@ function WorkspaceDrawer({
   row,
   open,
   onOpenChange,
-  onNewRevision,
   onCreateDataset,
 }: {
   row: WorkspaceRow | undefined;
   open: boolean;
   onOpenChange(open: boolean): void;
-  onNewRevision(): void;
   onCreateDataset(): void;
 }) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
+  const role = useEffectiveProjectRole();
   const [drawerTab, setDrawerTab] = useState('workflow');
   const [runMessage, setRunMessage] = useState('');
+  const [agentDetailsOpen, setAgentDetailsOpen] = useState(false);
+  const [resultDetailsOpen, setResultDetailsOpen] = useState(false);
   useEffect(() => {
     if (open) {
       setDrawerTab('workflow');
       setRunMessage('');
+      setAgentDetailsOpen(false);
+      setResultDetailsOpen(false);
     }
   }, [open, row?.target.id]);
   if (!row) return null;
 
   const targetDatasets = state.datasets.filter((dataset) => dataset.targetId === row.target.id);
+  const nextStep = workspaceNextStep(row);
+  const guardrailEvaluationRestricted = row.target.kind === 'guardrail' && role !== 'admin';
   const startEvaluation = () => {
+    if (guardrailEvaluationRestricted) {
+      setRunMessage('Guardrail evaluation is restricted to the Admin role.');
+      setDrawerTab('run');
+      return;
+    }
     if (!row.currentRevision) {
-      setRunMessage('Create an Agent revision before starting an Evaluation.');
+      setRunMessage('Create a Target revision before starting an Evaluation.');
       setDrawerTab('agent');
       return;
     }
@@ -378,7 +479,7 @@ function WorkspaceDrawer({
           <Tabs value={drawerTab} onValueChange={setDrawerTab}>
             <TabsList variant='line' className='w-full justify-start overflow-x-auto'>
               <TabsTrigger value='workflow'>Workflow</TabsTrigger>
-              <TabsTrigger value='agent'>Agent</TabsTrigger>
+              <TabsTrigger value='agent'>{KIND_META[row.target.kind].label}</TabsTrigger>
               <TabsTrigger value='dataset'>Dataset</TabsTrigger>
               <TabsTrigger value='run'>Evaluation</TabsTrigger>
               <TabsTrigger value='result'>Result</TabsTrigger>
@@ -386,17 +487,18 @@ function WorkspaceDrawer({
             {runMessage ? <p role='alert' className='mt-4 rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'>{runMessage}</p> : null}
             <TabsContent value='workflow' className='space-y-5 pt-5'>
               <div className='grid gap-4 rounded-lg border bg-muted/15 p-4 sm:grid-cols-2'>
-                <LifecycleNode label='Revision' value={`R${row.currentRevision?.revision ?? '—'}`} detail={configurationSummary(row)} tone='done' />
-                <LifecycleNode label='Dataset' value={row.selectedDataset?.name ?? 'Not created'} detail={datasetLifecycleDetail(row)} tone={lifecycleTones(row).dataset} />
-                <LifecycleNode label='Evaluation' value={row.latestRun ? STAGE_META[row.stage].label : 'Not started'} detail={row.latestRun ? `${row.progress}% complete` : 'Waiting for Dataset'} tone={lifecycleTones(row).run} />
-                <LifecycleNode label='Result' value={row.result} detail={resultActionLabel(row)} tone={lifecycleTones(row).result} />
+                <LifecycleNode label='Revision' value={`R${row.currentRevision?.revision ?? '—'}`} detail={configurationSummary(row)} tone='done' onClick={() => setDrawerTab('agent')} />
+                <LifecycleNode label='Dataset' value={row.selectedDataset?.name ?? 'Not created'} detail={datasetLifecycleDetail(row)} tone={lifecycleTones(row).dataset} recommended={nextStep.tab === 'dataset'} onClick={() => setDrawerTab('dataset')} />
+                <LifecycleNode label='Evaluation' value={row.latestRun ? STAGE_META[row.stage].label : 'Not started'} detail={row.latestRun ? `${row.progress}% complete` : 'Waiting for Dataset'} tone={lifecycleTones(row).run} recommended={nextStep.tab === 'run'} onClick={() => setDrawerTab('run')} />
+                <LifecycleNode label='Result' value={row.result} detail={resultActionLabel(row)} tone={lifecycleTones(row).result} recommended={nextStep.tab === 'result'} onClick={() => setDrawerTab('result')} />
               </div>
+              <NextStepCallout step={nextStep} onNavigate={setDrawerTab} />
               {row.stage === 'FAILED' ? (
                 <div className='space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4'>
                   <div className='flex items-center gap-2 font-medium text-destructive'><ShieldAlert className='size-4' />Recovery actions</div>
                   <div className='grid gap-2 sm:grid-cols-2'>
                     <Button variant='outline' className='justify-start' onClick={() => setDrawerTab('run')}><FlaskConical />Review failed cases</Button>
-                    <Button variant='outline' className='justify-start' onClick={() => setDrawerTab('agent')}><Bot />Check Agent config</Button>
+                    <Button variant='outline' className='justify-start' onClick={() => setDrawerTab('agent')}><Bot />Check {KIND_META[row.target.kind].label} config</Button>
                     <Button variant='outline' className='justify-start' onClick={() => setDrawerTab('dataset')}><Database />Check Test Cases</Button>
                     <Button className='justify-start' onClick={startEvaluation}><Play />Retry evaluation</Button>
                   </div>
@@ -405,26 +507,82 @@ function WorkspaceDrawer({
               {row.isStale ? <div className='rounded-md border border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200'><strong>Re-evaluation required.</strong> The latest completed run is pinned to an older Target or published Dataset revision.</div> : null}
             </TabsContent>
             <TabsContent value='agent' className='space-y-5 pt-5'>
-              <EvaluationTargetDetail targetId={row.target.id} embedded onEvaluate={() => setDrawerTab('run')} />
+              <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 px-4 py-3'>
+                <div className='min-w-0'>
+                  <p className='text-xs font-medium text-muted-foreground'>Latest report</p>
+                  <p className='mt-1 text-sm font-medium'>{row.latestReport?.summary ?? 'No report available.'}</p>
+                </div>
+                <div className='flex items-center gap-2'>
+                  {row.latestReport ? <EvaluationLayerStatusBadge status={row.latestReport.status} /> : null}
+                  <Button
+                    aria-expanded={agentDetailsOpen}
+                    size='sm'
+                    variant='outline'
+                    onClick={() => setAgentDetailsOpen((current) => !current)}
+                  >
+                    {agentDetailsOpen ? 'Hide details' : 'Details'}
+                  </Button>
+                </div>
+              </div>
+              <NextStepCallout
+                step={{
+                  tab: 'dataset',
+                  label: 'Choose or generate a Dataset',
+                  description: 'Use representative Test Cases before starting the evaluation.',
+                }}
+                onNavigate={setDrawerTab}
+              />
+              {agentDetailsOpen ? <EvaluationTargetDetail targetId={row.target.id} embedded onEvaluate={() => setDrawerTab('run')} /> : null}
             </TabsContent>
             <TabsContent value='dataset' className='space-y-5 pt-5'>
-              <div className='flex flex-wrap items-end justify-between gap-3 rounded-lg border bg-card p-3'>
+              <div className='rounded-lg border bg-card p-3'>
                 {targetDatasets.length ? <label className='grid min-w-64 flex-1 gap-2 text-xs font-medium text-muted-foreground'>Dataset<select className='h-10 rounded-md border bg-background px-3 text-sm text-foreground' value={row.selectedDataset?.id ?? ''} onChange={(event) => store.selectActiveDataset(event.target.value)}>{targetDatasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}</select></label> : null}
-                <Button variant='outline' onClick={onCreateDataset}><Plus />Create Dataset</Button>
               </div>
-              {row.selectedDataset ? <EvaluationDatasetDetail key={row.selectedDataset.id} datasetId={row.selectedDataset.id} embedded onEvaluate={() => setDrawerTab('run')} /> : <p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>Create a Dataset to add, generate, import, and publish Test Cases.</p>}
+              {row.selectedDataset ? <EvaluationDatasetDetail key={row.selectedDataset.id} datasetId={row.selectedDataset.id} compact embedded onCreateDataset={onCreateDataset} onEvaluate={() => setDrawerTab('run')} /> : <div className='space-y-4'><p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>Create a Dataset before generating Test Cases.</p><Button onClick={onCreateDataset}><Plus />Create Dataset</Button></div>}
             </TabsContent>
             <TabsContent value='run' className='space-y-5 pt-5'>
               {row.latestRun ? <EvaluationRunDetail key={row.latestRun.id} runId={row.latestRun.id} embedded /> : <p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>No Evaluation has been started for this Dataset.</p>}
-              <Button disabled={row.stage === 'RUNNING' || !row.publishedRevision} onClick={startEvaluation}><Play />{!row.publishedRevision ? 'Publish Test Cases first' : row.stage === 'RUNNING' ? 'Evaluation running' : row.latestRun ? 'Run again' : 'Start evaluation'}</Button>
+              {guardrailEvaluationRestricted ? <div className='rounded-lg border border-amber-500/35 bg-amber-500/10 p-4'><div className='flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-200'><ShieldAlert className='size-4' />Admin only</div><p className='mt-1 text-sm text-muted-foreground'>Guardrail evaluation can only be started or rerun by the Admin role. Existing runs and results remain visible for audit.</p></div> : <>
+                <Button disabled={row.stage === 'RUNNING' || !row.publishedRevision} onClick={startEvaluation}><Play />{!row.publishedRevision ? 'Publish Test Cases first' : row.stage === 'RUNNING' ? 'Evaluation running' : row.latestRun ? 'Run again' : 'Start evaluation'}</Button>
+                <NextStepCallout
+                  step={row.latestReport ? {
+                    tab: 'result',
+                    label: 'Review result',
+                    description: 'The evaluation is complete. Review its Summary and Reason.',
+                  } : {
+                    tab: 'run',
+                    label: row.latestRun ? 'Continue evaluation' : 'Start evaluation',
+                    description: 'Run the prepared Dataset to produce a result.',
+                  }}
+                  onNavigate={(tab) => {
+                    if (tab === 'run' && !row.latestReport) startEvaluation();
+                    else setDrawerTab(tab);
+                  }}
+                />
+              </>}
             </TabsContent>
             <TabsContent value='result' className='space-y-5 pt-5'>
-              {row.latestReport ? <EvaluationReportDetail key={row.latestReport.id} reportId={row.latestReport.id} embedded /> : <p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>A completed Evaluation is required before a Report is available.</p>}
+              <div className='rounded-lg border bg-muted/20 p-4'>
+                <div className='grid gap-4 sm:grid-cols-2'>
+                  <div><p className='text-xs font-medium text-muted-foreground'>Summary</p><p className='mt-1 text-sm'>{row.latestReport?.summary ?? 'No report available.'}</p></div>
+                  <div><p className='text-xs font-medium text-muted-foreground'>Reason</p><p className='mt-1 text-sm'>{reportReason(row)}</p></div>
+                </div>
+                {row.latestReport ? <div className='mt-3 flex justify-end'><Button aria-expanded={resultDetailsOpen} size='sm' variant='outline' onClick={() => setResultDetailsOpen((current) => !current)}>{resultDetailsOpen ? 'Hide details' : 'Details'}</Button></div> : null}
+              </div>
+              <NextStepCallout
+                step={{
+                  tab: 'run',
+                  label: row.latestReport ? 'Run evaluation again' : 'Start evaluation',
+                  description: row.latestReport ? 'Use the current result to decide whether another run is needed.' : 'Complete an evaluation to create a result.',
+                }}
+                onNavigate={setDrawerTab}
+              />
+              {row.latestReport && resultDetailsOpen ? <EvaluationReportDetail key={row.latestReport.id} reportId={row.latestReport.id} embedded /> : null}
             </TabsContent>
           </Tabs>
         </div>
         <SheetFooter className='flex-row flex-wrap justify-end border-t'>
-          {!row.publishedRevision ? <Button onClick={() => setDrawerTab('dataset')}><Database />Prepare Test Cases</Button> : row.stage === 'FAILED' ? null : row.primaryAction === 'VIEW_RESULTS' && row.latestReport ? <Button onClick={() => setDrawerTab('result')}>View results<ArrowRight /></Button> : row.primaryAction === 'VIEW_PROGRESS' && row.latestRun ? <Button onClick={() => setDrawerTab('run')}>View progress<ArrowRight /></Button> : row.primaryAction === 'VIEW_PROGRESS' && row.selectedDataset ? <Button onClick={() => setDrawerTab('dataset')}>Continue Dataset<ArrowRight /></Button> : <Button onClick={startEvaluation}><Play />Run evaluation</Button>}
+          {guardrailEvaluationRestricted ? <Button disabled><ShieldAlert />Admin only</Button> : !row.publishedRevision ? <Button onClick={() => setDrawerTab('dataset')}><Database />Prepare Test Cases</Button> : row.stage === 'FAILED' ? null : row.primaryAction === 'VIEW_RESULTS' && row.latestReport ? <Button onClick={() => setDrawerTab('result')}>View results<ArrowRight /></Button> : row.primaryAction === 'VIEW_PROGRESS' && row.latestRun ? <Button onClick={() => setDrawerTab('run')}>View progress<ArrowRight /></Button> : row.primaryAction === 'VIEW_PROGRESS' && row.selectedDataset ? <Button onClick={() => setDrawerTab('dataset')}>Continue Dataset<ArrowRight /></Button> : <Button onClick={startEvaluation}><Play />Run evaluation</Button>}
         </SheetFooter>
       </SheetContent>
     </Sheet>
@@ -487,19 +645,19 @@ function UnifiedWorkspace({
           <div className='grid gap-4 lg:grid-cols-[auto_1fr] lg:items-center'>
             <KindMark kind={row.target.kind} size='large' />
             <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
-              <div><p className='text-xs text-muted-foreground'>Agent revision</p><p className='font-medium'>R{row.currentRevision?.revision ?? '—'}</p></div>
+              <div><p className='text-xs text-muted-foreground'>{KIND_META[row.target.kind].label} revision</p><p className='font-medium'>R{row.currentRevision?.revision ?? '—'}</p></div>
               <div><p className='text-xs text-muted-foreground'>Test Case</p><p className='truncate font-medium'>{row.selectedDataset?.name ?? 'Not created'}</p></div>
               <div><p className='text-xs text-muted-foreground'>Evaluation</p><p className='font-medium'>{row.latestRun?.status ?? 'Not started'}</p></div>
               <div><p className='text-xs text-muted-foreground'>Latest result</p><p className='font-medium'>{row.result}</p><p className='text-xs text-muted-foreground'>{resultActionLabel(row)}</p></div>
             </div>
           </div>
-          {row.isStale ? <div className='rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'><strong>Re-evaluation required.</strong> The active Agent or published Test Case revision changed after the latest run.</div> : null}
+          {row.isStale ? <div className='rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'><strong>Re-evaluation required.</strong> The active Target or published Test Case revision changed after the latest run.</div> : null}
         </CardContent>
       </Card>
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as UnifiedWorkspaceTab)}>
         <TabsList variant='line' className='sticky top-0 z-10 w-full justify-start bg-background py-1'>
-          <TabsTrigger value='agent'>1. Agent</TabsTrigger>
+          <TabsTrigger value='agent'>1. {KIND_META[row.target.kind].label}</TabsTrigger>
           <TabsTrigger value='dataset'>2. Test Case</TabsTrigger>
           <TabsTrigger value='evaluation'>3. Evaluation</TabsTrigger>
         </TabsList>
@@ -561,7 +719,7 @@ function UnifiedWorkspace({
 function EmptyCatalog({ filtered }: { filtered: boolean }) {
   return (
     <div className='grid min-h-52 place-items-center rounded-lg border border-dashed p-8 text-center'>
-      <div><Search className='mx-auto size-7 text-muted-foreground' /><p className='mt-3 font-medium'>{filtered ? 'No evaluations match these filters' : 'No evaluation targets yet'}</p><p className='mt-1 text-sm text-muted-foreground'>{filtered ? 'Clear or change the filters to see more results.' : 'Create a Target to begin the evaluation workflow.'}</p></div>
+      <div><Search className='mx-auto size-7 text-muted-foreground' /><p className='mt-3 font-medium'>{filtered ? 'No evaluations match these filters' : 'No evaluation targets yet'}</p><p className='mt-1 text-sm text-muted-foreground'>{filtered ? 'Clear or change the filters to see more results.' : 'Targets created in connected sources appear here automatically.'}</p></div>
     </div>
   );
 }
@@ -579,7 +737,6 @@ export function EvaluationCatalogPage() {
   const [pageSize, setPageSize] = useState(12);
   const [selectedTargetId, setSelectedTargetId] = useState('');
   const [drawerTargetId, setDrawerTargetId] = useState('');
-  const [targetEditor, setTargetEditor] = useState<{ open: boolean; targetId?: string }>({ open: false });
   const [datasetEditorOpen, setDatasetEditorOpen] = useState(false);
 
   const baseRows = useMemo(() => {
@@ -643,8 +800,6 @@ export function EvaluationCatalogPage() {
     <section className='space-y-5 max-sm:[&_[data-slot=button]]:min-h-11'>
       <PageHeader
         title='Evaluations'
-        badge={<Badge variant='outline'>Frontend demo</Badge>}
-        actions={<Button variant='outline' onClick={() => setTargetEditor({ open: true })}><Plus />Create target</Button>}
       />
 
       <Card>
@@ -654,14 +809,12 @@ export function EvaluationCatalogPage() {
               <Search className='pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground' />
               <Input className='pl-9' value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search targets, Datasets, results, or IDs' />
             </label>
-            <label className='grid gap-1 text-xs text-muted-foreground'>Type<select className='h-9 min-w-40 rounded-md border bg-background px-3 text-sm text-foreground' value={kind} onChange={(event) => setKind(event.target.value as KindFilter)}><option value='all'>All types</option>{Object.entries(KIND_META).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</select></label>
-            <label className='grid gap-1 text-xs text-muted-foreground'>Sort<select className='h-9 min-w-44 rounded-md border bg-background px-3 text-sm text-foreground' value={sort} onChange={(event) => setSort(event.target.value as CatalogSort)}><option value='updated'>Recently updated</option><option value='name'>Name</option><option value='stage'>Lifecycle stage</option></select></label>
           </div>
           <div className='flex gap-1 overflow-x-auto border-y py-2'>
             {STAGE_ORDER.map((value) => <Button key={value} size='sm' variant={stage === value ? 'secondary' : 'ghost'} onClick={() => setStage(value)} className='shrink-0'>{value === 'ALL' ? 'All' : STAGE_META[value].label}<Badge variant='outline' className='ml-1'>{stageCounts[value]}</Badge></Button>)}
           </div>
           <div className='flex flex-wrap items-end justify-between gap-3'>
-            <p className='font-medium'>{filteredRows.length} evaluation target{filteredRows.length === 1 ? '' : 's'}</p>
+            <label className='grid gap-1 text-xs text-muted-foreground'>Sort<select className='h-9 min-w-44 rounded-md border bg-background px-3 text-sm text-foreground' value={sort} onChange={(event) => setSort(event.target.value as CatalogSort)}><option value='updated'>Recently updated</option><option value='name'>Name</option><option value='stage'>Lifecycle stage</option></select></label>
             <div className='flex rounded-md border p-1'>
               <Button size='sm' variant={view === 'cards' ? 'secondary' : 'ghost'} onClick={() => setView('cards')}><LayoutGrid />Cards</Button>
               <Button size='sm' variant={view === 'list' ? 'secondary' : 'ghost'} onClick={() => setView('list')}><List />List</Button>
@@ -671,7 +824,7 @@ export function EvaluationCatalogPage() {
         </CardContent>
       </Card>
 
-      {!visibleRows.length ? <EmptyCatalog filtered={Boolean(query || kind !== 'all' || stage !== 'ALL')} /> : view === 'cards' ? <div className='grid gap-4 md:grid-cols-2 2xl:grid-cols-3'>{visibleRows.map((row) => <CatalogCard key={row.target.id} row={row} onOpen={openDrawer} />)}</div> : view === 'list' ? <CatalogList rows={visibleRows} onOpen={openDrawer} /> : <LifecycleList rows={visibleRows} onOpen={openDrawer} />}
+      {!visibleRows.length ? <EmptyCatalog filtered={Boolean(query || kind !== 'all' || stage !== 'ALL')} /> : view === 'cards' ? <div className='grid gap-4 md:grid-cols-2 2xl:grid-cols-3'>{visibleRows.map((row) => <CatalogCard key={row.target.id} row={row} onOpen={openDrawer} />)}</div> : view === 'list' ? <CatalogList rows={visibleRows} kind={kind} onKindChange={setKind} onOpen={openDrawer} /> : <LifecycleList rows={visibleRows} onOpen={openDrawer} />}
 
       {filteredRows.length > pageSize ? <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3 text-sm'><span className='text-muted-foreground'>Page {page} of {pageCount}</span><div className='flex items-center gap-2'><label className='text-xs text-muted-foreground'>Rows <select className='ml-1 h-9 rounded-md border bg-background px-2 text-foreground' value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}><option value={6}>6</option><option value={12}>12</option><option value={24}>24</option></select></label><Button size='sm' variant='outline' disabled={page === 1} onClick={() => setPage((value) => value - 1)}>Previous</Button><Button size='sm' variant='outline' disabled={page === pageCount} onClick={() => setPage((value) => value + 1)}>Next</Button></div></div> : null}
 
@@ -679,10 +832,6 @@ export function EvaluationCatalogPage() {
         row={drawerRow}
         open={Boolean(drawerRow)}
         onOpenChange={(open) => { if (!open) setDrawerTargetId(''); }}
-        onNewRevision={() => {
-          if (!drawerRow) return;
-          setTargetEditor({ open: true, targetId: drawerRow.target.id });
-        }}
         onCreateDataset={() => {
           if (!drawerRow) return;
           activate(drawerRow);
@@ -690,7 +839,6 @@ export function EvaluationCatalogPage() {
         }}
       />
 
-      <TargetEditor key={targetEditor.targetId ?? 'new-target'} open={targetEditor.open} onOpenChange={(open) => setTargetEditor((current) => ({ ...current, open }))} {...(targetEditor.targetId ? { targetId: targetEditor.targetId } : {})} />
       <DatasetEditor open={datasetEditorOpen} onOpenChange={setDatasetEditorOpen} />
     </section>
   );

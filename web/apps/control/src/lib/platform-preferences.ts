@@ -10,9 +10,7 @@ export function detectedTimezone(): string {
 }
 
 export function getPlatformTheme(): ThemePreference {
-  if (typeof window === "undefined") return "system";
-  const value = window.localStorage.getItem(themeKey);
-  return value === "light" || value === "dark" ? value : "system";
+  return "light";
 }
 
 export function getPlatformTimezone(): string {
@@ -25,16 +23,14 @@ export function applyPlatformPreferences(input: {
   timezone: string;
 }): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(themeKey, input.theme);
+  window.localStorage.setItem(themeKey, "light");
   window.localStorage.setItem(timezoneKey, input.timezone);
-  const dark =
-    input.theme === "dark" ||
-    (input.theme === "system" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.classList.toggle("dark", dark);
-  document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  document.documentElement.classList.remove("dark");
+  document.documentElement.style.colorScheme = "light";
   window.dispatchEvent(
-    new CustomEvent(PREFERENCES_CHANGED_EVENT, { detail: input }),
+    new CustomEvent(PREFERENCES_CHANGED_EVENT, {
+      detail: { ...input, theme: "light" },
+    }),
   );
 }
 

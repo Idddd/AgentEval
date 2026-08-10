@@ -1,4 +1,4 @@
-export type EvaluationLayerTargetKind = "agent" | "mcp" | "kb" | "skill";
+export type EvaluationLayerTargetKind = "agent" | "mcp" | "kb" | "skill" | "guardrail";
 
 export interface EvaluationLayerTarget {
   id: string;
@@ -37,6 +37,9 @@ export interface EvaluationLayerTargetRevision {
   endpoint?: string;
   sources?: EvaluationLayerResource[];
   version?: string;
+  guardrailStages?: Array<"INPUT" | "OUTPUT" | "TOOL_CALL">;
+  policyCount?: number;
+  sourceStatus?: "CONNECTED" | "OFFLINE";
   tools: EvaluationLayerTool[];
   createdAt: string;
 }
@@ -111,6 +114,16 @@ export interface EvaluationLayerReport {
   status: "READY" | "FAILED";
   summary: string;
   createdAt: string;
+}
+
+export interface EvaluationLayerGuardrailApproval {
+  id: string;
+  reportId: string;
+  targetRevisionId: string;
+  status: "APPROVED" | "REJECTED";
+  actor: string;
+  decidedAt: string;
+  reason?: string;
 }
 
 export interface EvaluationLayerReflection {
@@ -267,6 +280,7 @@ export interface EvaluationLayerState {
   datasetRevisions: EvaluationLayerDatasetRevision[];
   runs: EvaluationLayerRun[];
   reports: EvaluationLayerReport[];
+  guardrailApprovals: EvaluationLayerGuardrailApproval[];
   reflections: EvaluationLayerReflection[];
   traces: EvaluationLayerTrace[];
   evaluators: EvaluationLayerEvaluator[];

@@ -3,16 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowUpRight,
-  Check,
   CircleUserRound,
   Clock3,
   FolderKanban,
   KeyRound,
   MapPin,
-  Monitor,
-  Moon,
   ShieldCheck,
-  Sun,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { ProjectAvatar } from "@/components/project/project-item";
@@ -33,13 +29,11 @@ import {
   applyPlatformPreferences,
   detectedTimezone,
 } from "@/lib/platform-preferences";
-import { cn } from "@/lib/utils";
 import {
   getPersonalProfile,
   personalProfileQueryKey,
   resetLocalPassword,
   updatePersonalProfile,
-  type ThemePreference,
 } from "@/services/personal-profile";
 
 export const Route = createFileRoute("/$projectId/profile")({
@@ -79,7 +73,6 @@ function MyAccountPage() {
     queryFn: getPersonalProfile,
   });
   const [city, setCity] = useState("");
-  const [theme, setTheme] = useState<ThemePreference>("system");
   const [timezone, setTimezone] = useState(detectedTimezone);
   const [now, setNow] = useState(() => new Date());
   const timezones = useMemo(getSupportedTimezones, []);
@@ -87,7 +80,6 @@ function MyAccountPage() {
   useEffect(() => {
     if (!profile.data) return;
     setCity(profile.data.city);
-    setTheme(profile.data.theme);
     setTimezone(profile.data.timezone);
   }, [profile.data]);
 
@@ -100,7 +92,7 @@ function MyAccountPage() {
     mutationFn: () =>
       updatePersonalProfile({
         city: city.trim(),
-        theme,
+        theme: "light",
         timezone,
       }),
     onSuccess: (data) => {
@@ -109,14 +101,9 @@ function MyAccountPage() {
     },
   });
 
-  const chooseTheme = (nextTheme: ThemePreference) => {
-    setTheme(nextTheme);
-    applyPlatformPreferences({ theme: nextTheme, timezone });
-  };
-
   const chooseTimezone = (nextTimezone: string) => {
     setTimezone(nextTimezone);
-    applyPlatformPreferences({ theme, timezone: nextTimezone });
+    applyPlatformPreferences({ theme: "light", timezone: nextTimezone });
   };
 
   if (profile.isPending) {
@@ -142,7 +129,6 @@ function MyAccountPage() {
   const current = profile.data;
   const dirty =
     city.trim() !== current.city ||
-    theme !== current.theme ||
     timezone !== current.timezone;
   const localTime = new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
@@ -226,35 +212,6 @@ function MyAccountPage() {
                     settings.
                   </p>
                 </div>
-
-                <fieldset className="space-y-2">
-                  <legend className="text-sm font-medium">Theme</legend>
-                  <div className="grid max-w-xl gap-2 sm:grid-cols-3">
-                    {([
-                      ["system", Monitor, "System"],
-                      ["light", Sun, "Light"],
-                      ["dark", Moon, "Dark"],
-                    ] as const).map(([value, Icon, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        aria-pressed={theme === value}
-                        className={cn(
-                          "flex min-h-12 items-center gap-2 rounded-md border px-3 text-sm outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/35",
-                          theme === value &&
-                            "border-primary/40 bg-primary/[0.07] text-primary",
-                        )}
-                        onClick={() => chooseTheme(value)}
-                      >
-                        <Icon className="size-4" />
-                        <span>{label}</span>
-                        {theme === value ? (
-                          <Check className="ml-auto size-4" />
-                        ) : null}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
 
                 <div className="space-y-2">
                   <Label htmlFor="account-timezone">Local time zone</Label>

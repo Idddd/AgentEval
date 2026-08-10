@@ -55,7 +55,7 @@ import { DemoRoleProvider, useDemoRole } from "@/hooks/use-demo-role";
 import type { ProjectRole } from "@/types/project";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { applyPlatformPreferences, getPlatformTheme } from "@/lib/platform-preferences";
+import { applyPlatformPreferences } from "@/lib/platform-preferences";
 import {
   getPersonalProfile,
   personalProfileQueryKey,
@@ -412,18 +412,6 @@ export function AppShell() {
       applyPlatformPreferences(account.data);
     }
   }, [account.data]);
-
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const syncSystemTheme = () => {
-      if (getPlatformTheme() === "system") {
-        document.documentElement.classList.toggle("dark", media.matches);
-        document.documentElement.style.colorScheme = media.matches ? "dark" : "light";
-      }
-    };
-    media.addEventListener("change", syncSystemTheme);
-    return () => media.removeEventListener("change", syncSystemTheme);
-  }, []);
 
   useEffect(() => {
     setSidebarOpen(window.localStorage.getItem("tasklattice.sidebar.collapsed") !== "true");

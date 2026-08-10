@@ -9,10 +9,10 @@ describe("Evaluation layer fixtures", () => {
   it("requires every target and revision to declare a supported kind", () => {
     const state = cloneEvaluationLayerFixtures();
     for (const target of state.targets) {
-      expect(["agent", "mcp", "kb", "skill"]).toContain(target.kind);
+      expect(["agent", "mcp", "kb", "skill", "guardrail"]).toContain(target.kind);
     }
     for (const revision of state.targetRevisions) {
-      expect(["agent", "mcp", "kb", "skill"]).toContain(revision.kind);
+      expect(["agent", "mcp", "kb", "skill", "guardrail"]).toContain(revision.kind);
     }
   });
 

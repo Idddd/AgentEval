@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { cloneEvaluationLayerFixtures } from '../fixture-validation';
 import type { EvaluationLayerDataset, EvaluationLayerDatasetRevision } from '../model';
-import { workspaceRows, workspaceTargetView } from './workspace-view-model';
+import { createEvaluationLayerStore } from '../mock-store';
+import {
+  workspaceNextStep,
+  workspaceRows,
+  workspaceTargetView,
+} from './workspace-view-model';
 
 const OFFICE_TARGET_ID = 'demo-permission-compliance';
 
@@ -143,7 +148,7 @@ describe('evaluation catalog workspace view model', () => {
 
     expect(stages).toMatchObject({
       'demo-onboarding-assistant': 'NOT_EVALUATED',
-      'demo-invoice-classification': 'BUILDING_DATASET',
+      'demo-invoice-classification': 'NOT_EVALUATED',
       'demo-deployment-monitor': 'RUNNING',
       'demo-operations-mcp': 'COMPLETED',
       'demo-document-summarization': 'COMPLETED',
@@ -154,6 +159,80 @@ describe('evaluation catalog workspace view model', () => {
       stage: 'COMPLETED',
       risk: { kind: 'FINDINGS', count: 1 },
     });
+  });
+
+  it('uses one not-evaluated stage for missing and draft Test Cases', () => {
+    const rows = workspaceRows(cloneEvaluationLayerFixtures());
+
+    expect({
+      withoutDataset: rows.find(
+        (row) => row.target.id === 'demo-onboarding-assistant',
+      )?.stage,
+      withDraft: rows.find(
+        (row) => row.target.id === 'demo-invoice-classification',
+      )?.stage,
+    }).toEqual({
+      withoutDataset: 'NOT_EVALUATED',
+      withDraft: 'NOT_EVALUATED',
+    });
+  });
+
+  it('routes every lifecycle state to the next actionable workflow tab', () => {
+    const rows = workspaceRows(cloneEvaluationLayerFixtures());
+    const nextTabs = Object.fromEntries(
+      rows.map((row) => [row.target.id, workspaceNextStep(row).tab]),
+    );
+
+    expect(nextTabs).toMatchObject({
+      'demo-onboarding-assistant': 'dataset',
+      'demo-invoice-classification': 'dataset',
+      'demo-deployment-monitor': 'run',
+      'demo-operations-mcp': 'result',
+      'demo-permission-compliance-baseline': 'run',
+      'demo-policy-kb': 'run',
+    });
+  });
+
+  it('routes a completed Guardrail evaluation through revision approval', () => {
+    let sequence = 0;
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: () => `approval-flow-${sequence++}`,
+      now: () => '2026-08-10T10:00:00.000Z',
+      random: () => 0.5,
+    });
+    const revision = store.getState().targetRevisions.find(
+      (item) => item.targetId === 'demo-pii-guardrail',
+    )!;
+    const dataset = store.getState().datasetRevisions.find(
+      (item) => item.targetId === 'demo-pii-guardrail',
+    )!;
+    const created = store.createRun({
+      targetRevisionId: revision.id,
+      datasetRevisionId: dataset.id,
+      evaluatorIds: ['permission-compliance'],
+    });
+    if (!created.ok) throw new Error(created.error);
+    let complete = false;
+    while (!complete) {
+      const result = store.advanceRun(created.value.runId);
+      if (!result.ok) throw new Error(result.error);
+      complete = result.value.complete;
+    }
+
+    const pending = workspaceTargetView(store.getState(), 'demo-pii-guardrail')!;
+    expect(pending.approvalStatus).toBe('PENDING');
+    expect(workspaceNextStep(pending)).toMatchObject({
+      tab: 'result',
+      label: 'Review and approve revision',
+    });
+
+    const report = store.getState().reports.find(
+      (item) => item.runId === created.value.runId,
+    )!;
+    store.decideGuardrailApproval(report.id, 'APPROVED');
+    expect(
+      workspaceTargetView(store.getState(), 'demo-pii-guardrail')?.approvalStatus,
+    ).toBe('APPROVED');
   });
 
   it('reselects latest Run and revisions inside the active Dataset', () => {
@@ -193,9 +272,9 @@ describe('evaluation catalog workspace view model', () => {
       publishedRevision: { id: published.id },
       latestRun: undefined,
       latestReport: undefined,
-      stage: 'BUILDING_DATASET',
+      stage: 'NOT_EVALUATED',
       isStale: false,
-      primaryAction: 'VIEW_PROGRESS',
+      primaryAction: 'RUN_EVALUATION',
     });
   });
 });

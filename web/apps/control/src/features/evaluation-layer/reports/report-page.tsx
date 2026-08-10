@@ -18,6 +18,7 @@ import {
   formatCost,
   formatPercent,
 } from "../shared/evaluation-ui";
+import { GuardrailReport } from "./guardrail-report";
 
 export function EvaluationReportDetail({ reportId, embedded = false }: { reportId: string; embedded?: boolean }) {
   const state = useEvaluationLayerState();
@@ -47,6 +48,12 @@ export function EvaluationReportDetail({ reportId, embedded = false }: { reportI
   const run = state.runs.find((item) => item.id === report.runId)!;
   const target = state.targets.find((item) => item.id === run.targetId)!;
   const dataset = state.datasets.find((item) => item.id === run.datasetId)!;
+  const targetRevision = state.targetRevisions.find(
+    (item) => item.id === run.targetRevisionId,
+  )!;
+  const datasetRevision = state.datasetRevisions.find(
+    (item) => item.id === run.datasetRevisionId,
+  )!;
   const traces = state.traces.filter((item) => item.runId === run.id);
   const done = run.results.filter((item) => item.status !== "PENDING");
   const failures = done.filter(
@@ -69,6 +76,32 @@ export function EvaluationReportDetail({ reportId, embedded = false }: { reportI
   const reflections = state.reflections.filter(
     (item) => item.reportId === report.id,
   );
+  if (target.kind === "guardrail") {
+    const approval = state.guardrailApprovals.find(
+      (item) => item.reportId === report.id,
+    );
+    return (
+      <div className="space-y-6">
+        <KeyValueGrid
+          items={([
+            ...(embedded ? [] : [["Report", report.id], ["Evaluation", run.id]]),
+            ["Guardrail", target.name],
+            ["Test Case", dataset.name],
+            ["Status", <EvaluationLayerStatusBadge status={report.status} />],
+            ["Created", new Date(report.createdAt).toLocaleString()],
+          ] as [string, ReactNode][])}
+        />
+        <GuardrailReport
+          cases={datasetRevision.cases}
+          results={run.results}
+          traces={traces}
+          revisionLabel={`R${targetRevision.revision} · v${targetRevision.version ?? "—"}`}
+          approval={approval}
+          onDecision={(status) => store.decideGuardrailApproval(report.id, status)}
+        />
+      </div>
+    );
+  }
   return (
     <div className="space-y-6">
       <KeyValueGrid

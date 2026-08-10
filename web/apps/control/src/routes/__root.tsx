@@ -64,7 +64,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{const t=localStorage.getItem('tasklattice.account.theme')||'system';const d=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);document.documentElement.style.colorScheme=d?'dark':'light'}catch{}",
+              "try{localStorage.setItem('tasklattice.account.theme','light');document.documentElement.classList.remove('dark');document.documentElement.style.colorScheme='light'}catch{}",
           }}
         />
       </head>

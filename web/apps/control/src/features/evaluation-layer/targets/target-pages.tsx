@@ -40,9 +40,10 @@ const KIND_LABELS: Record<EvaluationLayerTargetKind, string> = {
   mcp: 'MCP',
   kb: 'KB',
   skill: 'Skill',
+  guardrail: 'Guardrail',
 };
 
-const targetFilters = ['All targets', 'Agents', 'MCP servers', 'Knowledge bases', 'Skills'] as const;
+const targetFilters = ['All targets', 'Agents', 'MCP servers', 'Knowledge bases', 'Skills', 'Guardrails'] as const;
 const filterToKind: Partial<
   Record<(typeof targetFilters)[number], EvaluationLayerTargetKind>
 > = {
@@ -50,6 +51,7 @@ const filterToKind: Partial<
   'MCP servers': 'mcp',
   'Knowledge bases': 'kb',
   Skills: 'skill',
+  Guardrails: 'guardrail',
 };
 
 const kbCatalog: EvaluationLayerResource[] = [
@@ -89,6 +91,9 @@ function configurationSummary(revision: EvaluationLayerTargetRevision) {
   }
   if (revision.kind === 'kb') {
     return `${revision.sources?.length ?? 0} source${(revision.sources?.length ?? 0) === 1 ? '' : 's'}`;
+  }
+  if (revision.kind === 'guardrail') {
+    return `v${revision.version ?? '?'} · ${revision.policyCount ?? 0} policies · ${revision.guardrailStages?.join(' / ') ?? 'no stages'}`;
   }
   const parts = ['Model'];
   if (revision.prompt?.trim()) parts.push('Prompt');
@@ -384,7 +389,9 @@ export function EvaluationTargetDetail({
         ? [['Sources', `${current.sources?.length ?? 0}`], ['Revision', `R${current.revision}`]]
         : current.kind === 'skill'
           ? [['Version', current.version ?? 'Not configured'], ['Revision', `R${current.revision}`], ['Instructions', current.prompt?.trim() ? 'Configured' : 'None']]
-          : [['Model', current.model], ['Revision', `R${current.revision}`], ['Prompt', current.prompt?.trim() ? 'Configured' : 'None']];
+          : current.kind === 'guardrail'
+            ? [['Version', current.version ?? 'Not configured'], ['Revision', `R${current.revision}`], ['Check stages', current.guardrailStages?.join(', ') ?? 'None'], ['Policies', current.policyCount ?? 0], ['Source', current.sourceStatus ?? 'OFFLINE']]
+            : [['Model', current.model], ['Revision', `R${current.revision}`], ['Prompt', current.prompt?.trim() ? 'Configured' : 'None']];
   const evaluate = () => {
     store.selectActiveTarget(target.id);
     if (onEvaluate) {
@@ -400,11 +407,11 @@ export function EvaluationTargetDetail({
           <AgentGardenIcon type='custom' catalogIcon={target.icon} />
           <div><h2 className='text-2xl font-semibold'>{target.name}</h2><p className='mt-1 text-sm text-muted-foreground'>{target.description || 'No description recorded.'}</p><p className='mt-1 text-xs text-muted-foreground'>Revision {current.revision} · {configurationSummary(current)}</p></div>
         </div>
-        <div className='flex gap-2'><Button variant='outline' onClick={() => setEditorOpen(true)}><Plus className='size-4' />New revision</Button><Button onClick={evaluate}>Evaluate</Button></div>
+        <div className='flex gap-2'>{target.kind !== 'guardrail' ? <Button variant='outline' onClick={() => setEditorOpen(true)}><Plus className='size-4' />New revision</Button> : null}<Button onClick={evaluate}>Evaluate</Button></div>
       </div>
       <EvaluationSection title='Configuration'>
         <KeyValueGrid className='lg:grid-cols-3' items={configItems} />
-        <Tabs defaultValue={current.kind === 'skill' ? 'instructions' : current.kind === 'kb' ? 'sources' : 'tools'} className='mt-4'>
+        {current.kind !== 'guardrail' ? <Tabs defaultValue={current.kind === 'skill' ? 'instructions' : current.kind === 'kb' ? 'sources' : 'tools'} className='mt-4'>
           <TabsList>
             {current.kind !== 'kb' ? (
               <TabsTrigger value='tools'>{current.kind === 'mcp' ? 'Exposed tools' : 'Tools'} ({current.tools.length})</TabsTrigger>
@@ -416,7 +423,7 @@ export function EvaluationTargetDetail({
           <TabsContent value='tools'>{current.tools.length ? renderToolTable(current.tools) : emptyText('Tools')}</TabsContent>
           <TabsContent value='sources'>{current.sources?.length ? renderResourceTable(current.sources) : emptyText('Sources')}</TabsContent>
           <TabsContent value='instructions'><p className='text-sm text-muted-foreground'>{current.prompt?.trim() || 'No instructions configured.'}</p></TabsContent>
-        </Tabs>
+        </Tabs> : <p className='mt-4 text-sm text-muted-foreground'>Guardrail configuration is managed at its source. This page evaluates and approves the recorded revision.</p>}
       </EvaluationSection>
       <EvaluationSection title='Latest Report'>
         {latest ? (

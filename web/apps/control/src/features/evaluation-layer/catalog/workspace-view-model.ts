@@ -11,7 +11,6 @@ import { isLiveMonitoringRun } from '../mock-store';
 
 export type WorkspaceStage =
   | 'NOT_EVALUATED'
-  | 'BUILDING_DATASET'
   | 'RUNNING'
   | 'COMPLETED'
   | 'FAILED'
@@ -43,6 +42,7 @@ export interface WorkspaceRow {
   publishedRevision: EvaluationLayerDatasetRevision | undefined;
   latestRun: EvaluationLayerRun | undefined;
   latestReport: EvaluationLayerReport | undefined;
+  approvalStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | undefined;
   stage: WorkspaceStage;
   progress: number;
   result: string;
@@ -50,6 +50,12 @@ export interface WorkspaceRow {
   isStale: boolean;
   primaryAction: WorkspacePrimaryAction;
   updatedAt: string;
+}
+
+export interface WorkspaceNextStep {
+  tab: 'dataset' | 'run' | 'result';
+  label: string;
+  description: string;
 }
 
 function newest<T>(items: T[], timestamp: (item: T) => string, id: (item: T) => string) {
@@ -118,10 +124,9 @@ function riskFor(run: EvaluationLayerRun | undefined): WorkspaceRisk {
 
 function stageFor(
   run: EvaluationLayerRun | undefined,
-  draftRevision: EvaluationLayerDatasetRevision | undefined,
   isStale: boolean,
 ): WorkspaceStage {
-  if (!run) return draftRevision ? 'BUILDING_DATASET' : 'NOT_EVALUATED';
+  if (!run) return 'NOT_EVALUATED';
   if (run.status === 'QUEUED' || run.status === 'RUNNING') return 'RUNNING';
   if (run.status === 'FAILED') return 'FAILED';
   if (isStale) return 'NEEDS_RE_EVALUATION';
@@ -129,7 +134,7 @@ function stageFor(
 }
 
 function primaryActionFor(stage: WorkspaceStage): WorkspacePrimaryAction {
-  if (stage === 'RUNNING' || stage === 'BUILDING_DATASET') return 'VIEW_PROGRESS';
+  if (stage === 'RUNNING') return 'VIEW_PROGRESS';
   if (stage === 'COMPLETED') return 'VIEW_RESULTS';
   return 'RUN_EVALUATION';
 }
@@ -190,7 +195,13 @@ export function workspaceTargetView(
       (latestRun.targetRevisionId !== target.currentRevisionId ||
         latestRun.datasetRevisionId !== publishedRevision?.id),
   );
-  const stage = stageFor(latestRun, draftRevision, isStale);
+  const stage = stageFor(latestRun, isStale);
+  const guardrailApproval = latestReport
+    ? state.guardrailApprovals.find((item) => item.reportId === latestReport.id)
+    : undefined;
+  const approvalStatus = target.kind === 'guardrail' && latestReport
+    ? guardrailApproval?.status ?? 'PENDING'
+    : undefined;
 
   return {
     target,
@@ -200,6 +211,7 @@ export function workspaceTargetView(
     publishedRevision,
     latestRun,
     latestReport,
+    approvalStatus,
     stage,
     progress: progressFor(latestRun),
     result: resultFor(latestRun),
@@ -215,7 +227,60 @@ export function workspaceTargetView(
       latestRun?.startedAt,
       latestRun?.completedAt,
       latestReport?.createdAt,
+      guardrailApproval?.decidedAt,
     ]),
+  };
+}
+
+export function workspaceNextStep(row: WorkspaceRow): WorkspaceNextStep {
+  if (!row.publishedRevision) {
+    return {
+      tab: 'dataset',
+      label: 'Prepare and publish Test Cases',
+      description: 'A published Dataset is required before you can run this evaluation.',
+    };
+  }
+  if (row.stage === 'RUNNING') {
+    return {
+      tab: 'run',
+      label: 'View evaluation progress',
+      description: 'The evaluation is running. Open it to follow case progress.',
+    };
+  }
+  if (row.stage === 'FAILED') {
+    return {
+      tab: 'run',
+      label: 'Review failure and retry',
+      description: 'Review the failed cases before starting the evaluation again.',
+    };
+  }
+  if (row.stage === 'NEEDS_RE_EVALUATION') {
+    return {
+      tab: 'run',
+      label: 'Run evaluation again',
+      description: 'The Target or Dataset changed after the latest evaluation.',
+    };
+  }
+  if (row.stage === 'COMPLETED' && row.latestReport) {
+    if (row.approvalStatus === 'PENDING') {
+      return {
+        tab: 'result',
+        label: 'Review and approve revision',
+        description: 'The Guardrail evaluation passed and the current revision is ready for approval.',
+      };
+    }
+    return {
+      tab: 'result',
+      label: 'Review results',
+      description: 'The evaluation is complete and its report is ready to review.',
+    };
+  }
+  return {
+    tab: 'run',
+    label: row.latestRun ? 'View evaluation' : 'Start evaluation',
+    description: row.latestRun
+      ? 'Open the latest evaluation to review its outcome.'
+      : 'The Dataset is ready. Start the evaluation to produce results.',
   };
 }
 
