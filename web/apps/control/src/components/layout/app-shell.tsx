@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
+  Activity,
   Boxes,
   Bot,
   BrainCircuit,
@@ -12,6 +13,8 @@ import {
   Eye,
   FileLock2,
   FileClock,
+  ListFilter,
+  LockKeyhole,
   Network,
   Search,
   ServerCog,
@@ -85,6 +88,11 @@ type ProjectRoute =
   | "/$projectId/instances"
   | "/$projectId/requests/new"
   | "/$projectId/guardrails"
+  | "/$projectId/governance/guardrails"
+  | "/$projectId/governance/assignments"
+  | "/$projectId/governance/enforcements"
+  | "/$projectId/governance/integrations"
+  | "/$projectId/governance/evidence"
   | "/$projectId/access-policies"
   | "/$projectId/audit-logs"
   | "/$projectId/runtime-policies"
@@ -162,6 +170,36 @@ export const projectNavGroups: Array<{
     ],
   },
   {
+    label: "Guard Governance",
+    items: [
+      {
+        icon: ShieldCheck,
+        label: "Guardrails",
+        to: "/$projectId/governance/guardrails",
+      },
+      {
+        icon: ListFilter,
+        label: "Assignments",
+        to: "/$projectId/governance/assignments",
+      },
+      {
+        icon: LockKeyhole,
+        label: "Enforcements",
+        to: "/$projectId/governance/enforcements",
+      },
+      {
+        icon: Network,
+        label: "Integrations",
+        to: "/$projectId/governance/integrations",
+      },
+      {
+        icon: Activity,
+        label: "Evidence",
+        to: "/$projectId/governance/evidence",
+      },
+    ],
+  },
+  {
     label: "Evaluation",
     items: [
       { icon: CheckCircle2, label: "Eval", to: "/$projectId/evaluation/catalog", roles: SECURITY_EVAL_ROLES },
@@ -183,6 +221,7 @@ export function itemIsActive(item: NavItemDefinition, pathname: string, projectI
     item.to === "/$projectId/instances" ||
     item.to === "/$projectId/access-policies" ||
     item.to === "/$projectId/evaluations" ||
+    item.to === "/$projectId/governance/guardrails" ||
     item.to.startsWith("/$projectId/evaluation/")
   )
     return pathname === target || pathname.startsWith(`${target}/`);

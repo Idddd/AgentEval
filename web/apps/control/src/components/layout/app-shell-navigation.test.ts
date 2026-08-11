@@ -31,6 +31,40 @@ describe("Evaluation navigation", () => {
   });
 });
 
+describe("Guard Governance navigation", () => {
+  it("adds five isolated governance entries without replacing Security Guardrails", () => {
+    expect(
+      projectNavGroups
+        .find((group) => group.label === "Guard Governance")
+        ?.items.map((item) => item.label),
+    ).toEqual([
+      "Guardrails",
+      "Assignments",
+      "Enforcements",
+      "Integrations",
+      "Evidence",
+    ]);
+    expect(
+      projectNavGroups
+        .find((group) => group.label === "Security")
+        ?.items.some((item) => item.to === "/$projectId/guardrails"),
+    ).toBe(true);
+  });
+
+  it("keeps Guardrails active on a governance detail route", () => {
+    const guardrails = projectNavGroups
+      .find((group) => group.label === "Guard Governance")!
+      .items.find((item) => item.label === "Guardrails")!;
+    expect(
+      itemIsActive(
+        guardrails,
+        "/individual/governance/guardrails/guardrail-production",
+        "individual",
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("Role-based navigation whitelist", () => {
   it("shows every item to admin", () => {
     for (const group of projectNavGroups) {
@@ -40,12 +74,16 @@ describe("Role-based navigation whitelist", () => {
     }
   });
 
-  it("shows member everything except admin-only Guardrails", () => {
+  it("shows member every item allowed by its role whitelist", () => {
     for (const group of projectNavGroups) {
       expect(visibleLabels(group.label, "member")).toEqual(
-        group.items.filter((item) => item.label !== "Guardrails").map((item) => item.label),
+        group.items
+          .filter((item) => navItemVisibleForRole(item, "member"))
+          .map((item) => item.label),
       );
     }
+    expect(visibleLabels("Security", "member")).not.toContain("Guardrails");
+    expect(visibleLabels("Guard Governance", "member")).toContain("Guardrails");
   });
 
   it("restricts compliance to policy, behavior, and traceability surfaces", () => {

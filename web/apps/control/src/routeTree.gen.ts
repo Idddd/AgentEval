@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as ProjectIdIndexRouteImport } from './routes/$projectId/index'
 import { Route as ProjectIdCostRouteImport } from './routes/$projectId/cost'
 import { Route as ProjectIdEvaluationRouteImport } from './routes/$projectId/evaluation'
+import { Route as ProjectIdGovernanceRouteImport } from './routes/$projectId/governance'
 import { Route as ProjectIdGuardrailsRouteImport } from './routes/$projectId/guardrails'
 import { Route as ProjectIdKnowledgeBaseRouteImport } from './routes/$projectId/knowledge-base'
 import { Route as ProjectIdMcpServersRouteImport } from './routes/$projectId/mcp-servers'
@@ -35,6 +36,10 @@ import { Route as ProjectIdEvaluationOverviewRouteImport } from './routes/$proje
 import { Route as ProjectIdEvaluationSettingsRouteImport } from './routes/$projectId/evaluation/settings'
 import { Route as ProjectIdEvaluationsIndexRouteImport } from './routes/$projectId/evaluations/index'
 import { Route as ProjectIdEvaluationsNewRouteImport } from './routes/$projectId/evaluations/new'
+import { Route as ProjectIdGovernanceAssignmentsRouteImport } from './routes/$projectId/governance/assignments'
+import { Route as ProjectIdGovernanceEnforcementsRouteImport } from './routes/$projectId/governance/enforcements'
+import { Route as ProjectIdGovernanceEvidenceRouteImport } from './routes/$projectId/governance/evidence'
+import { Route as ProjectIdGovernanceIntegrationsRouteImport } from './routes/$projectId/governance/integrations'
 import { Route as ProjectIdInstancesIndexRouteImport } from './routes/$projectId/instances/index'
 import { Route as ProjectIdInstancesInstanceIdRouteImport } from './routes/$projectId/instances/$instanceId'
 import { Route as ProjectIdRequestsIndexRouteImport } from './routes/$projectId/requests/index'
@@ -54,6 +59,8 @@ import { Route as ProjectIdEvaluationsDatasetsDatasetIdRouteImport } from './rou
 import { Route as ProjectIdEvaluationsReportsReportIdRouteImport } from './routes/$projectId/evaluations/reports/$reportId'
 import { Route as ProjectIdEvaluationsRunsRunIdRouteImport } from './routes/$projectId/evaluations/runs/$runId'
 import { Route as ProjectIdEvaluationsTargetsTargetIdRouteImport } from './routes/$projectId/evaluations/targets/$targetId'
+import { Route as ProjectIdGovernanceGuardrailsIndexRouteImport } from './routes/$projectId/governance/guardrails/index'
+import { Route as ProjectIdGovernanceGuardrailsGuardrailIdRouteImport } from './routes/$projectId/governance/guardrails/$guardrailId'
 import { Route as ProjectIdSettingModelRoutingsRoutingIdRouteImport } from './routes/$projectId/setting/model-routings/$routingId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -79,6 +86,11 @@ const ProjectIdCostRoute = ProjectIdCostRouteImport.update({
 const ProjectIdEvaluationRoute = ProjectIdEvaluationRouteImport.update({
   id: '/$projectId/evaluation',
   path: '/$projectId/evaluation',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectIdGovernanceRoute = ProjectIdGovernanceRouteImport.update({
+  id: '/$projectId/governance',
+  path: '/$projectId/governance',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectIdGuardrailsRoute = ProjectIdGuardrailsRouteImport.update({
@@ -196,6 +208,30 @@ const ProjectIdEvaluationsNewRoute = ProjectIdEvaluationsNewRouteImport.update({
   path: '/$projectId/evaluations/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectIdGovernanceAssignmentsRoute =
+  ProjectIdGovernanceAssignmentsRouteImport.update({
+    id: '/assignments',
+    path: '/assignments',
+    getParentRoute: () => ProjectIdGovernanceRoute,
+  } as any)
+const ProjectIdGovernanceEnforcementsRoute =
+  ProjectIdGovernanceEnforcementsRouteImport.update({
+    id: '/enforcements',
+    path: '/enforcements',
+    getParentRoute: () => ProjectIdGovernanceRoute,
+  } as any)
+const ProjectIdGovernanceEvidenceRoute =
+  ProjectIdGovernanceEvidenceRouteImport.update({
+    id: '/evidence',
+    path: '/evidence',
+    getParentRoute: () => ProjectIdGovernanceRoute,
+  } as any)
+const ProjectIdGovernanceIntegrationsRoute =
+  ProjectIdGovernanceIntegrationsRouteImport.update({
+    id: '/integrations',
+    path: '/integrations',
+    getParentRoute: () => ProjectIdGovernanceRoute,
+  } as any)
 const ProjectIdInstancesIndexRoute = ProjectIdInstancesIndexRouteImport.update({
   id: '/$projectId/instances/',
   path: '/$projectId/instances/',
@@ -306,6 +342,18 @@ const ProjectIdEvaluationsTargetsTargetIdRoute =
     path: '/$projectId/evaluations/targets/$targetId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ProjectIdGovernanceGuardrailsIndexRoute =
+  ProjectIdGovernanceGuardrailsIndexRouteImport.update({
+    id: '/guardrails/',
+    path: '/guardrails/',
+    getParentRoute: () => ProjectIdGovernanceRoute,
+  } as any)
+const ProjectIdGovernanceGuardrailsGuardrailIdRoute =
+  ProjectIdGovernanceGuardrailsGuardrailIdRouteImport.update({
+    id: '/guardrails/$guardrailId',
+    path: '/guardrails/$guardrailId',
+    getParentRoute: () => ProjectIdGovernanceRoute,
+  } as any)
 const ProjectIdSettingModelRoutingsRoutingIdRoute =
   ProjectIdSettingModelRoutingsRoutingIdRouteImport.update({
     id: '/$projectId/setting/model-routings/$routingId',
@@ -318,6 +366,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
   '/$projectId/evaluation': typeof ProjectIdEvaluationRouteWithChildren
+  '/$projectId/governance': typeof ProjectIdGovernanceRouteWithChildren
   '/$projectId/guardrails': typeof ProjectIdGuardrailsRoute
   '/$projectId/knowledge-base': typeof ProjectIdKnowledgeBaseRoute
   '/$projectId/mcp-servers': typeof ProjectIdMcpServersRoute
@@ -335,6 +384,10 @@ export interface FileRoutesByFullPath {
   '/$projectId/evaluation/overview': typeof ProjectIdEvaluationOverviewRoute
   '/$projectId/evaluation/settings': typeof ProjectIdEvaluationSettingsRoute
   '/$projectId/evaluations/new': typeof ProjectIdEvaluationsNewRoute
+  '/$projectId/governance/assignments': typeof ProjectIdGovernanceAssignmentsRoute
+  '/$projectId/governance/enforcements': typeof ProjectIdGovernanceEnforcementsRoute
+  '/$projectId/governance/evidence': typeof ProjectIdGovernanceEvidenceRoute
+  '/$projectId/governance/integrations': typeof ProjectIdGovernanceIntegrationsRoute
   '/$projectId/instances/$instanceId': typeof ProjectIdInstancesInstanceIdRoute
   '/$projectId/requests/new': typeof ProjectIdRequestsNewRoute
   '/$projectId/access-policies/': typeof ProjectIdAccessPoliciesIndexRoute
@@ -355,16 +408,19 @@ export interface FileRoutesByFullPath {
   '/$projectId/evaluations/reports/$reportId': typeof ProjectIdEvaluationsReportsReportIdRoute
   '/$projectId/evaluations/runs/$runId': typeof ProjectIdEvaluationsRunsRunIdRoute
   '/$projectId/evaluations/targets/$targetId': typeof ProjectIdEvaluationsTargetsTargetIdRoute
+  '/$projectId/governance/guardrails/$guardrailId': typeof ProjectIdGovernanceGuardrailsGuardrailIdRoute
   '/$projectId/setting/model-routings/$routingId': typeof ProjectIdSettingModelRoutingsRoutingIdRoute
   '/$projectId/evaluation/datasets/': typeof ProjectIdEvaluationDatasetsIndexRoute
   '/$projectId/evaluation/runs/': typeof ProjectIdEvaluationRunsIndexRoute
   '/$projectId/evaluation/targets/': typeof ProjectIdEvaluationTargetsIndexRoute
   '/$projectId/evaluation/traces/': typeof ProjectIdEvaluationTracesIndexRoute
+  '/$projectId/governance/guardrails/': typeof ProjectIdGovernanceGuardrailsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
+  '/$projectId/governance': typeof ProjectIdGovernanceRouteWithChildren
   '/$projectId/guardrails': typeof ProjectIdGuardrailsRoute
   '/$projectId/knowledge-base': typeof ProjectIdKnowledgeBaseRoute
   '/$projectId/mcp-servers': typeof ProjectIdMcpServersRoute
@@ -382,6 +438,10 @@ export interface FileRoutesByTo {
   '/$projectId/evaluation/overview': typeof ProjectIdEvaluationOverviewRoute
   '/$projectId/evaluation/settings': typeof ProjectIdEvaluationSettingsRoute
   '/$projectId/evaluations/new': typeof ProjectIdEvaluationsNewRoute
+  '/$projectId/governance/assignments': typeof ProjectIdGovernanceAssignmentsRoute
+  '/$projectId/governance/enforcements': typeof ProjectIdGovernanceEnforcementsRoute
+  '/$projectId/governance/evidence': typeof ProjectIdGovernanceEvidenceRoute
+  '/$projectId/governance/integrations': typeof ProjectIdGovernanceIntegrationsRoute
   '/$projectId/instances/$instanceId': typeof ProjectIdInstancesInstanceIdRoute
   '/$projectId/requests/new': typeof ProjectIdRequestsNewRoute
   '/$projectId/access-policies': typeof ProjectIdAccessPoliciesIndexRoute
@@ -402,11 +462,13 @@ export interface FileRoutesByTo {
   '/$projectId/evaluations/reports/$reportId': typeof ProjectIdEvaluationsReportsReportIdRoute
   '/$projectId/evaluations/runs/$runId': typeof ProjectIdEvaluationsRunsRunIdRoute
   '/$projectId/evaluations/targets/$targetId': typeof ProjectIdEvaluationsTargetsTargetIdRoute
+  '/$projectId/governance/guardrails/$guardrailId': typeof ProjectIdGovernanceGuardrailsGuardrailIdRoute
   '/$projectId/setting/model-routings/$routingId': typeof ProjectIdSettingModelRoutingsRoutingIdRoute
   '/$projectId/evaluation/datasets': typeof ProjectIdEvaluationDatasetsIndexRoute
   '/$projectId/evaluation/runs': typeof ProjectIdEvaluationRunsIndexRoute
   '/$projectId/evaluation/targets': typeof ProjectIdEvaluationTargetsIndexRoute
   '/$projectId/evaluation/traces': typeof ProjectIdEvaluationTracesIndexRoute
+  '/$projectId/governance/guardrails': typeof ProjectIdGovernanceGuardrailsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -414,6 +476,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
   '/$projectId/evaluation': typeof ProjectIdEvaluationRouteWithChildren
+  '/$projectId/governance': typeof ProjectIdGovernanceRouteWithChildren
   '/$projectId/guardrails': typeof ProjectIdGuardrailsRoute
   '/$projectId/knowledge-base': typeof ProjectIdKnowledgeBaseRoute
   '/$projectId/mcp-servers': typeof ProjectIdMcpServersRoute
@@ -431,6 +494,10 @@ export interface FileRoutesById {
   '/$projectId/evaluation/overview': typeof ProjectIdEvaluationOverviewRoute
   '/$projectId/evaluation/settings': typeof ProjectIdEvaluationSettingsRoute
   '/$projectId/evaluations/new': typeof ProjectIdEvaluationsNewRoute
+  '/$projectId/governance/assignments': typeof ProjectIdGovernanceAssignmentsRoute
+  '/$projectId/governance/enforcements': typeof ProjectIdGovernanceEnforcementsRoute
+  '/$projectId/governance/evidence': typeof ProjectIdGovernanceEvidenceRoute
+  '/$projectId/governance/integrations': typeof ProjectIdGovernanceIntegrationsRoute
   '/$projectId/instances/$instanceId': typeof ProjectIdInstancesInstanceIdRoute
   '/$projectId/requests/new': typeof ProjectIdRequestsNewRoute
   '/$projectId/access-policies/': typeof ProjectIdAccessPoliciesIndexRoute
@@ -451,11 +518,13 @@ export interface FileRoutesById {
   '/$projectId/evaluations/reports/$reportId': typeof ProjectIdEvaluationsReportsReportIdRoute
   '/$projectId/evaluations/runs/$runId': typeof ProjectIdEvaluationsRunsRunIdRoute
   '/$projectId/evaluations/targets/$targetId': typeof ProjectIdEvaluationsTargetsTargetIdRoute
+  '/$projectId/governance/guardrails/$guardrailId': typeof ProjectIdGovernanceGuardrailsGuardrailIdRoute
   '/$projectId/setting/model-routings/$routingId': typeof ProjectIdSettingModelRoutingsRoutingIdRoute
   '/$projectId/evaluation/datasets/': typeof ProjectIdEvaluationDatasetsIndexRoute
   '/$projectId/evaluation/runs/': typeof ProjectIdEvaluationRunsIndexRoute
   '/$projectId/evaluation/targets/': typeof ProjectIdEvaluationTargetsIndexRoute
   '/$projectId/evaluation/traces/': typeof ProjectIdEvaluationTracesIndexRoute
+  '/$projectId/governance/guardrails/': typeof ProjectIdGovernanceGuardrailsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -464,6 +533,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/$projectId/cost'
     | '/$projectId/evaluation'
+    | '/$projectId/governance'
     | '/$projectId/guardrails'
     | '/$projectId/knowledge-base'
     | '/$projectId/mcp-servers'
@@ -481,6 +551,10 @@ export interface FileRouteTypes {
     | '/$projectId/evaluation/overview'
     | '/$projectId/evaluation/settings'
     | '/$projectId/evaluations/new'
+    | '/$projectId/governance/assignments'
+    | '/$projectId/governance/enforcements'
+    | '/$projectId/governance/evidence'
+    | '/$projectId/governance/integrations'
     | '/$projectId/instances/$instanceId'
     | '/$projectId/requests/new'
     | '/$projectId/access-policies/'
@@ -501,16 +575,19 @@ export interface FileRouteTypes {
     | '/$projectId/evaluations/reports/$reportId'
     | '/$projectId/evaluations/runs/$runId'
     | '/$projectId/evaluations/targets/$targetId'
+    | '/$projectId/governance/guardrails/$guardrailId'
     | '/$projectId/setting/model-routings/$routingId'
     | '/$projectId/evaluation/datasets/'
     | '/$projectId/evaluation/runs/'
     | '/$projectId/evaluation/targets/'
     | '/$projectId/evaluation/traces/'
+    | '/$projectId/governance/guardrails/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
     | '/$projectId/cost'
+    | '/$projectId/governance'
     | '/$projectId/guardrails'
     | '/$projectId/knowledge-base'
     | '/$projectId/mcp-servers'
@@ -528,6 +605,10 @@ export interface FileRouteTypes {
     | '/$projectId/evaluation/overview'
     | '/$projectId/evaluation/settings'
     | '/$projectId/evaluations/new'
+    | '/$projectId/governance/assignments'
+    | '/$projectId/governance/enforcements'
+    | '/$projectId/governance/evidence'
+    | '/$projectId/governance/integrations'
     | '/$projectId/instances/$instanceId'
     | '/$projectId/requests/new'
     | '/$projectId/access-policies'
@@ -548,17 +629,20 @@ export interface FileRouteTypes {
     | '/$projectId/evaluations/reports/$reportId'
     | '/$projectId/evaluations/runs/$runId'
     | '/$projectId/evaluations/targets/$targetId'
+    | '/$projectId/governance/guardrails/$guardrailId'
     | '/$projectId/setting/model-routings/$routingId'
     | '/$projectId/evaluation/datasets'
     | '/$projectId/evaluation/runs'
     | '/$projectId/evaluation/targets'
     | '/$projectId/evaluation/traces'
+    | '/$projectId/governance/guardrails'
   id:
     | '__root__'
     | '/'
     | '/login'
     | '/$projectId/cost'
     | '/$projectId/evaluation'
+    | '/$projectId/governance'
     | '/$projectId/guardrails'
     | '/$projectId/knowledge-base'
     | '/$projectId/mcp-servers'
@@ -576,6 +660,10 @@ export interface FileRouteTypes {
     | '/$projectId/evaluation/overview'
     | '/$projectId/evaluation/settings'
     | '/$projectId/evaluations/new'
+    | '/$projectId/governance/assignments'
+    | '/$projectId/governance/enforcements'
+    | '/$projectId/governance/evidence'
+    | '/$projectId/governance/integrations'
     | '/$projectId/instances/$instanceId'
     | '/$projectId/requests/new'
     | '/$projectId/access-policies/'
@@ -596,11 +684,13 @@ export interface FileRouteTypes {
     | '/$projectId/evaluations/reports/$reportId'
     | '/$projectId/evaluations/runs/$runId'
     | '/$projectId/evaluations/targets/$targetId'
+    | '/$projectId/governance/guardrails/$guardrailId'
     | '/$projectId/setting/model-routings/$routingId'
     | '/$projectId/evaluation/datasets/'
     | '/$projectId/evaluation/runs/'
     | '/$projectId/evaluation/targets/'
     | '/$projectId/evaluation/traces/'
+    | '/$projectId/governance/guardrails/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -608,6 +698,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ProjectIdCostRoute: typeof ProjectIdCostRoute
   ProjectIdEvaluationRoute: typeof ProjectIdEvaluationRouteWithChildren
+  ProjectIdGovernanceRoute: typeof ProjectIdGovernanceRouteWithChildren
   ProjectIdGuardrailsRoute: typeof ProjectIdGuardrailsRoute
   ProjectIdKnowledgeBaseRoute: typeof ProjectIdKnowledgeBaseRoute
   ProjectIdMcpServersRoute: typeof ProjectIdMcpServersRoute
@@ -673,6 +764,13 @@ declare module '@tanstack/react-router' {
       path: '/$projectId/evaluation'
       fullPath: '/$projectId/evaluation'
       preLoaderRoute: typeof ProjectIdEvaluationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$projectId/governance': {
+      id: '/$projectId/governance'
+      path: '/$projectId/governance'
+      fullPath: '/$projectId/governance'
+      preLoaderRoute: typeof ProjectIdGovernanceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$projectId/guardrails': {
@@ -822,6 +920,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectIdEvaluationsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$projectId/governance/assignments': {
+      id: '/$projectId/governance/assignments'
+      path: '/assignments'
+      fullPath: '/$projectId/governance/assignments'
+      preLoaderRoute: typeof ProjectIdGovernanceAssignmentsRouteImport
+      parentRoute: typeof ProjectIdGovernanceRoute
+    }
+    '/$projectId/governance/enforcements': {
+      id: '/$projectId/governance/enforcements'
+      path: '/enforcements'
+      fullPath: '/$projectId/governance/enforcements'
+      preLoaderRoute: typeof ProjectIdGovernanceEnforcementsRouteImport
+      parentRoute: typeof ProjectIdGovernanceRoute
+    }
+    '/$projectId/governance/evidence': {
+      id: '/$projectId/governance/evidence'
+      path: '/evidence'
+      fullPath: '/$projectId/governance/evidence'
+      preLoaderRoute: typeof ProjectIdGovernanceEvidenceRouteImport
+      parentRoute: typeof ProjectIdGovernanceRoute
+    }
+    '/$projectId/governance/integrations': {
+      id: '/$projectId/governance/integrations'
+      path: '/integrations'
+      fullPath: '/$projectId/governance/integrations'
+      preLoaderRoute: typeof ProjectIdGovernanceIntegrationsRouteImport
+      parentRoute: typeof ProjectIdGovernanceRoute
+    }
     '/$projectId/instances/': {
       id: '/$projectId/instances/'
       path: '/$projectId/instances'
@@ -955,6 +1081,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectIdEvaluationsTargetsTargetIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$projectId/governance/guardrails/': {
+      id: '/$projectId/governance/guardrails/'
+      path: '/guardrails'
+      fullPath: '/$projectId/governance/guardrails/'
+      preLoaderRoute: typeof ProjectIdGovernanceGuardrailsIndexRouteImport
+      parentRoute: typeof ProjectIdGovernanceRoute
+    }
+    '/$projectId/governance/guardrails/$guardrailId': {
+      id: '/$projectId/governance/guardrails/$guardrailId'
+      path: '/guardrails/$guardrailId'
+      fullPath: '/$projectId/governance/guardrails/$guardrailId'
+      preLoaderRoute: typeof ProjectIdGovernanceGuardrailsGuardrailIdRouteImport
+      parentRoute: typeof ProjectIdGovernanceRoute
+    }
     '/$projectId/setting/model-routings/$routingId': {
       id: '/$projectId/setting/model-routings/$routingId'
       path: '/$projectId/setting/model-routings/$routingId'
@@ -1005,11 +1145,35 @@ const ProjectIdEvaluationRouteChildren: ProjectIdEvaluationRouteChildren = {
 const ProjectIdEvaluationRouteWithChildren =
   ProjectIdEvaluationRoute._addFileChildren(ProjectIdEvaluationRouteChildren)
 
+interface ProjectIdGovernanceRouteChildren {
+  ProjectIdGovernanceAssignmentsRoute: typeof ProjectIdGovernanceAssignmentsRoute
+  ProjectIdGovernanceEnforcementsRoute: typeof ProjectIdGovernanceEnforcementsRoute
+  ProjectIdGovernanceEvidenceRoute: typeof ProjectIdGovernanceEvidenceRoute
+  ProjectIdGovernanceIntegrationsRoute: typeof ProjectIdGovernanceIntegrationsRoute
+  ProjectIdGovernanceGuardrailsGuardrailIdRoute: typeof ProjectIdGovernanceGuardrailsGuardrailIdRoute
+  ProjectIdGovernanceGuardrailsIndexRoute: typeof ProjectIdGovernanceGuardrailsIndexRoute
+}
+
+const ProjectIdGovernanceRouteChildren: ProjectIdGovernanceRouteChildren = {
+  ProjectIdGovernanceAssignmentsRoute: ProjectIdGovernanceAssignmentsRoute,
+  ProjectIdGovernanceEnforcementsRoute: ProjectIdGovernanceEnforcementsRoute,
+  ProjectIdGovernanceEvidenceRoute: ProjectIdGovernanceEvidenceRoute,
+  ProjectIdGovernanceIntegrationsRoute: ProjectIdGovernanceIntegrationsRoute,
+  ProjectIdGovernanceGuardrailsGuardrailIdRoute:
+    ProjectIdGovernanceGuardrailsGuardrailIdRoute,
+  ProjectIdGovernanceGuardrailsIndexRoute:
+    ProjectIdGovernanceGuardrailsIndexRoute,
+}
+
+const ProjectIdGovernanceRouteWithChildren =
+  ProjectIdGovernanceRoute._addFileChildren(ProjectIdGovernanceRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   ProjectIdCostRoute: ProjectIdCostRoute,
   ProjectIdEvaluationRoute: ProjectIdEvaluationRouteWithChildren,
+  ProjectIdGovernanceRoute: ProjectIdGovernanceRouteWithChildren,
   ProjectIdGuardrailsRoute: ProjectIdGuardrailsRoute,
   ProjectIdKnowledgeBaseRoute: ProjectIdKnowledgeBaseRoute,
   ProjectIdMcpServersRoute: ProjectIdMcpServersRoute,
