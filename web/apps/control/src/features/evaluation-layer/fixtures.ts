@@ -520,6 +520,22 @@ export const evaluationLayerFixtures: EvaluationLayerState = {
       currentRevisionId: "sample-security-scenarios-r1",
       createdAt: "2026-08-11T08:40:00.000Z",
     },
+    {
+      id: "demo-default-dataset",
+      targetId: "demo-onboarding-assistant",
+      name: "Demo Default Dataset",
+      description: "Default empty Dataset used to start the demo workflow and add the first Test Cases.",
+      currentRevisionId: "demo-default-dataset-r1",
+      createdAt: "2026-08-11T08:35:00.000Z",
+    },
+    {
+      id: "demo-published-dataset",
+      targetId: "demo-onboarding-assistant",
+      name: "Published Demo Dataset",
+      description: "Published Dataset used to verify the explicit Test coverage to Evaluation transition.",
+      currentRevisionId: "demo-published-dataset-r1",
+      createdAt: "2026-08-11T08:34:00.000Z",
+    },
   ],
   datasetRevisions: [
     { id: "permission-compliance-regression-r1", datasetId: "permission-compliance-regression", targetId: "demo-permission-compliance", revision: 1, status: "PUBLISHED", cases: permissionCases(), createdAt: "2026-07-30T10:00:00.000Z" },
@@ -530,6 +546,8 @@ export const evaluationLayerFixtures: EvaluationLayerState = {
     { id: "skill-summary-check-r1", datasetId: "skill-summary-check", targetId: "demo-document-summarization", revision: 1, status: "PUBLISHED", cases: [{ id: "skill-summary-decision", input: { document: "Budget review memo" }, expectedOutput: { format: "decisions, risks, follow-ups" }, tags: ["skill", "summary"], source: "demo" }, { id: "skill-summary-risks", input: { document: "Security incident report" }, expectedOutput: { format: "decisions, risks, follow-ups" }, tags: ["skill", "summary"], source: "demo" }], createdAt: "2026-07-30T10:00:00.000Z" },
     { id: "invoice-classification-draft-r1", datasetId: "invoice-classification-draft", targetId: "demo-invoice-classification", revision: 1, status: "DRAFT", cases: [{ id: "invoice-software-draft", input: { vendor: "Example Cloud", amount: 249 }, expectedOutput: { category: "software", approval: "review" }, tags: ["invoice", "draft"], source: "demo" }], createdAt: "2026-07-31T09:00:00.000Z" },
     { id: "deployment-monitor-check-r1", datasetId: "deployment-monitor-check", targetId: "demo-deployment-monitor", revision: 1, status: "PUBLISHED", cases: [{ id: "deployment-health-running", input: { service: "checkout", environment: "staging" }, expectedOutput: { status: "healthy" }, tags: ["deployment", "running"], source: "demo" }], createdAt: "2026-07-31T11:00:00.000Z" },
+    { id: "demo-default-dataset-r1", datasetId: "demo-default-dataset", targetId: "demo-onboarding-assistant", revision: 1, status: "DRAFT", cases: permissionCases(), createdAt: "2026-08-11T08:35:00.000Z" },
+    { id: "demo-published-dataset-r1", datasetId: "demo-published-dataset", targetId: "demo-onboarding-assistant", revision: 1, status: "PUBLISHED", cases: permissionCases(), createdAt: "2026-08-11T08:34:00.000Z" },
     {
       id: "pii-guardrail-regression-r1",
       datasetId: "pii-guardrail-regression",
@@ -583,8 +601,8 @@ export const evaluationLayerFixtures: EvaluationLayerState = {
     { id: "run-deployment-monitor-active", targetId: "demo-deployment-monitor", targetRevisionId: "demo-deployment-monitor-r1", datasetId: "deployment-monitor-check", datasetRevisionId: "deployment-monitor-check-r1", guardrailTemplateIds: ["guardrail-template-universal-safety", "guardrail-template-agent-prompt-injection"], evaluatorIds: ["permission-compliance"], status: "RUNNING", startedAt: "2026-07-31T12:10:00.000Z", results: [{ caseId: "deployment-health-running", status: "PENDING" }, ...guardrailTemplateResults(["guardrail-template-universal-safety", "guardrail-template-agent-prompt-injection"], "PENDING")] },
   ],
   reports: [
-    { id: "report-permission-baseline", runId: "run-permission-baseline", status: "READY", summary: "One jailbreak guardrail-bypass (fail-open) regression requires attention.", createdAt: "2026-07-30T12:02:00.000Z" },
-    { id: "report-tool-error", runId: "run-tool-error", status: "FAILED", summary: "The exploratory run ended with a Tool error.", createdAt: "2026-07-31T12:03:00.000Z" },
+    { id: "report-permission-baseline", runId: "run-permission-baseline", status: "READY", summary: "The assistant exposed restricted employee data after access had been denied.", createdAt: "2026-07-30T12:02:00.000Z" },
+    { id: "report-tool-error", runId: "run-tool-error", status: "FAILED", summary: "The evaluation could not finish because the Tool connection failed before a permission decision could be recorded.", createdAt: "2026-07-31T12:03:00.000Z" },
     { id: "report-operations-mcp-baseline", runId: "run-operations-mcp-baseline", status: "READY", summary: "All MCP operational checks passed.", createdAt: "2026-07-30T12:01:00.000Z" },
     { id: "report-policy-kb-baseline", runId: "run-policy-kb-baseline", status: "READY", summary: "All Knowledge Base retrieval checks passed.", createdAt: "2026-07-30T12:01:00.000Z" },
     { id: "report-skill-summary-baseline", runId: "run-skill-summary-baseline", status: "READY", summary: "All Document Summarization checks passed.", createdAt: "2026-07-30T12:01:00.000Z" },

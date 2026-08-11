@@ -83,6 +83,18 @@ describe("getHeaderBreadcrumbItems", () => {
       { href: "/individual/evaluation/catalog", label: "Eval" },
     ]);
     expect(
+      getHeaderBreadcrumbItems("/individual/evaluation/behavior"),
+    ).toEqual([
+      { href: "/individual/evaluation", label: "Evaluation" },
+      { href: "/individual/evaluation/behavior", label: "Behavior" },
+    ]);
+    expect(
+      getHeaderBreadcrumbItems("/individual/evaluation/id-management"),
+    ).toEqual([
+      { href: "/individual/evaluation", label: "Evaluation" },
+      { href: "/individual/evaluation/id-management", label: "ID Management" },
+    ]);
+    expect(
       getHeaderBreadcrumbItems(
         "/individual/evaluation/targets/demo-permission-compliance",
       ),

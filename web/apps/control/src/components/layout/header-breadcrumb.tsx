@@ -64,6 +64,8 @@ export function getHeaderBreadcrumbItems(pathname: string): HeaderBreadcrumbItem
     };
     const evaluationLayerLabels: Record<string, string> = {
       catalog: "Eval",
+      behavior: "Behavior",
+      "id-management": "ID Management",
       targets: "Agent",
       datasets: "Test Case",
       runs: "Evaluation",

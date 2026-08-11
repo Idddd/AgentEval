@@ -9,7 +9,11 @@ import { useCurrentProjectId } from '@/hooks/use-project';
 import { cn } from '@/lib/utils';
 import type { EvaluationLayerLogEntry, EvaluationLayerTargetKind } from '../model';
 import { isLiveMonitoringRun } from '../mock-store';
-import { useEvaluationLayerState, useEvaluationLayerStore } from '../mock-provider';
+import {
+  useEvaluationLayerAutoRun,
+  useEvaluationLayerState,
+  useEvaluationLayerStore,
+} from '../mock-provider';
 import { EvaluationLayerStatusBadge } from '../shared/evaluation-status';
 import {
   EvaluationMetric,
@@ -27,11 +31,18 @@ function rate(value: number) {
 
 type GuardrailTemplate = ReturnType<typeof useEvaluationLayerState>['guardrailTemplates'][number];
 
+const REQUIRED_GUARDRAIL_TEMPLATE_ID = 'guardrail-template-universal-safety';
+
 function applicableGuardrailTemplates(
   templates: GuardrailTemplate[],
   targetKind: EvaluationLayerTargetKind,
 ) {
   return templates.filter((template) => template.applicableTargetKinds.includes(targetKind));
+}
+
+function requiredGuardrailTemplateIds(templates: GuardrailTemplate[]) {
+  const universal = templates.find((template) => template.id === REQUIRED_GUARDRAIL_TEMPLATE_ID);
+  return universal ? [universal.id] : templates.slice(0, 1).map((template) => template.id);
 }
 
 export function guardrailTemplateIdsForTarget(
@@ -40,13 +51,20 @@ export function guardrailTemplateIdsForTarget(
   previousIds?: readonly string[],
 ) {
   const applicable = applicableGuardrailTemplates(templates, targetKind);
+  const requiredIds = requiredGuardrailTemplateIds(applicable);
   if (previousIds) {
     const applicableIds = new Set(applicable.map((template) => template.id));
-    return previousIds.filter((id) => applicableIds.has(id));
+    return [...new Set([
+      ...requiredIds,
+      ...previousIds.filter((id) => applicableIds.has(id)),
+    ])];
   }
-  return applicable
-    .filter((template) => template.defaultFor.includes(targetKind))
-    .map((template) => template.id);
+  return [...new Set([
+    ...requiredIds,
+    ...applicable
+      .filter((template) => template.defaultFor.includes(targetKind))
+      .map((template) => template.id),
+  ])];
 }
 
 export function GuardrailTemplatePicker({
@@ -62,55 +80,60 @@ export function GuardrailTemplatePicker({
 }) {
   const state = useEvaluationLayerState();
   const templates = applicableGuardrailTemplates(state.guardrailTemplates, targetKind);
-  const selected = templates.filter((template) => selectedIds.includes(template.id));
+  const requiredIds = requiredGuardrailTemplateIds(templates);
+  const effectiveSelectedIds = [...new Set([...requiredIds, ...selectedIds])];
+  const selected = templates.filter((template) => effectiveSelectedIds.includes(template.id));
   const caseCount = selected.reduce((sum, template) => sum + template.cases.length, 0);
   const toggle = (templateId: string, checked: boolean) => {
+    if (requiredIds.includes(templateId)) return;
     onSelectedIdsChange(checked
-      ? [...selectedIds, templateId]
-      : selectedIds.filter((id) => id !== templateId));
+      ? [...effectiveSelectedIds, templateId]
+      : effectiveSelectedIds.filter((id) => id !== templateId));
   };
 
   return (
-    <fieldset aria-label='Guardrail Test Packs' className='space-y-3 rounded-lg border bg-muted/10 p-4'>
+    <fieldset aria-label='Guardrail Test Packs' className='space-y-3 rounded-lg border bg-card p-3 shadow-sm'>
       <legend className='sr-only'>Guardrail Test Packs</legend>
-      <div className='flex flex-wrap items-start justify-between gap-2'>
+      <div className='flex flex-wrap items-start justify-between gap-2 border-b pb-3'>
         <div>
-          <p className='text-sm font-semibold'>Guardrail test packs</p>
-          <p className='mt-1 text-xs text-muted-foreground'>Choose one or more reusable safety baselines for this Target type.</p>
+          <p className='font-sans text-sm font-semibold'>Guardrail test packs</p>
+          <p className='mt-1 text-xs text-muted-foreground'>The baseline pack is required. Add any other compatible packs as needed.</p>
         </div>
-        <span className='rounded-full border bg-background px-2.5 py-1 text-xs font-medium'>
+        <span className='rounded-full border bg-muted/35 px-2.5 py-1 text-xs font-medium text-muted-foreground'>
           {selected.length} selected · {caseCount} safety cases
         </span>
       </div>
       {templates.length ? (
         <div className='grid gap-2 sm:grid-cols-2'>
           {templates.map((template) => {
-            const checked = selectedIds.includes(template.id);
+            const checked = effectiveSelectedIds.includes(template.id);
+            const required = requiredIds.includes(template.id);
             const recommended = template.defaultFor.includes(targetKind);
             return (
               <label
                 key={template.id}
                 className={cn(
-                  'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors',
-                  checked ? 'border-primary/45 bg-primary/5' : 'bg-background',
+                  'flex cursor-pointer items-start gap-2.5 rounded-md border p-2.5 transition-colors',
+                  checked ? 'border-cyan-500/40 bg-cyan-500/5 ring-1 ring-cyan-500/10' : 'bg-background hover:bg-muted/25',
                   disabled && 'cursor-not-allowed opacity-60',
                 )}
               >
                 <input
                   aria-label={`Select ${template.name}`}
-                  className='mt-1 size-4 accent-primary'
+                  className='mt-0.5 size-4 accent-cyan-600'
                   type='checkbox'
                   checked={checked}
-                  disabled={disabled}
+                  disabled={disabled || required}
                   onChange={(event) => toggle(template.id, event.target.checked)}
                 />
                 <span className='min-w-0 flex-1'>
                   <span className='flex flex-wrap items-center gap-2 text-sm font-medium'>
                     {template.name}
-                    {recommended ? <span className='rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300'>Recommended</span> : null}
+                    {required ? <span className='rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-700 dark:text-cyan-300'>Required</span> : <span className='rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground'>Optional</span>}
+                    {!required && recommended ? <span className='rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300'>Recommended</span> : null}
                   </span>
                   <span className='mt-1 block text-xs text-muted-foreground'>{template.description}</span>
-                  <span className='mt-2 block text-[11px] text-muted-foreground'>v{template.version} · {template.cases.length} cases</span>
+                  <span className='mt-1.5 block text-[11px] text-muted-foreground'>v{template.version} · {template.cases.length} cases</span>
                 </span>
               </label>
             );
@@ -326,22 +349,22 @@ function ExecutionTerminal({ entries }: { entries: EvaluationLayerLogEntry[] }) 
   );
 }
 
-export function EvaluationRunDetail({ runId, embedded = false }: { runId: string; embedded?: boolean }) {
+export function EvaluationRunDetail({
+  runId,
+  embedded = false,
+  defaultExpanded = false,
+}: {
+  runId: string;
+  embedded?: boolean;
+  defaultExpanded?: boolean;
+}) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
   const projectId = useCurrentProjectId();
-  const [autoRun, setAutoRun] = useState(true);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const { autoRun, setAutoRun } = useEvaluationLayerAutoRun();
+  const [detailsOpen, setDetailsOpen] = useState(defaultExpanded);
   const run = state.runs.find((item) => item.id === runId);
   const pending = run?.results.find((result) => result.status === 'PENDING');
-  // Auto-advance the mock execution so the terminal streams case by case.
-  useEffect(() => {
-    if (!autoRun || !run || !pending) return;
-    const timer = setInterval(() => {
-      store.advanceRun(run.id);
-    }, 900);
-    return () => clearInterval(timer);
-  }, [autoRun, run, pending, store]);
   if (!run) return <EmptyState icon={FlaskConical} title='Evaluation not found' description='This mock Evaluation does not exist.' action={<Button asChild variant='outline'><Link to='/$projectId/evaluation/runs' params={{ projectId }}>Back to Evaluation</Link></Button>} />;
   const target = state.targets.find((item) => item.id === run.targetId)!;
   const targetRevision = state.targetRevisions.find((item) => item.id === run.targetRevisionId);
@@ -354,7 +377,7 @@ export function EvaluationRunDetail({ runId, embedded = false }: { runId: string
     .filter((entry) => entry.runId === run.id)
     .sort((a, b) => a.at.localeCompare(b.at));
   const statusTitle = pending
-    ? 'Evaluation running'
+    ? embedded ? 'Report in progress' : 'Evaluation running'
     : run.status === 'FAILED'
       ? 'Evaluation failed'
       : 'Evaluation complete';
@@ -374,7 +397,7 @@ export function EvaluationRunDetail({ runId, embedded = false }: { runId: string
         </div>
         <div className='flex items-center gap-2'>
           <EvaluationLayerStatusBadge status={run.status} />
-          <Button
+          {!defaultExpanded ? <Button
             aria-controls={`evaluation-details-${run.id}`}
             aria-expanded={detailsOpen}
             size='sm'
@@ -382,11 +405,11 @@ export function EvaluationRunDetail({ runId, embedded = false }: { runId: string
             onClick={() => setDetailsOpen((open) => !open)}
           >
             {detailsOpen ? 'Hide details' : 'Details'}
-          </Button>
+          </Button> : null}
         </div>
       </div>
       {detailsOpen ? <div id={`evaluation-details-${run.id}`} className='space-y-5'>
-        <div className='flex flex-wrap items-start justify-between gap-3'><div><h3 className='text-base font-semibold'>Evaluation details</h3><p className='mt-1 text-sm text-muted-foreground'>{target.name} · {dataset.name}</p></div>{pending ? <div className='flex items-center gap-4'><Label className='flex items-center gap-2 text-sm'><input type='checkbox' checked={autoRun} onChange={(event) => setAutoRun(event.target.checked)} />Auto run</Label><Button onClick={() => store.advanceRun(run.id)}><Play className='size-4' />Run next Case</Button></div> : report && !embedded ? <Button asChild><Link to='/$projectId/evaluation/reports/$reportId' params={{ projectId, reportId: report.id }}>Open Report<ArrowRight className='size-4' /></Link></Button> : null}</div>
+        <div className='flex flex-wrap items-start justify-between gap-3'><div><h3 className='text-base font-semibold'>{embedded ? 'Live report' : 'Evaluation details'}</h3><p className='mt-1 text-sm text-muted-foreground'>{target.name} · {dataset.name}</p></div>{pending ? <div className='flex items-center gap-4'><Label className='flex items-center gap-2 text-sm'><input type='checkbox' checked={autoRun} onChange={(event) => setAutoRun(event.target.checked)} />Auto run</Label><Button onClick={() => store.advanceRun(run.id)}><Play className='size-4' />Run next Case</Button></div> : report && !embedded ? <Button asChild><Link to='/$projectId/evaluation/reports/$reportId' params={{ projectId, reportId: report.id }}>Open Report<ArrowRight className='size-4' /></Link></Button> : null}</div>
         <KeyValueGrid items={[['Target revision', targetRevision ? `R${targetRevision.revision}` : '—'], ['Dataset revision', datasetRevision ? `R${datasetRevision.revision}` : '—'], ['Evaluators', run.evaluatorIds.join(', ')], ['Judge model', state.settings.model], ['Started', new Date(run.startedAt).toLocaleString()], ['Status', <EvaluationLayerStatusBadge status={run.status} />]]} />
         <div className='grid gap-4 md:grid-cols-3'><EvaluationMetric label='Progress' value={`${stats.done.length}/${run.results.length}`} detail={<Progress value={(stats.done.length / Math.max(run.results.length, 1)) * 100} />} /><EvaluationMetric label='Pass rate' value={rate(stats.passRate)} /><EvaluationMetric label='Evaluation cost' value={formatCost(stats.cost)} /></div>
         <EvaluationSection title='Execution log' description='Structured mock log streamed while Cases execute; kept after the run completes.'>

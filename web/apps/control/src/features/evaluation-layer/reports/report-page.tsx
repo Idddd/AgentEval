@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { useCurrentProjectId } from "@/hooks/use-project";
 import { useEffectiveProjectRole } from "@/hooks/use-project-permissions";
+import { cn } from "@/lib/utils";
 import {
   useEvaluationLayerState,
   useEvaluationLayerStore,
@@ -33,6 +34,18 @@ interface GuardrailPackResultGroup {
   results: EvaluationLayerRunResult[];
 }
 
+interface ToolEvidenceViewRow {
+  key: string;
+  traceId: string;
+  toolId: string;
+  requested: boolean;
+  executed: boolean;
+  succeeded: boolean;
+  effectVerified: boolean | null;
+  output: unknown;
+  simulated: boolean;
+}
+
 function resultCounts(results: EvaluationLayerRunResult[]) {
   return {
     passed: results.filter((item) => item.status === "PASS").length,
@@ -40,40 +53,6 @@ function resultCounts(results: EvaluationLayerRunResult[]) {
       (item) => item.status === "FAIL" || item.status === "ERROR",
     ).length,
   };
-}
-
-function ResultSourceSummary({
-  businessResults,
-  packGroups,
-}: {
-  businessResults: EvaluationLayerRunResult[];
-  packGroups: GuardrailPackResultGroup[];
-}) {
-  const business = resultCounts(businessResults);
-  const guardrail = resultCounts(
-    packGroups.flatMap((group) => group.results),
-  );
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <div className="rounded-md border bg-muted/20 p-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Business Dataset results
-        </p>
-        <p className="mt-1 text-sm font-medium">
-          {business.passed} passed · {business.failed} failed
-        </p>
-      </div>
-      <div className="rounded-md border bg-muted/20 p-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Guardrail Test Pack results
-        </p>
-        <p className="mt-1 text-sm font-medium">
-          {guardrail.passed} passed · {guardrail.failed} failed · {packGroups.length}{" "}
-          {packGroups.length === 1 ? "pack" : "packs"}
-        </p>
-      </div>
-    </div>
-  );
 }
 
 function ResultGroup({
@@ -99,7 +78,10 @@ function ResultGroup({
   );
   return (
     <div className="overflow-hidden rounded-md border">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/20 px-4 py-3">
+      <div className={cn(
+        "flex flex-wrap items-start justify-between border-b bg-muted/20",
+        embedded ? "gap-2 px-3 py-2" : "gap-3 px-4 py-3",
+      )}>
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {eyebrow}
@@ -115,7 +97,7 @@ function ResultGroup({
         </div>
       </div>
       {results.length ? (
-        <EvaluationTable>
+        <EvaluationTable density={embedded ? "compact" : "default"}>
           <thead>
             <tr>
               <th>Case</th>
@@ -153,7 +135,10 @@ function ResultGroup({
         </p>
       )}
       {showFailedCases && failed.length ? (
-        <div className="border-t border-destructive/20 bg-destructive/5 px-4 py-3">
+        <div className={cn(
+          "border-t border-destructive/20 bg-destructive/5",
+          embedded ? "px-3 py-2" : "px-4 py-3",
+        )}>
           <p className="text-xs font-medium uppercase tracking-wide text-destructive">
             Failed cases
           </p>
@@ -330,16 +315,55 @@ export function EvaluationReportDetail({
     ? done.filter((item) => item.status === "PASS").length / done.length
     : 0;
   const cost = traces.reduce((sum, trace) => sum + trace.costUsd, 0);
-  const baseline = state.reports.find((item) => item.id !== report.id);
-  const baselineRun = baseline
-    ? state.runs.find((item) => item.id === baseline.runId)
-    : undefined;
-  const baselineDone =
-    baselineRun?.results.filter((item) => item.status !== "PENDING") ?? [];
-  const baselinePass = baselineDone.length
-    ? baselineDone.filter((item) => item.status === "PASS").length /
-      baselineDone.length
-    : 0;
+  const totalCost = cost + done.length * 0.0004;
+  const caseDefinitions = new Map([
+    ...datasetRevision.cases,
+    ...guardrailPackIds.flatMap((templateId) => (
+      state.guardrailTemplates.find((item) => item.id === templateId)?.cases ?? []
+    )),
+  ].map((item) => [item.id, item] as const));
+  const recordedToolEvidence: ToolEvidenceViewRow[] = traces.flatMap((trace) => (
+    trace.toolEvidence.map((evidence) => ({
+      key: evidence.id,
+      traceId: trace.id,
+      toolId: evidence.toolId,
+      requested: evidence.requested,
+      executed: evidence.executed,
+      succeeded: evidence.succeeded,
+      effectVerified: evidence.effectVerified,
+      output: evidence.output ?? evidence.error ?? { status: "No output recorded" },
+      simulated: false,
+    }))
+  ));
+  const simulatedToolEvidence: ToolEvidenceViewRow[] = done.map((result) => {
+    const definition = caseDefinitions.get(result.caseId);
+    const toolId = [definition?.expectedOutput, definition?.input]
+      .flatMap((record) => Object.entries(record ?? {}))
+      .find(([key, value]) => key.toLowerCase().includes("tool") && typeof value === "string")?.[1]
+      ?? targetRevision.tools.find((tool) => tool.enabled)?.name
+      ?? `${targetLabel} invocation`;
+    const response = result.response ?? "Demo invocation completed.";
+    const blockedBeforeExecution = /blocked before execution|deny enforced before/i.test(response);
+    const executed = result.status !== "ERROR" && !blockedBeforeExecution;
+    return {
+      key: `simulated-${result.caseId}`,
+      traceId: result.traceId ?? `demo-${result.caseId}`,
+      toolId: String(toolId),
+      requested: true,
+      executed,
+      succeeded: executed && result.status !== "ERROR",
+      effectVerified: result.status === "PASS",
+      output: {
+        mode: "demo",
+        behavior: blockedBeforeExecution ? "blocked" : executed ? "executed" : "failed",
+        response,
+      },
+      simulated: true,
+    };
+  });
+  const toolEvidenceRows = recordedToolEvidence.length
+    ? recordedToolEvidence
+    : simulatedToolEvidence;
   const reflections = state.reflections.filter(
     (item) => item.reportId === report.id,
   );
@@ -357,10 +381,80 @@ export function EvaluationReportDetail({
       : !isDeveloper
         ? "Developer access is required to update the Target after rejection."
         : "This rejected evaluation has already been superseded by a newer Target revision.";
+  const reflectionContent = reflections.length ? (
+    <div className={cn("grid", embedded ? "gap-2" : "gap-3")}>
+      {reflections.map((reflection) => reflectionActionsHidden ? (
+        <div
+          key={reflection.id}
+          className={cn("rounded-md border", embedded ? "p-2" : "p-4")}
+        >
+          <p className="font-medium">{reflection.suggestion}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Status: {reflection.status}
+          </p>
+        </div>
+      ) : (
+        <label
+          key={reflection.id}
+          className={cn("flex items-start rounded-md border", embedded ? "gap-2 p-2" : "gap-3 p-4")}
+        >
+          <input
+            type="checkbox"
+            className="mt-1"
+            disabled={reflection.status !== "OPEN" || !canApplyReflection}
+            checked={selected.includes(reflection.id)}
+            onChange={(event) =>
+              setSelected((current) =>
+                event.target.checked
+                  ? [...current, reflection.id]
+                  : current.filter((id) => id !== reflection.id),
+              )
+            }
+          />
+          <span>
+            <span className="font-medium">{reflection.suggestion}</span>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              Status: {reflection.status}
+            </span>
+          </span>
+        </label>
+      ))}
+      {canApplyReflection ? (
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            variant="outline"
+            onClick={() => store.finishReflectionWithoutChanges(report.id, {
+              name: role === "member" ? "Developer" : role,
+              role,
+            })}
+          >
+            Finish without changes
+          </Button>
+          <Button
+            disabled={!selected.length}
+            onClick={() => store.submitReflection(report.id, selected, {
+              name: role === "member" ? "Developer" : role,
+              role,
+            })}
+          >
+            Apply selected changes
+          </Button>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {reflectionUnavailableMessage}
+        </p>
+      )}
+    </div>
+  ) : null;
   if (target.kind === "guardrail") {
     return (
-      <div className="space-y-6">
+      <div className={cn(
+        "space-y-6",
+        embedded && "space-y-2 [&_[data-slot=card]]:[--card-spacing:--spacing(2)] [&_[data-slot=card-description]]:text-xs [&_dl>div]:p-2! [&_pre]:max-h-48 [&_pre]:p-2 [&_td]:px-2! [&_td]:py-1! [&_th]:px-2! [&_th]:py-1!",
+      )}>
         <KeyValueGrid
+          {...(embedded ? { className: "sm:grid-cols-4 lg:grid-cols-4" } : {})}
           items={([
             ...(embedded ? [] : [["Report", report.id], ["Evaluation", run.id]]),
             ["Guardrail", target.name],
@@ -369,12 +463,6 @@ export function EvaluationReportDetail({
             ["Created", new Date(report.createdAt).toLocaleString()],
           ] as [string, ReactNode][])}
         />
-        <EvaluationSection title="Summary">
-          <ResultSourceSummary
-            businessResults={businessResults}
-            packGroups={guardrailPackGroups}
-          />
-        </EvaluationSection>
         <GuardrailReport
           cases={datasetRevision.cases}
           results={businessResults}
@@ -404,8 +492,12 @@ export function EvaluationReportDetail({
     );
   }
   return (
-    <div className="space-y-6">
+    <div className={cn(
+      "space-y-6",
+      embedded && "space-y-2 [&_[data-slot=card]]:[--card-spacing:--spacing(2)] [&_[data-slot=card-description]]:text-xs [&_dl>div]:p-2! [&_pre]:max-h-48 [&_pre]:p-2 [&_td]:px-2! [&_td]:py-1! [&_th]:px-2! [&_th]:py-1!",
+    )}>
       <KeyValueGrid
+        {...(embedded ? { className: "sm:grid-cols-4 lg:grid-cols-4" } : {})}
         items={([
           ...(embedded ? [] : [["Report", report.id], ["Evaluation", run.id]]),
           [targetLabel, target.name],
@@ -415,38 +507,33 @@ export function EvaluationReportDetail({
         ] as [string, ReactNode][])}
       />
       <EvaluationSection title="Summary">
-        <div className="grid gap-4 md:grid-cols-4">
-          <EvaluationMetric label="Pass rate" value={formatPercent(passRate)} />
+        <div className={cn("grid md:grid-cols-4", embedded ? "gap-2" : "gap-4")}>
+          <EvaluationMetric compact={embedded} label="Pass rate" value={formatPercent(passRate)} />
           <EvaluationMetric
+            compact={embedded}
             label="Passed"
             value={done.filter((item) => item.status === "PASS").length}
           />
-          <EvaluationMetric label="Failed" value={failures.length} />
-          <EvaluationMetric label="Total cost" value={formatCost(cost)} />
+          <EvaluationMetric compact={embedded} label="Failed" value={failures.length} />
+          <EvaluationMetric compact={embedded} label="Total cost" value={formatCost(totalCost)} />
         </div>
-        <p className="mt-4 text-sm text-muted-foreground">{report.summary}</p>
-        <div className="mt-4">
-          <ResultSourceSummary
-            businessResults={businessResults}
-            packGroups={guardrailPackGroups}
-          />
-        </div>
+        <p className={cn("text-sm text-muted-foreground", embedded ? "mt-2" : "mt-4")}>{report.summary}</p>
       </EvaluationSection>
-      <TestResultsBySource
-        datasetName={dataset.name}
-        datasetRevision={datasetRevision.revision}
-        businessResults={businessResults}
-        packGroups={guardrailPackGroups}
-        embedded={embedded}
-        projectId={projectId}
-      />
-      <EvaluationSection title="Failure reasons">
-        {failures.length ? (
-          <div className="grid gap-3">
+      {failures.length || reflectionContent ? (
+        <div className={cn(
+          "grid items-start",
+          embedded ? "gap-2" : "gap-4",
+          failures.length && reflectionContent && "md:grid-cols-2",
+        )}>
+          {failures.length ? <EvaluationSection title="Failure reasons">
+          <div className={cn("grid", embedded ? "gap-2" : "gap-3")}>
             {failures.map((failure) => (
               <div
                 key={failure.caseId}
-                className="rounded-md border border-destructive/20 bg-destructive/5 p-4"
+                className={cn(
+                  "rounded-md border border-destructive/20 bg-destructive/5",
+                  embedded ? "p-2" : "p-4",
+                )}
               >
                 <p className="font-medium">{failure.caseId}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -455,15 +542,30 @@ export function EvaluationReportDetail({
               </div>
             ))}
           </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">No failed Cases.</p>
-        )}
-      </EvaluationSection>
+          </EvaluationSection> : null}
+          {reflectionContent ? (
+            <EvaluationSection
+              title="Reflection"
+              description="Evidence-backed improvements for the next Target revision."
+            >
+              {reflectionContent}
+            </EvaluationSection>
+          ) : null}
+        </div>
+      ) : null}
+      <TestResultsBySource
+        datasetName={dataset.name}
+        datasetRevision={datasetRevision.revision}
+        businessResults={businessResults}
+        packGroups={guardrailPackGroups}
+        embedded={embedded}
+        projectId={projectId}
+      />
       <EvaluationSection
         title="Tool Evidence"
         description="Requested, executed, succeeded, and effect-verified evidence."
       >
-        <EvaluationTable>
+        <EvaluationTable density={embedded ? "compact" : "default"}>
           <thead>
             <tr>
               <th>Trace</th>
@@ -476,25 +578,32 @@ export function EvaluationReportDetail({
             </tr>
           </thead>
           <tbody>
-            {traces.flatMap((trace) =>
-              trace.toolEvidence.map((evidence) => (
-                <tr key={evidence.id}>
-                  <td>{trace.id}</td>
+            {toolEvidenceRows.map((evidence) => (
+                <tr key={evidence.key}>
+                  <td>
+                    <div className="flex items-center gap-2">
+                      <span>{evidence.traceId}</span>
+                      {evidence.simulated ? (
+                        <span className="rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-medium text-cyan-700 dark:text-cyan-300">
+                          Demo
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
                   <td>{evidence.toolId}</td>
-                  <td>{String(evidence.requested)}</td>
-                  <td>{String(evidence.executed)}</td>
-                  <td>{String(evidence.succeeded)}</td>
+                  <td>{evidence.requested ? "Yes" : "No"}</td>
+                  <td>{evidence.executed ? "Yes" : "No"}</td>
+                  <td>{evidence.succeeded ? "Yes" : "No"}</td>
                   <td>
                     {evidence.effectVerified === null
                       ? "Not available"
-                      : String(evidence.effectVerified)}
+                      : evidence.effectVerified ? "Yes" : "No"}
                   </td>
                   <td>
                     <JsonPreview value={evidence.output} />
                   </td>
                 </tr>
-              )),
-            )}
+              ))}
           </tbody>
         </EvaluationTable>
       </EvaluationSection>
@@ -502,9 +611,9 @@ export function EvaluationReportDetail({
         title="LLM Judge"
         description="Recorded Langfuse-compatible judge evidence; no live model request is made."
       >
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className={cn("grid md:grid-cols-2", embedded ? "gap-2" : "gap-4")}>
           {traces.map((trace) => (
-            <div key={trace.id} className="rounded-md border p-4">
+            <div key={trace.id} className={cn("rounded-md border", embedded ? "p-2" : "p-4")}>
               <div className="flex items-center justify-between">
                 <p className="font-medium">{trace.caseId}</p>
                 <span className="text-xs text-muted-foreground">
@@ -530,89 +639,14 @@ export function EvaluationReportDetail({
           ))}
         </div>
       </EvaluationSection>
-      <EvaluationSection
-        title="Comparison"
-        description="Compare shared Cases, regressions, resolved failures, configuration, and cost."
-      >
-        <div className="grid gap-4 md:grid-cols-3">
-          <EvaluationMetric
-            label="Baseline"
-            value={baseline?.id ?? "Not available"}
-          />
-          <EvaluationMetric
-            label="Pass-rate delta"
-            value={`${Math.round((passRate - baselinePass) * 100)} pp`}
-          />
-          <EvaluationMetric
-            label="Cost delta"
-            value={formatCost(
-              cost -
-                (baselineRun
-                  ? state.traces
-                      .filter((trace) => trace.runId === baselineRun.id)
-                      .reduce((sum, trace) => sum + trace.costUsd, 0)
-                  : 0),
-            )}
-          />
-        </div>
-        <KeyValueGrid
-          className="mt-4"
-          items={[
-            ["Regressions", failures.length],
-            [
-              "Resolved failures",
-              Math.max(
-                0,
-                baselineDone.filter((item) => item.status !== "PASS").length -
-                  failures.length,
-              ),
-            ],
-            [
-              "Unchanged failures",
-              failures.filter((item) =>
-                baselineDone.some(
-                  (base) =>
-                    base.caseId === item.caseId && base.status !== "PASS",
-                ),
-              ).length,
-            ],
-            [
-              "Added Cases",
-              done.filter(
-                (item) =>
-                  !baselineDone.some((base) => base.caseId === item.caseId),
-              ).length,
-            ],
-            [
-              "Removed Cases",
-              baselineDone.filter(
-                (item) =>
-                  !done.some((current) => current.caseId === item.caseId),
-              ).length,
-            ],
-            [
-              "Configuration diff",
-              run.targetRevisionId === baselineRun?.targetRevisionId
-                ? "No change"
-                : `${baselineRun?.targetRevisionId ?? "—"} → ${run.targetRevisionId}`,
-            ],
-          ]}
-        />
-      </EvaluationSection>
       <EvaluationSection title="Usage & Cost">
-        <KeyValueGrid
-          items={[
-            ["Agent", formatCost(cost)],
-            ["Judge", formatCost(done.length * 0.0004)],
-            ["Evaluation total", formatCost(cost + done.length * 0.0004)],
-            [
-              "Average / Case",
-              formatCost(done.length ? cost / done.length : 0),
-            ],
-            ["Trace count", traces.length],
-            ["Currency", "USD"],
-          ]}
-        />
+        <div className="flex items-center justify-between rounded-md border bg-muted/20 px-3 py-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total cost</span>
+          <span className="flex items-center gap-2">
+            <strong className="text-sm">{formatCost(totalCost)}</strong>
+            <span className="text-xs text-muted-foreground">USD</span>
+          </span>
+        </div>
       </EvaluationSection>
       <RevisionDecisionSection
         decision={decision}
@@ -626,81 +660,6 @@ export function EvaluationReportDetail({
           role,
         })}
       />
-      <EvaluationSection
-        title="Reflection"
-        description="After rejection, select evidence-backed improvements and create one immutable Target revision."
-      >
-        {reflections.length ? (
-          <div className="grid gap-3">
-            {reflections.map((reflection) => reflectionActionsHidden ? (
-              <div
-                key={reflection.id}
-                className="rounded-md border p-4"
-              >
-                <p className="font-medium">{reflection.suggestion}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Status: {reflection.status}
-                </p>
-              </div>
-            ) : (
-              <label
-                key={reflection.id}
-                className="flex items-start gap-3 rounded-md border p-4"
-              >
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  disabled={reflection.status !== "OPEN" || !canApplyReflection}
-                  checked={selected.includes(reflection.id)}
-                  onChange={(event) =>
-                    setSelected((current) =>
-                      event.target.checked
-                        ? [...current, reflection.id]
-                        : current.filter((id) => id !== reflection.id),
-                    )
-                  }
-                />
-                <span>
-                  <span className="font-medium">{reflection.suggestion}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    Status: {reflection.status}
-                  </span>
-                </span>
-              </label>
-            ))}
-            {canApplyReflection ? (
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => store.finishReflectionWithoutChanges(report.id, {
-                    name: role === "member" ? "Developer" : role,
-                    role,
-                  })}
-                >
-                  Finish without changes
-                </Button>
-                <Button
-                  disabled={!selected.length}
-                  onClick={() => store.submitReflection(report.id, selected, {
-                    name: role === "member" ? "Developer" : role,
-                    role,
-                  })}
-                >
-                  Apply selected changes
-                </Button>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {reflectionUnavailableMessage}
-              </p>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            No Reflection suggestions are available.
-          </p>
-        )}
-      </EvaluationSection>
     </div>
   );
 }

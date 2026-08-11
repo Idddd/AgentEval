@@ -31,7 +31,9 @@ import { Route as ProjectIdAgentGardenIndexRouteImport } from './routes/$project
 import { Route as ProjectIdAgentGardenAgentIdRouteImport } from './routes/$projectId/agent-garden/$agentId'
 import { Route as ProjectIdAuditLogsIndexRouteImport } from './routes/$projectId/audit-logs/index'
 import { Route as ProjectIdEvaluationIndexRouteImport } from './routes/$projectId/evaluation/index'
+import { Route as ProjectIdEvaluationBehaviorRouteImport } from './routes/$projectId/evaluation/behavior'
 import { Route as ProjectIdEvaluationCatalogRouteImport } from './routes/$projectId/evaluation/catalog'
+import { Route as ProjectIdEvaluationIdManagementRouteImport } from './routes/$projectId/evaluation/id-management'
 import { Route as ProjectIdEvaluationOverviewRouteImport } from './routes/$projectId/evaluation/overview'
 import { Route as ProjectIdEvaluationSettingsRouteImport } from './routes/$projectId/evaluation/settings'
 import { Route as ProjectIdEvaluationsIndexRouteImport } from './routes/$projectId/evaluations/index'
@@ -179,10 +181,22 @@ const ProjectIdEvaluationIndexRoute =
     path: '/',
     getParentRoute: () => ProjectIdEvaluationRoute,
   } as any)
+const ProjectIdEvaluationBehaviorRoute =
+  ProjectIdEvaluationBehaviorRouteImport.update({
+    id: '/behavior',
+    path: '/behavior',
+    getParentRoute: () => ProjectIdEvaluationRoute,
+  } as any)
 const ProjectIdEvaluationCatalogRoute =
   ProjectIdEvaluationCatalogRouteImport.update({
     id: '/catalog',
     path: '/catalog',
+    getParentRoute: () => ProjectIdEvaluationRoute,
+  } as any)
+const ProjectIdEvaluationIdManagementRoute =
+  ProjectIdEvaluationIdManagementRouteImport.update({
+    id: '/id-management',
+    path: '/id-management',
     getParentRoute: () => ProjectIdEvaluationRoute,
   } as any)
 const ProjectIdEvaluationOverviewRoute =
@@ -380,7 +394,9 @@ export interface FileRoutesByFullPath {
   '/$projectId/': typeof ProjectIdIndexRoute
   '/$projectId/access-policies/$policyId': typeof ProjectIdAccessPoliciesPolicyIdRoute
   '/$projectId/agent-garden/$agentId': typeof ProjectIdAgentGardenAgentIdRoute
+  '/$projectId/evaluation/behavior': typeof ProjectIdEvaluationBehaviorRoute
   '/$projectId/evaluation/catalog': typeof ProjectIdEvaluationCatalogRoute
+  '/$projectId/evaluation/id-management': typeof ProjectIdEvaluationIdManagementRoute
   '/$projectId/evaluation/overview': typeof ProjectIdEvaluationOverviewRoute
   '/$projectId/evaluation/settings': typeof ProjectIdEvaluationSettingsRoute
   '/$projectId/evaluations/new': typeof ProjectIdEvaluationsNewRoute
@@ -434,7 +450,9 @@ export interface FileRoutesByTo {
   '/$projectId': typeof ProjectIdIndexRoute
   '/$projectId/access-policies/$policyId': typeof ProjectIdAccessPoliciesPolicyIdRoute
   '/$projectId/agent-garden/$agentId': typeof ProjectIdAgentGardenAgentIdRoute
+  '/$projectId/evaluation/behavior': typeof ProjectIdEvaluationBehaviorRoute
   '/$projectId/evaluation/catalog': typeof ProjectIdEvaluationCatalogRoute
+  '/$projectId/evaluation/id-management': typeof ProjectIdEvaluationIdManagementRoute
   '/$projectId/evaluation/overview': typeof ProjectIdEvaluationOverviewRoute
   '/$projectId/evaluation/settings': typeof ProjectIdEvaluationSettingsRoute
   '/$projectId/evaluations/new': typeof ProjectIdEvaluationsNewRoute
@@ -490,7 +508,9 @@ export interface FileRoutesById {
   '/$projectId/': typeof ProjectIdIndexRoute
   '/$projectId/access-policies/$policyId': typeof ProjectIdAccessPoliciesPolicyIdRoute
   '/$projectId/agent-garden/$agentId': typeof ProjectIdAgentGardenAgentIdRoute
+  '/$projectId/evaluation/behavior': typeof ProjectIdEvaluationBehaviorRoute
   '/$projectId/evaluation/catalog': typeof ProjectIdEvaluationCatalogRoute
+  '/$projectId/evaluation/id-management': typeof ProjectIdEvaluationIdManagementRoute
   '/$projectId/evaluation/overview': typeof ProjectIdEvaluationOverviewRoute
   '/$projectId/evaluation/settings': typeof ProjectIdEvaluationSettingsRoute
   '/$projectId/evaluations/new': typeof ProjectIdEvaluationsNewRoute
@@ -547,7 +567,9 @@ export interface FileRouteTypes {
     | '/$projectId/'
     | '/$projectId/access-policies/$policyId'
     | '/$projectId/agent-garden/$agentId'
+    | '/$projectId/evaluation/behavior'
     | '/$projectId/evaluation/catalog'
+    | '/$projectId/evaluation/id-management'
     | '/$projectId/evaluation/overview'
     | '/$projectId/evaluation/settings'
     | '/$projectId/evaluations/new'
@@ -601,7 +623,9 @@ export interface FileRouteTypes {
     | '/$projectId'
     | '/$projectId/access-policies/$policyId'
     | '/$projectId/agent-garden/$agentId'
+    | '/$projectId/evaluation/behavior'
     | '/$projectId/evaluation/catalog'
+    | '/$projectId/evaluation/id-management'
     | '/$projectId/evaluation/overview'
     | '/$projectId/evaluation/settings'
     | '/$projectId/evaluations/new'
@@ -656,7 +680,9 @@ export interface FileRouteTypes {
     | '/$projectId/'
     | '/$projectId/access-policies/$policyId'
     | '/$projectId/agent-garden/$agentId'
+    | '/$projectId/evaluation/behavior'
     | '/$projectId/evaluation/catalog'
+    | '/$projectId/evaluation/id-management'
     | '/$projectId/evaluation/overview'
     | '/$projectId/evaluation/settings'
     | '/$projectId/evaluations/new'
@@ -885,11 +911,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectIdEvaluationIndexRouteImport
       parentRoute: typeof ProjectIdEvaluationRoute
     }
+    '/$projectId/evaluation/behavior': {
+      id: '/$projectId/evaluation/behavior'
+      path: '/behavior'
+      fullPath: '/$projectId/evaluation/behavior'
+      preLoaderRoute: typeof ProjectIdEvaluationBehaviorRouteImport
+      parentRoute: typeof ProjectIdEvaluationRoute
+    }
     '/$projectId/evaluation/catalog': {
       id: '/$projectId/evaluation/catalog'
       path: '/catalog'
       fullPath: '/$projectId/evaluation/catalog'
       preLoaderRoute: typeof ProjectIdEvaluationCatalogRouteImport
+      parentRoute: typeof ProjectIdEvaluationRoute
+    }
+    '/$projectId/evaluation/id-management': {
+      id: '/$projectId/evaluation/id-management'
+      path: '/id-management'
+      fullPath: '/$projectId/evaluation/id-management'
+      preLoaderRoute: typeof ProjectIdEvaluationIdManagementRouteImport
       parentRoute: typeof ProjectIdEvaluationRoute
     }
     '/$projectId/evaluation/overview': {
@@ -1106,7 +1146,9 @@ declare module '@tanstack/react-router' {
 }
 
 interface ProjectIdEvaluationRouteChildren {
+  ProjectIdEvaluationBehaviorRoute: typeof ProjectIdEvaluationBehaviorRoute
   ProjectIdEvaluationCatalogRoute: typeof ProjectIdEvaluationCatalogRoute
+  ProjectIdEvaluationIdManagementRoute: typeof ProjectIdEvaluationIdManagementRoute
   ProjectIdEvaluationOverviewRoute: typeof ProjectIdEvaluationOverviewRoute
   ProjectIdEvaluationSettingsRoute: typeof ProjectIdEvaluationSettingsRoute
   ProjectIdEvaluationIndexRoute: typeof ProjectIdEvaluationIndexRoute
@@ -1123,7 +1165,9 @@ interface ProjectIdEvaluationRouteChildren {
 }
 
 const ProjectIdEvaluationRouteChildren: ProjectIdEvaluationRouteChildren = {
+  ProjectIdEvaluationBehaviorRoute: ProjectIdEvaluationBehaviorRoute,
   ProjectIdEvaluationCatalogRoute: ProjectIdEvaluationCatalogRoute,
+  ProjectIdEvaluationIdManagementRoute: ProjectIdEvaluationIdManagementRoute,
   ProjectIdEvaluationOverviewRoute: ProjectIdEvaluationOverviewRoute,
   ProjectIdEvaluationSettingsRoute: ProjectIdEvaluationSettingsRoute,
   ProjectIdEvaluationIndexRoute: ProjectIdEvaluationIndexRoute,

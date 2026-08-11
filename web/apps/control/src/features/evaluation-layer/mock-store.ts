@@ -77,6 +77,10 @@ export interface CreateRunInput {
   evaluatorIds: string[];
 }
 
+export interface PublishDatasetRevisionOptions {
+  allowEmpty?: boolean;
+}
+
 export interface EvaluationLayerStore {
   getState(): EvaluationLayerState;
   subscribe(listener: () => void): () => void;
@@ -95,7 +99,7 @@ export interface EvaluationLayerStore {
   importCases(datasetId: string, json: string): CommandResult<{ imported: number }>;
   generateCases(datasetId: string): CommandResult<{ generated: number }>;
   completeCoverage(datasetId: string): CommandResult<{ generated: number }>;
-  publishDatasetRevision(datasetId: string): CommandResult<{ revisionId: string }>;
+  publishDatasetRevision(datasetId: string, options?: PublishDatasetRevisionOptions): CommandResult<{ revisionId: string }>;
   createRun(input: CreateRunInput): CommandResult<{ runId: string }>;
   advanceRun(runId: string): CommandResult<{ complete: boolean }>;
   decideRevision(
@@ -1101,11 +1105,11 @@ export function createEvaluationLayerStore(
       }
       return { ok: true, value: { generated: generated.length } };
     },
-    publishDatasetRevision(datasetId) {
+    publishDatasetRevision(datasetId, options) {
       const dataset = state.datasets.find((item) => item.id === datasetId);
       const draft = draftFor(datasetId);
       if (!dataset || !draft) return fail("Test Case draft not found.", "NOT_FOUND");
-      if (!draft.cases.length) {
+      if (!draft.cases.length && !options?.allowEmpty) {
         return fail("Add at least one case before publishing.", "INVALID_INPUT");
       }
       const revisionId = dependencies.id();
@@ -1295,10 +1299,10 @@ export function createEvaluationLayerStore(
               status: "READY" as const,
               summary: targetRevision?.kind === "guardrail"
                 ? hasFailure
-                  ? "Guardrail decisions require review before approval."
+                  ? "The guardrail made a different decision than expected, so the request was not handled according to policy."
                   : "All Guardrail decisions matched the expected policy."
                 : hasFailure
-                  ? "Permission-compliance regressions require review."
+                  ? "The assistant performed an action that violated the expected access policy."
                   : "All permission-compliance cases passed.",
               createdAt: dependencies.now(),
             }

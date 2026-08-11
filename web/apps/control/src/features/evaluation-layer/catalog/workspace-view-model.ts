@@ -253,6 +253,13 @@ export function workspaceTargetView(
 }
 
 export function workspaceNextStep(row: WorkspaceRow): WorkspaceNextStep {
+  if (!row.selectedDataset) {
+    return {
+      tab: 'dataset',
+      label: 'Select Dataset',
+      description: 'Choose an existing Dataset or create a new one before continuing.',
+    };
+  }
   if (!row.publishedRevision) {
     return {
       tab: 'dataset',
@@ -262,9 +269,9 @@ export function workspaceNextStep(row: WorkspaceRow): WorkspaceNextStep {
   }
   if (row.stage === 'RUNNING') {
     return {
-      tab: 'run',
-      label: 'Evaluation in progress',
-      description: 'Case progress and results update here as the run advances.',
+      tab: 'result',
+      label: 'Report in progress',
+      description: 'Progress, logs, and per-case results update in the Report as the run advances.',
     };
   }
   if (row.stage === 'NEEDS_RE_EVALUATION') {

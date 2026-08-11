@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EvaluationLayerProvider } from '../mock-provider';
@@ -20,11 +20,14 @@ afterEach(() => {
   cleanup();
 });
 
-function reportView(decisionMode: 'inline' | 'hidden' = 'inline') {
+function reportView(
+  decisionMode: 'inline' | 'hidden' = 'inline',
+  reportId = 'report-permission-baseline',
+) {
   return (
     <EvaluationLayerProvider projectId='individual'>
       <EvaluationReportDetail
-        reportId='report-permission-baseline'
+        reportId={reportId}
         embedded
         decisionMode={decisionMode}
       />
@@ -33,16 +36,40 @@ function reportView(decisionMode: 'inline' | 'hidden' = 'inline') {
 }
 
 describe('Evaluation report Developer changes', () => {
-  it('separates Business Dataset results from Guardrail Test Pack results', () => {
+  it('keeps source groups in Test Results without repeating their counts in Summary', () => {
     render(reportView('hidden'));
 
-    expect(screen.getByText('Business Dataset results')).not.toBeNull();
-    expect(screen.getByText('Guardrail Test Pack results')).not.toBeNull();
+    expect(screen.queryByText('Business Dataset results')).toBeNull();
+    expect(screen.queryByText('Guardrail Test Pack results')).toBeNull();
+    expect(screen.getByText('Business Dataset')).not.toBeNull();
     expect(screen.getAllByText('Office Assistant Core Scenarios').length).toBe(2);
     expect(screen.getByText('Universal Safety Baseline')).not.toBeNull();
     expect(screen.getByText('Agent Prompt Injection')).not.toBeNull();
     expect(screen.getByText('Failed cases')).not.toBeNull();
     expect(screen.getAllByText('guardrail-agent-instruction-override').length).toBeGreaterThanOrEqual(2);
+
+    const failure = screen.getByText('Failure reasons').closest('[data-slot="card"]');
+    const reflection = screen.getByText('Reflection').closest('[data-slot="card"]');
+    const results = screen.getByText('Test Results').closest('[data-slot="card"]');
+    expect(failure?.parentElement).toBe(reflection?.parentElement);
+    expect(failure!.compareDocumentPosition(results!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(reflection!.compareDocumentPosition(results!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(screen.queryByText('Comparison')).toBeNull();
+  });
+
+  it('shows simulated Tool Evidence and a one-line cost summary when traces have no tool calls', () => {
+    render(reportView('hidden', 'report-skill-summary-baseline'));
+
+    const evidence = within(screen.getByText('Tool Evidence').closest('[data-slot="card"]')! as HTMLElement);
+    expect(evidence.getAllByText('Demo')).toHaveLength(4);
+    expect(evidence.getAllByText('Skill invocation')).toHaveLength(4);
+
+    const usage = within(screen.getByText('Usage & Cost').closest('[data-slot="card"]')! as HTMLElement);
+    expect(usage.getByText('Total cost')).not.toBeNull();
+    expect(usage.getByText('USD')).not.toBeNull();
+    expect(usage.queryByText('Agent')).toBeNull();
+    expect(usage.queryByText('Judge')).toBeNull();
+    expect(usage.queryByText('Trace count')).toBeNull();
   });
 
   it('allows only the Developer role to apply Reflection after rejection', async () => {

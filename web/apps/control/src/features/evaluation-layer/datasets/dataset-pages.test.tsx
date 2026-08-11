@@ -37,6 +37,15 @@ describe('Evaluation Dataset detail copy', () => {
     ).toBeTruthy();
     expect(generate.getAttribute('data-variant')).toBe('default');
     expect(screen.queryByRole('button', { name: 'Publish draft' })).toBeNull();
+    const table = screen.getByRole('table');
+    const edit = screen.getByRole('button', { name: 'Edit case' });
+    expect(table.getAttribute('data-density')).toBe('compact');
+    expect(table.className).toContain('[&_td]:py-0.5');
+    expect(edit.getAttribute('data-size')).toBe('icon-xs');
+    expect(edit.className).toContain('size-5');
+    const tags = screen.getByText('invoice, draft');
+    expect(tags.closest('td')?.className).toContain('truncate');
+    expect(tags.closest('tr')?.className).toContain('h-6');
   });
 
   it('lets the catalog generate and add cases without opening Details', async () => {
@@ -97,7 +106,13 @@ describe('Evaluation Dataset detail copy', () => {
     });
 
     expect(screen.getAllByLabelText('Include staged case')).toHaveLength(6);
-    expect(screen.getByDisplayValue('Northwind Cloud')).toBeTruthy();
+    const stagedInput = screen.getByDisplayValue('Northwind Cloud');
+    expect(stagedInput).toBeTruthy();
+    expect(stagedInput.className).toContain('md:text-xs');
+    expect(stagedInput.className).toContain('font-sans');
+    expect(stagedInput.className).toContain('border-transparent');
+    expect(stagedInput.closest('tr')?.className).not.toContain('bg-primary');
+    expect(stagedInput.closest('tr')?.className).toContain('h-6');
     expect(screen.getByDisplayValue('149')).toBeTruthy();
     expect(screen.getByDisplayValue('software')).toBeTruthy();
     expect(screen.getAllByDisplayValue('approve')).toHaveLength(3);

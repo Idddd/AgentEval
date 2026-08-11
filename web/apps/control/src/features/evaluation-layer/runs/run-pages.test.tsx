@@ -42,7 +42,7 @@ describe('Evaluation run detail', () => {
 });
 
 describe('Evaluation run setup', () => {
-  it('reuses the latest run Guardrail packs and requires at least one selection', async () => {
+  it('reuses the latest run Guardrail packs and keeps the baseline selection required', async () => {
     render(
       <EvaluationLayerProvider projectId='individual'>
         <EvaluationRunSetup onRunCreated={vi.fn()} />
@@ -52,13 +52,19 @@ describe('Evaluation run setup', () => {
     expect(screen.getByText('Test coverage')).not.toBeNull();
     expect(screen.getByRole('combobox', { name: 'Business Dataset' })).not.toBeNull();
     const packs = screen.getByRole('group', { name: 'Guardrail Test Packs' });
-    expect((within(packs).getByRole('checkbox', { name: 'Select Universal Safety Baseline' }) as HTMLInputElement).checked).toBe(true);
-    expect((within(packs).getByRole('checkbox', { name: 'Select Agent Prompt Injection' }) as HTMLInputElement).checked).toBe(true);
+    const required = within(packs).getByRole('checkbox', { name: 'Select Universal Safety Baseline' }) as HTMLInputElement;
+    const optional = within(packs).getByRole('checkbox', { name: 'Select Agent Prompt Injection' }) as HTMLInputElement;
+    expect(required.checked).toBe(true);
+    expect(required.disabled).toBe(true);
+    expect(optional.checked).toBe(true);
+    expect(optional.disabled).toBe(false);
     expect(within(packs).queryByText('MCP Tool Authorization')).toBeNull();
     expect(screen.getByRole('status').textContent).toContain('waiting for an Admin decision');
     expect((screen.getByRole('button', { name: 'Start evaluation' }) as HTMLButtonElement).disabled).toBe(true);
 
-    for (const template of within(packs).getAllByRole('checkbox')) await userEvent.click(template);
-    expect(within(packs).getByText('Select at least one Guardrail test pack before running the evaluation.')).not.toBeNull();
+    await userEvent.click(optional);
+    expect(optional.checked).toBe(false);
+    expect(within(packs).getByText(/1 selected · \d+ safety cases/)).not.toBeNull();
+    expect(within(packs).queryByText('Select at least one Guardrail test pack before running the evaluation.')).toBeNull();
   });
 });

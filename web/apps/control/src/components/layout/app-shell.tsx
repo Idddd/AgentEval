@@ -13,6 +13,7 @@ import {
   Eye,
   FileLock2,
   FileClock,
+  Fingerprint,
   ListFilter,
   LockKeyhole,
   Network,
@@ -79,6 +80,8 @@ type ProjectRoute =
   | "/$projectId/traces"
   | "/$projectId/evaluations"
   | "/$projectId/evaluation/catalog"
+  | "/$projectId/evaluation/behavior"
+  | "/$projectId/evaluation/id-management"
   | "/$projectId/evaluation/targets"
   | "/$projectId/evaluation/datasets"
   | "/$projectId/evaluation/runs"
@@ -121,6 +124,8 @@ const AGENT_OPERATOR_ROLES: ProjectRole[] = ["admin", "member"];
  * detection (ADA, FRT, ISS per the role-requirement matrix).
  */
 const SECURITY_EVAL_ROLES: ProjectRole[] = [...AGENT_OPERATOR_ROLES, "ada", "frt", "iss"];
+/** Model behavior monitoring is also available to Compliance reviewers. */
+const BEHAVIOR_MONITOR_ROLES: ProjectRole[] = [...SECURITY_EVAL_ROLES, "compliance"];
 /** Agent ID Management: agent identification/registry (FRT only). */
 const AGENT_IDENTITY_ROLES: ProjectRole[] = [...AGENT_OPERATOR_ROLES, "frt"];
 /** Agent Permission Management: policy compliance + permission control (FRT, Compliance). */
@@ -203,6 +208,8 @@ export const projectNavGroups: Array<{
     label: "Evaluation",
     items: [
       { icon: CheckCircle2, label: "Eval", to: "/$projectId/evaluation/catalog", roles: SECURITY_EVAL_ROLES },
+      { icon: Activity, label: "Behavior", to: "/$projectId/evaluation/behavior", roles: BEHAVIOR_MONITOR_ROLES },
+      { icon: Fingerprint, label: "ID Management", to: "/$projectId/evaluation/id-management", roles: AGENT_IDENTITY_ROLES },
     ],
   },
   {

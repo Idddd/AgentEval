@@ -10,12 +10,12 @@ function visibleLabels(groupLabel: string, role: ProjectRole) {
 }
 
 describe("Evaluation navigation", () => {
-  it("keeps the Evaluation section consolidated under Eval and moves the merged Overview to Observer", () => {
+  it("keeps evaluation workflows together and moves the merged Overview to Observer", () => {
     expect(
       projectNavGroups
         .find((group) => group.label === "Evaluation")
         ?.items.map((item) => item.label),
-    ).toEqual(["Eval"]);
+    ).toEqual(["Eval", "Behavior", "ID Management"]);
     expect(
       projectNavGroups
         .find((group) => group.label === "Observer")
@@ -28,6 +28,13 @@ describe("Evaluation navigation", () => {
     const catalog = group.items[0]!;
     expect(itemIsActive(catalog, "/individual/evaluation/catalog", "individual")).toBe(true);
     expect(itemIsActive(catalog, "/individual/evaluation/targets/demo", "individual")).toBe(false);
+  });
+
+  it("scopes Behavior and ID Management active states to their own pages", () => {
+    const items = projectNavGroups.find((item) => item.label === "Evaluation")!.items;
+    expect(itemIsActive(items[1]!, "/individual/evaluation/behavior", "individual")).toBe(true);
+    expect(itemIsActive(items[1]!, "/individual/evaluation/id-management", "individual")).toBe(false);
+    expect(itemIsActive(items[2]!, "/individual/evaluation/id-management", "individual")).toBe(true);
   });
 });
 
@@ -88,7 +95,7 @@ describe("Role-based navigation whitelist", () => {
 
   it("restricts compliance to policy, behavior, and traceability surfaces", () => {
     expect(visibleLabels("Agentic", "compliance")).toEqual([]);
-    expect(visibleLabels("Evaluation", "compliance")).toEqual([]);
+    expect(visibleLabels("Evaluation", "compliance")).toEqual(["Behavior"]);
     expect(visibleLabels("Security", "compliance")).toEqual([
       "Access Policies",
       "Runtime Policies",
@@ -103,7 +110,7 @@ describe("Role-based navigation whitelist", () => {
   it("gives ADA and ISS risk-assessment, behavior, and traceability surfaces", () => {
     for (const role of ["ada", "iss"] as const) {
       expect(visibleLabels("Agentic", role)).toEqual(["Skills", "MCP Servers"]);
-      expect(visibleLabels("Evaluation", role)).toEqual(["Eval"]);
+      expect(visibleLabels("Evaluation", role)).toEqual(["Eval", "Behavior"]);
       expect(visibleLabels("Security", role)).toEqual(["Audit Logs"]);
       expect(visibleLabels("Observer", role)).toEqual(["Traces", "Overview"]);
     }
@@ -118,7 +125,7 @@ describe("Role-based navigation whitelist", () => {
       "Knowledge Base",
       "Memory",
     ]);
-    expect(visibleLabels("Evaluation", "frt")).toEqual(["Eval"]);
+    expect(visibleLabels("Evaluation", "frt")).toEqual(["Eval", "Behavior", "ID Management"]);
     expect(visibleLabels("Security", "frt")).toEqual([
       "Access Policies",
       "Runtime Policies",

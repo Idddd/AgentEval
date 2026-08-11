@@ -336,6 +336,35 @@ describe("EvaluationLayerStore", () => {
     ]);
   });
 
+  it("allows an empty Dataset snapshot only when the guided workflow opts in", () => {
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: (() => {
+        let sequence = 0;
+        return () => `empty-dataset-${sequence++}`;
+      })(),
+    });
+    const created = store.createDataset({
+      targetId: 'demo-onboarding-assistant',
+      name: 'Onboarding Assistant Dataset',
+      description: 'Guided workflow Dataset',
+    });
+    if (!created.ok) throw new Error(created.error);
+
+    expect(store.publishDatasetRevision(created.value.datasetId)).toMatchObject({
+      ok: false,
+      code: 'INVALID_INPUT',
+    });
+    const published = store.publishDatasetRevision(created.value.datasetId, {
+      allowEmpty: true,
+    });
+    expect(published.ok).toBe(true);
+    expect(
+      store.getState().datasetRevisions.find(
+        (revision) => revision.id === (published.ok ? published.value.revisionId : ''),
+      )?.cases,
+    ).toEqual([]);
+  });
+
   it('approves an all-pass Report for a non-Guardrail Target', () => {
     const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
       id: () => 'mcp-pass-decision',

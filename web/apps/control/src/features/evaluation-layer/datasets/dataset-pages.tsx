@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { ArrowRight, Copy, Database, Loader2, Pencil, Plus, Sparkles, Trash2, Upload } from 'lucide-react';
+import { ArrowRight, CircleCheck, Copy, Database, Loader2, Pencil, Plus, Sparkles, Trash2, Upload } from 'lucide-react';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,7 +23,7 @@ import { EvaluationLayerStatusBadge } from '../shared/evaluation-status';
 import { EvaluationSection, EvaluationTable, formatCost } from '../shared/evaluation-ui';
 import { traceCost } from '../traces/trace-view-model';
 
-const builtInColumns: EvaluationLayerDatasetColumn[] = [
+export const DEFAULT_DATASET_COLUMNS: EvaluationLayerDatasetColumn[] = [
   { name: 'query', kind: 'input', dataType: 'string', required: true, description: 'User query to the agent', locked: true },
   { name: 'expected_action', kind: 'output', dataType: 'string', required: true, description: 'Expected action or outcome from the target', locked: true },
   { name: 'header', kind: 'input', dataType: 'json', required: false, description: 'Request header metadata', locked: true },
@@ -120,7 +120,7 @@ export function DatasetEditor({ open, onOpenChange }: { open: boolean; onOpenCha
   const store = useEvaluationLayerStore();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [columns, setColumns] = useState<EvaluationLayerDatasetColumn[]>(builtInColumns);
+  const [columns, setColumns] = useState<EvaluationLayerDatasetColumn[]>(DEFAULT_DATASET_COLUMNS);
   const [error, setError] = useState('');
   const addColumn = () => setColumns((current) => [...current, { name: '', kind: 'input', dataType: 'string', required: true, description: '' }]);
   const updateColumn = (index: number, patch: Partial<EvaluationLayerDatasetColumn>) => setColumns((current) => current.map((item, position) => position === index ? { ...item, ...patch } : item));
@@ -274,6 +274,7 @@ export function EvaluationDatasetDetail({
   compact = false,
   showEvaluateAction = true,
   showDetailsToggle = true,
+  showGenerateAction = true,
 }: {
   datasetId: string;
   onEvaluate?(): void;
@@ -282,6 +283,7 @@ export function EvaluationDatasetDetail({
   compact?: boolean;
   showEvaluateAction?: boolean;
   showDetailsToggle?: boolean;
+  showGenerateAction?: boolean;
 }) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
@@ -378,55 +380,88 @@ export function EvaluationDatasetDetail({
     }
     void navigate({ to: '/$projectId/evaluation/runs/new', params: { projectId } });
   };
+  const noticeIsSuccess = notice.startsWith('Added and published');
   return (
-    <div className='space-y-5'>
+    <div className={embedded ? 'overflow-hidden rounded-lg border bg-card shadow-sm' : 'space-y-5'}>
       {compact ? <div className='space-y-3'>
-        <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3'>
-          <Button variant='outline' disabled={generating} onClick={() => { if (showDetailsToggle) setDetailsOpen(true); generate(); }}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate Dataset'}</Button>
+        <div className={cn('flex flex-wrap items-center justify-between gap-3', embedded ? 'p-3' : 'rounded-lg border bg-muted/20 p-3')}>
+          {showGenerateAction ? <Button variant='outline' disabled={generating} onClick={() => { if (showDetailsToggle) setDetailsOpen(true); generate(); }}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate Dataset'}</Button> : null}
           {showDetailsToggle ? <Button aria-label={detailsOpen ? 'Hide Dataset details' : 'Show Dataset details'} aria-expanded={detailsOpen} size='sm' variant='outline' onClick={() => setDetailsOpen((currentOpen) => !currentOpen)}>{detailsOpen ? 'Hide details' : 'Details'}</Button> : null}
         </div>
         {!detailsOpen && pendingRows.length ? <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/25 bg-primary/5 p-3 text-sm'><span>{pendingRows.length} generated cases ready</span><Button onClick={commitPending}>Add selected</Button></div> : null}
       </div> : null}
       {!compact || detailsOpen ? <>
-      <div className='flex flex-wrap items-start justify-between gap-3'>
-        <div><h2 className='text-2xl font-semibold'>{dataset.name}</h2><p className='mt-1 text-xs text-muted-foreground'>{current?.status === 'PUBLISHED' ? `Published R${current.revision}` : 'Not published'} · Draft has {draft?.cases.length ?? 0} cases</p></div>
-        <div className='flex flex-wrap gap-2'>{!compact ? <Button disabled={generating} onClick={generate}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate'}</Button> : null}<Button variant='outline' disabled={generating} onClick={addEmptyRow}><Plus className='size-4' />Add case</Button><Button variant='outline' disabled={generating} onClick={() => setImportOpen(true)}><Upload className='size-4' />Import JSON</Button>{onCreateDataset ? <Button variant='outline' onClick={onCreateDataset}><Plus className='size-4' />Create Dataset</Button> : null}{current?.status === 'PUBLISHED' && showEvaluateAction ? <Button variant='outline' onClick={evaluate}>Evaluate</Button> : null}</div>
+      <div className={cn('flex flex-wrap items-center justify-between gap-3', embedded && 'border-b bg-muted/25 px-3 py-2.5')}>
+        <div><h2 className={cn('font-sans font-semibold', embedded ? 'text-sm' : 'text-2xl')}>{dataset.name}</h2><p className='mt-0.5 text-xs text-muted-foreground'>{current?.status === 'PUBLISHED' ? `Published R${current.revision}` : 'Not published'} · Draft has {draft?.cases.length ?? 0} cases</p></div>
+        <div className='flex flex-wrap gap-1.5'>{!compact && showGenerateAction ? <Button size={embedded ? 'sm' : 'default'} {...(embedded ? { className: 'bg-cyan-600 text-white hover:bg-cyan-700' } : {})} disabled={generating} onClick={generate}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate'}</Button> : null}<Button size={embedded ? 'sm' : 'default'} variant='outline' disabled={generating} onClick={addEmptyRow}><Plus className='size-4' />Add case</Button><Button size={embedded ? 'sm' : 'default'} variant='outline' disabled={generating} onClick={() => setImportOpen(true)}><Upload className='size-4' />Import JSON</Button>{onCreateDataset ? <Button size={embedded ? 'sm' : 'default'} variant='outline' onClick={onCreateDataset}><Plus className='size-4' />Create Dataset</Button> : null}{current?.status === 'PUBLISHED' && showEvaluateAction ? <Button size={embedded ? 'sm' : 'default'} variant='outline' onClick={evaluate}>Evaluate</Button> : null}</div>
       </div>
-      {notice ? <p className='rounded-lg border bg-muted/20 px-4 py-3 text-sm'>{notice}</p> : null}
-      <Tabs defaultValue='draft'>
-        <TabsList variant='line'><TabsTrigger value='draft'>Draft cases</TabsTrigger><TabsTrigger value='schema'>Schema</TabsTrigger><TabsTrigger value='history'>Evaluation history</TabsTrigger></TabsList>
-        <TabsContent value='draft' className='pt-4'>
-          <EvaluationSection title='Current Dataset draft'>
-            {cases.length || pendingRows.length || generating ? <EvaluationTable><thead><tr><th className='w-8'><span className='sr-only'>Select</span></th><th>#</th>{schema.map((column) => <th key={column.name}>{column.name}{column.required ? ' *' : ''}</th>)}<th>Source</th><th>Generated from</th><th>Requirement</th><th>Tags</th><th>Actions</th></tr></thead><tbody>
+      {notice ? <div role='status' className={cn('flex items-center gap-2 rounded-md border px-3 py-2 text-xs', embedded && 'mx-3 mt-3', noticeIsSuccess ? 'border-emerald-500/25 bg-emerald-500/5 text-emerald-800 dark:text-emerald-200' : 'border-cyan-500/25 bg-cyan-500/5 text-foreground')}>
+        {noticeIsSuccess ? <CircleCheck className='size-4 shrink-0' /> : <Sparkles className='size-4 shrink-0 text-cyan-700 dark:text-cyan-300' />}
+        <span>{notice}</span>
+      </div> : null}
+      <Tabs defaultValue='draft' className={cn('min-w-0', embedded && 'px-3 pb-3')}>
+        <TabsList variant='line' className='w-full justify-start border-b'><TabsTrigger className='after:bg-cyan-600 data-[state=active]:text-cyan-700 dark:data-[state=active]:text-cyan-300' value='draft'>Draft cases</TabsTrigger><TabsTrigger className='after:bg-cyan-600 data-[state=active]:text-cyan-700 dark:data-[state=active]:text-cyan-300' value='schema'>Schema</TabsTrigger><TabsTrigger className='after:bg-cyan-600 data-[state=active]:text-cyan-700 dark:data-[state=active]:text-cyan-300' value='history'>Evaluation history</TabsTrigger></TabsList>
+        <TabsContent value='draft' className={embedded ? 'pt-2' : 'pt-4'}>
+          <EvaluationSection title='Current Dataset draft' {...(embedded ? { className: 'border-0 bg-transparent py-0 shadow-none [--card-spacing:--spacing(2)] [&_[data-slot=card-title]]:!font-sans' } : {})}>
+            {cases.length || pendingRows.length || generating ? <EvaluationTable density={embedded ? 'compact' : 'default'}><thead><tr><th className='w-8'><span className='sr-only'>Select</span></th><th>#</th>{schema.map((column) => <th key={column.name}>{column.name}{column.required ? ' *' : ''}</th>)}<th>Source</th><th>Generated from</th><th>Requirement</th><th>Tags</th><th>Actions</th></tr></thead><tbody>
               {cases.map((item, index) => {
               const provenance = item.metadata?.provenance && typeof item.metadata.provenance === 'object' ? item.metadata.provenance as Record<string, unknown> : item.metadata ?? {};
-              return <tr key={item.id}><td /><td>{index + 1}</td>{schema.map((column) => { const value = (column.kind === 'input' ? item.input : item.expectedOutput)[column.name]; return <td key={column.name} className='max-w-64 truncate'>{value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')}</td>; })}<td>{visibleSource(item.source)}</td><td>{String(provenance.tool_name ?? provenance.tool_id ?? provenance.source ?? item.source)}</td><td>{String(provenance.requirement ?? item.metadata?.requirement ?? '')}</td><td>{item.tags.join(', ')}</td><td><div className='flex'><Button size='icon-sm' variant='ghost' aria-label='Edit case' onClick={() => setCaseEditor({ open: true, item })}><Pencil /></Button><Button size='icon-sm' variant='ghost' aria-label='Duplicate case' onClick={() => store.duplicateCase(dataset.id, item.id)}><Copy /></Button><Button size='icon-sm' variant='ghost' aria-label='Delete case' onClick={() => store.deleteCase(dataset.id, item.id)}><Trash2 /></Button></div></td></tr>;
+              const source = visibleSource(item.source);
+              const generatedFrom = String(provenance.tool_name ?? provenance.tool_id ?? provenance.source ?? item.source);
+              const requirement = String(provenance.requirement ?? item.metadata?.requirement ?? '');
+              const tags = item.tags.join(', ');
+              return (
+                <tr key={item.id} {...(embedded ? { className: 'h-6' } : {})}>
+                  <td />
+                  <td>{index + 1}</td>
+                  {schema.map((column) => {
+                    const value = (column.kind === 'input' ? item.input : item.expectedOutput)[column.name];
+                    const label = value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
+                    return <td key={column.name} className='max-w-64 truncate' title={label}>{label}</td>;
+                  })}
+                  <td className='w-24 max-w-24 truncate' title={source}>{source}</td>
+                  <td className='w-32 max-w-32 truncate' title={generatedFrom}>{generatedFrom}</td>
+                  <td className='w-36 max-w-36 truncate' title={requirement}>{requirement}</td>
+                  <td className='w-40 max-w-40 truncate' title={tags}>{tags}</td>
+                  <td className='whitespace-nowrap'><div className='flex'><Button size={embedded ? 'icon-xs' : 'icon-sm'} {...(embedded ? { className: 'size-5' } : {})} variant='ghost' aria-label='Edit case' onClick={() => setCaseEditor({ open: true, item })}><Pencil /></Button><Button size={embedded ? 'icon-xs' : 'icon-sm'} {...(embedded ? { className: 'size-5' } : {})} variant='ghost' aria-label='Duplicate case' onClick={() => store.duplicateCase(dataset.id, item.id)}><Copy /></Button><Button size={embedded ? 'icon-xs' : 'icon-sm'} {...(embedded ? { className: 'size-5' } : {})} variant='ghost' aria-label='Delete case' onClick={() => store.deleteCase(dataset.id, item.id)}><Trash2 /></Button></div></td>
+                </tr>
+              );
             })}
               {generating ? generatedCases.map((_, index) => (
-                <tr key={`generating-${index}`} className='animate-pulse'>
+                <tr key={`generating-${index}`} className={cn('animate-pulse', embedded && 'h-6')}>
                   <td /><td><span className='text-xs text-muted-foreground'>…</span></td>
                   {schema.map((column) => <td key={column.name}><div className='h-4 rounded bg-muted' /></td>)}
                   <td colSpan={5}><div className='h-4 w-28 rounded bg-muted' /></td>
                 </tr>
               )) : null}
               {pendingRows.map((row) => (
-                <tr key={row.id} className='bg-primary/5'>
+                <tr key={row.id} className={cn('font-sans font-normal', embedded && 'h-6')}>
                   <td><input type='checkbox' aria-label='Include staged case' checked={row.checked} onChange={() => togglePending(row.id)} /></td>
                   <td><span className='rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary'>new</span></td>
                   {schema.map((column) => (
                     <td key={column.name}>
                       {column.dataType === 'boolean' ? (
-                        <select className='h-8 w-full rounded-md border bg-background px-2 text-xs' value={row.values[column.name] || 'false'} onChange={(event) => updatePending(row.id, column.name, event.target.value)}><option>true</option><option>false</option></select>
+                        <select className={cn(
+                          'w-full font-sans text-xs font-normal leading-4 md:text-xs',
+                          embedded
+                            ? 'h-5 rounded-sm border border-transparent bg-transparent px-0 py-0 outline-none focus:border-ring focus:bg-background focus:px-1'
+                            : 'h-8 rounded-md border bg-background px-2',
+                        )} value={row.values[column.name] || 'false'} onChange={(event) => updatePending(row.id, column.name, event.target.value)}><option>true</option><option>false</option></select>
                       ) : (
-                        <Input className={cn('h-8 min-w-32 text-xs', column.dataType === 'json' && 'font-mono')} value={row.values[column.name] ?? ''} onChange={(event) => updatePending(row.id, column.name, event.target.value)} />
+                        <Input className={cn(
+                          'min-w-32 font-sans text-xs font-normal leading-4 md:text-xs',
+                          embedded
+                            ? 'h-5 rounded-sm border-transparent bg-transparent px-0 py-0 shadow-none dark:bg-transparent focus-visible:border-ring focus-visible:bg-background focus-visible:px-1 focus-visible:ring-1'
+                            : 'h-8',
+                        )} value={row.values[column.name] ?? ''} onChange={(event) => updatePending(row.id, column.name, event.target.value)} />
                       )}
                     </td>
                   ))}
-                  <td>{visibleSource(row.source)}</td>
-                  <td>—</td>
-                  <td>—</td>
-                  <td>{row.tags.join(', ') || '—'}</td>
-                  <td><Button size='icon-sm' variant='ghost' aria-label='Discard staged case' onClick={() => removePending(row.id)}><Trash2 /></Button></td>
+                  <td className='w-24 max-w-24 truncate' title={visibleSource(row.source)}>{visibleSource(row.source)}</td>
+                  <td className='w-32 max-w-32 truncate'>—</td>
+                  <td className='w-36 max-w-36 truncate'>—</td>
+                  <td className='w-40 max-w-40 truncate' title={row.tags.join(', ')}>{row.tags.join(', ') || '—'}</td>
+                  <td className='whitespace-nowrap'><Button size={embedded ? 'icon-xs' : 'icon-sm'} {...(embedded ? { className: 'size-5' } : {})} variant='ghost' aria-label='Discard staged case' onClick={() => removePending(row.id)}><Trash2 /></Button></td>
                 </tr>
               ))}
             </tbody></EvaluationTable> : <div><p className='font-medium'>No cases in the current draft</p><p className='mt-1 text-sm text-muted-foreground'>Add a case, generate an LLM draft, import JSON, or complete Tool coverage.</p></div>}

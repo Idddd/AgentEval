@@ -14,6 +14,8 @@ function matchRouteIds(pathname: string) {
 describe("Evaluation layer routes", () => {
   it.each([
     ["/individual/evaluation/catalog", "/$projectId/evaluation/catalog"],
+    ["/individual/evaluation/behavior", "/$projectId/evaluation/behavior"],
+    ["/individual/evaluation/id-management", "/$projectId/evaluation/id-management"],
     ["/individual/evaluation/targets", "/$projectId/evaluation/targets/"],
     ["/individual/evaluation/datasets", "/$projectId/evaluation/datasets/"],
     ["/individual/evaluation/runs", "/$projectId/evaluation/runs/"],
