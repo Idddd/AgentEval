@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PageHeader } from "@/components/layout/page-header";
+import { GuardrailsPage } from "@/features/guard-governance/guardrails/guardrails-page";
 
 export const Route = createFileRoute(
   "/$projectId/governance/guardrails/",
 )({ component: GuardrailsRoute });
 
 function GuardrailsRoute() {
-  return <PageHeader title="Guardrails" description="Define and test model I/O safety controls." />;
+  const { projectId } = Route.useParams();
+  return <GuardrailsPage projectId={projectId} />;
 }
