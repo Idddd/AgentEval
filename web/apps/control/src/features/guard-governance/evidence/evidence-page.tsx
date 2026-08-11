@@ -18,10 +18,10 @@ export function EvidencePage() {
   const [risk, setRisk] = useState<"" | GuardrailRisk>("");
   const [selected, setSelected] = useState<EvidenceEvent | null>(null);
   const items = filterEvidence(state, {
-    guardrailId: guardrailId || undefined,
-    assignmentId: assignmentId || undefined,
-    outcome: outcome || undefined,
-    risk: risk || undefined,
+    ...(guardrailId ? { guardrailId } : {}),
+    ...(assignmentId ? { assignmentId } : {}),
+    ...(outcome ? { outcome } : {}),
+    ...(risk ? { risk } : {}),
   });
   const blocked = state.evidence.filter((item) => item.outcome === "BLOCK").length;
 
