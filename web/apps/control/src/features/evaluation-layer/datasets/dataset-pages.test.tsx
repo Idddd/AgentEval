@@ -39,6 +39,32 @@ describe('Evaluation Dataset detail copy', () => {
     expect(screen.queryByRole('button', { name: 'Publish draft' })).toBeNull();
   });
 
+  it('lets the catalog generate and add cases without opening Details', async () => {
+    vi.useFakeTimers();
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationDatasetDetail
+          datasetId='invoice-classification-draft'
+          compact
+          embedded
+          showDetailsToggle={false}
+        />
+      </EvaluationLayerProvider>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Generate Dataset' })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Show Dataset details' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Generate Dataset' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_800);
+    });
+
+    expect(screen.queryByRole('tab', { name: 'Draft cases' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add selected' })).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected' }));
+    expect(screen.queryByRole('button', { name: 'Add selected' })).toBeNull();
+  });
+
   it('keeps operational metadata without introductory descriptions', async () => {
     render(
       <EvaluationLayerProvider projectId='individual'>

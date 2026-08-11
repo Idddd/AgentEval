@@ -118,22 +118,33 @@ describe('Catalog drawer progressive disclosure', () => {
     for (const tab of ['Workflow', 'Skill', 'Dataset', 'Evaluation', 'Result']) {
       expect(drawer.queryByRole('tab', { name: tab })).toBeNull();
     }
-    expect(drawer.getByRole('region', { name: 'Skill & revision' })).not.toBeNull();
-    expect(drawer.getByRole('region', { name: 'Test coverage' })).not.toBeNull();
-    expect(drawer.getByRole('region', { name: 'Evaluation' })).not.toBeNull();
-    expect(drawer.getByRole('region', { name: 'Result' })).not.toBeNull();
+    expect(drawer.getByRole('region', { name: 'Current step: Result' })).not.toBeNull();
+    expect(drawer.getByRole('button', { name: 'Details' })).not.toBeNull();
     expect(drawer.getAllByRole('button', { name: 'Approve' })).toHaveLength(1);
+  });
+
+  it('shows a three-stage workflow and only the current stage by default', async () => {
+    const drawer = await openCompletedSkill();
+    const workflow = within(drawer.getByRole('group', { name: 'Evaluation workflow' }));
+
+    expect(workflow.getByText('Test coverage')).not.toBeNull();
+    expect(workflow.getByText('Evaluation')).not.toBeNull();
+    expect(workflow.getByText('Result')).not.toBeNull();
+    expect(workflow.queryByText('Revision')).toBeNull();
+    expect(drawer.queryByRole('region', { name: 'Skill & revision' })).toBeNull();
+    expect(drawer.getAllByRole('region', { name: /Current step/ })).toHaveLength(1);
+    expect(drawer.queryByText('R1')).toBeNull();
   });
 
   it('keeps revision metadata behind Skill details', async () => {
     const drawer = await openCompletedSkill();
-    const panel = within(drawer.getByRole('region', { name: 'Skill & revision' }));
 
-    expect(panel.queryByText('Revision')).toBeNull();
-    expect(panel.queryByText('Configuration')).toBeNull();
-    expect(panel.queryByText('Target ID')).toBeNull();
-    expect(panel.queryByText('Report history')).toBeNull();
-    await userEvent.click(panel.getByRole('button', { name: 'Show Skill details' }));
+    expect(drawer.queryByText('Revision')).toBeNull();
+    expect(drawer.queryByText('Configuration')).toBeNull();
+    expect(drawer.queryByText('Target ID')).toBeNull();
+    expect(drawer.queryByText('Report history')).toBeNull();
+    await userEvent.click(drawer.getByRole('button', { name: 'Details' }));
+    const panel = within(drawer.getByRole('region', { name: 'Target details' }));
 
     expect(panel.getAllByText('Revision').length).toBeGreaterThan(0);
     expect(panel.getByText('Configuration')).not.toBeNull();
@@ -144,39 +155,70 @@ describe('Catalog drawer progressive disclosure', () => {
 
   it('combines the Business Dataset and required Guardrail test packs in Test coverage', async () => {
     const drawer = await openCompletedSkill();
-    const panel = within(drawer.getByRole('region', { name: 'Test coverage' }));
+    await userEvent.click(drawer.getByRole('button', { name: 'Details' }));
+    const panel = within(drawer.getByRole('region', { name: 'Test coverage details' }));
 
     expect(panel.getByText('Business Dataset')).not.toBeNull();
     expect(panel.getByRole('combobox', { name: 'Dataset' })).not.toBeNull();
-    expect(panel.getByRole('button', { name: 'Generate Dataset' })).not.toBeNull();
+    expect(panel.getByRole('button', { name: 'Generate' })).not.toBeNull();
     expect(panel.getByRole('group', { name: 'Guardrail Test Packs' })).not.toBeNull();
     expect((panel.getByRole('checkbox', { name: 'Select Universal Safety Baseline' }) as HTMLInputElement).checked).toBe(true);
     expect(panel.getByText(/2 selected · \d+ safety cases/)).not.toBeNull();
     expect(panel.getByText(/Combined coverage: \d+ business cases \+ \d+ Guardrail cases/)).not.toBeNull();
-    expect(panel.queryByText('Draft cases')).toBeNull();
-    await userEvent.click(panel.getByRole('button', { name: 'Show Dataset details' }));
-
     expect(panel.getByText('Draft cases')).not.toBeNull();
     expect(panel.getByText('Evaluation history')).not.toBeNull();
   });
 
+  it('keeps default Test coverage focused on Dataset actions', async () => {
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationCatalogPage />
+      </EvaluationLayerProvider>,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /Invoice Classification demo-invoice-classification/ }),
+    );
+    const drawer = within(screen.getByRole('dialog', { name: 'Invoice Classification' }));
+    const current = within(drawer.getByRole('region', { name: 'Current step: Test coverage' }));
+
+    expect(current.getByRole('combobox', { name: 'Dataset' })).not.toBeNull();
+    expect(current.getByRole('button', { name: 'Generate Dataset' })).not.toBeNull();
+    expect(current.queryByRole('group', { name: 'Guardrail Test Packs' })).toBeNull();
+    expect(current.queryByText(/Combined coverage:/)).toBeNull();
+  });
+
   it('shows only Summary and Reason until Result details are opened', async () => {
     const drawer = await openCompletedSkill();
-    const panel = within(drawer.getByRole('region', { name: 'Result' }));
+    const panel = within(drawer.getByRole('region', { name: 'Current step: Result' }));
 
     expect(panel.getByText('Summary')).not.toBeNull();
     expect(panel.getByText('Reason')).not.toBeNull();
     expect(panel.queryByText('Test Results')).toBeNull();
-    await userEvent.click(panel.getByRole('button', { name: 'Show Result details' }));
-
-    expect(panel.getByText('Test Results')).not.toBeNull();
-    expect(panel.getByText('Failure reasons')).not.toBeNull();
     expect(drawer.getAllByRole('button', { name: 'Approve' })).toHaveLength(1);
+    await userEvent.click(drawer.getByRole('button', { name: 'Details' }));
+
+    const details = within(drawer.getByRole('region', { name: 'Result details' }));
+    expect(details.getByText('Test Results')).not.toBeNull();
+    expect(details.getByText('Failure reasons')).not.toBeNull();
+    expect(drawer.queryByRole('button', { name: 'Approve' })).toBeNull();
+  });
+
+  it('opens all complete information groups from the global Details action', async () => {
+    const drawer = await openCompletedSkill();
+
+    for (const name of ['Target details', 'Test coverage details', 'Evaluation details', 'Result details']) {
+      expect(drawer.queryByRole('region', { name })).toBeNull();
+    }
+    await userEvent.click(drawer.getByRole('button', { name: 'Details' }));
+
+    for (const name of ['Target details', 'Test coverage details', 'Evaluation details', 'Result details']) {
+      expect(drawer.getByRole('region', { name })).not.toBeNull();
+    }
   });
 
   it('lets an Admin approve a passing evaluation', async () => {
     const drawer = await openCompletedSkill();
-    const result = within(drawer.getByRole('region', { name: 'Result' }));
+    const result = within(drawer.getByRole('region', { name: 'Current step: Result' }));
 
     expect(result.getAllByText('Pending approval').length).toBeGreaterThan(0);
     expect(drawer.queryByRole('button', { name: 'Reject' })).toBeNull();
@@ -198,14 +240,13 @@ describe('Catalog drawer progressive disclosure', () => {
       screen.getByRole('button', { name: /Office Assistant demo-permission-compliance/ }),
     );
     const drawer = within(screen.getByRole('dialog', { name: 'Office Assistant' }));
-    const result = within(drawer.getByRole('region', { name: 'Result' }));
+    const result = within(drawer.getByRole('region', { name: 'Current step: Result' }));
 
     expect(result.getAllByText('Pending rejection').length).toBeGreaterThan(0);
     expect(drawer.queryByRole('button', { name: 'Approve' })).toBeNull();
     await userEvent.click(drawer.getByRole('button', { name: 'Reject' }));
 
-    expect(result.getAllByText('Rejected').length).toBeGreaterThan(0);
-    expect(result.getByText(/Developer changes required/)).not.toBeNull();
+    expect(drawer.getAllByText('Rejected').length).toBeGreaterThan(0);
     expect(drawer.queryByRole('button', { name: 'Reject' })).toBeNull();
     expect(drawer.queryByRole('button', { name: 'Update target revision' })).toBeNull();
     expect(drawer.getByText('Waiting for Developer changes')).not.toBeNull();
@@ -217,7 +258,7 @@ describe('Catalog drawer progressive disclosure', () => {
       </EvaluationLayerProvider>,
     );
     await userEvent.click(drawer.getByRole('button', { name: 'Update target revision' }));
-    const target = within(drawer.getByRole('region', { name: 'Agent & revision' }));
+    const target = within(drawer.getByRole('region', { name: 'Current step: Test coverage' }));
     expect((target.getByRole('button', { name: 'New revision' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -265,7 +306,7 @@ describe('Guardrail evaluation access', () => {
     const drawer = within(screen.getByRole('dialog', { name: 'PII Protection Guardrail' }));
     return {
       drawer,
-      evaluation: within(drawer.getByRole('region', { name: 'Evaluation' })),
+      evaluation: within(drawer.getByRole('region', { name: /Current step/ })),
     };
   }
 
@@ -273,7 +314,7 @@ describe('Guardrail evaluation access', () => {
     roleState.value = 'member';
     const { drawer, evaluation } = await openGuardrailEvaluation();
 
-    expect(evaluation.getByText('Admin only')).not.toBeNull();
+    expect(evaluation.getAllByText('Admin only')).toHaveLength(2);
     expect(drawer.queryByRole('button', { name: 'Run evaluation' })).toBeNull();
     expect(drawer.queryByRole('button', { name: 'Retry evaluation' })).toBeNull();
     expect(drawer.queryByRole('button', { name: 'Run evaluation again' })).toBeNull();
@@ -286,10 +327,13 @@ describe('Guardrail evaluation access', () => {
     expect(evaluation.queryByText('Admin only')).toBeNull();
     expect(drawer.getAllByRole('button', { name: 'Run evaluation' })).toHaveLength(1);
 
-    const coverage = within(drawer.getByRole('region', { name: 'Test coverage' }));
+    await userEvent.click(drawer.getByRole('button', { name: 'Details' }));
+    const coverage = within(drawer.getByRole('region', { name: 'Test coverage details' }));
     for (const template of coverage.getAllByRole('checkbox')) await userEvent.click(template);
     expect(coverage.getByText('Select at least one Guardrail test pack before running the evaluation.')).not.toBeNull();
-    expect((drawer.getByRole('button', { name: 'Run evaluation' }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(drawer.getByRole('button', { name: 'Hide details' }));
+    expect(drawer.queryByRole('button', { name: 'Run evaluation' })).toBeNull();
+    expect(drawer.getByRole('region', { name: 'Current step: Test coverage' })).not.toBeNull();
   });
 });
 

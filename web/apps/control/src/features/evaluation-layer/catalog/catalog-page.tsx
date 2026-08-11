@@ -46,7 +46,6 @@ import {
   Sheet,
   SheetContent,
   SheetDescription,
-  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
@@ -272,6 +271,13 @@ function compactResult(row: WorkspaceRow) {
 
 type WorkspaceSectionKey = 'agent' | 'dataset' | 'run' | 'result';
 type WorkspaceSectionTone = 'ready' | 'active' | 'waiting' | 'failed' | 'stale';
+type VisibleWorkflowStage = 'coverage' | 'evaluation' | 'result';
+
+function visibleWorkflowStage(section: WorkspaceSectionKey): VisibleWorkflowStage {
+  if (section === 'run') return 'evaluation';
+  if (section === 'result') return 'result';
+  return 'coverage';
+}
 
 export function WorkspaceActionBar({
   step,
@@ -300,6 +306,8 @@ export function WorkspaceActionBar({
 }
 
 function WorkspaceSection({
+  action,
+  ariaLabel,
   children,
   current = false,
   description,
@@ -310,6 +318,8 @@ function WorkspaceSection({
   title,
   tone,
 }: {
+  action?: ReactNode;
+  ariaLabel?: string;
   children: ReactNode;
   current?: boolean;
   description: string;
@@ -326,8 +336,9 @@ function WorkspaceSection({
       ref={sectionRef}
       id={`evaluation-workspace-${section}`}
       tabIndex={-1}
+      aria-label={ariaLabel}
       aria-current={current ? 'step' : undefined}
-      aria-labelledby={headingId}
+      aria-labelledby={ariaLabel ? undefined : headingId}
       className={cn(
         'scroll-mt-5 overflow-hidden rounded-xl border bg-card shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         current && 'border-cyan-500/45 ring-1 ring-cyan-500/25',
@@ -355,6 +366,7 @@ function WorkspaceSection({
         )}>{status}</Badge>
       </div>
       <div className='space-y-5 border-t p-4'>{children}</div>
+      {action ? <div className='border-t p-4'>{action}</div> : null}
     </section>
   );
 }
@@ -515,8 +527,7 @@ function WorkspaceDrawer({
     message: string;
     section: WorkspaceSectionKey;
   }>();
-  const [agentDetailsOpen, setAgentDetailsOpen] = useState(false);
-  const [resultDetailsOpen, setResultDetailsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedGuardrailTemplateIds, setSelectedGuardrailTemplateIds] = useState<string[]>([]);
   const agentSectionRef = useRef<HTMLElement>(null);
   const datasetSectionRef = useRef<HTMLElement>(null);
@@ -542,8 +553,7 @@ function WorkspaceDrawer({
   useEffect(() => {
     if (open) {
       setWorkspaceNotice(undefined);
-      setAgentDetailsOpen(false);
-      setResultDetailsOpen(false);
+      setDetailsOpen(false);
       previousWorkspaceRef.current = {
         stage: row?.stage,
         targetId: row?.target.id,
@@ -563,7 +573,7 @@ function WorkspaceDrawer({
     const previous = previousWorkspaceRef.current;
     if (previous.targetId === row.target.id && previous.stage === 'RUNNING') {
       if (row.stage === 'COMPLETED') {
-        setResultDetailsOpen(true);
+        setDetailsOpen(false);
         focusSection('result');
       }
       if (row.stage === 'FAILED') focusSection('run');
@@ -650,7 +660,7 @@ function WorkspaceDrawer({
     focusSection('result');
   };
   const reviewRejectedTarget = () => {
-    setAgentDetailsOpen(true);
+    setDetailsOpen(false);
     focusSection('agent');
   };
 
@@ -754,7 +764,7 @@ function WorkspaceDrawer({
   } else if (row.stage === 'RUNNING') {
     footerAction = undefined;
   } else if (row.stage === 'NEEDS_RE_EVALUATION' && guardrailEvaluationRestricted) {
-    footerAction = <Button onClick={() => { setResultDetailsOpen(true); focusSection('result'); }}>View outdated result<ArrowRight /></Button>;
+    footerAction = <Button onClick={() => { setDetailsOpen(true); focusSection('result'); }}>View outdated result<ArrowRight /></Button>;
   } else if (row.stage === 'NEEDS_RE_EVALUATION') {
     footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={startEvaluation}><Play />Run evaluation again</Button>;
   } else if (row.decisionStatus === 'PENDING' && role === 'admin') {
@@ -777,9 +787,9 @@ function WorkspaceDrawer({
         ? <Button onClick={reviewRejectedTarget}><Wrench />Update target revision</Button>
         : undefined;
   } else if (row.decisionStatus === 'PENDING') {
-    footerAction = <Button onClick={() => { setResultDetailsOpen(true); focusSection('result'); }}>View results<ArrowRight /></Button>;
+    footerAction = <Button onClick={() => { setDetailsOpen(true); focusSection('result'); }}>View results<ArrowRight /></Button>;
   } else if (guardrailEvaluationRestricted && row.latestReport) {
-    footerAction = <Button onClick={() => { setResultDetailsOpen(true); focusSection('result'); }}>View results<ArrowRight /></Button>;
+    footerAction = <Button onClick={() => { setDetailsOpen(true); focusSection('result'); }}>View results<ArrowRight /></Button>;
   } else if (guardrailEvaluationRestricted && row.latestRun) {
     footerAction = <Button onClick={() => focusSection('run')}>View evaluation<ArrowRight /></Button>;
   } else if (guardrailEvaluationRestricted) {
@@ -787,7 +797,7 @@ function WorkspaceDrawer({
   } else if (row.stage === 'FAILED') {
     footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={startEvaluation}><Play />Retry evaluation</Button>;
   } else if (row.stage === 'COMPLETED' && row.latestReport) {
-    footerAction = <Button onClick={() => { setResultDetailsOpen(true); focusSection('result'); }}>View results<ArrowRight /></Button>;
+    footerAction = <Button onClick={() => { setDetailsOpen(true); focusSection('result'); }}>View results<ArrowRight /></Button>;
   } else if (row.latestRun) {
     footerAction = <Button onClick={() => focusSection('run')}>View evaluation<ArrowRight /></Button>;
   } else {
@@ -806,26 +816,34 @@ function WorkspaceDrawer({
             <div className='min-w-0 flex-1'>
               <SheetDescription>{KIND_META[row.target.kind].label} · {row.target.id}</SheetDescription>
               <SheetTitle className='mt-1 truncate text-xl'>{row.target.name}</SheetTitle>
-              <p className='mt-1 text-xs text-muted-foreground'>R{row.currentRevision?.revision ?? '—'} · {configurationSummary(row)}</p>
             </div>
-            <StageBadge stage={row.stage} />
+            <div className='flex items-center gap-2'>
+              <Button
+                aria-controls='evaluation-workspace-details'
+                aria-expanded={detailsOpen}
+                size='sm'
+                variant='outline'
+                onClick={() => setDetailsOpen((current) => !current)}
+              >
+                {detailsOpen ? 'Hide details' : 'Details'}
+              </Button>
+              <StageBadge stage={row.stage} />
+            </div>
           </div>
         </SheetHeader>
         <div className='min-h-0 flex-1 space-y-5 overflow-y-auto p-5'>
-          <section aria-labelledby='evaluation-workflow-overview-heading' className='space-y-4 rounded-xl border bg-muted/15 p-4'>
-            <div>
-              <h3 id='evaluation-workflow-overview-heading' className='font-semibold'>Workflow overview</h3>
-              <p className='mt-1 text-xs text-muted-foreground'>Every step is available below in one continuous workspace.</p>
-            </div>
-            <div className='grid gap-4 sm:grid-cols-2'>
-              <LifecycleNode label='Revision' value={`R${row.currentRevision?.revision ?? '—'}`} detail={configurationSummary(row)} tone={row.currentRevision ? 'done' : 'failed'} onClick={() => focusSection('agent')} />
-              <LifecycleNode label='Test coverage' value={row.selectedDataset?.name ?? 'Not created'} detail={`${datasetLifecycleDetail(row)} · ${selectedGuardrailTemplateIds.length} Guardrail packs`} tone={lifecycleTones(row).dataset} recommended={footerStep.tab === 'dataset'} onClick={() => focusSection('dataset')} />
-              <LifecycleNode label='Evaluation' value={row.latestRun ? STAGE_META[row.stage].label : 'Not started'} detail={row.latestRun ? `${row.progress}% complete` : 'Waiting for Dataset'} tone={lifecycleTones(row).run} recommended={nextStep.tab === 'run'} onClick={() => focusSection('run')} />
-              <LifecycleNode label='Result' value={decisionStatusLabel(row) ?? row.result} detail={resultActionLabel(row)} tone={lifecycleTones(row).result} recommended={nextStep.tab === 'result'} onClick={() => focusSection('result')} />
+          <section className='rounded-xl border bg-muted/15 p-4'>
+            <div role='group' aria-label='Evaluation workflow' className='grid grid-cols-3 gap-3'>
+              <LifecycleNode label='Test coverage' value={datasetCountSummary(row)} detail={`${selectedGuardrailTemplateIds.length} Guardrail packs`} tone={lifecycleTones(row).dataset} recommended={visibleWorkflowStage(footerStep.tab) === 'coverage'} onClick={() => setDetailsOpen(true)} />
+              <LifecycleNode label='Evaluation' value={row.latestRun ? STAGE_META[row.stage].label : 'Not started'} detail={row.latestRun ? `${row.progress}% complete` : 'Waiting for Dataset'} tone={lifecycleTones(row).run} recommended={visibleWorkflowStage(footerStep.tab) === 'evaluation'} onClick={() => setDetailsOpen(true)} />
+              <LifecycleNode label='Result' value={decisionStatusLabel(row) ?? row.result} detail={resultActionLabel(row)} tone={lifecycleTones(row).result} recommended={visibleWorkflowStage(footerStep.tab) === 'result'} onClick={() => setDetailsOpen(true)} />
             </div>
           </section>
 
-          <WorkspaceSection
+          <div id={detailsOpen ? 'evaluation-workspace-details' : undefined} className='space-y-5'>
+          {detailsOpen || footerStep.tab === 'agent' ? <WorkspaceSection
+            action={!detailsOpen && footerStep.tab === 'agent' ? <WorkspaceActionBar step={footerStep} action={footerAction} /> : undefined}
+            ariaLabel={detailsOpen ? 'Target details' : 'Current step: Test coverage'}
             section='agent'
             sectionRef={agentSectionRef}
             step={1}
@@ -833,34 +851,34 @@ function WorkspaceDrawer({
             description={`R${row.currentRevision?.revision ?? '—'} · ${configurationSummary(row)}`}
             status={row.currentRevision ? 'Ready' : 'Required'}
             tone={row.currentRevision ? 'ready' : 'failed'}
-            current={!row.currentRevision}
+            current={!detailsOpen && footerStep.tab === 'agent'}
           >
             {workspaceNotice?.section === 'agent' ? <p role='alert' className='rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'>{workspaceNotice.message}</p> : null}
-            <div className='flex justify-end'>
-              <Button aria-label={agentDetailsOpen ? `Hide ${KIND_META[row.target.kind].label} details` : `Show ${KIND_META[row.target.kind].label} details`} aria-controls='evaluation-workspace-agent-details' aria-expanded={agentDetailsOpen} size='sm' variant='outline' onClick={() => setAgentDetailsOpen((current) => !current)}>{agentDetailsOpen ? 'Hide details' : 'Details'}</Button>
-            </div>
-            {agentDetailsOpen ? <div id='evaluation-workspace-agent-details'><EvaluationTargetDetail targetId={row.target.id} embedded showEvaluateAction={false} onEvaluate={() => focusSection('run')} /></div> : null}
-          </WorkspaceSection>
+            <EvaluationTargetDetail targetId={row.target.id} embedded showEvaluateAction={false} onEvaluate={() => focusSection('run')} />
+          </WorkspaceSection> : null}
 
-          <WorkspaceSection
+          {detailsOpen || footerStep.tab === 'dataset' ? <WorkspaceSection
+            ariaLabel={detailsOpen ? 'Test coverage details' : 'Current step: Test coverage'}
             section='dataset'
             sectionRef={datasetSectionRef}
             step={2}
             title='Test coverage'
             description={row.selectedDataset ? `${row.selectedDataset.name} · ${datasetLifecycleDetail(row)} · ${selectedGuardrailTemplateIds.length} Guardrail packs` : 'Choose a Business Dataset and Guardrail safety tests.'}
-            status={row.publishedRevision && selectedGuardrailTemplateIds.length ? `Published R${row.publishedRevision.revision} · ${selectedGuardrailTemplateIds.length} packs` : row.draftRevision ? 'Draft' : 'Required'}
+            status={row.publishedRevision && selectedGuardrailTemplateIds.length ? `${detailsOpen ? `Published R${row.publishedRevision.revision}` : 'Published'} · ${selectedGuardrailTemplateIds.length} packs` : row.draftRevision ? 'Draft' : 'Required'}
             tone={datasetTone}
-            current={footerStep.tab === 'dataset'}
+            current={!detailsOpen && footerStep.tab === 'dataset'}
           >
             {workspaceNotice?.section === 'dataset' ? <p role='alert' className='rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'>{workspaceNotice.message}</p> : null}
-            <div><p className='text-sm font-semibold'>Business Dataset</p><p className='mt-1 text-xs text-muted-foreground'>Your representative functional and business scenarios.</p></div>
+            {detailsOpen ? <div><p className='text-sm font-semibold'>Business Dataset</p><p className='mt-1 text-xs text-muted-foreground'>Your representative functional and business scenarios.</p></div> : null}
             {targetDatasets.length ? <div className='rounded-lg border bg-muted/10 p-3'><label className='grid min-w-64 flex-1 gap-2 text-xs font-medium text-muted-foreground'>Dataset<select className='h-10 rounded-md border bg-background px-3 text-sm text-foreground' value={row.selectedDataset?.id ?? ''} onChange={(event) => store.selectActiveDataset(event.target.value)}>{targetDatasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}</select></label></div> : null}
-            {row.selectedDataset ? <EvaluationDatasetDetail key={row.selectedDataset.id} datasetId={row.selectedDataset.id} compact embedded showEvaluateAction={false} onCreateDataset={onCreateDataset} onEvaluate={() => focusSection('run')} /> : <div className='space-y-4'><p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>Create a Dataset before generating Test Cases.</p><Button variant='outline' onClick={onCreateDataset}><Plus />Create Dataset</Button></div>}
-            <GuardrailTemplatePicker targetKind={row.target.kind} selectedIds={selectedGuardrailTemplateIds} onSelectedIdsChange={setSelectedGuardrailTemplateIds} disabled={guardrailEvaluationRestricted} />
-            <p className='text-xs text-muted-foreground'>Combined coverage: {row.publishedRevision?.cases.length ?? 0} business cases + {selectedGuardrailCaseCount} Guardrail cases.</p>
-          </WorkspaceSection>
+            {row.selectedDataset ? <EvaluationDatasetDetail key={row.selectedDataset.id} datasetId={row.selectedDataset.id} compact={!detailsOpen} embedded showEvaluateAction={false} showDetailsToggle={detailsOpen} onCreateDataset={onCreateDataset} onEvaluate={() => focusSection('run')} /> : <div className='space-y-4'><p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>Create a Dataset before generating Test Cases.</p><Button variant='outline' onClick={onCreateDataset}><Plus />Create Dataset</Button></div>}
+            {detailsOpen || !selectedGuardrailTemplateIds.length ? <GuardrailTemplatePicker targetKind={row.target.kind} selectedIds={selectedGuardrailTemplateIds} onSelectedIdsChange={setSelectedGuardrailTemplateIds} disabled={guardrailEvaluationRestricted} /> : null}
+            {detailsOpen ? <p className='text-xs text-muted-foreground'>Combined coverage: {row.publishedRevision?.cases.length ?? 0} business cases + {selectedGuardrailCaseCount} Guardrail cases.</p> : null}
+          </WorkspaceSection> : null}
 
-          <WorkspaceSection
+          {detailsOpen || footerStep.tab === 'run' ? <WorkspaceSection
+            action={!detailsOpen && footerStep.tab === 'run' ? <WorkspaceActionBar step={footerStep} progress={row.stage === 'RUNNING' ? row.progress : undefined} action={row.stage === 'RUNNING' ? undefined : footerAction} /> : undefined}
+            ariaLabel={detailsOpen ? 'Evaluation details' : 'Current step: Evaluation'}
             section='run'
             sectionRef={runSectionRef}
             step={3}
@@ -868,17 +886,19 @@ function WorkspaceDrawer({
             description={row.latestRun ? `${row.result} · ${row.progress}% complete` : 'Run the Business Dataset and selected Guardrail test packs against this revision.'}
             status={STAGE_META[row.stage].label}
             tone={evaluationTone}
-            current={nextStep.tab === 'run'}
+            current={!detailsOpen && footerStep.tab === 'run'}
           >
             {workspaceNotice?.section === 'run' ? <p role='alert' className='rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'>{workspaceNotice.message}</p> : null}
             {row.isStale ? <div className='rounded-md border border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200'><strong>Re-evaluation required.</strong> The latest completed run is pinned to an older Target or published Dataset revision.</div> : null}
-            {row.latestRun ? <EvaluationRunDetail key={row.latestRun.id} runId={row.latestRun.id} embedded /> : <p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>No Evaluation has been started for this Dataset.</p>}
+            {detailsOpen && row.latestRun ? <EvaluationRunDetail key={row.latestRun.id} runId={row.latestRun.id} embedded /> : row.latestRun ? <div className='rounded-lg border bg-muted/20 p-4 text-sm'><p className='font-semibold'>{row.stage === 'RUNNING' ? 'Evaluation in progress' : row.result}</p><p className='mt-1 text-muted-foreground'>{row.stage === 'RUNNING' ? `${row.progress}% complete. Details contain logs and per-case progress.` : 'Open Details for logs, traces, and per-case results.'}</p></div> : <p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>No Evaluation has been started for this Dataset.</p>}
             {guardrailEvaluationRestricted ? <div className='rounded-lg border border-amber-500/35 bg-amber-500/10 p-4'><div className='flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-200'><ShieldAlert className='size-4' />Admin only</div><p className='mt-1 text-sm text-muted-foreground'>Guardrail evaluation can only be started or rerun by the Admin role. Existing runs and results remain visible for audit.</p></div> : null}
             {!guardrailEvaluationRestricted && !row.publishedRevision ? <p className='rounded-lg border border-dashed p-4 text-sm text-muted-foreground'>Publish the selected Test Cases to enable evaluation.</p> : null}
             {row.stage === 'FAILED' ? <div className='space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4'><div className='flex items-center gap-2 font-medium text-destructive'><ShieldAlert className='size-4' />Recovery actions</div><div className='grid gap-2 sm:grid-cols-2'><Button variant='outline' className='justify-start' onClick={() => focusSection('agent')}><Bot />Check {KIND_META[row.target.kind].label} config</Button><Button variant='outline' className='justify-start' onClick={() => focusSection('dataset')}><Database />Check Test Cases</Button></div></div> : null}
-          </WorkspaceSection>
+          </WorkspaceSection> : null}
 
-          <WorkspaceSection
+          {detailsOpen || footerStep.tab === 'result' ? <WorkspaceSection
+            action={!detailsOpen && footerStep.tab === 'result' ? <WorkspaceActionBar step={footerStep} action={footerAction} /> : undefined}
+            ariaLabel={detailsOpen ? 'Result details' : 'Current step: Result'}
             section='result'
             sectionRef={resultSectionRef}
             step={4}
@@ -886,7 +906,7 @@ function WorkspaceDrawer({
             description={row.latestReport ? row.latestReport.summary : 'Results appear here when the evaluation completes.'}
             status={decisionStatusLabel(row) ?? (row.latestReport ? row.result : row.stage === 'FAILED' ? 'Failed' : 'Waiting')}
             tone={resultTone}
-            current={nextStep.tab === 'result'}
+            current={!detailsOpen && footerStep.tab === 'result'}
           >
             {workspaceNotice?.section === 'result' ? <p role='alert' className='rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'>{workspaceNotice.message}</p> : null}
             <div className='rounded-lg border bg-muted/20 p-4'>
@@ -894,7 +914,6 @@ function WorkspaceDrawer({
                 <div><p className='text-xs font-medium text-muted-foreground'>Summary</p><p className='mt-1 text-sm'>{row.latestReport?.summary ?? 'No report available.'}</p></div>
                 <div><p className='text-xs font-medium text-muted-foreground'>Reason</p><p className='mt-1 text-sm'>{reportReason(row)}</p></div>
               </div>
-              {row.latestReport ? <div className='mt-3 flex justify-end'><Button aria-label={resultDetailsOpen ? 'Hide Result details' : 'Show Result details'} aria-controls='evaluation-workspace-result-details' aria-expanded={resultDetailsOpen} size='sm' variant='outline' onClick={() => setResultDetailsOpen((current) => !current)}>{resultDetailsOpen ? 'Hide details' : 'Details'}</Button></div> : null}
             </div>
             {row.decisionStatus ? (
               <div
@@ -922,16 +941,10 @@ function WorkspaceDrawer({
                 </p>
               </div>
             ) : null}
-            {row.latestReport && resultDetailsOpen ? <div id='evaluation-workspace-result-details'><EvaluationReportDetail key={row.latestReport.id} reportId={row.latestReport.id} embedded decisionMode='hidden' /></div> : null}
-          </WorkspaceSection>
+            {row.latestReport && detailsOpen ? <EvaluationReportDetail key={row.latestReport.id} reportId={row.latestReport.id} embedded decisionMode='hidden' /> : null}
+          </WorkspaceSection> : null}
+          </div>
         </div>
-        <SheetFooter className='border-t p-4'>
-          <WorkspaceActionBar
-            step={footerStep}
-            progress={row.stage === 'RUNNING' ? row.progress : undefined}
-            action={row.stage === 'RUNNING' ? undefined : footerAction}
-          />
-        </SheetFooter>
       </SheetContent>
     </Sheet>
   );

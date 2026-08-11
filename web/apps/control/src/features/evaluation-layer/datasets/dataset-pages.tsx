@@ -273,6 +273,7 @@ export function EvaluationDatasetDetail({
   embedded = false,
   compact = false,
   showEvaluateAction = true,
+  showDetailsToggle = true,
 }: {
   datasetId: string;
   onEvaluate?(): void;
@@ -280,6 +281,7 @@ export function EvaluationDatasetDetail({
   embedded?: boolean;
   compact?: boolean;
   showEvaluateAction?: boolean;
+  showDetailsToggle?: boolean;
 }) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
@@ -378,9 +380,12 @@ export function EvaluationDatasetDetail({
   };
   return (
     <div className='space-y-5'>
-      {compact ? <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3'>
-        <Button variant='outline' disabled={generating} onClick={() => { setDetailsOpen(true); generate(); }}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate Dataset'}</Button>
-        <Button aria-label={detailsOpen ? 'Hide Dataset details' : 'Show Dataset details'} aria-expanded={detailsOpen} size='sm' variant='outline' onClick={() => setDetailsOpen((currentOpen) => !currentOpen)}>{detailsOpen ? 'Hide details' : 'Details'}</Button>
+      {compact ? <div className='space-y-3'>
+        <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3'>
+          <Button variant='outline' disabled={generating} onClick={() => { if (showDetailsToggle) setDetailsOpen(true); generate(); }}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate Dataset'}</Button>
+          {showDetailsToggle ? <Button aria-label={detailsOpen ? 'Hide Dataset details' : 'Show Dataset details'} aria-expanded={detailsOpen} size='sm' variant='outline' onClick={() => setDetailsOpen((currentOpen) => !currentOpen)}>{detailsOpen ? 'Hide details' : 'Details'}</Button> : null}
+        </div>
+        {!detailsOpen && pendingRows.length ? <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/25 bg-primary/5 p-3 text-sm'><span>{pendingRows.length} generated cases ready</span><Button onClick={commitPending}>Add selected</Button></div> : null}
       </div> : null}
       {!compact || detailsOpen ? <>
       <div className='flex flex-wrap items-start justify-between gap-3'>
