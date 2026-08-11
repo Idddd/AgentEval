@@ -7,10 +7,8 @@ import {
 } from "./store";
 
 describe("Guard Governance store", () => {
-  it("rejects an assignment until its Guardrail has a passing test", () => {
-    const store = createGuardGovernanceStore(
-      cloneGuardGovernanceFixtures("individual"),
-    );
+  it("rejects an assignment until its Guardrail has an active tested version", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
 
     expect(() =>
       store.createAssignment({
@@ -20,60 +18,68 @@ describe("Guard Governance store", () => {
         enabled: true,
         trafficScope: {
           combinator: "and",
-          rules: [
-            {
-              field: "environment",
-              operator: "equals",
-              value: "production",
-            },
-          ],
+          rules: [{ field: "environment", operator: "equals", value: "production" }],
         },
       }),
-    ).toThrow("Only Ready guardrails can be assigned");
+    ).toThrow("Only tested Guardrails with an active version can be assigned");
   });
 
-  it("marks a Guardrail Ready and appends Evidence after a passing run", () => {
+  it("creates an immutable version and audit events after a passing run", () => {
     const store = createGuardGovernanceStore(
       cloneGuardGovernanceFixtures("individual"),
-      {
-        id: () => "generated-id",
-        now: () => "2026-08-11T08:00:00.000Z",
-      },
+      { id: () => "generated-id", now: () => "2026-08-11T08:00:00.000Z" },
     );
-    const before = store.getState().evidence.length;
+    const beforeVersions = store.getState().versions.length;
+    const beforeAudit = store.getState().auditEvents.length;
 
-    const result = store.runGuardrailTest("guardrail-draft");
+    const result = store.runGuardrailTest("guardrail-production");
 
     expect(result.status).toBe("PASSED");
+    expect(result.metrics).toMatchObject({ total: 3, passed: 3, complianceRate: 100 });
+    expect(store.getState().versions).toHaveLength(beforeVersions + 1);
+    expect(store.getState().auditEvents).toHaveLength(beforeAudit + 2);
+    expect(store.getState().auditEvents[0]?.kind).toBe("guardrail.version.created");
     expect(
-      store
-        .getState()
-        .guardrails.find((item) => item.id === "guardrail-draft")?.status,
-    ).toBe("READY");
-    expect(store.getState().evidence).toHaveLength(
-      before + result.caseResults.length,
+      store.getState().guardrails.find((item) => item.id === "guardrail-production")
+        ?.activeVersion,
+    ).toBe(3);
+  });
+
+  it("increments the draft and invalidates readiness after an edit", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    store.updateGuardrail("guardrail-production", { purpose: "Updated reviewed purpose" });
+
+    const guardrail = store.getState().guardrails.find((item) => item.id === "guardrail-production");
+    expect(guardrail).toMatchObject({ draftVersion: 3, testedCurrent: false, status: "NEEDS_TESTING" });
+    expect(store.getState().auditEvents[0]?.kind).toBe("guardrail.updated");
+  });
+
+  it("rejects changes to system-managed baselines", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    expect(() => store.updateGuardrail("guardrail-default", { name: "Changed" })).toThrow(
+      "System-managed Guardrails cannot be edited",
+    );
+    expect(() => store.toggleAssignment("assignment-default", false)).toThrow(
+      "System-managed Assignments cannot be paused",
     );
   });
 
   it("derives enabled Enforcements in ascending priority order", () => {
-    const store = createGuardGovernanceStore(
-      cloneGuardGovernanceFixtures("individual"),
-    );
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
 
-    expect(
-      effectiveEnforcements(store.getState()).map(
-        (item) => item.assignmentId,
-      ),
-    ).toEqual(["assignment-production", "assignment-support"]);
+    expect(effectiveEnforcements(store.getState()).map((item) => item.assignmentId)).toEqual([
+      "assignment-production",
+      "assignment-support",
+      "assignment-default",
+    ]);
   });
 
-  it("returns a registration Credential without retaining its cleartext value", () => {
+  it("returns a one-time Credential without retaining its cleartext value", () => {
     const store = createGuardGovernanceStore(
       cloneGuardGovernanceFixtures("individual"),
-      {
-        id: () => "integration-new",
-        credential: () => "tlg_mock_secret",
-      },
+      { id: () => "integration-new", credential: () => "tlg_mock_secret" },
     );
 
     const result = store.registerIntegration({
@@ -84,15 +90,14 @@ describe("Guard Governance store", () => {
 
     expect(result.credential).toBe("tlg_mock_secret");
     expect(
-      store
-        .getState()
-        .integrations.find((item) => item.id === "integration-new")
-        ?.credentialHint,
-    ).toBe("…cret");
+      store.getState().integrations.find((item) => item.id === "integration-new")
+        ?.credentialPrefix,
+    ).toBe("tlg_…cret");
     expect(JSON.stringify(store.getState())).not.toContain("tlg_mock_secret");
+    expect(store.getState().auditEvents[0]?.kind).toBe("integration.registered");
   });
 
-  it("filters Evidence by every supported dimension", () => {
+  it("filters Decision Evidence by every supported dimension", () => {
     const state = cloneGuardGovernanceFixtures("individual");
 
     expect(

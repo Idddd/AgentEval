@@ -19,7 +19,12 @@ function Probe() {
       >
         Disable
       </button>
-      <span>{String(state.assignments[0]?.enabled)}</span>
+      <span>
+        {String(
+          state.assignments.find((item) => item.id === "assignment-production")
+            ?.enabled,
+        )}
+      </span>
     </div>
   );
 }
