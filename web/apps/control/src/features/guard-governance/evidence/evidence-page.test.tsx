@@ -8,6 +8,21 @@ import { EvidencePage } from "./evidence-page";
 afterEach(cleanup);
 
 describe("EvidencePage", () => {
+  it("shows the complete audit event log with resolved context and privacy guidance", () => {
+    render(
+      <GuardGovernanceProvider projectId="individual">
+        <EvidencePage />
+      </GuardGovernanceProvider>,
+    );
+
+    expect(screen.getByRole("tab", { name: "Audit Events" })).not.toBeNull();
+    expect(screen.getByRole("tab", { name: "Decision Traces" })).not.toBeNull();
+    expect(screen.getByText("Guardrail version created")).not.toBeNull();
+    expect(screen.getAllByText("Production Safety").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/100% compliance and 44 ms P95 latency/)).not.toBeNull();
+    expect(screen.getByText("Evidence privacy")).not.toBeNull();
+  });
+
   it("filters Evidence and opens complete decision details", async () => {
     const user = userEvent.setup();
     render(
@@ -15,6 +30,8 @@ describe("EvidencePage", () => {
         <EvidencePage />
       </GuardGovernanceProvider>,
     );
+
+    await user.click(screen.getByRole("tab", { name: "Decision Traces" }));
 
     await user.selectOptions(screen.getByLabelText("Guardrail filter"), "guardrail-production");
     await user.selectOptions(screen.getByLabelText("Assignment filter"), "assignment-production");

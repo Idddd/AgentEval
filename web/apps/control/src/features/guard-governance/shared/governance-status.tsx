@@ -1,8 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-const positive = new Set(["READY", "ACTIVE", "PASSED", "HEALTHY", "ALLOW"]);
-const warning = new Set(["NEEDS_TESTING", "DEGRADED", "TRANSFORM", "REDACT"]);
+const positive = new Set(["READY", "ACTIVE", "PASSED", "HEALTHY", "ALLOW", "ONLINE", "VERIFIED", "SUCCESS", "PROTECTED"]);
+const warning = new Set(["NEEDS_TESTING", "DEGRADED", "TRANSFORM", "REDACT", "WAITING", "PAUSED", "UNAVAILABLE"]);
 const negative = new Set(["FAILED", "BLOCK", "ERROR"]);
 
 export function GovernanceStatusBadge({ status }: { status: string }) {
