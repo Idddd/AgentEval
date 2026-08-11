@@ -2,6 +2,7 @@ import type {
   EvaluationLayerDataset,
   EvaluationLayerDatasetRevision,
   EvaluationLayerReport,
+  EvaluationLayerRevisionDecision,
   EvaluationLayerRun,
   EvaluationLayerState,
   EvaluationLayerTarget,
@@ -42,7 +43,9 @@ export interface WorkspaceRow {
   publishedRevision: EvaluationLayerDatasetRevision | undefined;
   latestRun: EvaluationLayerRun | undefined;
   latestReport: EvaluationLayerReport | undefined;
-  approvalStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | undefined;
+  decision: EvaluationLayerRevisionDecision | undefined;
+  decisionStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | undefined;
+  decisionRecommendation: 'APPROVED' | 'REJECTED' | undefined;
   stage: WorkspaceStage;
   progress: number;
   result: string;
@@ -53,7 +56,7 @@ export interface WorkspaceRow {
 }
 
 export interface WorkspaceNextStep {
-  tab: 'dataset' | 'run' | 'result';
+  tab: 'agent' | 'dataset' | 'run' | 'result';
   label: string;
   description: string;
 }
@@ -128,8 +131,8 @@ function stageFor(
 ): WorkspaceStage {
   if (!run) return 'NOT_EVALUATED';
   if (run.status === 'QUEUED' || run.status === 'RUNNING') return 'RUNNING';
-  if (run.status === 'FAILED') return 'FAILED';
   if (isStale) return 'NEEDS_RE_EVALUATION';
+  if (run.status === 'FAILED') return 'FAILED';
   return 'COMPLETED';
 }
 
@@ -137,6 +140,22 @@ function primaryActionFor(stage: WorkspaceStage): WorkspacePrimaryAction {
   if (stage === 'RUNNING') return 'VIEW_PROGRESS';
   if (stage === 'COMPLETED') return 'VIEW_RESULTS';
   return 'RUN_EVALUATION';
+}
+
+function decisionRecommendationFor(
+  run: EvaluationLayerRun | undefined,
+  report: EvaluationLayerReport | undefined,
+  isStale: boolean,
+) {
+  if (!run || !report || isStale) return undefined;
+  if (!['COMPLETED', 'PARTIAL', 'FAILED'].includes(run.status)) return undefined;
+  if (run.results.some((result) => result.status === 'PENDING')) return undefined;
+  const allPassed =
+    run.status === 'COMPLETED' &&
+    report.status === 'READY' &&
+    run.results.length > 0 &&
+    run.results.every((result) => result.status === 'PASS');
+  return allPassed ? 'APPROVED' as const : 'REJECTED' as const;
 }
 
 function latestTimestamp(values: Array<string | undefined>) {
@@ -196,12 +215,11 @@ export function workspaceTargetView(
         latestRun.datasetRevisionId !== publishedRevision?.id),
   );
   const stage = stageFor(latestRun, isStale);
-  const guardrailApproval = latestReport
-    ? state.guardrailApprovals.find((item) => item.reportId === latestReport.id)
+  const decision = latestReport
+    ? state.revisionDecisions.find((item) => item.reportId === latestReport.id)
     : undefined;
-  const approvalStatus = target.kind === 'guardrail' && latestReport
-    ? guardrailApproval?.status ?? 'PENDING'
-    : undefined;
+  const decisionRecommendation = decisionRecommendationFor(latestRun, latestReport, isStale);
+  const decisionStatus = decision?.status ?? (decisionRecommendation ? 'PENDING' : undefined);
 
   return {
     target,
@@ -211,7 +229,9 @@ export function workspaceTargetView(
     publishedRevision,
     latestRun,
     latestReport,
-    approvalStatus,
+    decision,
+    decisionStatus,
+    decisionRecommendation,
     stage,
     progress: progressFor(latestRun),
     result: resultFor(latestRun),
@@ -227,7 +247,7 @@ export function workspaceTargetView(
       latestRun?.startedAt,
       latestRun?.completedAt,
       latestReport?.createdAt,
-      guardrailApproval?.decidedAt,
+      decision?.decidedAt,
     ]),
   };
 }
@@ -243,15 +263,8 @@ export function workspaceNextStep(row: WorkspaceRow): WorkspaceNextStep {
   if (row.stage === 'RUNNING') {
     return {
       tab: 'run',
-      label: 'View evaluation progress',
-      description: 'The evaluation is running. Open it to follow case progress.',
-    };
-  }
-  if (row.stage === 'FAILED') {
-    return {
-      tab: 'run',
-      label: 'Review failure and retry',
-      description: 'Review the failed cases before starting the evaluation again.',
+      label: 'Evaluation in progress',
+      description: 'Case progress and results update here as the run advances.',
     };
   }
   if (row.stage === 'NEEDS_RE_EVALUATION') {
@@ -261,14 +274,38 @@ export function workspaceNextStep(row: WorkspaceRow): WorkspaceNextStep {
       description: 'The Target or Dataset changed after the latest evaluation.',
     };
   }
+  if (row.decisionStatus === 'PENDING') {
+    const approve = row.decisionRecommendation === 'APPROVED';
+    return {
+      tab: 'result',
+      label: approve ? 'Approve evaluation' : 'Reject evaluation',
+      description: approve
+        ? 'All Test Cases passed. An Admin must approve this evaluated revision.'
+        : 'The evaluation failed or contains findings. An Admin must reject it for Developer changes.',
+    };
+  }
+  if (row.decisionStatus === 'REJECTED') {
+    return {
+      tab: 'agent',
+      label: 'Update rejected target',
+      description: 'A Developer must create or update the Target revision, then run the evaluation again.',
+    };
+  }
+  if (row.decisionStatus === 'APPROVED') {
+    return {
+      tab: 'result',
+      label: 'Evaluation approved',
+      description: 'The evaluated Target revision has been approved by an Admin.',
+    };
+  }
+  if (row.stage === 'FAILED') {
+    return {
+      tab: 'run',
+      label: 'Review failure and retry',
+      description: 'Review the failed cases before starting the evaluation again.',
+    };
+  }
   if (row.stage === 'COMPLETED' && row.latestReport) {
-    if (row.approvalStatus === 'PENDING') {
-      return {
-        tab: 'result',
-        label: 'Review and approve revision',
-        description: 'The Guardrail evaluation passed and the current revision is ready for approval.',
-      };
-    }
     return {
       tab: 'result',
       label: 'Review results',

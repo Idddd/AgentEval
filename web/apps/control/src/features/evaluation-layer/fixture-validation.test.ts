@@ -84,6 +84,8 @@ describe("Evaluation layer fixtures", () => {
       "restart-admin-allow",
       "restart-employee-deny",
       "jailbreak-guard-bypass",
+      "guardrail-universal-sensitive-data",
+      "guardrail-agent-instruction-override",
     ]);
     expect(run.results.some((item) => item.status === "PENDING")).toBe(false);
     expect(evaluationLayerFixtures.settings).toMatchObject({

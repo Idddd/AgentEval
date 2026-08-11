@@ -1,8 +1,11 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
@@ -56,12 +59,16 @@ import { useEvaluationLayerState, useEvaluationLayerStore } from '../mock-provid
 import { DatasetEditor, EvaluationDatasetDetail } from '../datasets/dataset-pages';
 import { isLiveMonitoringRun } from '../mock-store';
 import { EvaluationReportDetail } from '../reports/report-page';
-import { EvaluationRunDetail, EvaluationRunSetup } from '../runs/run-pages';
+import {
+  EvaluationRunDetail,
+  EvaluationRunSetup,
+  GuardrailTemplatePicker,
+  guardrailTemplateIdsForTarget,
+} from '../runs/run-pages';
 import { EvaluationLayerStatusBadge } from '../shared/evaluation-status';
 import {
   EvaluationSection,
   EvaluationTable,
-  KeyValueGrid,
   formatCost,
   formatRelativeTime,
 } from '../shared/evaluation-ui';
@@ -154,15 +161,28 @@ function datasetLifecycleDetail(row: WorkspaceRow) {
 
 function resultActionLabel(row: WorkspaceRow) {
   if (!row.publishedRevision) return row.draftRevision ? 'Publish Test Cases' : 'Prepare Test Cases';
-  if (row.stage === 'FAILED') return 'Retry required';
   if (row.stage === 'NEEDS_RE_EVALUATION') return 'Re-evaluation required';
   if (row.stage === 'RUNNING') return 'Evaluation in progress';
   if (row.stage === 'NOT_EVALUATED') return 'Start evaluation';
+  if (row.decisionStatus === 'APPROVED') return 'Approved by Admin';
+  if (row.decisionStatus === 'REJECTED') return 'Rejected · Developer changes required';
+  if (row.decisionStatus === 'PENDING') {
+    return row.decisionRecommendation === 'APPROVED'
+      ? 'Awaiting Admin approval'
+      : 'Awaiting Admin rejection';
+  }
+  if (row.stage === 'FAILED') return 'Retry required';
   if (row.risk.kind === 'FINDINGS') return 'Review required';
-  if (row.approvalStatus === 'PENDING') return 'Ready for approval';
-  if (row.approvalStatus === 'APPROVED') return 'Revision approved';
-  if (row.approvalStatus === 'REJECTED') return 'Revision rejected';
   return 'No findings';
+}
+
+function decisionStatusLabel(row: WorkspaceRow) {
+  if (row.decisionStatus === 'APPROVED') return 'Approved';
+  if (row.decisionStatus === 'REJECTED') return 'Rejected';
+  if (row.decisionStatus === 'PENDING') {
+    return row.decisionRecommendation === 'APPROVED' ? 'Pending approval' : 'Pending rejection';
+  }
+  return undefined;
 }
 
 function reportReason(row: WorkspaceRow) {
@@ -187,7 +207,7 @@ export function LifecycleNode({
   label: string;
   value: string;
   detail: string;
-  tone: 'done' | 'active' | 'waiting' | 'failed';
+  tone: 'done' | 'active' | 'waiting' | 'failed' | 'stale';
   recommended?: boolean;
   onClick?: () => void;
 }) {
@@ -198,6 +218,7 @@ export function LifecycleNode({
         tone === 'done' && 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
         tone === 'active' && 'border-cyan-500/50 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300',
         tone === 'failed' && 'border-destructive/50 bg-destructive/10 text-destructive',
+        tone === 'stale' && 'border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300',
         tone === 'waiting' && 'border-border text-muted-foreground',
       )}>
         {tone === 'done' ? <Check className='size-3' /> : tone === 'failed' ? <XCircle className='size-3' /> : <Circle className='size-2.5 fill-current' />}
@@ -236,6 +257,8 @@ function datasetCountSummary(row: WorkspaceRow) {
 }
 
 function compactResult(row: WorkspaceRow) {
+  if (row.decisionStatus === 'APPROVED') return 'Approved';
+  if (row.decisionStatus === 'REJECTED') return 'Rejected';
   const run = row.latestRun;
   if (!run) return 'Not evaluated';
   if (run.status === 'QUEUED' || run.status === 'RUNNING') return 'In progress';
@@ -247,24 +270,92 @@ function compactResult(row: WorkspaceRow) {
     : 'Passed';
 }
 
-export function NextStepCallout({
+type WorkspaceSectionKey = 'agent' | 'dataset' | 'run' | 'result';
+type WorkspaceSectionTone = 'ready' | 'active' | 'waiting' | 'failed' | 'stale';
+
+export function WorkspaceActionBar({
   step,
-  onNavigate,
+  action,
+  progress,
 }: {
   step: WorkspaceNextStep;
-  onNavigate(tab: WorkspaceNextStep['tab']): void;
+  action?: ReactNode | undefined;
+  progress?: number | undefined;
 }) {
   return (
-    <div className='flex flex-col gap-3 rounded-lg border border-cyan-500/40 bg-cyan-500/10 p-4 sm:flex-row sm:items-center sm:justify-between'>
+    <div className='flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
       <div className='min-w-0'>
-        <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-700 dark:text-cyan-300'>Next step</p>
+        <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground'>Current step</p>
         <p className='mt-1 font-semibold text-foreground'>{step.label}</p>
         <p className='mt-1 text-xs text-muted-foreground'>{step.description}</p>
       </div>
-      <Button className='shrink-0' onClick={() => onNavigate(step.tab)}>
-        {step.label}<ArrowRight />
-      </Button>
+      {typeof progress === 'number' ? (
+        <div className='grid min-w-44 shrink-0 gap-1.5' aria-label={`Evaluation ${progress}% complete`}>
+          <div className='flex items-center justify-between text-xs font-medium'><span>Running</span><span>{progress}%</span></div>
+          <Progress value={progress} />
+        </div>
+      ) : action}
     </div>
+  );
+}
+
+function WorkspaceSection({
+  children,
+  current = false,
+  description,
+  section,
+  sectionRef,
+  status,
+  step,
+  title,
+  tone,
+}: {
+  children: ReactNode;
+  current?: boolean;
+  description: string;
+  section: WorkspaceSectionKey;
+  sectionRef: RefObject<HTMLElement | null>;
+  status: string;
+  step: number;
+  title: string;
+  tone: WorkspaceSectionTone;
+}) {
+  const headingId = `evaluation-workspace-${section}-heading`;
+  return (
+    <section
+      ref={sectionRef}
+      id={`evaluation-workspace-${section}`}
+      tabIndex={-1}
+      aria-current={current ? 'step' : undefined}
+      aria-labelledby={headingId}
+      className={cn(
+        'scroll-mt-5 overflow-hidden rounded-xl border bg-card shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        current && 'border-cyan-500/45 ring-1 ring-cyan-500/25',
+      )}
+    >
+      <div className='flex items-start gap-3 p-4'>
+        <span className={cn(
+          'grid size-7 shrink-0 place-items-center rounded-full border text-xs font-semibold',
+          tone === 'ready' && 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+          tone === 'active' && 'border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300',
+          tone === 'waiting' && 'border-border bg-muted/50 text-muted-foreground',
+          tone === 'failed' && 'border-destructive/40 bg-destructive/10 text-destructive',
+          tone === 'stale' && 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+        )}>{step}</span>
+        <div className='min-w-0 flex-1'>
+          <h3 id={headingId} className='font-semibold'>{title}</h3>
+          <p className='mt-1 text-xs text-muted-foreground'>{description}</p>
+        </div>
+        <Badge variant='outline' className={cn(
+          tone === 'ready' && 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+          tone === 'active' && 'border-cyan-500/35 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300',
+          tone === 'failed' && 'border-destructive/35 bg-destructive/10 text-destructive',
+          tone === 'stale' && 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+          tone === 'waiting' && 'text-muted-foreground',
+        )}>{status}</Badge>
+      </div>
+      <div className='space-y-5 border-t p-4'>{children}</div>
+    </section>
   );
 }
 
@@ -273,7 +364,15 @@ function lifecycleTones(row: WorkspaceRow) {
     revision: 'done' as const,
     dataset: row.selectedDataset ? (row.publishedRevision ? 'done' as const : 'active' as const) : 'waiting' as const,
     run: row.stage === 'RUNNING' ? 'active' as const : row.stage === 'FAILED' ? 'failed' as const : row.latestRun ? 'done' as const : 'waiting' as const,
-    result: row.stage === 'COMPLETED' || row.stage === 'NEEDS_RE_EVALUATION' ? 'done' as const : row.stage === 'FAILED' ? 'failed' as const : 'waiting' as const,
+    result: row.stage === 'NEEDS_RE_EVALUATION'
+      ? 'stale' as const
+      : row.decisionStatus === 'REJECTED' || row.decisionRecommendation === 'REJECTED'
+        ? 'failed' as const
+        : row.stage === 'COMPLETED'
+          ? 'done' as const
+          : row.stage === 'FAILED'
+            ? 'failed' as const
+            : 'waiting' as const,
   };
 }
 
@@ -307,7 +406,7 @@ function CatalogCard({ row, onOpen }: { row: WorkspaceRow; onOpen(row: Workspace
         <p className='line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground'>{row.target.description}</p>
         <div className='rounded-md border bg-muted/20 p-3'>
           <p className='text-[10px] font-semibold uppercase tracking-wider text-muted-foreground'>Evaluation</p>
-          <p className='mt-1 font-medium'>{row.result}</p>
+          <p className='mt-1 font-medium'>{decisionStatusLabel(row) ?? row.result}</p>
           {row.stage === 'RUNNING' ? <Progress className='mt-3' value={row.progress} /> : null}
           <p className={cn('mt-1 text-xs', row.risk.kind === 'FINDINGS' ? 'font-medium text-destructive' : 'text-muted-foreground')}>{resultActionLabel(row)}</p>
         </div>
@@ -387,7 +486,7 @@ function LifecycleList({ rows, onOpen }: { rows: WorkspaceRow[]; onOpen(row: Wor
               <LifecycleNode label='Revision' value={`R${row.currentRevision?.revision ?? '—'}`} detail='Evaluation target' tone={tones.revision} />
               <LifecycleNode label='Dataset' value={row.selectedDataset?.name ?? 'Not created'} detail={datasetLifecycleDetail(row)} tone={tones.dataset} />
               <LifecycleNode label='Evaluation' value={row.latestRun ? STAGE_META[row.stage].label : 'Not started'} detail={row.latestRun ? `${row.progress}% complete` : 'Waiting for Dataset'} tone={tones.run} />
-              <LifecycleNode label='Result' value={row.result} detail={resultActionLabel(row)} tone={tones.result} />
+              <LifecycleNode label='Result' value={decisionStatusLabel(row) ?? row.result} detail={resultActionLabel(row)} tone={tones.result} />
             </div>
             <ArrowRight className='hidden size-5 text-muted-foreground lg:block' />
           </button>
@@ -410,38 +509,108 @@ function WorkspaceDrawer({
 }) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
+  const projectId = useCurrentProjectId();
   const role = useEffectiveProjectRole();
-  const [drawerTab, setDrawerTab] = useState('workflow');
-  const [runMessage, setRunMessage] = useState('');
+  const [workspaceNotice, setWorkspaceNotice] = useState<{
+    message: string;
+    section: WorkspaceSectionKey;
+  }>();
   const [agentDetailsOpen, setAgentDetailsOpen] = useState(false);
   const [resultDetailsOpen, setResultDetailsOpen] = useState(false);
+  const [selectedGuardrailTemplateIds, setSelectedGuardrailTemplateIds] = useState<string[]>([]);
+  const agentSectionRef = useRef<HTMLElement>(null);
+  const datasetSectionRef = useRef<HTMLElement>(null);
+  const runSectionRef = useRef<HTMLElement>(null);
+  const resultSectionRef = useRef<HTMLElement>(null);
+  const previousWorkspaceRef = useRef<{
+    stage: WorkspaceStage | undefined;
+    targetId: string | undefined;
+  }>({ stage: undefined, targetId: undefined });
+  const focusSection = useCallback((section: WorkspaceSectionKey) => {
+    const node = {
+      agent: agentSectionRef.current,
+      dataset: datasetSectionRef.current,
+      result: resultSectionRef.current,
+      run: runSectionRef.current,
+    }[section];
+    if (!node) return;
+    if (typeof node.scrollIntoView === 'function') {
+      node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    node.focus({ preventScroll: true });
+  }, []);
   useEffect(() => {
     if (open) {
-      setDrawerTab('workflow');
-      setRunMessage('');
+      setWorkspaceNotice(undefined);
       setAgentDetailsOpen(false);
       setResultDetailsOpen(false);
+      previousWorkspaceRef.current = {
+        stage: row?.stage,
+        targetId: row?.target.id,
+      };
     }
   }, [open, row?.target.id]);
+  useEffect(() => {
+    if (!open || !row) return;
+    setSelectedGuardrailTemplateIds(guardrailTemplateIdsForTarget(
+      state.guardrailTemplates,
+      row.target.kind,
+      row.latestRun?.guardrailTemplateIds,
+    ));
+  }, [open, row?.latestRun?.id, row?.target.id, row?.target.kind, state.guardrailTemplates]);
+  useEffect(() => {
+    if (!open || !row) return;
+    const previous = previousWorkspaceRef.current;
+    if (previous.targetId === row.target.id && previous.stage === 'RUNNING') {
+      if (row.stage === 'COMPLETED') {
+        setResultDetailsOpen(true);
+        focusSection('result');
+      }
+      if (row.stage === 'FAILED') focusSection('run');
+    }
+    previousWorkspaceRef.current = {
+      stage: row.stage,
+      targetId: row.target.id,
+    };
+  }, [focusSection, open, row?.stage, row?.target.id]);
   if (!row) return null;
 
   const targetDatasets = state.datasets.filter((dataset) => dataset.targetId === row.target.id);
+  const selectedGuardrailTemplates = state.guardrailTemplates.filter((template) => selectedGuardrailTemplateIds.includes(template.id));
+  const selectedGuardrailCaseCount = selectedGuardrailTemplates.reduce((sum, template) => sum + template.cases.length, 0);
   const nextStep = workspaceNextStep(row);
   const guardrailEvaluationRestricted = row.target.kind === 'guardrail' && role !== 'admin';
   const startEvaluation = () => {
     if (guardrailEvaluationRestricted) {
-      setRunMessage('Guardrail evaluation is restricted to the Admin role.');
-      setDrawerTab('run');
+      setWorkspaceNotice({
+        message: 'Guardrail evaluation is restricted to the Admin role.',
+        section: 'run',
+      });
+      focusSection('run');
       return;
     }
     if (!row.currentRevision) {
-      setRunMessage('Create a Target revision before starting an Evaluation.');
-      setDrawerTab('agent');
+      setWorkspaceNotice({
+        message: 'Create a Target revision before starting an Evaluation.',
+        section: 'agent',
+      });
+      focusSection('agent');
       return;
     }
     if (!row.publishedRevision) {
-      setRunMessage('Publish the selected Test Cases before starting an Evaluation.');
-      setDrawerTab('dataset');
+      setWorkspaceNotice({
+        message: 'Publish the selected Test Cases before starting an Evaluation.',
+        section: 'dataset',
+      });
+      focusSection('dataset');
+      return;
+    }
+    if (!selectedGuardrailTemplateIds.length) {
+      setWorkspaceNotice({
+        message: 'Select at least one Guardrail test pack before starting the Evaluation.',
+        section: 'dataset',
+      });
+      focusSection('dataset');
       return;
     }
     const evaluatorIds = state.evaluators.filter((evaluator) => evaluator.enabled).map((evaluator) => evaluator.id);
@@ -449,20 +618,187 @@ function WorkspaceDrawer({
       targetRevisionId: row.currentRevision.id,
       datasetRevisionId: row.publishedRevision.id,
       evaluatorIds,
+      guardrailTemplateIds: selectedGuardrailTemplateIds,
     });
     if (!result.ok) {
-      setRunMessage(result.error);
+      setWorkspaceNotice({ message: result.error, section: 'run' });
+      focusSection('run');
       return;
     }
-    setRunMessage('');
-    setDrawerTab('run');
+    setWorkspaceNotice(undefined);
+    focusSection('run');
   };
+  const decideRevision = (status: 'APPROVED' | 'REJECTED') => {
+    if (role !== 'admin' || !row.latestReport || row.decisionStatus !== 'PENDING') {
+      setWorkspaceNotice({
+        message: 'Only an Admin can decide a pending evaluation result.',
+        section: 'result',
+      });
+      focusSection('result');
+      return;
+    }
+    const result = store.decideRevision(row.latestReport.id, status, {
+      name: 'Local Administrator',
+      role,
+    });
+    if (!result.ok) {
+      setWorkspaceNotice({ message: result.error, section: 'result' });
+      focusSection('result');
+      return;
+    }
+    setWorkspaceNotice(undefined);
+    focusSection('result');
+  };
+  const reviewRejectedTarget = () => {
+    setAgentDetailsOpen(true);
+    focusSection('agent');
+  };
+
+  const datasetTone: WorkspaceSectionTone = row.publishedRevision && selectedGuardrailTemplateIds.length
+    ? 'ready'
+    : row.draftRevision
+      ? 'active'
+      : 'waiting';
+  const evaluationTone: WorkspaceSectionTone = row.stage === 'FAILED'
+    ? 'failed'
+    : row.stage === 'RUNNING'
+      ? 'active'
+      : row.stage === 'NEEDS_RE_EVALUATION'
+        ? 'stale'
+        : row.stage === 'COMPLETED'
+          ? 'ready'
+          : 'waiting';
+  const resultTone: WorkspaceSectionTone = row.stage === 'NEEDS_RE_EVALUATION'
+    ? 'stale'
+    : row.decisionStatus === 'REJECTED' || row.decisionRecommendation === 'REJECTED'
+      ? 'failed'
+      : row.decisionStatus === 'APPROVED' || row.latestReport
+        ? 'ready'
+        : 'waiting';
+  const footerStep: WorkspaceNextStep = (() => {
+    if (!row.currentRevision) {
+      return {
+        tab: 'agent',
+        label: `Review ${KIND_META[row.target.kind].label} revision`,
+        description: 'A current revision is required before an evaluation can run.',
+      };
+    }
+    if (!row.publishedRevision || row.stage === 'RUNNING') return nextStep;
+    if (row.decisionStatus === 'PENDING' && role !== 'admin') {
+      return {
+        tab: 'result',
+        label: 'Awaiting Admin decision',
+        description: row.decisionRecommendation === 'APPROVED'
+          ? 'The evaluation passed and is waiting for Admin approval.'
+          : 'The evaluation failed or contains findings and is waiting for Admin rejection.',
+      };
+    }
+    if (row.decisionStatus === 'REJECTED') {
+      return row.target.kind === 'guardrail'
+        ? {
+            tab: 'agent',
+            label: 'Update rejected Guardrail at source',
+            description: 'Open Guardrails to update the managed source, then run this evaluation again.',
+          }
+        : role === 'member'
+          ? nextStep
+          : {
+              tab: 'agent',
+              label: 'Waiting for Developer changes',
+              description: 'A Developer must update the rejected Target revision before it can be evaluated again.',
+            };
+    }
+    if (guardrailEvaluationRestricted && row.stage === 'NEEDS_RE_EVALUATION') {
+      return {
+        tab: 'result',
+        label: 'Review outdated result',
+        description: 'The current result remains available, but an Admin must run the updated configuration.',
+      };
+    }
+    if (guardrailEvaluationRestricted && row.latestReport) {
+      return {
+        tab: 'result',
+        label: 'Review results',
+        description: 'This Guardrail evaluation is available in read-only mode.',
+      };
+    }
+    if (guardrailEvaluationRestricted && row.latestRun) {
+      return {
+        tab: 'run',
+        label: 'Review evaluation',
+        description: 'This Guardrail evaluation is available in read-only mode.',
+      };
+    }
+    if (guardrailEvaluationRestricted) {
+      return {
+        tab: 'run',
+        label: 'Admin approval required',
+        description: 'Only an Admin can start or rerun a Guardrail evaluation.',
+      };
+    }
+    if (!selectedGuardrailTemplateIds.length && (!row.latestRun || row.stage === 'FAILED' || row.stage === 'NEEDS_RE_EVALUATION')) {
+      return {
+        tab: 'dataset',
+        label: 'Select Guardrail test packs',
+        description: 'At least one safety test pack is required for every evaluation.',
+      };
+    }
+    return nextStep;
+  })();
+
+  let footerAction: ReactNode;
+  if (!row.currentRevision) {
+    footerAction = <Button onClick={() => focusSection('agent')}><Bot />Review revision</Button>;
+  } else if (!row.publishedRevision) {
+    footerAction = <Button onClick={() => focusSection('dataset')}><Database />Prepare Test Cases</Button>;
+  } else if (row.stage === 'RUNNING') {
+    footerAction = undefined;
+  } else if (row.stage === 'NEEDS_RE_EVALUATION' && guardrailEvaluationRestricted) {
+    footerAction = <Button onClick={() => { setResultDetailsOpen(true); focusSection('result'); }}>View outdated result<ArrowRight /></Button>;
+  } else if (row.stage === 'NEEDS_RE_EVALUATION') {
+    footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={startEvaluation}><Play />Run evaluation again</Button>;
+  } else if (row.decisionStatus === 'PENDING' && role === 'admin') {
+    const approve = row.decisionRecommendation === 'APPROVED';
+    footerAction = (
+      <Button
+        variant={approve ? 'default' : 'destructive'}
+        onClick={() => decideRevision(approve ? 'APPROVED' : 'REJECTED')}
+      >
+        {approve ? <Check /> : <XCircle />}
+        {approve ? 'Approve' : 'Reject'}
+      </Button>
+    );
+  } else if (row.decisionStatus === 'REJECTED') {
+    footerAction = row.target.kind === 'guardrail'
+      ? role === 'admin'
+        ? <Button asChild><Link to='/$projectId/guardrails' params={{ projectId }}><Wrench />Open Guardrail source</Link></Button>
+        : undefined
+      : role === 'member'
+        ? <Button onClick={reviewRejectedTarget}><Wrench />Update target revision</Button>
+        : undefined;
+  } else if (row.decisionStatus === 'PENDING') {
+    footerAction = <Button onClick={() => { setResultDetailsOpen(true); focusSection('result'); }}>View results<ArrowRight /></Button>;
+  } else if (guardrailEvaluationRestricted && row.latestReport) {
+    footerAction = <Button onClick={() => { setResultDetailsOpen(true); focusSection('result'); }}>View results<ArrowRight /></Button>;
+  } else if (guardrailEvaluationRestricted && row.latestRun) {
+    footerAction = <Button onClick={() => focusSection('run')}>View evaluation<ArrowRight /></Button>;
+  } else if (guardrailEvaluationRestricted) {
+    footerAction = <Button disabled variant='outline'><ShieldAlert />Admin only</Button>;
+  } else if (row.stage === 'FAILED') {
+    footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={startEvaluation}><Play />Retry evaluation</Button>;
+  } else if (row.stage === 'COMPLETED' && row.latestReport) {
+    footerAction = <Button onClick={() => { setResultDetailsOpen(true); focusSection('result'); }}>View results<ArrowRight /></Button>;
+  } else if (row.latestRun) {
+    footerAction = <Button onClick={() => focusSection('run')}>View evaluation<ArrowRight /></Button>;
+  } else {
+    footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={startEvaluation}><Play />Run evaluation</Button>;
+  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        className='gap-0'
-        style={{ width: 'min(94vw, 42rem)', maxWidth: '42rem' }}
+        className='gap-0 sm:max-w-none'
+        style={{ width: 'min(96vw, 56rem)', maxWidth: '56rem' }}
       >
         <SheetHeader className='border-b p-5 pr-16'>
           <div className='flex items-start gap-3'>
@@ -475,114 +811,126 @@ function WorkspaceDrawer({
             <StageBadge stage={row.stage} />
           </div>
         </SheetHeader>
-        <div className='min-h-0 flex-1 overflow-y-auto p-5'>
-          <Tabs value={drawerTab} onValueChange={setDrawerTab}>
-            <TabsList variant='line' className='w-full justify-start overflow-x-auto'>
-              <TabsTrigger value='workflow'>Workflow</TabsTrigger>
-              <TabsTrigger value='agent'>{KIND_META[row.target.kind].label}</TabsTrigger>
-              <TabsTrigger value='dataset'>Dataset</TabsTrigger>
-              <TabsTrigger value='run'>Evaluation</TabsTrigger>
-              <TabsTrigger value='result'>Result</TabsTrigger>
-            </TabsList>
-            {runMessage ? <p role='alert' className='mt-4 rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'>{runMessage}</p> : null}
-            <TabsContent value='workflow' className='space-y-5 pt-5'>
-              <div className='grid gap-4 rounded-lg border bg-muted/15 p-4 sm:grid-cols-2'>
-                <LifecycleNode label='Revision' value={`R${row.currentRevision?.revision ?? '—'}`} detail={configurationSummary(row)} tone='done' onClick={() => setDrawerTab('agent')} />
-                <LifecycleNode label='Dataset' value={row.selectedDataset?.name ?? 'Not created'} detail={datasetLifecycleDetail(row)} tone={lifecycleTones(row).dataset} recommended={nextStep.tab === 'dataset'} onClick={() => setDrawerTab('dataset')} />
-                <LifecycleNode label='Evaluation' value={row.latestRun ? STAGE_META[row.stage].label : 'Not started'} detail={row.latestRun ? `${row.progress}% complete` : 'Waiting for Dataset'} tone={lifecycleTones(row).run} recommended={nextStep.tab === 'run'} onClick={() => setDrawerTab('run')} />
-                <LifecycleNode label='Result' value={row.result} detail={resultActionLabel(row)} tone={lifecycleTones(row).result} recommended={nextStep.tab === 'result'} onClick={() => setDrawerTab('result')} />
+        <div className='min-h-0 flex-1 space-y-5 overflow-y-auto p-5'>
+          <section aria-labelledby='evaluation-workflow-overview-heading' className='space-y-4 rounded-xl border bg-muted/15 p-4'>
+            <div>
+              <h3 id='evaluation-workflow-overview-heading' className='font-semibold'>Workflow overview</h3>
+              <p className='mt-1 text-xs text-muted-foreground'>Every step is available below in one continuous workspace.</p>
+            </div>
+            <div className='grid gap-4 sm:grid-cols-2'>
+              <LifecycleNode label='Revision' value={`R${row.currentRevision?.revision ?? '—'}`} detail={configurationSummary(row)} tone={row.currentRevision ? 'done' : 'failed'} onClick={() => focusSection('agent')} />
+              <LifecycleNode label='Test coverage' value={row.selectedDataset?.name ?? 'Not created'} detail={`${datasetLifecycleDetail(row)} · ${selectedGuardrailTemplateIds.length} Guardrail packs`} tone={lifecycleTones(row).dataset} recommended={footerStep.tab === 'dataset'} onClick={() => focusSection('dataset')} />
+              <LifecycleNode label='Evaluation' value={row.latestRun ? STAGE_META[row.stage].label : 'Not started'} detail={row.latestRun ? `${row.progress}% complete` : 'Waiting for Dataset'} tone={lifecycleTones(row).run} recommended={nextStep.tab === 'run'} onClick={() => focusSection('run')} />
+              <LifecycleNode label='Result' value={decisionStatusLabel(row) ?? row.result} detail={resultActionLabel(row)} tone={lifecycleTones(row).result} recommended={nextStep.tab === 'result'} onClick={() => focusSection('result')} />
+            </div>
+          </section>
+
+          <WorkspaceSection
+            section='agent'
+            sectionRef={agentSectionRef}
+            step={1}
+            title={`${KIND_META[row.target.kind].label} & revision`}
+            description={`R${row.currentRevision?.revision ?? '—'} · ${configurationSummary(row)}`}
+            status={row.currentRevision ? 'Ready' : 'Required'}
+            tone={row.currentRevision ? 'ready' : 'failed'}
+            current={!row.currentRevision}
+          >
+            {workspaceNotice?.section === 'agent' ? <p role='alert' className='rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'>{workspaceNotice.message}</p> : null}
+            <div className='flex justify-end'>
+              <Button aria-label={agentDetailsOpen ? `Hide ${KIND_META[row.target.kind].label} details` : `Show ${KIND_META[row.target.kind].label} details`} aria-controls='evaluation-workspace-agent-details' aria-expanded={agentDetailsOpen} size='sm' variant='outline' onClick={() => setAgentDetailsOpen((current) => !current)}>{agentDetailsOpen ? 'Hide details' : 'Details'}</Button>
+            </div>
+            {agentDetailsOpen ? <div id='evaluation-workspace-agent-details'><EvaluationTargetDetail targetId={row.target.id} embedded showEvaluateAction={false} onEvaluate={() => focusSection('run')} /></div> : null}
+          </WorkspaceSection>
+
+          <WorkspaceSection
+            section='dataset'
+            sectionRef={datasetSectionRef}
+            step={2}
+            title='Test coverage'
+            description={row.selectedDataset ? `${row.selectedDataset.name} · ${datasetLifecycleDetail(row)} · ${selectedGuardrailTemplateIds.length} Guardrail packs` : 'Choose a Business Dataset and Guardrail safety tests.'}
+            status={row.publishedRevision && selectedGuardrailTemplateIds.length ? `Published R${row.publishedRevision.revision} · ${selectedGuardrailTemplateIds.length} packs` : row.draftRevision ? 'Draft' : 'Required'}
+            tone={datasetTone}
+            current={footerStep.tab === 'dataset'}
+          >
+            {workspaceNotice?.section === 'dataset' ? <p role='alert' className='rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'>{workspaceNotice.message}</p> : null}
+            <div><p className='text-sm font-semibold'>Business Dataset</p><p className='mt-1 text-xs text-muted-foreground'>Your representative functional and business scenarios.</p></div>
+            {targetDatasets.length ? <div className='rounded-lg border bg-muted/10 p-3'><label className='grid min-w-64 flex-1 gap-2 text-xs font-medium text-muted-foreground'>Dataset<select className='h-10 rounded-md border bg-background px-3 text-sm text-foreground' value={row.selectedDataset?.id ?? ''} onChange={(event) => store.selectActiveDataset(event.target.value)}>{targetDatasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}</select></label></div> : null}
+            {row.selectedDataset ? <EvaluationDatasetDetail key={row.selectedDataset.id} datasetId={row.selectedDataset.id} compact embedded showEvaluateAction={false} onCreateDataset={onCreateDataset} onEvaluate={() => focusSection('run')} /> : <div className='space-y-4'><p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>Create a Dataset before generating Test Cases.</p><Button variant='outline' onClick={onCreateDataset}><Plus />Create Dataset</Button></div>}
+            <GuardrailTemplatePicker targetKind={row.target.kind} selectedIds={selectedGuardrailTemplateIds} onSelectedIdsChange={setSelectedGuardrailTemplateIds} disabled={guardrailEvaluationRestricted} />
+            <p className='text-xs text-muted-foreground'>Combined coverage: {row.publishedRevision?.cases.length ?? 0} business cases + {selectedGuardrailCaseCount} Guardrail cases.</p>
+          </WorkspaceSection>
+
+          <WorkspaceSection
+            section='run'
+            sectionRef={runSectionRef}
+            step={3}
+            title='Evaluation'
+            description={row.latestRun ? `${row.result} · ${row.progress}% complete` : 'Run the Business Dataset and selected Guardrail test packs against this revision.'}
+            status={STAGE_META[row.stage].label}
+            tone={evaluationTone}
+            current={nextStep.tab === 'run'}
+          >
+            {workspaceNotice?.section === 'run' ? <p role='alert' className='rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'>{workspaceNotice.message}</p> : null}
+            {row.isStale ? <div className='rounded-md border border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200'><strong>Re-evaluation required.</strong> The latest completed run is pinned to an older Target or published Dataset revision.</div> : null}
+            {row.latestRun ? <EvaluationRunDetail key={row.latestRun.id} runId={row.latestRun.id} embedded /> : <p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>No Evaluation has been started for this Dataset.</p>}
+            {guardrailEvaluationRestricted ? <div className='rounded-lg border border-amber-500/35 bg-amber-500/10 p-4'><div className='flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-200'><ShieldAlert className='size-4' />Admin only</div><p className='mt-1 text-sm text-muted-foreground'>Guardrail evaluation can only be started or rerun by the Admin role. Existing runs and results remain visible for audit.</p></div> : null}
+            {!guardrailEvaluationRestricted && !row.publishedRevision ? <p className='rounded-lg border border-dashed p-4 text-sm text-muted-foreground'>Publish the selected Test Cases to enable evaluation.</p> : null}
+            {row.stage === 'FAILED' ? <div className='space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4'><div className='flex items-center gap-2 font-medium text-destructive'><ShieldAlert className='size-4' />Recovery actions</div><div className='grid gap-2 sm:grid-cols-2'><Button variant='outline' className='justify-start' onClick={() => focusSection('agent')}><Bot />Check {KIND_META[row.target.kind].label} config</Button><Button variant='outline' className='justify-start' onClick={() => focusSection('dataset')}><Database />Check Test Cases</Button></div></div> : null}
+          </WorkspaceSection>
+
+          <WorkspaceSection
+            section='result'
+            sectionRef={resultSectionRef}
+            step={4}
+            title='Result'
+            description={row.latestReport ? row.latestReport.summary : 'Results appear here when the evaluation completes.'}
+            status={decisionStatusLabel(row) ?? (row.latestReport ? row.result : row.stage === 'FAILED' ? 'Failed' : 'Waiting')}
+            tone={resultTone}
+            current={nextStep.tab === 'result'}
+          >
+            {workspaceNotice?.section === 'result' ? <p role='alert' className='rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'>{workspaceNotice.message}</p> : null}
+            <div className='rounded-lg border bg-muted/20 p-4'>
+              <div className='grid gap-4 sm:grid-cols-2'>
+                <div><p className='text-xs font-medium text-muted-foreground'>Summary</p><p className='mt-1 text-sm'>{row.latestReport?.summary ?? 'No report available.'}</p></div>
+                <div><p className='text-xs font-medium text-muted-foreground'>Reason</p><p className='mt-1 text-sm'>{reportReason(row)}</p></div>
               </div>
-              <NextStepCallout step={nextStep} onNavigate={setDrawerTab} />
-              {row.stage === 'FAILED' ? (
-                <div className='space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4'>
-                  <div className='flex items-center gap-2 font-medium text-destructive'><ShieldAlert className='size-4' />Recovery actions</div>
-                  <div className='grid gap-2 sm:grid-cols-2'>
-                    <Button variant='outline' className='justify-start' onClick={() => setDrawerTab('run')}><FlaskConical />Review failed cases</Button>
-                    <Button variant='outline' className='justify-start' onClick={() => setDrawerTab('agent')}><Bot />Check {KIND_META[row.target.kind].label} config</Button>
-                    <Button variant='outline' className='justify-start' onClick={() => setDrawerTab('dataset')}><Database />Check Test Cases</Button>
-                    <Button className='justify-start' onClick={startEvaluation}><Play />Retry evaluation</Button>
-                  </div>
+              {row.latestReport ? <div className='mt-3 flex justify-end'><Button aria-label={resultDetailsOpen ? 'Hide Result details' : 'Show Result details'} aria-controls='evaluation-workspace-result-details' aria-expanded={resultDetailsOpen} size='sm' variant='outline' onClick={() => setResultDetailsOpen((current) => !current)}>{resultDetailsOpen ? 'Hide details' : 'Details'}</Button></div> : null}
+            </div>
+            {row.decisionStatus ? (
+              <div
+                role='status'
+                aria-live='polite'
+                className={cn(
+                  'rounded-lg border p-4',
+                  row.decisionStatus === 'APPROVED' && 'border-emerald-500/35 bg-emerald-500/10',
+                  (row.decisionStatus === 'REJECTED' || row.decisionRecommendation === 'REJECTED') && 'border-destructive/35 bg-destructive/5',
+                  row.decisionStatus === 'PENDING' && row.decisionRecommendation === 'APPROVED' && 'border-amber-500/35 bg-amber-500/10',
+                )}
+              >
+                <div className='flex items-center gap-2 font-semibold'>
+                  {row.decisionStatus === 'APPROVED' ? <ShieldCheck className='size-4 text-emerald-600' /> : row.decisionStatus === 'REJECTED' || row.decisionRecommendation === 'REJECTED' ? <XCircle className='size-4 text-destructive' /> : <Circle className='size-4 text-amber-600' />}
+                  {decisionStatusLabel(row)}
                 </div>
-              ) : null}
-              {row.isStale ? <div className='rounded-md border border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200'><strong>Re-evaluation required.</strong> The latest completed run is pinned to an older Target or published Dataset revision.</div> : null}
-            </TabsContent>
-            <TabsContent value='agent' className='space-y-5 pt-5'>
-              <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 px-4 py-3'>
-                <div className='min-w-0'>
-                  <p className='text-xs font-medium text-muted-foreground'>Latest report</p>
-                  <p className='mt-1 text-sm font-medium'>{row.latestReport?.summary ?? 'No report available.'}</p>
-                </div>
-                <div className='flex items-center gap-2'>
-                  {row.latestReport ? <EvaluationLayerStatusBadge status={row.latestReport.status} /> : null}
-                  <Button
-                    aria-expanded={agentDetailsOpen}
-                    size='sm'
-                    variant='outline'
-                    onClick={() => setAgentDetailsOpen((current) => !current)}
-                  >
-                    {agentDetailsOpen ? 'Hide details' : 'Details'}
-                  </Button>
-                </div>
+                <p className='mt-1 text-sm text-muted-foreground'>
+                  {row.decisionStatus === 'APPROVED'
+                    ? `Approved by ${row.decision?.actor ?? 'Admin'}. This evaluated revision is ready to use.`
+                    : row.decisionStatus === 'REJECTED'
+                      ? 'Developer changes required. Update the Target revision, then run the evaluation again.'
+                      : row.decisionRecommendation === 'APPROVED'
+                        ? 'All Test Cases passed. An Admin must approve this evaluated revision.'
+                        : 'The evaluation failed or contains findings. An Admin must reject it before a Developer updates the Target.'}
+                </p>
               </div>
-              <NextStepCallout
-                step={{
-                  tab: 'dataset',
-                  label: 'Choose or generate a Dataset',
-                  description: 'Use representative Test Cases before starting the evaluation.',
-                }}
-                onNavigate={setDrawerTab}
-              />
-              {agentDetailsOpen ? <EvaluationTargetDetail targetId={row.target.id} embedded onEvaluate={() => setDrawerTab('run')} /> : null}
-            </TabsContent>
-            <TabsContent value='dataset' className='space-y-5 pt-5'>
-              <div className='rounded-lg border bg-card p-3'>
-                {targetDatasets.length ? <label className='grid min-w-64 flex-1 gap-2 text-xs font-medium text-muted-foreground'>Dataset<select className='h-10 rounded-md border bg-background px-3 text-sm text-foreground' value={row.selectedDataset?.id ?? ''} onChange={(event) => store.selectActiveDataset(event.target.value)}>{targetDatasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}</select></label> : null}
-              </div>
-              {row.selectedDataset ? <EvaluationDatasetDetail key={row.selectedDataset.id} datasetId={row.selectedDataset.id} compact embedded onCreateDataset={onCreateDataset} onEvaluate={() => setDrawerTab('run')} /> : <div className='space-y-4'><p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>Create a Dataset before generating Test Cases.</p><Button onClick={onCreateDataset}><Plus />Create Dataset</Button></div>}
-            </TabsContent>
-            <TabsContent value='run' className='space-y-5 pt-5'>
-              {row.latestRun ? <EvaluationRunDetail key={row.latestRun.id} runId={row.latestRun.id} embedded /> : <p className='rounded-lg border border-dashed p-6 text-sm text-muted-foreground'>No Evaluation has been started for this Dataset.</p>}
-              {guardrailEvaluationRestricted ? <div className='rounded-lg border border-amber-500/35 bg-amber-500/10 p-4'><div className='flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-200'><ShieldAlert className='size-4' />Admin only</div><p className='mt-1 text-sm text-muted-foreground'>Guardrail evaluation can only be started or rerun by the Admin role. Existing runs and results remain visible for audit.</p></div> : <>
-                <Button disabled={row.stage === 'RUNNING' || !row.publishedRevision} onClick={startEvaluation}><Play />{!row.publishedRevision ? 'Publish Test Cases first' : row.stage === 'RUNNING' ? 'Evaluation running' : row.latestRun ? 'Run again' : 'Start evaluation'}</Button>
-                <NextStepCallout
-                  step={row.latestReport ? {
-                    tab: 'result',
-                    label: 'Review result',
-                    description: 'The evaluation is complete. Review its Summary and Reason.',
-                  } : {
-                    tab: 'run',
-                    label: row.latestRun ? 'Continue evaluation' : 'Start evaluation',
-                    description: 'Run the prepared Dataset to produce a result.',
-                  }}
-                  onNavigate={(tab) => {
-                    if (tab === 'run' && !row.latestReport) startEvaluation();
-                    else setDrawerTab(tab);
-                  }}
-                />
-              </>}
-            </TabsContent>
-            <TabsContent value='result' className='space-y-5 pt-5'>
-              <div className='rounded-lg border bg-muted/20 p-4'>
-                <div className='grid gap-4 sm:grid-cols-2'>
-                  <div><p className='text-xs font-medium text-muted-foreground'>Summary</p><p className='mt-1 text-sm'>{row.latestReport?.summary ?? 'No report available.'}</p></div>
-                  <div><p className='text-xs font-medium text-muted-foreground'>Reason</p><p className='mt-1 text-sm'>{reportReason(row)}</p></div>
-                </div>
-                {row.latestReport ? <div className='mt-3 flex justify-end'><Button aria-expanded={resultDetailsOpen} size='sm' variant='outline' onClick={() => setResultDetailsOpen((current) => !current)}>{resultDetailsOpen ? 'Hide details' : 'Details'}</Button></div> : null}
-              </div>
-              <NextStepCallout
-                step={{
-                  tab: 'run',
-                  label: row.latestReport ? 'Run evaluation again' : 'Start evaluation',
-                  description: row.latestReport ? 'Use the current result to decide whether another run is needed.' : 'Complete an evaluation to create a result.',
-                }}
-                onNavigate={setDrawerTab}
-              />
-              {row.latestReport && resultDetailsOpen ? <EvaluationReportDetail key={row.latestReport.id} reportId={row.latestReport.id} embedded /> : null}
-            </TabsContent>
-          </Tabs>
+            ) : null}
+            {row.latestReport && resultDetailsOpen ? <div id='evaluation-workspace-result-details'><EvaluationReportDetail key={row.latestReport.id} reportId={row.latestReport.id} embedded decisionMode='hidden' /></div> : null}
+          </WorkspaceSection>
         </div>
-        <SheetFooter className='flex-row flex-wrap justify-end border-t'>
-          {guardrailEvaluationRestricted ? <Button disabled><ShieldAlert />Admin only</Button> : !row.publishedRevision ? <Button onClick={() => setDrawerTab('dataset')}><Database />Prepare Test Cases</Button> : row.stage === 'FAILED' ? null : row.primaryAction === 'VIEW_RESULTS' && row.latestReport ? <Button onClick={() => setDrawerTab('result')}>View results<ArrowRight /></Button> : row.primaryAction === 'VIEW_PROGRESS' && row.latestRun ? <Button onClick={() => setDrawerTab('run')}>View progress<ArrowRight /></Button> : row.primaryAction === 'VIEW_PROGRESS' && row.selectedDataset ? <Button onClick={() => setDrawerTab('dataset')}>Continue Dataset<ArrowRight /></Button> : <Button onClick={startEvaluation}><Play />Run evaluation</Button>}
+        <SheetFooter className='border-t p-4'>
+          <WorkspaceActionBar
+            step={footerStep}
+            progress={row.stage === 'RUNNING' ? row.progress : undefined}
+            action={row.stage === 'RUNNING' ? undefined : footerAction}
+          />
         </SheetFooter>
       </SheetContent>
     </Sheet>
@@ -648,7 +996,7 @@ function UnifiedWorkspace({
               <div><p className='text-xs text-muted-foreground'>{KIND_META[row.target.kind].label} revision</p><p className='font-medium'>R{row.currentRevision?.revision ?? '—'}</p></div>
               <div><p className='text-xs text-muted-foreground'>Test Case</p><p className='truncate font-medium'>{row.selectedDataset?.name ?? 'Not created'}</p></div>
               <div><p className='text-xs text-muted-foreground'>Evaluation</p><p className='font-medium'>{row.latestRun?.status ?? 'Not started'}</p></div>
-              <div><p className='text-xs text-muted-foreground'>Latest result</p><p className='font-medium'>{row.result}</p><p className='text-xs text-muted-foreground'>{resultActionLabel(row)}</p></div>
+              <div><p className='text-xs text-muted-foreground'>Latest result</p><p className='font-medium'>{decisionStatusLabel(row) ?? row.result}</p><p className='text-xs text-muted-foreground'>{resultActionLabel(row)}</p></div>
             </div>
           </div>
           {row.isStale ? <div className='rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200'><strong>Re-evaluation required.</strong> The active Target or published Test Case revision changed after the latest run.</div> : null}

@@ -272,12 +272,14 @@ export function EvaluationDatasetDetail({
   onCreateDataset,
   embedded = false,
   compact = false,
+  showEvaluateAction = true,
 }: {
   datasetId: string;
   onEvaluate?(): void;
   onCreateDataset?(): void;
   embedded?: boolean;
   compact?: boolean;
+  showEvaluateAction?: boolean;
 }) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
@@ -377,17 +379,13 @@ export function EvaluationDatasetDetail({
   return (
     <div className='space-y-5'>
       {compact ? <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3'>
-        <Button disabled={generating} onClick={() => { setDetailsOpen(true); generate(); }}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate Dataset'}</Button>
-        <Button aria-expanded={detailsOpen} size='sm' variant='outline' onClick={() => setDetailsOpen((currentOpen) => !currentOpen)}>{detailsOpen ? 'Hide details' : 'Details'}</Button>
-      </div> : null}
-      {compact ? <div className='flex flex-col gap-3 rounded-lg border border-cyan-500/40 bg-cyan-500/10 p-4 sm:flex-row sm:items-center sm:justify-between'>
-        <div><p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-700 dark:text-cyan-300'>Next step</p><p className='mt-1 font-semibold'>{current?.status === 'PUBLISHED' ? 'Start evaluation' : 'Review generated Test Cases'}</p><p className='mt-1 text-xs text-muted-foreground'>{current?.status === 'PUBLISHED' ? 'The Dataset is ready to run.' : 'Generate Test Cases, review them in Details, then continue.'}</p></div>
-        <Button className='shrink-0' onClick={current?.status === 'PUBLISHED' ? evaluate : () => setDetailsOpen(true)}>{current?.status === 'PUBLISHED' ? 'Start evaluation' : 'Open Details'}<ArrowRight className='size-4' /></Button>
+        <Button variant='outline' disabled={generating} onClick={() => { setDetailsOpen(true); generate(); }}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate Dataset'}</Button>
+        <Button aria-label={detailsOpen ? 'Hide Dataset details' : 'Show Dataset details'} aria-expanded={detailsOpen} size='sm' variant='outline' onClick={() => setDetailsOpen((currentOpen) => !currentOpen)}>{detailsOpen ? 'Hide details' : 'Details'}</Button>
       </div> : null}
       {!compact || detailsOpen ? <>
       <div className='flex flex-wrap items-start justify-between gap-3'>
         <div><h2 className='text-2xl font-semibold'>{dataset.name}</h2><p className='mt-1 text-xs text-muted-foreground'>{current?.status === 'PUBLISHED' ? `Published R${current.revision}` : 'Not published'} · Draft has {draft?.cases.length ?? 0} cases</p></div>
-        <div className='flex flex-wrap gap-2'>{!compact ? <Button disabled={generating} onClick={generate}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate'}</Button> : null}<Button variant='outline' disabled={generating} onClick={addEmptyRow}><Plus className='size-4' />Add case</Button><Button variant='outline' disabled={generating} onClick={() => setImportOpen(true)}><Upload className='size-4' />Import JSON</Button>{onCreateDataset ? <Button variant='outline' onClick={onCreateDataset}><Plus className='size-4' />Create Dataset</Button> : null}{current?.status === 'PUBLISHED' ? <Button variant='outline' onClick={evaluate}>Evaluate</Button> : null}</div>
+        <div className='flex flex-wrap gap-2'>{!compact ? <Button disabled={generating} onClick={generate}>{generating ? <Loader2 className='size-4 animate-spin' /> : <Sparkles className='size-4' />}{generating ? 'Generating…' : 'Generate'}</Button> : null}<Button variant='outline' disabled={generating} onClick={addEmptyRow}><Plus className='size-4' />Add case</Button><Button variant='outline' disabled={generating} onClick={() => setImportOpen(true)}><Upload className='size-4' />Import JSON</Button>{onCreateDataset ? <Button variant='outline' onClick={onCreateDataset}><Plus className='size-4' />Create Dataset</Button> : null}{current?.status === 'PUBLISHED' && showEvaluateAction ? <Button variant='outline' onClick={evaluate}>Evaluate</Button> : null}</div>
       </div>
       {notice ? <p className='rounded-lg border bg-muted/20 px-4 py-3 text-sm'>{notice}</p> : null}
       <Tabs defaultValue='draft'>

@@ -1,13 +1,14 @@
 /** @vitest-environment jsdom */
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
 import type {
   EvaluationLayerCase,
   EvaluationLayerRunResult,
   EvaluationLayerTrace,
 } from '../model';
 import { GuardrailReport, guardrailReportMetrics } from './guardrail-report';
+
+afterEach(cleanup);
 
 const cases: EvaluationLayerCase[] = [
   { id: 'benign', input: { content: 'hello' }, expectedOutput: { guardrail_decision: 'ALLOW' }, tags: [], source: 'test' },
@@ -34,25 +35,18 @@ describe('Guardrail report', () => {
     });
   });
 
-  it('shows a pending revision and records the selected approval decision', async () => {
-    const onDecision = vi.fn();
+  it('renders the Guardrail metrics and decision evidence', () => {
     render(
       <GuardrailReport
         cases={cases}
         results={results}
         traces={[] as EvaluationLayerTrace[]}
-        revisionLabel='R2 · v2.0.0'
-        approval={undefined}
-        onDecision={onDecision}
       />,
     );
 
     expect(screen.getByText('3 / 3')).not.toBeNull();
     expect(screen.getByText('1 / 1')).not.toBeNull();
     expect(screen.getByText('4 / 4')).not.toBeNull();
-    expect(screen.getByText('Pending')).not.toBeNull();
-
-    await userEvent.click(screen.getByRole('button', { name: 'Approve revision' }));
-    expect(onDecision).toHaveBeenCalledWith('APPROVED');
+    expect(screen.getByText('Decision details')).not.toBeNull();
   });
 });

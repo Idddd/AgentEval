@@ -1,8 +1,5 @@
-import { CheckCircle2, ShieldCheck, XCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import type {
   EvaluationLayerCase,
-  EvaluationLayerGuardrailApproval,
   EvaluationLayerRunResult,
   EvaluationLayerTrace,
 } from '../model';
@@ -11,7 +8,6 @@ import {
   EvaluationMetric,
   EvaluationSection,
   EvaluationTable,
-  KeyValueGrid,
 } from '../shared/evaluation-ui';
 
 export function guardrailReportMetrics(
@@ -49,16 +45,10 @@ export function GuardrailReport({
   cases,
   results,
   traces,
-  revisionLabel,
-  approval,
-  onDecision,
 }: {
   cases: EvaluationLayerCase[];
   results: EvaluationLayerRunResult[];
   traces: EvaluationLayerTrace[];
-  revisionLabel: string;
-  approval: EvaluationLayerGuardrailApproval | undefined;
-  onDecision: (status: 'APPROVED' | 'REJECTED') => void;
 }) {
   const metrics = guardrailReportMetrics(cases, results);
   const traceByCase = new Map(traces.map((trace) => [trace.caseId, trace]));
@@ -115,53 +105,6 @@ export function GuardrailReport({
             })}
           </tbody>
         </EvaluationTable>
-      </EvaluationSection>
-
-      <EvaluationSection
-        title='Revision approval'
-        description={`This decision applies only to ${revisionLabel}.`}
-        action={
-          approval ? (
-            <span className='inline-flex items-center gap-2 text-sm font-medium'>
-              {approval.status === 'APPROVED' ? (
-                <CheckCircle2 className='size-4 text-emerald-500' />
-              ) : (
-                <XCircle className='size-4 text-destructive' />
-              )}
-              {approval.status === 'APPROVED' ? 'Approved' : 'Rejected'}
-            </span>
-          ) : (
-            <span className='inline-flex items-center gap-2 text-sm font-medium text-amber-500'>
-              <ShieldCheck className='size-4' />Pending
-            </span>
-          )
-        }
-      >
-        {approval ? (
-          <KeyValueGrid
-            items={[
-              ['Decision', approval.status === 'APPROVED' ? 'Approved' : 'Rejected'],
-              ['Revision', revisionLabel],
-              ['Actor', approval.actor],
-              ['Time', new Date(approval.decidedAt).toLocaleString()],
-              ['Reason', approval.reason ?? 'Evaluation passed; revision is ready to use.'],
-            ]}
-          />
-        ) : (
-          <div className='flex flex-wrap items-center justify-between gap-4'>
-            <p className='max-w-2xl text-sm text-muted-foreground'>
-              Review the results above, then approve this Guardrail revision or send it back for changes.
-            </p>
-            <div className='flex gap-2'>
-              <Button variant='outline' onClick={() => onDecision('REJECTED')}>
-                Reject revision
-              </Button>
-              <Button onClick={() => onDecision('APPROVED')}>
-                Approve revision
-              </Button>
-            </div>
-          </div>
-        )}
       </EvaluationSection>
     </div>
   );

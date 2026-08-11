@@ -3,9 +3,9 @@ import { cn } from "@/lib/utils";
 
 export function EvaluationLayerStatusBadge({ status }: { status: string }) {
   const normalized = status.toUpperCase();
-  const positive = ["PASS", "READY", "COMPLETED", "SUCCESS", "PUBLISHED"].includes(normalized);
-  const negative = ["FAIL", "FAILED", "ERROR", "FAILURE"].includes(normalized);
-  const active = ["RUNNING", "QUEUED", "OPEN", "DRAFT", "PARTIAL"].includes(normalized);
+  const positive = ["PASS", "READY", "COMPLETED", "SUCCESS", "PUBLISHED", "APPROVED"].includes(normalized);
+  const negative = ["FAIL", "FAILED", "ERROR", "FAILURE", "REJECTED"].includes(normalized);
+  const active = ["RUNNING", "QUEUED", "OPEN", "DRAFT", "PARTIAL", "PENDING"].includes(normalized);
   return (
     <Badge
       variant="outline"

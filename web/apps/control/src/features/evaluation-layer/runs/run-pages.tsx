@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { useCurrentProjectId } from '@/hooks/use-project';
-import type { EvaluationLayerLogEntry } from '../model';
+import { cn } from '@/lib/utils';
+import type { EvaluationLayerLogEntry, EvaluationLayerTargetKind } from '../model';
 import { isLiveMonitoringRun } from '../mock-store';
 import { useEvaluationLayerState, useEvaluationLayerStore } from '../mock-provider';
 import { EvaluationLayerStatusBadge } from '../shared/evaluation-status';
@@ -22,6 +23,105 @@ import { traceCost } from '../traces/trace-view-model';
 
 function rate(value: number) {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+type GuardrailTemplate = ReturnType<typeof useEvaluationLayerState>['guardrailTemplates'][number];
+
+function applicableGuardrailTemplates(
+  templates: GuardrailTemplate[],
+  targetKind: EvaluationLayerTargetKind,
+) {
+  return templates.filter((template) => template.applicableTargetKinds.includes(targetKind));
+}
+
+export function guardrailTemplateIdsForTarget(
+  templates: GuardrailTemplate[],
+  targetKind: EvaluationLayerTargetKind,
+  previousIds?: readonly string[],
+) {
+  const applicable = applicableGuardrailTemplates(templates, targetKind);
+  if (previousIds) {
+    const applicableIds = new Set(applicable.map((template) => template.id));
+    return previousIds.filter((id) => applicableIds.has(id));
+  }
+  return applicable
+    .filter((template) => template.defaultFor.includes(targetKind))
+    .map((template) => template.id);
+}
+
+export function GuardrailTemplatePicker({
+  targetKind,
+  selectedIds,
+  onSelectedIdsChange,
+  disabled = false,
+}: {
+  targetKind: EvaluationLayerTargetKind;
+  selectedIds: readonly string[];
+  onSelectedIdsChange(ids: string[]): void;
+  disabled?: boolean;
+}) {
+  const state = useEvaluationLayerState();
+  const templates = applicableGuardrailTemplates(state.guardrailTemplates, targetKind);
+  const selected = templates.filter((template) => selectedIds.includes(template.id));
+  const caseCount = selected.reduce((sum, template) => sum + template.cases.length, 0);
+  const toggle = (templateId: string, checked: boolean) => {
+    onSelectedIdsChange(checked
+      ? [...selectedIds, templateId]
+      : selectedIds.filter((id) => id !== templateId));
+  };
+
+  return (
+    <fieldset aria-label='Guardrail Test Packs' className='space-y-3 rounded-lg border bg-muted/10 p-4'>
+      <legend className='sr-only'>Guardrail Test Packs</legend>
+      <div className='flex flex-wrap items-start justify-between gap-2'>
+        <div>
+          <p className='text-sm font-semibold'>Guardrail test packs</p>
+          <p className='mt-1 text-xs text-muted-foreground'>Choose one or more reusable safety baselines for this Target type.</p>
+        </div>
+        <span className='rounded-full border bg-background px-2.5 py-1 text-xs font-medium'>
+          {selected.length} selected · {caseCount} safety cases
+        </span>
+      </div>
+      {templates.length ? (
+        <div className='grid gap-2 sm:grid-cols-2'>
+          {templates.map((template) => {
+            const checked = selectedIds.includes(template.id);
+            const recommended = template.defaultFor.includes(targetKind);
+            return (
+              <label
+                key={template.id}
+                className={cn(
+                  'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors',
+                  checked ? 'border-primary/45 bg-primary/5' : 'bg-background',
+                  disabled && 'cursor-not-allowed opacity-60',
+                )}
+              >
+                <input
+                  aria-label={`Select ${template.name}`}
+                  className='mt-1 size-4 accent-primary'
+                  type='checkbox'
+                  checked={checked}
+                  disabled={disabled}
+                  onChange={(event) => toggle(template.id, event.target.checked)}
+                />
+                <span className='min-w-0 flex-1'>
+                  <span className='flex flex-wrap items-center gap-2 text-sm font-medium'>
+                    {template.name}
+                    {recommended ? <span className='rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300'>Recommended</span> : null}
+                  </span>
+                  <span className='mt-1 block text-xs text-muted-foreground'>{template.description}</span>
+                  <span className='mt-2 block text-[11px] text-muted-foreground'>v{template.version} · {template.cases.length} cases</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      ) : (
+        <p className='rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm'>No Guardrail test pack is available for this Target type.</p>
+      )}
+      {!selected.length ? <p role='alert' className='text-xs font-medium text-amber-700 dark:text-amber-300'>Select at least one Guardrail test pack before running the evaluation.</p> : null}
+    </fieldset>
+  );
 }
 
 function runStats(state: ReturnType<typeof useEvaluationLayerState>, runId: string) {
@@ -77,6 +177,14 @@ export function EvaluationRunSetup({ onRunCreated }: { onRunCreated?(runId: stri
   const navigate = useNavigate();
   const target = state.targets.find((item) => item.id === state.settings.activeTargetId) ?? state.targets[0]!;
   const targetRevision = state.targetRevisions.find((item) => item.id === target.currentRevisionId)!;
+  const latestTargetRun = [...state.runs]
+    .filter((run) => run.targetId === target.id && !isLiveMonitoringRun(run.id))
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
+  const initialGuardrailTemplateIds = guardrailTemplateIdsForTarget(
+    state.guardrailTemplates,
+    target.kind,
+    latestTargetRun?.guardrailTemplateIds,
+  );
   const options = useMemo(() => {
     const published = state.datasetRevisions
       .filter((item) => item.targetId === target.id && item.status === 'PUBLISHED')
@@ -95,12 +203,33 @@ export function EvaluationRunSetup({ onRunCreated }: { onRunCreated?(runId: stri
   const defaultOption = options.find((item) => item.datasetId === state.settings.activeDatasetId && !item.draft) ?? options[0];
   const [source, setSource] = useState(defaultOption?.value ?? '');
   const [publishedDraftId, setPublishedDraftId] = useState('');
+  const [selectedGuardrailTemplateIds, setSelectedGuardrailTemplateIds] = useState(initialGuardrailTemplateIds);
   const [evaluatorSource, setEvaluatorSource] = useState<'BUILT_IN' | 'LANGFUSE'>('BUILT_IN');
   const [selectedLangfuse, setSelectedLangfuse] = useState(() => new Set(state.evaluators.filter((item) => item.provider === 'LANGFUSE' && item.enabled).map((item) => item.id)));
   const [message, setMessage] = useState('');
   const option = options.find((item) => item.value === source);
   const selectedRevisionId = option?.draft ? publishedDraftId : option?.revisionId ?? '';
   const selectedRevision = state.datasetRevisions.find((item) => item.id === (option?.draft ? option.revisionId : selectedRevisionId));
+  useEffect(() => {
+    setSelectedGuardrailTemplateIds(guardrailTemplateIdsForTarget(
+      state.guardrailTemplates,
+      target.kind,
+      latestTargetRun?.guardrailTemplateIds,
+    ));
+  }, [latestTargetRun?.id, state.guardrailTemplates, target.id, target.kind]);
+  const pendingDecisionReport = state.reports
+    .filter((report) => {
+      const run = state.runs.find((item) => item.id === report.runId);
+      return run?.targetRevisionId === targetRevision.id && run.datasetRevisionId === selectedRevisionId;
+    })
+    .sort(
+      (left, right) =>
+        right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+    )[0];
+  const decisionPending = Boolean(
+    pendingDecisionReport &&
+    !state.revisionDecisions.some((item) => item.reportId === pendingDecisionReport.id),
+  );
   const unavailable = useMemo(() => {
     const available = new Set(targetRevision.tools.filter((tool) => tool.enabled).flatMap((tool) => [tool.id.toLowerCase(), tool.name.toLowerCase()]));
     return [...new Set((selectedRevision?.cases ?? []).map((item) => String(item.expectedOutput.expected_tool_called ?? '')).filter((name) => name && !available.has(name.toLowerCase())))];
@@ -114,10 +243,19 @@ export function EvaluationRunSetup({ onRunCreated }: { onRunCreated?(runId: stri
   };
   const start = () => {
     if (!selectedRevisionId) return;
+    if (!selectedGuardrailTemplateIds.length) {
+      setMessage('Select at least one Guardrail test pack before starting the evaluation.');
+      return;
+    }
     const evaluatorIds = evaluatorSource === 'BUILT_IN'
       ? state.evaluators.filter((item) => item.provider === 'BUILT_IN' && item.enabled).map((item) => item.id)
       : [...selectedLangfuse];
-    const result = store.createRun({ targetRevisionId: targetRevision.id, datasetRevisionId: selectedRevisionId, evaluatorIds });
+    const result = store.createRun({
+      targetRevisionId: targetRevision.id,
+      datasetRevisionId: selectedRevisionId,
+      evaluatorIds,
+      guardrailTemplateIds: selectedGuardrailTemplateIds,
+    });
     if (!result.ok) return setMessage(result.error);
     if (onRunCreated) {
       onRunCreated(result.value.runId);
@@ -131,17 +269,20 @@ export function EvaluationRunSetup({ onRunCreated }: { onRunCreated?(runId: stri
       <EvaluationSection title='Evaluation' description='Select immutable inputs, review the evaluation context, and start a run.'>
         <div className='grid gap-5'>
           <div className='rounded-lg border bg-muted/20 p-4'><p className='font-medium'>Configuration</p><p className='mt-1 text-sm text-muted-foreground'>Target R{targetRevision.revision} · {targetRevision.model} · {targetRevision.tools.length} tool bindings</p></div>
-          {options.length ? <Label className='grid gap-2'>Dataset source<select className='h-11 rounded-md border bg-background px-3' value={source} onChange={(event) => { setSource(event.target.value); setPublishedDraftId(''); }}><option value='' disabled>Select a Dataset source</option>{options.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Label> : <p className='rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm'>Add cases to a Dataset draft before starting an evaluation.</p>}
+          <div><p className='font-medium'>Test coverage</p><p className='mt-1 text-sm text-muted-foreground'>Combine your Business Dataset with required Guardrail safety tests.</p></div>
+          {options.length ? <Label className='grid gap-2'>Business Dataset<select className='h-11 rounded-md border bg-background px-3' value={source} onChange={(event) => { setSource(event.target.value); setPublishedDraftId(''); }}><option value='' disabled>Select a Dataset source</option>{options.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Label> : <p className='rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm'>Add cases to a Dataset draft before starting an evaluation.</p>}
           {option?.draft && !publishedDraftId ? <Button className='w-fit' variant='outline' onClick={publishDraft}>Publish selected draft</Button> : null}
+          <GuardrailTemplatePicker targetKind={target.kind} selectedIds={selectedGuardrailTemplateIds} onSelectedIdsChange={setSelectedGuardrailTemplateIds} />
           <Label className='grid gap-2'>Evaluator source<select className='h-11 rounded-md border bg-background px-3' value={evaluatorSource} onChange={(event) => setEvaluatorSource(event.target.value as 'BUILT_IN' | 'LANGFUSE')}><option value='BUILT_IN'>Built-in</option><option value='LANGFUSE'>Langfuse</option></select></Label>
           {evaluatorSource === 'LANGFUSE' ? <fieldset className='space-y-2 rounded-lg border p-4'><legend className='px-1 text-sm font-medium'>Evaluators</legend>{state.evaluators.filter((item) => item.provider === 'LANGFUSE').map((evaluator) => <label key={evaluator.id} className='flex items-center gap-2 text-sm'><input type='checkbox' checked={selectedLangfuse.has(evaluator.id)} onChange={(event) => setSelectedLangfuse((current) => { const next = new Set(current); if (event.target.checked) next.add(evaluator.id); else next.delete(evaluator.id); return next; })} />{evaluator.name} · {evaluator.provider} · v{evaluator.version}</label>)}</fieldset> : null}
           <p className='text-sm text-muted-foreground'>Evaluator {evaluatorSource === 'BUILT_IN' ? 'Built-in v1' : `Langfuse · ${selectedLangfuse.size} selected`} · Judge {state.settings.model}</p>
           <p className='text-xs text-muted-foreground'>Deterministic assertions remain authoritative · Cost includes agent and judge usage</p>
+          {decisionPending ? <p role='status' className='rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm'>This evaluation is waiting for an Admin decision before it can be run again.</p> : null}
           {unavailable.length ? <p className='rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm'>Tool evidence unavailable: {unavailable.join(', ')}. This does not block the run.</p> : null}
           {message ? <p className='rounded-lg border p-3 text-sm'>{message}</p> : null}
         </div>
       </EvaluationSection>
-      <div className='flex justify-end'><Button size='lg' disabled={!selectedRevisionId || (evaluatorSource === 'LANGFUSE' && !selectedLangfuse.size)} onClick={start}><Play className='size-4' />Start evaluation</Button></div>
+      <div className='flex justify-end'><Button size='lg' disabled={decisionPending || !selectedRevisionId || !selectedGuardrailTemplateIds.length || (evaluatorSource === 'LANGFUSE' && !selectedLangfuse.size)} onClick={start}><Play className='size-4' />Start evaluation</Button></div>
     </div>
   );
 }

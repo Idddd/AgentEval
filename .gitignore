@@ -18,6 +18,7 @@ streamlit.*.log
 .claude
 .agents
 docs/superpowers
+.pnpm-store/
 web/node_modules/
 web/apps/*/node_modules/
 web/apps/*/dist/

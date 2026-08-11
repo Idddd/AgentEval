@@ -9,18 +9,15 @@ import {
   CheckCircle2,
   CircleDollarSign,
   CircleHelp,
-  Database,
   Eye,
   FileLock2,
   FileClock,
-  FlaskConical,
   Network,
   Search,
   ServerCog,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  Target,
   Waypoints,
   type LucideIcon,
 } from "lucide-react";
@@ -168,9 +165,6 @@ export const projectNavGroups: Array<{
     label: "Evaluation",
     items: [
       { icon: CheckCircle2, label: "Eval", to: "/$projectId/evaluation/catalog", roles: SECURITY_EVAL_ROLES },
-      { icon: Target, label: "Agent", to: "/$projectId/evaluation/targets", roles: SECURITY_EVAL_ROLES },
-      { icon: Database, label: "Test Case", to: "/$projectId/evaluation/datasets", roles: SECURITY_EVAL_ROLES },
-      { icon: FlaskConical, label: "Evaluation", to: "/$projectId/evaluation/runs", roles: SECURITY_EVAL_ROLES },
     ],
   },
   {

@@ -9,7 +9,7 @@ import {
   CatalogList,
   EvaluationCatalogPage,
   LifecycleNode,
-  NextStepCallout,
+  WorkspaceActionBar,
 } from './catalog-page';
 
 const roleState = vi.hoisted(() => ({ value: 'admin' }));
@@ -61,7 +61,7 @@ describe('Catalog discovery', () => {
 });
 
 describe('Catalog workflow guidance', () => {
-  it('opens the matching workflow tab from a recommended lifecycle node', async () => {
+  it('opens the matching workflow section from a recommended lifecycle node', async () => {
     const onClick = vi.fn();
     render(
       <LifecycleNode
@@ -80,28 +80,27 @@ describe('Catalog workflow guidance', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('navigates to the destination exposed by the next-step action', async () => {
-    const onNavigate = vi.fn();
+  it('presents one action for the current workflow step', async () => {
+    const onAction = vi.fn();
     render(
-      <NextStepCallout
+      <WorkspaceActionBar
         step={{
           tab: 'dataset',
           label: 'Prepare and publish Test Cases',
           description: 'A published Dataset is required before you can run this evaluation.',
         }}
-        onNavigate={onNavigate}
+        action={<button type='button' onClick={onAction}>Prepare Test Cases</button>}
       />,
     );
 
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Prepare and publish Test Cases' }),
-    );
-    expect(onNavigate).toHaveBeenCalledWith('dataset');
+    expect(screen.getByText('Current step')).not.toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Prepare Test Cases' }));
+    expect(onAction).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('Catalog drawer progressive disclosure', () => {
-  async function openCompletedSkill(tabName: 'Skill' | 'Dataset' | 'Result') {
+  async function openCompletedSkill() {
     render(
       <EvaluationLayerProvider projectId='individual'>
         <EvaluationCatalogPage />
@@ -110,46 +109,146 @@ describe('Catalog drawer progressive disclosure', () => {
     await userEvent.click(
       screen.getByRole('button', { name: /Document Summarization demo-document-summarization/ }),
     );
-    await userEvent.click(screen.getByRole('tab', { name: tabName }));
-    return within(screen.getByRole('tabpanel', { name: tabName }));
+    return within(screen.getByRole('dialog', { name: 'Document Summarization' }));
   }
 
-  it('shows only the latest report until Skill details are opened', async () => {
-    const panel = await openCompletedSkill('Skill');
+  it('shows the complete workflow without the five top-level tabs', async () => {
+    const drawer = await openCompletedSkill();
 
-    expect(panel.getByText('Latest report')).not.toBeNull();
-    expect(panel.queryByText('Configuration')).toBeNull();
-    expect(panel.getByText('Next step')).not.toBeNull();
-    await userEvent.click(panel.getByRole('button', { name: 'Details' }));
-
-    expect(panel.getByText('Configuration')).not.toBeNull();
-    expect(panel.getByText('Report history')).not.toBeNull();
+    for (const tab of ['Workflow', 'Skill', 'Dataset', 'Evaluation', 'Result']) {
+      expect(drawer.queryByRole('tab', { name: tab })).toBeNull();
+    }
+    expect(drawer.getByRole('region', { name: 'Skill & revision' })).not.toBeNull();
+    expect(drawer.getByRole('region', { name: 'Test coverage' })).not.toBeNull();
+    expect(drawer.getByRole('region', { name: 'Evaluation' })).not.toBeNull();
+    expect(drawer.getByRole('region', { name: 'Result' })).not.toBeNull();
+    expect(drawer.getAllByRole('button', { name: 'Approve' })).toHaveLength(1);
   });
 
-  it('keeps Dataset editing behind Details and leads with generation', async () => {
-    const panel = await openCompletedSkill('Dataset');
+  it('keeps revision metadata behind Skill details', async () => {
+    const drawer = await openCompletedSkill();
+    const panel = within(drawer.getByRole('region', { name: 'Skill & revision' }));
 
+    expect(panel.queryByText('Revision')).toBeNull();
+    expect(panel.queryByText('Configuration')).toBeNull();
+    expect(panel.queryByText('Target ID')).toBeNull();
+    expect(panel.queryByText('Report history')).toBeNull();
+    await userEvent.click(panel.getByRole('button', { name: 'Show Skill details' }));
+
+    expect(panel.getAllByText('Revision').length).toBeGreaterThan(0);
+    expect(panel.getByText('Configuration')).not.toBeNull();
+    expect(panel.getByText('Target ID')).not.toBeNull();
+    expect(panel.getByText('Report history')).not.toBeNull();
+    expect((panel.getByRole('button', { name: 'Decision pending' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('combines the Business Dataset and required Guardrail test packs in Test coverage', async () => {
+    const drawer = await openCompletedSkill();
+    const panel = within(drawer.getByRole('region', { name: 'Test coverage' }));
+
+    expect(panel.getByText('Business Dataset')).not.toBeNull();
     expect(panel.getByRole('combobox', { name: 'Dataset' })).not.toBeNull();
     expect(panel.getByRole('button', { name: 'Generate Dataset' })).not.toBeNull();
+    expect(panel.getByRole('group', { name: 'Guardrail Test Packs' })).not.toBeNull();
+    expect((panel.getByRole('checkbox', { name: 'Select Universal Safety Baseline' }) as HTMLInputElement).checked).toBe(true);
+    expect(panel.getByText(/2 selected · \d+ safety cases/)).not.toBeNull();
+    expect(panel.getByText(/Combined coverage: \d+ business cases \+ \d+ Guardrail cases/)).not.toBeNull();
     expect(panel.queryByText('Draft cases')).toBeNull();
-    expect(panel.getByText('Next step')).not.toBeNull();
-    await userEvent.click(panel.getByRole('button', { name: 'Details' }));
+    await userEvent.click(panel.getByRole('button', { name: 'Show Dataset details' }));
 
     expect(panel.getByText('Draft cases')).not.toBeNull();
     expect(panel.getByText('Evaluation history')).not.toBeNull();
   });
 
   it('shows only Summary and Reason until Result details are opened', async () => {
-    const panel = await openCompletedSkill('Result');
+    const drawer = await openCompletedSkill();
+    const panel = within(drawer.getByRole('region', { name: 'Result' }));
 
     expect(panel.getByText('Summary')).not.toBeNull();
     expect(panel.getByText('Reason')).not.toBeNull();
     expect(panel.queryByText('Test Results')).toBeNull();
-    expect(panel.getByText('Next step')).not.toBeNull();
-    await userEvent.click(panel.getByRole('button', { name: 'Details' }));
+    await userEvent.click(panel.getByRole('button', { name: 'Show Result details' }));
 
     expect(panel.getByText('Test Results')).not.toBeNull();
     expect(panel.getByText('Failure reasons')).not.toBeNull();
+    expect(drawer.getAllByRole('button', { name: 'Approve' })).toHaveLength(1);
+  });
+
+  it('lets an Admin approve a passing evaluation', async () => {
+    const drawer = await openCompletedSkill();
+    const result = within(drawer.getByRole('region', { name: 'Result' }));
+
+    expect(result.getAllByText('Pending approval').length).toBeGreaterThan(0);
+    expect(drawer.queryByRole('button', { name: 'Reject' })).toBeNull();
+    await userEvent.click(drawer.getByRole('button', { name: 'Approve' }));
+
+    expect(result.getAllByText('Approved').length).toBeGreaterThan(0);
+    expect(result.getByText(/Approved by Local Administrator/)).not.toBeNull();
+    expect(drawer.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(drawer.getByRole('button', { name: 'View results' })).not.toBeNull();
+  });
+
+  it('lets an Admin reject an evaluation with findings for Developer changes', async () => {
+    const view = render(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationCatalogPage />
+      </EvaluationLayerProvider>,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /Office Assistant demo-permission-compliance/ }),
+    );
+    const drawer = within(screen.getByRole('dialog', { name: 'Office Assistant' }));
+    const result = within(drawer.getByRole('region', { name: 'Result' }));
+
+    expect(result.getAllByText('Pending rejection').length).toBeGreaterThan(0);
+    expect(drawer.queryByRole('button', { name: 'Approve' })).toBeNull();
+    await userEvent.click(drawer.getByRole('button', { name: 'Reject' }));
+
+    expect(result.getAllByText('Rejected').length).toBeGreaterThan(0);
+    expect(result.getByText(/Developer changes required/)).not.toBeNull();
+    expect(drawer.queryByRole('button', { name: 'Reject' })).toBeNull();
+    expect(drawer.queryByRole('button', { name: 'Update target revision' })).toBeNull();
+    expect(drawer.getByText('Waiting for Developer changes')).not.toBeNull();
+
+    roleState.value = 'member';
+    view.rerender(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationCatalogPage />
+      </EvaluationLayerProvider>,
+    );
+    await userEvent.click(drawer.getByRole('button', { name: 'Update target revision' }));
+    const target = within(drawer.getByRole('region', { name: 'Agent & revision' }));
+    expect((target.getByRole('button', { name: 'New revision' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('lets an Admin reject an explicitly failed evaluation', async () => {
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationCatalogPage />
+      </EvaluationLayerProvider>,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /Customer Service demo-permission-compliance-baseline/ }),
+    );
+    const drawer = within(screen.getByRole('dialog', { name: 'Customer Service' }));
+
+    expect(drawer.getByRole('button', { name: 'Reject' })).not.toBeNull();
+    expect(drawer.queryByRole('button', { name: 'Retry evaluation' })).toBeNull();
+    await userEvent.click(drawer.getByRole('button', { name: 'Reject' }));
+
+    expect(drawer.getAllByText('Rejected').length).toBeGreaterThan(0);
+    expect(drawer.queryByRole('button', { name: 'Update target revision' })).toBeNull();
+    expect(drawer.getByText('Waiting for Developer changes')).not.toBeNull();
+  });
+
+  it('keeps evaluation decisions read-only for non-admin roles', async () => {
+    roleState.value = 'member';
+    const drawer = await openCompletedSkill();
+
+    expect(drawer.getByText('Awaiting Admin decision')).not.toBeNull();
+    expect(drawer.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(drawer.queryByRole('button', { name: 'Reject' })).toBeNull();
+    expect(drawer.getByRole('button', { name: 'View results' })).not.toBeNull();
   });
 });
 
@@ -163,24 +262,34 @@ describe('Guardrail evaluation access', () => {
     await userEvent.click(
       screen.getByRole('button', { name: /PII Protection Guardrail demo-pii-guardrail/ }),
     );
-    await userEvent.click(screen.getByRole('tab', { name: 'Evaluation' }));
-    return within(screen.getByRole('tabpanel', { name: 'Evaluation' }));
+    const drawer = within(screen.getByRole('dialog', { name: 'PII Protection Guardrail' }));
+    return {
+      drawer,
+      evaluation: within(drawer.getByRole('region', { name: 'Evaluation' })),
+    };
   }
 
   it('blocks Guardrail evaluation actions for non-admin roles', async () => {
     roleState.value = 'member';
-    const panel = await openGuardrailEvaluation();
+    const { drawer, evaluation } = await openGuardrailEvaluation();
 
-    expect(panel.getByText('Admin only')).not.toBeNull();
-    expect(panel.queryByRole('button', { name: 'Start evaluation' })).toBeNull();
-    expect(panel.queryByRole('button', { name: 'Run again' })).toBeNull();
+    expect(evaluation.getByText('Admin only')).not.toBeNull();
+    expect(drawer.queryByRole('button', { name: 'Run evaluation' })).toBeNull();
+    expect(drawer.queryByRole('button', { name: 'Retry evaluation' })).toBeNull();
+    expect(drawer.queryByRole('button', { name: 'Run evaluation again' })).toBeNull();
+    expect((drawer.getByRole('button', { name: 'Admin only' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('keeps Guardrail evaluation actions available to admins', async () => {
-    const panel = await openGuardrailEvaluation();
+    const { drawer, evaluation } = await openGuardrailEvaluation();
 
-    expect(panel.queryByText('Admin only')).toBeNull();
-    expect(panel.getAllByRole('button', { name: 'Start evaluation' }).length).toBeGreaterThan(0);
+    expect(evaluation.queryByText('Admin only')).toBeNull();
+    expect(drawer.getAllByRole('button', { name: 'Run evaluation' })).toHaveLength(1);
+
+    const coverage = within(drawer.getByRole('region', { name: 'Test coverage' }));
+    for (const template of coverage.getAllByRole('checkbox')) await userEvent.click(template);
+    expect(coverage.getByText('Select at least one Guardrail test pack before running the evaluation.')).not.toBeNull();
+    expect((drawer.getByRole('button', { name: 'Run evaluation' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

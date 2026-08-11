@@ -57,13 +57,14 @@ API on port `8000`, and runs TALI on port `18082`.
 
 ## TALI evaluation demo
 
-The current sidebar exposes the fixture-backed Evaluation demo:
-
-- Agent: `/individual/evaluation/targets`
-- Test Case: `/individual/evaluation/datasets`
-- Evaluation: `/individual/evaluation/runs`
-- Overview: `/individual/evaluation/overview`
-- Settings: `/individual/evaluation/settings`
+The sidebar exposes the fixture-backed Evaluation demo through the unified
+`Eval` entry at `/individual/evaluation/catalog`, with `Overview` available at
+`/individual/evaluation/overview`. The catalog and its in-app links provide
+access to the supporting Agent, Test Case, Evaluation, and Settings pages.
+Opening a catalog target presents its revision, Dataset, Evaluation, and Result
+in one continuous workspace with a single context-aware primary action. An
+Admin approves all-passing evaluations or rejects evaluations with findings;
+rejected Target revisions are returned to a Developer for changes and rerun.
 
 This demo uses an in-memory store and deterministic simulation. Edits reset
 when the page reloads. The API-backed evaluation store remains available for

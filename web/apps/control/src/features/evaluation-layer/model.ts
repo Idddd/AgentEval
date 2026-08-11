@@ -88,12 +88,28 @@ export interface EvaluationLayerDatasetRevision {
   createdAt: string;
 }
 
+/**
+ * A built-in, immutable demo test pack. Unlike a Guardrail Target, a template
+ * is test input that can be reused across compatible Target kinds.
+ */
+export interface EvaluationLayerGuardrailTemplate {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  applicableTargetKinds: EvaluationLayerTargetKind[];
+  cases: EvaluationLayerCase[];
+  /** Target kinds for which the UI should preselect this template. */
+  defaultFor: EvaluationLayerTargetKind[];
+}
+
 export interface EvaluationLayerRun {
   id: string;
   targetId: string;
   targetRevisionId: string;
   datasetId: string;
   datasetRevisionId: string;
+  guardrailTemplateIds: string[];
   evaluatorIds: string[];
   status: "QUEUED" | "RUNNING" | "COMPLETED" | "PARTIAL" | "FAILED";
   startedAt: string;
@@ -103,6 +119,8 @@ export interface EvaluationLayerRun {
 
 export interface EvaluationLayerRunResult {
   caseId: string;
+  /** Present when this result came from a built-in Guardrail Test Pack. */
+  guardrailTemplateId?: string;
   status: "PENDING" | "PASS" | "FAIL" | "ERROR";
   traceId?: string;
   response?: string;
@@ -116,7 +134,7 @@ export interface EvaluationLayerReport {
   createdAt: string;
 }
 
-export interface EvaluationLayerGuardrailApproval {
+export interface EvaluationLayerRevisionDecision {
   id: string;
   reportId: string;
   targetRevisionId: string;
@@ -278,9 +296,10 @@ export interface EvaluationLayerState {
   targetRevisions: EvaluationLayerTargetRevision[];
   datasets: EvaluationLayerDataset[];
   datasetRevisions: EvaluationLayerDatasetRevision[];
+  guardrailTemplates: EvaluationLayerGuardrailTemplate[];
   runs: EvaluationLayerRun[];
   reports: EvaluationLayerReport[];
-  guardrailApprovals: EvaluationLayerGuardrailApproval[];
+  revisionDecisions: EvaluationLayerRevisionDecision[];
   reflections: EvaluationLayerReflection[];
   traces: EvaluationLayerTrace[];
   evaluators: EvaluationLayerEvaluator[];

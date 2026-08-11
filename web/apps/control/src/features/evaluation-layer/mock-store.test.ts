@@ -5,7 +5,85 @@ import {
 } from "./fixture-validation";
 import { createEvaluationLayerStore, isLiveMonitoringRun } from "./mock-store";
 
+const ADMIN_ACTOR = { name: "Local Administrator", role: "admin" };
+const DEVELOPER_ACTOR = { name: "Developer", role: "member" };
+
 describe("EvaluationLayerStore", () => {
+  it('ships reusable Guardrail Test Pack presets and a runnable sample', () => {
+    const state = cloneEvaluationLayerFixtures();
+    const kinds = ['agent', 'mcp', 'kb', 'skill', 'guardrail'] as const;
+
+    expect(state.guardrailTemplates.find(
+      (item) => item.name === 'Universal Safety Baseline',
+    )?.applicableTargetKinds).toEqual(expect.arrayContaining([...kinds]));
+    for (const kind of kinds) {
+      expect(state.guardrailTemplates.some(
+        (item) => item.defaultFor.includes(kind) && item.applicableTargetKinds.includes(kind),
+      )).toBe(true);
+    }
+    const sample = state.targets.find(
+      (item) => item.name === 'Sample Security Assistant',
+    );
+    expect(sample).toEqual(expect.objectContaining({ kind: 'agent' }));
+    expect(state.datasets.find(
+      (item) => item.name === 'Sample Security Scenarios',
+    )).toEqual(expect.objectContaining({ targetId: sample?.id }));
+    expect(state.runs.some((item) => item.targetId === sample?.id)).toBe(false);
+  });
+
+  it('requires a compatible Guardrail Test Pack for every new Run', () => {
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+    const input = {
+      targetRevisionId: 'demo-sample-security-assistant-r1',
+      datasetRevisionId: 'sample-security-scenarios-r1',
+      evaluatorIds: ['permission-compliance'],
+    };
+
+    expect(store.createRun({ ...input, guardrailTemplateIds: [] })).toMatchObject({
+      ok: false,
+      code: 'INVALID_INPUT',
+    });
+    expect(store.createRun({
+      ...input,
+      guardrailTemplateIds: ['missing-template'],
+    })).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    expect(store.createRun({
+      ...input,
+      guardrailTemplateIds: ['guardrail-template-mcp-tool-authorization'],
+    })).toMatchObject({ ok: false, code: 'CONFLICT' });
+  });
+
+  it('merges business and selected Guardrail Test Pack cases into a Run', () => {
+    let sequence = 0;
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: () => `sample-pack-run-${sequence++}`,
+      now: () => '2026-08-11T10:00:00.000Z',
+    });
+    const created = store.createRun({
+      targetRevisionId: 'demo-sample-security-assistant-r1',
+      datasetRevisionId: 'sample-security-scenarios-r1',
+      guardrailTemplateIds: [
+        'guardrail-template-universal-safety',
+        'guardrail-template-agent-prompt-injection',
+      ],
+      evaluatorIds: ['permission-compliance'],
+    });
+
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    let run = store.getState().runs.find((item) => item.id === created.value.runId)!;
+    expect(run.results).toHaveLength(4);
+    expect(run.results.filter((item) => item.guardrailTemplateId)).toHaveLength(2);
+
+    while (run.results.some((item) => item.status === 'PENDING')) {
+      expect(store.advanceRun(run.id).ok).toBe(true);
+      run = store.getState().runs.find((item) => item.id === created.value.runId)!;
+    }
+    expect(run.status).toBe('COMPLETED');
+    expect(run.results.every((item) => item.status === 'PASS')).toBe(true);
+    expect(validateEvaluationLayerState(store.getState())).toEqual([]);
+  });
+
   it("publishes a Dataset revision without mutating the draft source", () => {
     const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
       id: () => "dataset-revision-new",
@@ -84,6 +162,11 @@ describe("EvaluationLayerStore", () => {
 
   it('generates mcp scenario traces with tool evidence', () => {
     const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+    expect(store.decideRevision(
+      'report-operations-mcp-baseline',
+      'APPROVED',
+      ADMIN_ACTOR,
+    ).ok).toBe(true);
     const revision = store.getState().targetRevisions.find(
       (item) => item.targetId === 'demo-operations-mcp',
     )!;
@@ -93,6 +176,7 @@ describe("EvaluationLayerStore", () => {
     const created = store.createRun({
       targetRevisionId: revision.id,
       datasetRevisionId: datasetRevision.id,
+      guardrailTemplateIds: ['guardrail-template-universal-safety'],
       evaluatorIds: ['permission-compliance'],
     });
     expect(created.ok).toBe(true);
@@ -122,6 +206,7 @@ describe("EvaluationLayerStore", () => {
     const created = store.createRun({
       targetRevisionId: revision.id,
       datasetRevisionId: datasetRevision.id,
+      guardrailTemplateIds: ['guardrail-template-universal-safety'],
       evaluatorIds: ['permission-compliance'],
     });
     expect(created.ok).toBe(true);
@@ -141,6 +226,11 @@ describe("EvaluationLayerStore", () => {
 
   it('generates skill scenario traces with instruction compliance scores', () => {
     const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+    expect(store.decideRevision(
+      'report-skill-summary-baseline',
+      'APPROVED',
+      ADMIN_ACTOR,
+    ).ok).toBe(true);
     const revision = store.getState().targetRevisions.find(
       (item) => item.targetId === 'demo-document-summarization',
     )!;
@@ -150,6 +240,7 @@ describe("EvaluationLayerStore", () => {
     const created = store.createRun({
       targetRevisionId: revision.id,
       datasetRevisionId: datasetRevision.id,
+      guardrailTemplateIds: ['guardrail-template-universal-safety'],
       evaluatorIds: ['permission-compliance'],
     });
     expect(created.ok).toBe(true);
@@ -184,6 +275,7 @@ describe("EvaluationLayerStore", () => {
     const created = store.createRun({
       targetRevisionId: revision.id,
       datasetRevisionId: datasetRevision.id,
+      guardrailTemplateIds: ['guardrail-template-universal-safety'],
       evaluatorIds: ['permission-compliance'],
     });
     expect(created.ok).toBe(true);
@@ -201,25 +293,39 @@ describe("EvaluationLayerStore", () => {
     const run = state.runs.find((item) => item.id === created.value.runId)!;
     const report = state.reports.find((item) => item.runId === run.id)!;
     const traces = state.traces.filter((item) => item.runId === run.id);
-    expect(run.results.map((item) => item.status)).toEqual([
+    expect(
+      run.results
+        .filter((item) => !item.guardrailTemplateId)
+        .map((item) => item.status),
+    ).toEqual([
       'PASS',
       'PASS',
       'PASS',
       'PASS',
     ]);
-    expect(traces.map((item) => item.deterministicReasons.actual_decision)).toEqual([
+    expect(
+      traces
+        .filter((item) => datasetRevision.cases.some((testCase) => testCase.id === item.caseId))
+        .map((item) => item.deterministicReasons.actual_decision),
+    ).toEqual([
       'ALLOW',
       'BLOCK',
       'REDACT',
       'BLOCK',
     ]);
+    expect(run.results.filter((item) => item.guardrailTemplateId)).toEqual([
+      expect.objectContaining({
+        guardrailTemplateId: 'guardrail-template-universal-safety',
+        status: 'PASS',
+      }),
+    ]);
     expect(report.summary).toBe('All Guardrail decisions matched the expected policy.');
 
-    expect(store.decideGuardrailApproval(report.id, 'APPROVED')).toEqual({
+    expect(store.decideRevision(report.id, 'APPROVED', ADMIN_ACTOR)).toEqual({
       ok: true,
-      value: { approvalId: expect.any(String) },
+      value: { decisionId: expect.any(String) },
     });
-    expect(store.getState().guardrailApprovals).toEqual([
+    expect(store.getState().revisionDecisions).toEqual([
       expect.objectContaining({
         reportId: report.id,
         targetRevisionId: revision.id,
@@ -228,6 +334,336 @@ describe("EvaluationLayerStore", () => {
         decidedAt: '2026-08-10T09:30:00.000Z',
       }),
     ]);
+  });
+
+  it('approves an all-pass Report for a non-Guardrail Target', () => {
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: () => 'mcp-pass-decision',
+      now: () => '2026-08-10T11:00:00.000Z',
+    });
+
+    expect(store.decideRevision('report-operations-mcp-baseline', 'APPROVED', ADMIN_ACTOR)).toEqual({
+      ok: true,
+      value: { decisionId: 'mcp-pass-decision' },
+    });
+    expect(store.getState().revisionDecisions).toEqual([
+      expect.objectContaining({
+        id: 'mcp-pass-decision',
+        reportId: 'report-operations-mcp-baseline',
+        targetRevisionId: 'demo-operations-mcp-r1',
+        status: 'APPROVED',
+        actor: 'Local Administrator',
+        decidedAt: '2026-08-10T11:00:00.000Z',
+      }),
+    ]);
+  });
+
+  it.each([
+    ['a Report with findings', 'report-permission-baseline'],
+    ['a failed Report', 'report-tool-error'],
+  ])('rejects %s', (_label, reportId) => {
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: () => `${reportId}-decision`,
+      now: () => '2026-08-10T11:15:00.000Z',
+    });
+
+    expect(store.decideRevision(reportId, 'REJECTED', ADMIN_ACTOR)).toEqual({
+      ok: true,
+      value: { decisionId: `${reportId}-decision` },
+    });
+    expect(store.getState().revisionDecisions).toEqual([
+      expect.objectContaining({
+        reportId,
+        status: 'REJECTED',
+        reason: 'Developer changes required.',
+      }),
+    ]);
+  });
+
+  it.each([
+    ['report-operations-mcp-baseline', 'REJECTED' as const],
+    ['report-permission-baseline', 'APPROVED' as const],
+    ['report-tool-error', 'APPROVED' as const],
+  ])('rejects the wrong decision direction for %s', (reportId, status) => {
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+
+    expect(store.decideRevision(reportId, status, ADMIN_ACTOR)).toMatchObject({
+      ok: false,
+      code: 'INVALID_INPUT',
+    });
+    expect(store.getState().revisionDecisions).toEqual([]);
+  });
+
+  it('rejects a second decision for the same Report', () => {
+    let sequence = 0;
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: () => `duplicate-decision-${sequence++}`,
+    });
+
+    expect(store.decideRevision('report-operations-mcp-baseline', 'APPROVED', ADMIN_ACTOR).ok).toBe(true);
+    expect(store.decideRevision('report-operations-mcp-baseline', 'APPROVED', ADMIN_ACTOR)).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+    expect(store.getState().revisionDecisions).toHaveLength(1);
+  });
+
+  it('rejects a decision when the evaluated Target revision is no longer current', () => {
+    const state = cloneEvaluationLayerFixtures();
+    const target = state.targets.find((item) => item.id === 'demo-operations-mcp')!;
+    const current = state.targetRevisions.find((item) => item.id === target.currentRevisionId)!;
+    state.targetRevisions.push({
+      ...current,
+      id: 'demo-operations-mcp-r2',
+      revision: 2,
+      createdAt: '2026-08-10T12:00:00.000Z',
+    });
+    target.currentRevisionId = 'demo-operations-mcp-r2';
+    const store = createEvaluationLayerStore(state);
+
+    expect(store.decideRevision('report-operations-mcp-baseline', 'APPROVED', ADMIN_ACTOR)).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+    expect(store.getState().revisionDecisions).toEqual([]);
+  });
+
+  it('requires the Admin decision before a Developer creates a new revision', () => {
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: () => 'demo-operations-mcp-r2',
+    });
+
+    expect(store.createTargetRevision('demo-operations-mcp', {}, DEVELOPER_ACTOR)).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+    expect(store.decideRevision('report-operations-mcp-baseline', 'APPROVED', ADMIN_ACTOR).ok).toBe(true);
+    expect(store.createTargetRevision('demo-operations-mcp', {}, DEVELOPER_ACTOR).ok).toBe(true);
+  });
+
+  it('requires a decision on the latest current Report before rerunning the same revisions', () => {
+    let sequence = 0;
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: () => `rerun-after-decision-${sequence++}`,
+    });
+    const input = {
+      targetRevisionId: 'demo-operations-mcp-r1',
+      datasetRevisionId: 'mcp-operational-check-r1',
+      guardrailTemplateIds: ['guardrail-template-universal-safety'],
+      evaluatorIds: ['permission-compliance'],
+    };
+    const runCount = store.getState().runs.length;
+
+    expect(store.createRun(input)).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+    expect(store.getState().runs).toHaveLength(runCount);
+
+    expect(store.decideRevision(
+      'report-operations-mcp-baseline',
+      'APPROVED',
+      ADMIN_ACTOR,
+    ).ok).toBe(true);
+    const rerun = store.createRun(input);
+    expect(rerun).toMatchObject({ ok: true });
+    if (!rerun.ok) return;
+    let complete = false;
+    while (!complete) {
+      const advanced = store.advanceRun(rerun.value.runId);
+      expect(advanced.ok).toBe(true);
+      if (!advanced.ok) return;
+      complete = advanced.value.complete;
+    }
+
+    expect(store.createRun(input)).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+  });
+
+  it('does not let an undecided stale Dataset Report block a new Target revision', () => {
+    const state = cloneEvaluationLayerFixtures();
+    const published = state.datasetRevisions.find(
+      (item) => item.id === 'mcp-operational-check-r1',
+    )!;
+    state.datasetRevisions.push({
+      ...published,
+      id: 'mcp-operational-check-r2',
+      revision: 2,
+      createdAt: '2026-08-10T12:00:00.000Z',
+    });
+    const store = createEvaluationLayerStore(state, {
+      id: () => 'demo-operations-mcp-r2',
+    });
+
+    expect(store.createTargetRevision('demo-operations-mcp', {}, DEVELOPER_ACTOR)).toMatchObject({
+      ok: true,
+      value: { revisionId: 'demo-operations-mcp-r2' },
+    });
+  });
+
+  it('does not let an undecided stale Dataset Report block a run of the latest published revision', () => {
+    const state = cloneEvaluationLayerFixtures();
+    const published = state.datasetRevisions.find(
+      (item) => item.id === 'mcp-operational-check-r1',
+    )!;
+    state.datasetRevisions.push({
+      ...published,
+      id: 'mcp-operational-check-r2',
+      revision: 2,
+      createdAt: '2026-08-10T12:00:00.000Z',
+    });
+    const store = createEvaluationLayerStore(state, {
+      id: () => 'latest-dataset-run',
+    });
+
+    expect(store.createRun({
+      targetRevisionId: 'demo-operations-mcp-r1',
+      datasetRevisionId: 'mcp-operational-check-r2',
+      guardrailTemplateIds: ['guardrail-template-universal-safety'],
+      evaluatorIds: ['permission-compliance'],
+    })).toMatchObject({
+      ok: true,
+      value: { runId: 'latest-dataset-run' },
+    });
+  });
+
+  it('does not let a non-reviewable Report block a new Target revision', () => {
+    const state = cloneEvaluationLayerFixtures();
+    const run = state.runs.find(
+      (item) => item.id === 'run-operations-mcp-baseline',
+    )!;
+    run.status = 'RUNNING';
+    run.results[0]!.status = 'PENDING';
+    const store = createEvaluationLayerStore(state, {
+      id: () => 'demo-operations-mcp-r2',
+    });
+
+    expect(store.createTargetRevision('demo-operations-mcp', {}, DEVELOPER_ACTOR)).toMatchObject({
+      ok: true,
+      value: { revisionId: 'demo-operations-mcp-r2' },
+    });
+  });
+
+  it('allows Reflection changes only after rejection', () => {
+    let sequence = 0;
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: () => `reflection-after-reject-${sequence++}`,
+    });
+
+    expect(store.submitReflection('report-permission-baseline', ['reflection-guard-order'], DEVELOPER_ACTOR)).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+    expect(store.decideRevision('report-permission-baseline', 'REJECTED', ADMIN_ACTOR).ok).toBe(true);
+    expect(store.submitReflection('report-permission-baseline', ['reflection-guard-order'], DEVELOPER_ACTOR)).toMatchObject({
+      ok: true,
+      value: { revisionId: expect.any(String) },
+    });
+  });
+
+  it('allows dismissing Reflection only for the current rejected revision', () => {
+    let sequence = 0;
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: () => `reflection-dismiss-${sequence++}`,
+    });
+
+    expect(store.finishReflectionWithoutChanges('report-permission-baseline', DEVELOPER_ACTOR)).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+    expect(store.decideRevision('report-permission-baseline', 'REJECTED', ADMIN_ACTOR).ok).toBe(true);
+    expect(store.finishReflectionWithoutChanges('report-permission-baseline', DEVELOPER_ACTOR).ok).toBe(true);
+    expect(store.getState().reflections.find(
+      (item) => item.id === 'reflection-guard-order',
+    )?.status).toBe('DISMISSED');
+  });
+
+  it('rejects decisions from non-admin actors', () => {
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+
+    expect(store.decideRevision('report-operations-mcp-baseline', 'APPROVED', {
+      name: 'Developer',
+      role: 'member',
+    })).toMatchObject({
+      ok: false,
+      code: 'UNAVAILABLE',
+    });
+  });
+
+  it.each(['admin', 'ada', 'frt', 'iss', 'compliance'])(
+    'keeps rejected Target changes unavailable to the %s role',
+    (role) => {
+      const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+      const actor = { name: role, role };
+
+      expect(store.decideRevision(
+        'report-permission-baseline',
+        'REJECTED',
+        ADMIN_ACTOR,
+      ).ok).toBe(true);
+      expect(store.createTargetRevision(
+        'demo-permission-compliance',
+        {},
+        actor,
+      )).toMatchObject({ ok: false, code: 'UNAVAILABLE' });
+      expect(store.submitReflection(
+        'report-permission-baseline',
+        ['reflection-guard-order'],
+        actor,
+      )).toMatchObject({ ok: false, code: 'UNAVAILABLE' });
+      expect(store.finishReflectionWithoutChanges(
+        'report-permission-baseline',
+        actor,
+      )).toMatchObject({ ok: false, code: 'UNAVAILABLE' });
+    },
+  );
+
+  it('rejects a decision for an outdated published Dataset revision', () => {
+    const state = cloneEvaluationLayerFixtures();
+    const current = state.datasetRevisions.find(
+      (item) => item.id === 'mcp-operational-check-r1',
+    )!;
+    state.datasetRevisions.push({
+      ...current,
+      id: 'mcp-operational-check-r2',
+      revision: 2,
+      createdAt: '2026-08-10T12:00:00.000Z',
+    });
+    const store = createEvaluationLayerStore(state);
+
+    expect(store.decideRevision('report-operations-mcp-baseline', 'APPROVED', ADMIN_ACTOR)).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+  });
+
+  it('does not approve a completed Report with no Case results', () => {
+    const state = cloneEvaluationLayerFixtures();
+    state.runs.find((item) => item.id === 'run-operations-mcp-baseline')!.results = [];
+    const store = createEvaluationLayerStore(state);
+
+    expect(store.decideRevision('report-operations-mcp-baseline', 'APPROVED', ADMIN_ACTOR)).toMatchObject({
+      ok: false,
+      code: 'INVALID_INPUT',
+    });
+  });
+
+  it('validates that a Revision Decision matches its Report Run revision', () => {
+    const state = cloneEvaluationLayerFixtures();
+    state.revisionDecisions.push({
+      id: 'mismatched-decision',
+      reportId: 'report-operations-mcp-baseline',
+      targetRevisionId: 'demo-policy-kb-r1',
+      status: 'APPROVED',
+      actor: 'Local Administrator',
+      decidedAt: '2026-08-10T11:30:00.000Z',
+    });
+
+    expect(validateEvaluationLayerState(state)).toContain(
+      'revisionDecisions.mismatched-decision.targetRevisionId: demo-policy-kb-r1',
+    );
   });
 
   it('stores Dataset schema, completes Tool coverage and shares Dataset context', () => {

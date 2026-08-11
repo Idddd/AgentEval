@@ -9,6 +9,7 @@ import {
 } from './workspace-view-model';
 
 const OFFICE_TARGET_ID = 'demo-permission-compliance';
+const ADMIN_ACTOR = { name: 'Local Administrator', role: 'admin' };
 
 describe('evaluation catalog workspace view model', () => {
   it('joins every Target to its selected Dataset and latest Evaluation graph', () => {
@@ -26,10 +27,12 @@ describe('evaluation catalog workspace view model', () => {
       publishedRevision: { id: 'permission-compliance-regression-r1' },
       latestRun: { id: 'run-permission-baseline' },
       latestReport: { id: 'report-permission-baseline' },
+      decisionStatus: 'PENDING',
+      decisionRecommendation: 'REJECTED',
       stage: 'COMPLETED',
       progress: 100,
-      result: '5 passed · 1 finding',
-      risk: { kind: 'FINDINGS', count: 1, label: '1 finding' },
+      result: '6 passed · 2 findings',
+      risk: { kind: 'FINDINGS', count: 2, label: '2 findings' },
       isStale: false,
       primaryAction: 'VIEW_RESULTS',
       updatedAt: '2026-07-31T10:00:00.000Z',
@@ -44,7 +47,7 @@ describe('evaluation catalog workspace view model', () => {
     expect(workspaceTargetView(state, OFFICE_TARGET_ID)).toMatchObject({
       stage: 'COMPLETED',
       progress: 100,
-      risk: { kind: 'FINDINGS', count: 1 },
+      risk: { kind: 'FINDINGS', count: 2 },
       primaryAction: 'VIEW_RESULTS',
     });
   });
@@ -59,6 +62,8 @@ describe('evaluation catalog workspace view model', () => {
       stage: 'FAILED',
       result: 'Evaluation failed',
       risk: { kind: 'INCONCLUSIVE', label: 'Inconclusive' },
+      decisionStatus: 'PENDING',
+      decisionRecommendation: 'REJECTED',
       primaryAction: 'RUN_EVALUATION',
     });
 
@@ -157,7 +162,7 @@ describe('evaluation catalog workspace view model', () => {
     });
     expect(workspaceTargetView(cloneEvaluationLayerFixtures(), OFFICE_TARGET_ID)).toMatchObject({
       stage: 'COMPLETED',
-      risk: { kind: 'FINDINGS', count: 1 },
+      risk: { kind: 'FINDINGS', count: 2 },
     });
   });
 
@@ -188,7 +193,7 @@ describe('evaluation catalog workspace view model', () => {
       'demo-invoice-classification': 'dataset',
       'demo-deployment-monitor': 'run',
       'demo-operations-mcp': 'result',
-      'demo-permission-compliance-baseline': 'run',
+      'demo-permission-compliance-baseline': 'result',
       'demo-policy-kb': 'run',
     });
   });
@@ -209,6 +214,7 @@ describe('evaluation catalog workspace view model', () => {
     const created = store.createRun({
       targetRevisionId: revision.id,
       datasetRevisionId: dataset.id,
+      guardrailTemplateIds: ['guardrail-template-universal-safety'],
       evaluatorIds: ['permission-compliance'],
     });
     if (!created.ok) throw new Error(created.error);
@@ -220,19 +226,68 @@ describe('evaluation catalog workspace view model', () => {
     }
 
     const pending = workspaceTargetView(store.getState(), 'demo-pii-guardrail')!;
-    expect(pending.approvalStatus).toBe('PENDING');
+    expect(pending.decisionStatus).toBe('PENDING');
+    expect(pending.decisionRecommendation).toBe('APPROVED');
     expect(workspaceNextStep(pending)).toMatchObject({
       tab: 'result',
-      label: 'Review and approve revision',
+      label: 'Approve evaluation',
     });
 
     const report = store.getState().reports.find(
       (item) => item.runId === created.value.runId,
     )!;
-    store.decideGuardrailApproval(report.id, 'APPROVED');
+    store.decideRevision(report.id, 'APPROVED', ADMIN_ACTOR);
     expect(
-      workspaceTargetView(store.getState(), 'demo-pii-guardrail')?.approvalStatus,
+      workspaceTargetView(store.getState(), 'demo-pii-guardrail')?.decisionStatus,
     ).toBe('APPROVED');
+  });
+
+  it('routes approved and rejected evaluations to their final workflow states', () => {
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+    const passedReport = store.getState().reports.find(
+      (item) => item.id === 'report-skill-summary-baseline',
+    )!;
+    const failedReport = store.getState().reports.find(
+      (item) => item.id === 'report-permission-baseline',
+    )!;
+
+    expect(store.decideRevision(passedReport.id, 'APPROVED', ADMIN_ACTOR).ok).toBe(true);
+    expect(store.decideRevision(failedReport.id, 'REJECTED', ADMIN_ACTOR).ok).toBe(true);
+
+    const approved = workspaceTargetView(store.getState(), 'demo-document-summarization')!;
+    const rejected = workspaceTargetView(store.getState(), OFFICE_TARGET_ID)!;
+    expect(approved.decisionStatus).toBe('APPROVED');
+    expect(workspaceNextStep(approved)).toMatchObject({
+      tab: 'result',
+      label: 'Evaluation approved',
+    });
+    expect(rejected.decisionStatus).toBe('REJECTED');
+    expect(workspaceNextStep(rejected)).toMatchObject({
+      tab: 'agent',
+      label: 'Update rejected target',
+    });
+  });
+
+  it('moves a rejected FAILED evaluation to re-evaluation after Developer changes', () => {
+    let sequence = 0;
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures(), {
+      id: () => `failed-revision-flow-${sequence++}`,
+    });
+    expect(store.decideRevision('report-tool-error', 'REJECTED', ADMIN_ACTOR).ok).toBe(true);
+    expect(store.createTargetRevision('demo-permission-compliance-baseline', {}, {
+      name: 'Developer',
+      role: 'member',
+    }).ok).toBe(true);
+
+    const row = workspaceTargetView(
+      store.getState(),
+      'demo-permission-compliance-baseline',
+    )!;
+    expect(row.stage).toBe('NEEDS_RE_EVALUATION');
+    expect(workspaceNextStep(row)).toMatchObject({
+      tab: 'run',
+      label: 'Run evaluation again',
+    });
   });
 
   it('reselects latest Run and revisions inside the active Dataset', () => {

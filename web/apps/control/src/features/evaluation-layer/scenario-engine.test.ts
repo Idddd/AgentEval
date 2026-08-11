@@ -10,9 +10,15 @@ describe("advanceEvaluationScenario", () => {
       id: () => `generated-${++sequence}`,
       now: () => "2026-08-04T10:00:00.000Z",
     });
+    expect(store.decideRevision(
+      "report-permission-baseline",
+      "REJECTED",
+      { name: "Local Administrator", role: "admin" },
+    ).ok).toBe(true);
     const created = store.createRun({
       targetRevisionId: "demo-permission-compliance-r2",
       datasetRevisionId: "permission-compliance-regression-r1",
+      guardrailTemplateIds: ["guardrail-template-universal-safety"],
       evaluatorIds: ["permission-compliance"],
     });
     expect(created.ok).toBe(true);

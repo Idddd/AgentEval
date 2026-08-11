@@ -4,6 +4,7 @@ import { FileChartColumn } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { useCurrentProjectId } from "@/hooks/use-project";
+import { useEffectiveProjectRole } from "@/hooks/use-project-permissions";
 import {
   useEvaluationLayerState,
   useEvaluationLayerStore,
@@ -19,11 +20,216 @@ import {
   formatPercent,
 } from "../shared/evaluation-ui";
 import { GuardrailReport } from "./guardrail-report";
+import {
+  RevisionDecisionSection,
+  type RevisionDecisionMode,
+} from "./revision-decision";
+import type { EvaluationLayerRunResult } from "../model";
 
-export function EvaluationReportDetail({ reportId, embedded = false }: { reportId: string; embedded?: boolean }) {
+interface GuardrailPackResultGroup {
+  id: string;
+  name: string;
+  version: string;
+  results: EvaluationLayerRunResult[];
+}
+
+function resultCounts(results: EvaluationLayerRunResult[]) {
+  return {
+    passed: results.filter((item) => item.status === "PASS").length,
+    failed: results.filter(
+      (item) => item.status === "FAIL" || item.status === "ERROR",
+    ).length,
+  };
+}
+
+function ResultSourceSummary({
+  businessResults,
+  packGroups,
+}: {
+  businessResults: EvaluationLayerRunResult[];
+  packGroups: GuardrailPackResultGroup[];
+}) {
+  const business = resultCounts(businessResults);
+  const guardrail = resultCounts(
+    packGroups.flatMap((group) => group.results),
+  );
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="rounded-md border bg-muted/20 p-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Business Dataset results
+        </p>
+        <p className="mt-1 text-sm font-medium">
+          {business.passed} passed · {business.failed} failed
+        </p>
+      </div>
+      <div className="rounded-md border bg-muted/20 p-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Guardrail Test Pack results
+        </p>
+        <p className="mt-1 text-sm font-medium">
+          {guardrail.passed} passed · {guardrail.failed} failed · {packGroups.length}{" "}
+          {packGroups.length === 1 ? "pack" : "packs"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ResultGroup({
+  eyebrow,
+  name,
+  version,
+  results,
+  embedded,
+  projectId,
+  showFailedCases = false,
+}: {
+  eyebrow: string;
+  name: string;
+  version: string;
+  results: EvaluationLayerRunResult[];
+  embedded: boolean;
+  projectId: string;
+  showFailedCases?: boolean;
+}) {
+  const counts = resultCounts(results);
+  const failed = results.filter(
+    (item) => item.status === "FAIL" || item.status === "ERROR",
+  );
+  return (
+    <div className="overflow-hidden rounded-md border">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/20 px-4 py-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {eyebrow}
+          </p>
+          <p className="mt-1 font-medium">{name}</p>
+          <p className="text-xs text-muted-foreground">{version}</p>
+        </div>
+        <div className="text-right text-sm">
+          <p>{counts.passed} passed · {counts.failed} failed</p>
+          <p className="text-xs text-muted-foreground">
+            {results.length} evaluated {results.length === 1 ? "case" : "cases"}
+          </p>
+        </div>
+      </div>
+      {results.length ? (
+        <EvaluationTable>
+          <thead>
+            <tr>
+              <th>Case</th>
+              <th>Status</th>
+              <th>Response</th>
+              <th>Trace</th>
+            </tr>
+          </thead>
+          <tbody>
+            {results.map((result) => (
+              <tr key={`${eyebrow}-${result.caseId}`}>
+                <td>{result.caseId}</td>
+                <td>
+                  <EvaluationLayerStatusBadge status={result.status} />
+                </td>
+                <td>{result.response}</td>
+                <td>
+                  {result.traceId && !embedded ? (
+                    <Link
+                      className="font-mono text-xs hover:underline"
+                      to="/$projectId/evaluation/traces/$traceId"
+                      params={{ projectId, traceId: result.traceId }}
+                    >
+                      {result.traceId}
+                    </Link>
+                  ) : result.traceId ? "Available" : "Not available"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </EvaluationTable>
+      ) : (
+        <p className="px-4 py-3 text-sm text-muted-foreground">
+          No completed results.
+        </p>
+      )}
+      {showFailedCases && failed.length ? (
+        <div className="border-t border-destructive/20 bg-destructive/5 px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-destructive">
+            Failed cases
+          </p>
+          <ul className="mt-2 space-y-1 text-sm">
+            {failed.map((result) => (
+              <li key={`failed-${eyebrow}-${result.caseId}`}>
+                <span className="font-medium">{result.caseId}</span>
+                {result.response ? ` — ${result.response}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TestResultsBySource({
+  datasetName,
+  datasetRevision,
+  businessResults,
+  packGroups,
+  embedded,
+  projectId,
+}: {
+  datasetName: string;
+  datasetRevision: number;
+  businessResults: EvaluationLayerRunResult[];
+  packGroups: GuardrailPackResultGroup[];
+  embedded: boolean;
+  projectId: string;
+}) {
+  return (
+    <EvaluationSection
+      title="Test Results"
+      description="Business Dataset and required Guardrail Test Pack evidence are shown separately."
+    >
+      <div className="space-y-4">
+        <ResultGroup
+          eyebrow="Business Dataset"
+          name={datasetName}
+          version={`Published R${datasetRevision}`}
+          results={businessResults}
+          embedded={embedded}
+          projectId={projectId}
+        />
+        {packGroups.map((group) => (
+          <ResultGroup
+            key={group.id}
+            eyebrow="Guardrail Test Pack"
+            name={group.name}
+            version={group.version}
+            results={group.results}
+            embedded={embedded}
+            projectId={projectId}
+            showFailedCases
+          />
+        ))}
+      </div>
+    </EvaluationSection>
+  );
+}
+
+export function EvaluationReportDetail({
+  reportId,
+  embedded = false,
+  decisionMode = "inline",
+}: {
+  reportId: string;
+  embedded?: boolean;
+  decisionMode?: RevisionDecisionMode;
+}) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
   const projectId = useCurrentProjectId();
+  const role = useEffectiveProjectRole();
   const report = state.reports.find((item) => item.id === reportId);
   const [selected, setSelected] = useState<string[]>(() =>
     state.reflections
@@ -56,9 +262,70 @@ export function EvaluationReportDetail({ reportId, embedded = false }: { reportI
   )!;
   const traces = state.traces.filter((item) => item.runId === run.id);
   const done = run.results.filter((item) => item.status !== "PENDING");
+  const businessResults = done.filter((item) => !item.guardrailTemplateId);
+  const guardrailPackIds = Array.from(
+    new Set([
+      ...run.guardrailTemplateIds,
+      ...done.flatMap((item) =>
+        item.guardrailTemplateId ? [item.guardrailTemplateId] : [],
+      ),
+    ]),
+  );
+  const guardrailPackGroups: GuardrailPackResultGroup[] = guardrailPackIds.map(
+    (templateId) => {
+      const template = state.guardrailTemplates.find(
+        (item) => item.id === templateId,
+      );
+      return {
+        id: templateId,
+        name: template?.name ?? templateId,
+        version: template?.version ?? "Version unavailable",
+        results: done.filter(
+          (item) => item.guardrailTemplateId === templateId,
+        ),
+      };
+    },
+  );
   const failures = done.filter(
     (item) => item.status === "FAIL" || item.status === "ERROR",
   );
+  const decision = state.revisionDecisions.find(
+    (item) => item.reportId === report.id,
+  );
+  const allPassed =
+    run.status === "COMPLETED" &&
+    report.status === "READY" &&
+    run.results.length > 0 &&
+    run.results.every((item) => item.status === "PASS");
+  const recommendation = allPassed ? "APPROVED" as const : "REJECTED" as const;
+  const revisionLabel = `${target.name} R${targetRevision.revision}`;
+  const latestPublishedDatasetRevision = state.datasetRevisions
+    .filter(
+      (item) => item.datasetId === run.datasetId && item.status === "PUBLISHED",
+    )
+    .sort(
+      (left, right) =>
+        right.revision - left.revision ||
+        right.createdAt.localeCompare(left.createdAt) ||
+        right.id.localeCompare(left.id),
+    )[0];
+  const decisionBlockedReason = decision
+    ? undefined
+    : target.currentRevisionId !== run.targetRevisionId
+      ? "This report belongs to an outdated Target revision and cannot be decided."
+      : latestPublishedDatasetRevision?.id !== run.datasetRevisionId
+        ? "This report belongs to an outdated Dataset revision and cannot be decided."
+        : !["COMPLETED", "PARTIAL", "FAILED"].includes(run.status) ||
+            run.results.some((item) => item.status === "PENDING")
+          ? "Only a finished evaluation can be decided."
+          : undefined;
+  const targetLabel = target.kind === "agent"
+    ? "Agent"
+    : target.kind === "skill"
+      ? "Skill"
+      : target.kind === "mcp"
+        ? "MCP Server"
+        : "Knowledge Base";
   const passRate = done.length
     ? done.filter((item) => item.status === "PASS").length / done.length
     : 0;
@@ -76,10 +343,21 @@ export function EvaluationReportDetail({ reportId, embedded = false }: { reportI
   const reflections = state.reflections.filter(
     (item) => item.reportId === report.id,
   );
+  const isDeveloper = role === "member";
+  const reflectionActionsHidden = decisionMode === "hidden";
+  const canApplyReflection =
+    !reflectionActionsHidden &&
+    isDeveloper &&
+    decision?.status === "REJECTED" &&
+    target.currentRevisionId === run.targetRevisionId;
+  const reflectionUnavailableMessage = reflectionActionsHidden
+    ? "Reflection changes are available to Developers in the standalone report."
+    : decision?.status !== "REJECTED"
+      ? "Developer changes become available after an Admin rejects this evaluation."
+      : !isDeveloper
+        ? "Developer access is required to update the Target after rejection."
+        : "This rejected evaluation has already been superseded by a newer Target revision.";
   if (target.kind === "guardrail") {
-    const approval = state.guardrailApprovals.find(
-      (item) => item.reportId === report.id,
-    );
     return (
       <div className="space-y-6">
         <KeyValueGrid
@@ -91,13 +369,36 @@ export function EvaluationReportDetail({ reportId, embedded = false }: { reportI
             ["Created", new Date(report.createdAt).toLocaleString()],
           ] as [string, ReactNode][])}
         />
+        <EvaluationSection title="Summary">
+          <ResultSourceSummary
+            businessResults={businessResults}
+            packGroups={guardrailPackGroups}
+          />
+        </EvaluationSection>
         <GuardrailReport
           cases={datasetRevision.cases}
-          results={run.results}
+          results={businessResults}
           traces={traces}
-          revisionLabel={`R${targetRevision.revision} · v${targetRevision.version ?? "—"}`}
-          approval={approval}
-          onDecision={(status) => store.decideGuardrailApproval(report.id, status)}
+        />
+        <TestResultsBySource
+          datasetName={dataset.name}
+          datasetRevision={datasetRevision.revision}
+          businessResults={businessResults}
+          packGroups={guardrailPackGroups}
+          embedded={embedded}
+          projectId={projectId}
+        />
+        <RevisionDecisionSection
+          decision={decision}
+          recommendation={recommendation}
+          revisionLabel={revisionLabel}
+          canDecide={role === "admin"}
+          blockedReason={decisionBlockedReason}
+          mode={decisionMode}
+          onDecision={(status) => store.decideRevision(report.id, status, {
+            name: role === "admin" ? "Local Administrator" : role,
+            role,
+          })}
         />
       </div>
     );
@@ -107,7 +408,7 @@ export function EvaluationReportDetail({ reportId, embedded = false }: { reportI
       <KeyValueGrid
         items={([
           ...(embedded ? [] : [["Report", report.id], ["Evaluation", run.id]]),
-          ["Agent", target.name],
+          [targetLabel, target.name],
           ["Test Case", dataset.name],
           ["Status", <EvaluationLayerStatusBadge status={report.status} />],
           ["Created", new Date(report.createdAt).toLocaleString()],
@@ -124,41 +425,21 @@ export function EvaluationReportDetail({ reportId, embedded = false }: { reportI
           <EvaluationMetric label="Total cost" value={formatCost(cost)} />
         </div>
         <p className="mt-4 text-sm text-muted-foreground">{report.summary}</p>
+        <div className="mt-4">
+          <ResultSourceSummary
+            businessResults={businessResults}
+            packGroups={guardrailPackGroups}
+          />
+        </div>
       </EvaluationSection>
-      <EvaluationSection title="Test Results">
-        <EvaluationTable>
-          <thead>
-            <tr>
-              <th>Case</th>
-              <th>Status</th>
-              <th>Response</th>
-              <th>Trace</th>
-            </tr>
-          </thead>
-          <tbody>
-            {done.map((result) => (
-              <tr key={result.caseId}>
-                <td>{result.caseId}</td>
-                <td>
-                  <EvaluationLayerStatusBadge status={result.status} />
-                </td>
-                <td>{result.response}</td>
-                <td>
-                  {result.traceId && !embedded ? (
-                    <Link
-                      className="font-mono text-xs hover:underline"
-                      to="/$projectId/evaluation/traces/$traceId"
-                      params={{ projectId, traceId: result.traceId }}
-                    >
-                      {result.traceId}
-                    </Link>
-                  ) : result.traceId ? "Available" : "Not available"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </EvaluationTable>
-      </EvaluationSection>
+      <TestResultsBySource
+        datasetName={dataset.name}
+        datasetRevision={datasetRevision.revision}
+        businessResults={businessResults}
+        packGroups={guardrailPackGroups}
+        embedded={embedded}
+        projectId={projectId}
+      />
       <EvaluationSection title="Failure reasons">
         {failures.length ? (
           <div className="grid gap-3">
@@ -333,13 +614,35 @@ export function EvaluationReportDetail({ reportId, embedded = false }: { reportI
           ]}
         />
       </EvaluationSection>
+      <RevisionDecisionSection
+        decision={decision}
+        recommendation={recommendation}
+        revisionLabel={revisionLabel}
+        canDecide={role === "admin"}
+        blockedReason={decisionBlockedReason}
+        mode={decisionMode}
+        onDecision={(status) => store.decideRevision(report.id, status, {
+          name: role === "admin" ? "Local Administrator" : role,
+          role,
+        })}
+      />
       <EvaluationSection
         title="Reflection"
-        description="Select evidence-backed improvements and create one immutable Agent revision."
+        description="After rejection, select evidence-backed improvements and create one immutable Target revision."
       >
         {reflections.length ? (
           <div className="grid gap-3">
-            {reflections.map((reflection) => (
+            {reflections.map((reflection) => reflectionActionsHidden ? (
+              <div
+                key={reflection.id}
+                className="rounded-md border p-4"
+              >
+                <p className="font-medium">{reflection.suggestion}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Status: {reflection.status}
+                </p>
+              </div>
+            ) : (
               <label
                 key={reflection.id}
                 className="flex items-start gap-3 rounded-md border p-4"
@@ -347,7 +650,7 @@ export function EvaluationReportDetail({ reportId, embedded = false }: { reportI
                 <input
                   type="checkbox"
                   className="mt-1"
-                  disabled={reflection.status !== "OPEN"}
+                  disabled={reflection.status !== "OPEN" || !canApplyReflection}
                   checked={selected.includes(reflection.id)}
                   onChange={(event) =>
                     setSelected((current) =>
@@ -365,20 +668,32 @@ export function EvaluationReportDetail({ reportId, embedded = false }: { reportI
                 </span>
               </label>
             ))}
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => store.finishReflectionWithoutChanges(report.id)}
-              >
-                Finish without changes
-              </Button>
-              <Button
-                disabled={!selected.length}
-                onClick={() => store.submitReflection(report.id, selected)}
-              >
-                Apply selected changes
-              </Button>
-            </div>
+            {canApplyReflection ? (
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => store.finishReflectionWithoutChanges(report.id, {
+                    name: role === "member" ? "Developer" : role,
+                    role,
+                  })}
+                >
+                  Finish without changes
+                </Button>
+                <Button
+                  disabled={!selected.length}
+                  onClick={() => store.submitReflection(report.id, selected, {
+                    name: role === "member" ? "Developer" : role,
+                    role,
+                  })}
+                >
+                  Apply selected changes
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {reflectionUnavailableMessage}
+              </p>
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">

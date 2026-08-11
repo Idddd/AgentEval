@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, ChevronRight, Waypoints } from 'lucide-react';
+import { BellRing, ChevronRight, Waypoints } from 'lucide-react';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -10,10 +10,7 @@ import type {
   EvaluationLayerSpan,
   EvaluationLayerTrace,
 } from '../model';
-import {
-  useEvaluationLayerState,
-  useEvaluationLayerStore,
-} from '../mock-provider';
+import { useEvaluationLayerState } from '../mock-provider';
 import { EvaluationLayerStatusBadge } from '../shared/evaluation-status';
 import {
   EvaluationMetric,
@@ -36,11 +33,12 @@ import {
   traceLatency,
 } from './trace-view-model';
 
+const TRACE_ALERT_EMAIL = 'security-ops@tasklattice.local';
+
 export function EvaluationTraceDetail({ traceId }: { traceId: string }) {
   const state = useEvaluationLayerState();
-  const store = useEvaluationLayerStore();
   const projectId = useCurrentProjectId();
-  const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [alertSent, setAlertSent] = useState(false);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const trace = state.traces.find((item) => item.id === traceId);
   const rows = useMemo(() => (trace ? spanRows(trace) : []), [trace]);
@@ -73,24 +71,20 @@ export function EvaluationTraceDetail({ traceId }: { traceId: string }) {
           <p className='mt-1 text-sm text-muted-foreground'>
             Case {trace.caseId} · Evaluation {trace.runId}
           </p>
-          {trace.markedFailed ? (
-            <p className='mt-2 text-sm font-medium text-destructive'>
-              Marked as failed for this review session
+          {alertSent ? (
+            <p
+              role='status'
+              aria-live='polite'
+              className='mt-2 text-sm font-medium text-emerald-700 dark:text-emerald-300'
+            >
+              Alert sent to {TRACE_ALERT_EMAIL}.
             </p>
           ) : null}
         </div>
         <div className='flex flex-wrap gap-2'>
-          <Button
-            variant='outline'
-            onClick={() => store.markTraceFailed(trace.id, !trace.markedFailed)}
-          >
-            {trace.markedFailed ? 'Unmark fail' : 'Mark fail'}
-          </Button>
-          <Button
-            variant={analysisOpen ? 'default' : 'outline'}
-            onClick={() => setAnalysisOpen((value) => !value)}
-          >
-            {analysisOpen ? 'Close analysis' : 'Analysis'}
+          <Button onClick={() => setAlertSent(true)}>
+            <BellRing className='size-4' />
+            Send alert
           </Button>
           <Button asChild variant='outline'>
             <Link to='/$projectId/evaluation/overview' params={{ projectId }}>
@@ -128,9 +122,7 @@ export function EvaluationTraceDetail({ traceId }: { traceId: string }) {
         </div>
       </EvaluationSection>
 
-      {analysisOpen ? (
-        <TraceAnalysis trace={trace} onClose={() => setAnalysisOpen(false)} />
-      ) : null}
+      <TraceAnalysis trace={trace} />
 
       <EvaluationSection
         title='Span tree'
@@ -227,25 +219,13 @@ export function EvaluationTraceDetail({ traceId }: { traceId: string }) {
   );
 }
 
-function TraceAnalysis({
-  trace,
-  onClose,
-}: {
-  trace: EvaluationLayerTrace;
-  onClose: () => void;
-}) {
+function TraceAnalysis({ trace }: { trace: EvaluationLayerTrace }) {
   const suggestions = recommendations(trace);
   const average = judgeAverage(trace);
   return (
     <EvaluationSection
       title='Analysis'
       description='Evidence-backed recommendations from the selected Trace.'
-      action={
-        <Button size='sm' variant='ghost' onClick={onClose}>
-          <ArrowLeft className='size-4' />
-          Back to trace detail
-        </Button>
-      }
     >
       <KeyValueGrid
         className='sm:grid-cols-4 lg:grid-cols-4'

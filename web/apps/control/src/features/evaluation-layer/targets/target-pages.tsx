@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useCurrentProjectId } from '@/hooks/use-project';
+import { useEffectiveProjectRole } from '@/hooks/use-project-permissions';
 import { AgentGardenIcon } from '@/components/agent-garden/agent-garden-icon';
 import type {
   EvaluationLayerResource,
@@ -143,6 +144,7 @@ export function TargetEditor({
 }) {
   const store = useEvaluationLayerStore();
   const state = useEvaluationLayerState();
+  const role = useEffectiveProjectRole();
   const target = state.targets.find((item) => item.id === targetId);
   const revision = target
     ? state.targetRevisions.find((item) => item.id === target.currentRevisionId)
@@ -184,7 +186,10 @@ export function TargetEditor({
       input.prompt = prompt;
     }
     if (targetId) {
-      const result = store.createTargetRevision(targetId, input);
+      const result = store.createTargetRevision(targetId, input, {
+        name: role === 'member' ? 'Developer' : role,
+        role,
+      });
       if (!result.ok) return setError(result.error);
     } else {
       const result = store.createTarget({ name, description, kind, ...input });
@@ -352,14 +357,17 @@ export function EvaluationTargetDetail({
   targetId,
   onEvaluate,
   embedded = false,
+  showEvaluateAction = true,
 }: {
   targetId: string;
   onEvaluate?(): void;
   embedded?: boolean;
+  showEvaluateAction?: boolean;
 }) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
   const projectId = useCurrentProjectId();
+  const role = useEffectiveProjectRole();
   const navigate = useNavigate();
   const [editorOpen, setEditorOpen] = useState(false);
   const target = state.targets.find((item) => item.id === targetId);
@@ -375,6 +383,32 @@ export function EvaluationTargetDetail({
     return { report, metrics, targetRevision, datasetRevision, delta: previous === undefined ? undefined : metrics.passRate - previous };
   });
   const latest = reportRows[0];
+  const latestCurrentReport = reportRows.find((item) => {
+    const run = item.metrics.run;
+    if (item.targetRevision?.id !== current.id || !run) return false;
+    const latestPublishedDatasetRevision = state.datasetRevisions
+      .filter(
+        (revision) =>
+          revision.datasetId === run.datasetId && revision.status === 'PUBLISHED',
+      )
+      .sort(
+        (left, right) =>
+          right.revision - left.revision ||
+          right.createdAt.localeCompare(left.createdAt) ||
+          right.id.localeCompare(left.id),
+      )[0];
+    return latestPublishedDatasetRevision?.id === run.datasetRevisionId;
+  })?.report;
+  const decisionPending = Boolean(
+    latestCurrentReport &&
+    !state.revisionDecisions.some((item) => item.reportId === latestCurrentReport.id),
+  );
+  const canCreateRevision = role === 'member' && !decisionPending;
+  const revisionActionLabel = decisionPending
+    ? 'Decision pending'
+    : role === 'member'
+      ? 'New revision'
+      : 'Developer only';
   const renderToolTable = (tools: EvaluationLayerTool[]) => (
     <EvaluationTable><thead><tr><th>Name</th><th>Description</th><th>Status</th><th>Tags</th></tr></thead><tbody>{tools.map((tool) => <tr key={tool.id}><td className='font-medium'>{tool.name}</td><td>{tool.description}</td><td>{tool.enabled ? 'Enabled' : 'Disabled'}</td><td>{tool.tags.join(', ')}</td></tr>)}</tbody></EvaluationTable>
   );
@@ -392,6 +426,7 @@ export function EvaluationTargetDetail({
           : current.kind === 'guardrail'
             ? [['Version', current.version ?? 'Not configured'], ['Revision', `R${current.revision}`], ['Check stages', current.guardrailStages?.join(', ') ?? 'None'], ['Policies', current.policyCount ?? 0], ['Source', current.sourceStatus ?? 'OFFLINE']]
             : [['Model', current.model], ['Revision', `R${current.revision}`], ['Prompt', current.prompt?.trim() ? 'Configured' : 'None']];
+  configItems.push(['Target ID', target.id]);
   const evaluate = () => {
     store.selectActiveTarget(target.id);
     if (onEvaluate) {
@@ -407,7 +442,7 @@ export function EvaluationTargetDetail({
           <AgentGardenIcon type='custom' catalogIcon={target.icon} />
           <div><h2 className='text-2xl font-semibold'>{target.name}</h2><p className='mt-1 text-sm text-muted-foreground'>{target.description || 'No description recorded.'}</p><p className='mt-1 text-xs text-muted-foreground'>Revision {current.revision} · {configurationSummary(current)}</p></div>
         </div>
-        <div className='flex gap-2'>{target.kind !== 'guardrail' ? <Button variant='outline' onClick={() => setEditorOpen(true)}><Plus className='size-4' />New revision</Button> : null}<Button onClick={evaluate}>Evaluate</Button></div>
+        <div className='flex gap-2'>{target.kind !== 'guardrail' ? <Button variant='outline' disabled={!canCreateRevision} onClick={() => setEditorOpen(true)}><Plus className='size-4' />{revisionActionLabel}</Button> : null}{showEvaluateAction ? <Button aria-label={decisionPending ? 'Evaluation unavailable while decision pending' : 'Evaluate'} disabled={decisionPending} onClick={evaluate}>Evaluate</Button> : null}</div>
       </div>
       <EvaluationSection title='Configuration'>
         <KeyValueGrid className='lg:grid-cols-3' items={configItems} />

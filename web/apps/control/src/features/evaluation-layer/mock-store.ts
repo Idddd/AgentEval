@@ -33,6 +33,11 @@ export interface EvaluationLayerDependencies {
   random(): number;
 }
 
+export interface RevisionActor {
+  name: string;
+  role: string;
+}
+
 export interface CreateTargetInput {
   name: string;
   description: string;
@@ -68,6 +73,7 @@ export type DatasetCaseInput = Omit<EvaluationLayerCase, "id">;
 export interface CreateRunInput {
   targetRevisionId: string;
   datasetRevisionId: string;
+  guardrailTemplateIds: string[];
   evaluatorIds: string[];
 }
 
@@ -78,6 +84,7 @@ export interface EvaluationLayerStore {
   createTargetRevision(
     targetId: string,
     input: TargetRevisionInput,
+    actor: RevisionActor,
   ): CommandResult<{ revisionId: string }>;
   createDataset(input: CreateDatasetInput): CommandResult<{ datasetId: string }>;
   updateDatasetDraft(datasetId: string, input: DatasetDraftInput): CommandResult;
@@ -91,12 +98,17 @@ export interface EvaluationLayerStore {
   publishDatasetRevision(datasetId: string): CommandResult<{ revisionId: string }>;
   createRun(input: CreateRunInput): CommandResult<{ runId: string }>;
   advanceRun(runId: string): CommandResult<{ complete: boolean }>;
-  decideGuardrailApproval(
+  decideRevision(
     reportId: string,
     status: "APPROVED" | "REJECTED",
-  ): CommandResult<{ approvalId: string }>;
-  submitReflection(reportId: string, suggestionIds: string[]): CommandResult<{ revisionId: string }>;
-  finishReflectionWithoutChanges(reportId: string): CommandResult;
+    actor: RevisionActor,
+  ): CommandResult<{ decisionId: string }>;
+  submitReflection(
+    reportId: string,
+    suggestionIds: string[],
+    actor: RevisionActor,
+  ): CommandResult<{ revisionId: string }>;
+  finishReflectionWithoutChanges(reportId: string, actor: RevisionActor): CommandResult;
   selectActiveTarget(targetId: string): CommandResult;
   selectActiveDataset(datasetId: string): CommandResult;
   markTraceFailed(traceId: string, marked: boolean): CommandResult;
@@ -754,6 +766,42 @@ export function createEvaluationLayerStore(
     return true;
   };
 
+  const latestPublishedRevisionFor = (datasetId: string) =>
+    state.datasetRevisions
+      .filter(
+        (revision) =>
+          revision.datasetId === datasetId && revision.status === "PUBLISHED",
+      )
+      .sort(
+        (left, right) =>
+          right.revision - left.revision ||
+          right.createdAt.localeCompare(left.createdAt) ||
+          right.id.localeCompare(left.id),
+      )[0];
+
+  const latestReviewableReportFor = (
+    targetRevisionId: string,
+    datasetRevisionId: string,
+  ) =>
+    state.reports
+      .filter((report) => {
+        const run = state.runs.find((item) => item.id === report.runId);
+        return (
+          run?.targetRevisionId === targetRevisionId &&
+          run.datasetRevisionId === datasetRevisionId &&
+          ["COMPLETED", "PARTIAL", "FAILED"].includes(run.status) &&
+          !run.results.some((result) => result.status === "PENDING")
+        );
+      })
+      .sort(
+        (left, right) =>
+          right.createdAt.localeCompare(left.createdAt) ||
+          right.id.localeCompare(left.id),
+      )[0];
+
+  const lacksDecision = (reportId: string) =>
+    !state.revisionDecisions.some((decision) => decision.reportId === reportId);
+
   const store: EvaluationLayerStore = {
     getState: () => state,
     subscribe(listener) {
@@ -805,13 +853,28 @@ export function createEvaluationLayerStore(
       }));
       return { ok: true, value: { targetId } };
     },
-    createTargetRevision(targetId, input) {
+    createTargetRevision(targetId, input, actor) {
+      if (actor.role !== "member") {
+        return fail("Only a Developer can change a Target revision.", "UNAVAILABLE");
+      }
       const target = state.targets.find((item) => item.id === targetId);
       if (!target) return fail("Agent not found.", "NOT_FOUND");
       const current = state.targetRevisions.find(
         (revision) => revision.id === target.currentRevisionId,
       );
       if (!current) return fail("Agent revision not found.", "NOT_FOUND");
+      const pendingCurrentReport = state.datasets
+        .filter((dataset) => dataset.targetId === targetId)
+        .map((dataset) => latestPublishedRevisionFor(dataset.id))
+        .filter((revision) => revision !== undefined)
+        .map((revision) => latestReviewableReportFor(current.id, revision.id))
+        .find((report) => report && lacksDecision(report.id));
+      if (pendingCurrentReport) {
+        return fail(
+          "An Admin decision is required before this Target revision can be changed.",
+          "CONFLICT",
+        );
+      }
       const revisionId = dependencies.id();
       const revision: EvaluationLayerTargetRevision = {
         ...current,
@@ -1077,8 +1140,62 @@ export function createEvaluationLayerStore(
       if (targetRevision.targetId !== datasetRevision.targetId) {
         return fail("Agent and Test Case must share an Agent.", "CONFLICT");
       }
+      if (!input.guardrailTemplateIds.length) {
+        return fail("Select at least one Guardrail Test Pack.", "INVALID_INPUT");
+      }
+      const uniqueGuardrailTemplateIds = [...new Set(input.guardrailTemplateIds)];
+      if (uniqueGuardrailTemplateIds.length !== input.guardrailTemplateIds.length) {
+        return fail("Guardrail Test Packs must be unique.", "INVALID_INPUT");
+      }
+      const guardrailTemplates = uniqueGuardrailTemplateIds.map((templateId) =>
+        state.guardrailTemplates.find((template) => template.id === templateId),
+      );
+      if (guardrailTemplates.some((template) => !template)) {
+        return fail("Guardrail Test Pack not found.", "NOT_FOUND");
+      }
+      if (
+        guardrailTemplates.some(
+          (template) => !template?.applicableTargetKinds.includes(targetRevision.kind),
+        )
+      ) {
+        return fail(
+          "Guardrail Test Pack is not compatible with this Target type.",
+          "CONFLICT",
+        );
+      }
+      const target = state.targets.find(
+        (item) => item.id === targetRevision.targetId,
+      );
+      const latestPublishedDatasetRevision = latestPublishedRevisionFor(
+        datasetRevision.datasetId,
+      );
+      if (
+        target?.currentRevisionId === targetRevision.id &&
+        latestPublishedDatasetRevision?.id === datasetRevision.id
+      ) {
+        const latestReport = latestReviewableReportFor(
+          targetRevision.id,
+          datasetRevision.id,
+        );
+        if (latestReport && lacksDecision(latestReport.id)) {
+          return fail(
+            "An Admin decision is required before this evaluation can be rerun.",
+            "CONFLICT",
+          );
+        }
+      }
       const runId = dependencies.id();
       const now = dependencies.now();
+      const guardrailResults = guardrailTemplates.flatMap((template) =>
+        template
+          ? template.cases.map((item) => ({
+              caseId: item.id,
+              guardrailTemplateId: template.id,
+              status: "PENDING" as const,
+            }))
+          : [],
+      );
+      const resultCount = datasetRevision.cases.length + guardrailResults.length;
       replaceState((snapshot) => ({
         ...snapshot,
         logs: [
@@ -1090,7 +1207,7 @@ export function createEvaluationLayerStore(
             actor: "system" as const,
             action: "run_started" as const,
             outcome: "info" as const,
-            detail: `Evaluation started · ${datasetRevision.cases.length} cases queued`,
+            detail: `Evaluation started · ${resultCount} cases queued`,
           },
         ].slice(-LOG_ENTRY_CAP),
         runs: [
@@ -1101,13 +1218,17 @@ export function createEvaluationLayerStore(
             targetRevisionId: targetRevision.id,
             datasetId: datasetRevision.datasetId,
             datasetRevisionId: datasetRevision.id,
+            guardrailTemplateIds: uniqueGuardrailTemplateIds,
             evaluatorIds: [...input.evaluatorIds],
             status: "RUNNING",
             startedAt: now,
-            results: datasetRevision.cases.map((item) => ({
-              caseId: item.id,
-              status: "PENDING",
-            })),
+            results: [
+              ...datasetRevision.cases.map((item) => ({
+                caseId: item.id,
+                status: "PENDING" as const,
+              })),
+              ...guardrailResults,
+            ],
           },
         ],
         settings: { ...snapshot.settings, selectedRunId: runId },
@@ -1125,14 +1246,28 @@ export function createEvaluationLayerStore(
       const datasetRevision = state.datasetRevisions.find(
         (revision) => revision.id === run.datasetRevisionId,
       );
-      const datasetCase = datasetRevision?.cases.find(
-        (item) => item.id === nextResult.caseId,
-      );
+      const guardrailTemplate = nextResult.guardrailTemplateId
+        ? state.guardrailTemplates.find(
+            (template) => template.id === nextResult.guardrailTemplateId,
+          )
+        : undefined;
+      const datasetCase = nextResult.guardrailTemplateId
+        ? guardrailTemplate?.cases.find((item) => item.id === nextResult.caseId)
+        : datasetRevision?.cases.find((item) => item.id === nextResult.caseId);
       if (!datasetCase) return fail("Evaluation case not found.", "NOT_FOUND");
 
       const generated = resultForCase(state, runId, datasetCase, dependencies);
+      const generatedResult = nextResult.guardrailTemplateId
+        ? {
+            ...generated.result,
+            guardrailTemplateId: nextResult.guardrailTemplateId,
+          }
+        : generated.result;
       const results = run.results.map((result) =>
-        result.caseId === nextResult.caseId ? generated.result : result,
+        result.caseId === nextResult.caseId &&
+        result.guardrailTemplateId === nextResult.guardrailTemplateId
+          ? generatedResult
+          : result,
       );
       const complete = results.every((result) => result.status !== "PENDING");
       const hasFailure = results.some(
@@ -1201,7 +1336,10 @@ export function createEvaluationLayerStore(
       }));
       return { ok: true, value: { complete } };
     },
-    decideGuardrailApproval(reportId, status) {
+    decideRevision(reportId, status, actor) {
+      if (actor.role !== "admin") {
+        return fail("Only an Admin can decide an evaluation.", "UNAVAILABLE");
+      }
       const report = state.reports.find((item) => item.id === reportId);
       const run = report
         ? state.runs.find((item) => item.id === report.runId)
@@ -1209,33 +1347,71 @@ export function createEvaluationLayerStore(
       const revision = run
         ? state.targetRevisions.find((item) => item.id === run.targetRevisionId)
         : undefined;
-      if (!report || !run || revision?.kind !== "guardrail") {
-        return fail("Guardrail approval context not found.", "NOT_FOUND");
+      const target = revision
+        ? state.targets.find((item) => item.id === revision.targetId)
+        : undefined;
+      if (!report || !run || !revision || !target) {
+        return fail("Revision decision context not found.", "NOT_FOUND");
       }
-      if (state.guardrailApprovals.some((item) => item.reportId === reportId)) {
-        return fail("This Guardrail evaluation already has a decision.", "CONFLICT");
+      if (
+        !["COMPLETED", "PARTIAL", "FAILED"].includes(run.status) ||
+        run.results.some((result) => result.status === "PENDING")
+      ) {
+        return fail("Only finished evaluations can be reviewed.", "CONFLICT");
       }
-      const approvalId = dependencies.id();
+      if (target.currentRevisionId !== revision.id) {
+        return fail("Only the current Target revision can be reviewed.", "CONFLICT");
+      }
+      const latestPublishedDatasetRevision = latestPublishedRevisionFor(
+        run.datasetId,
+      );
+      if (latestPublishedDatasetRevision?.id !== run.datasetRevisionId) {
+        return fail(
+          "Only an evaluation of the latest published Dataset revision can be reviewed.",
+          "CONFLICT",
+        );
+      }
+      if (state.revisionDecisions.some((item) => item.reportId === reportId)) {
+        return fail("This evaluation already has a decision.", "CONFLICT");
+      }
+      const allPassed =
+        run.status === "COMPLETED" &&
+        report.status === "READY" &&
+        run.results.length > 0 &&
+        run.results.every((result) => result.status === "PASS");
+      const requiredStatus = allPassed ? "APPROVED" : "REJECTED";
+      if (status !== requiredStatus) {
+        return fail(
+          !allPassed
+            ? "Evaluations with findings or failures must be rejected."
+            : "Evaluations with all passing results must be approved.",
+          "INVALID_INPUT",
+        );
+      }
+      const decisionId = dependencies.id();
       replaceState((snapshot) => ({
         ...snapshot,
-        guardrailApprovals: [
-          ...snapshot.guardrailApprovals,
+        revisionDecisions: [
+          ...snapshot.revisionDecisions,
           {
-            id: approvalId,
+            id: decisionId,
             reportId,
             targetRevisionId: revision.id,
             status,
-            actor: "Local Administrator",
+            actor: actor.name,
             decidedAt: dependencies.now(),
             ...(status === "REJECTED"
-              ? { reason: "Evaluation findings require changes." }
+              ? { reason: "Developer changes required." }
               : {}),
           },
         ],
       }));
-      return { ok: true, value: { approvalId } };
+      return { ok: true, value: { decisionId } };
     },
-    submitReflection(reportId, suggestionIds) {
+    submitReflection(reportId, suggestionIds, actor) {
+      if (actor.role !== "member") {
+        return fail("Only a Developer can apply Reflection changes.", "UNAVAILABLE");
+      }
       const report = state.reports.find((item) => item.id === reportId);
       const run = report
         ? state.runs.find((item) => item.id === report.runId)
@@ -1246,10 +1422,25 @@ export function createEvaluationLayerStore(
       if (!report || !run || !target) {
         return fail("Reflection context not found.", "NOT_FOUND");
       }
+      const decision = state.revisionDecisions.find(
+        (item) => item.reportId === reportId,
+      );
+      if (decision?.status !== "REJECTED") {
+        return fail(
+          "Developer changes require a rejected evaluation.",
+          "CONFLICT",
+        );
+      }
+      if (target.currentRevisionId !== run.targetRevisionId) {
+        return fail(
+          "This rejected evaluation has already been superseded by a newer Target revision.",
+          "CONFLICT",
+        );
+      }
       if (!suggestionIds.length) {
         return fail("Select at least one suggestion.", "INVALID_INPUT");
       }
-      const created = store.createTargetRevision(target.id, {});
+      const created = store.createTargetRevision(target.id, {}, actor);
       if (!created.ok) return created;
       replaceState((snapshot) => ({
         ...snapshot,
@@ -1259,9 +1450,34 @@ export function createEvaluationLayerStore(
       }));
       return { ok: true, value: { revisionId: created.value.revisionId } };
     },
-    finishReflectionWithoutChanges(reportId) {
-      if (!state.reports.some((report) => report.id === reportId)) {
-        return fail("Report not found.", "NOT_FOUND");
+    finishReflectionWithoutChanges(reportId, actor) {
+      if (actor.role !== "member") {
+        return fail("Only a Developer can finish Reflection.", "UNAVAILABLE");
+      }
+      const report = state.reports.find((item) => item.id === reportId);
+      const run = report
+        ? state.runs.find((item) => item.id === report.runId)
+        : undefined;
+      const target = run
+        ? state.targets.find((item) => item.id === run.targetId)
+        : undefined;
+      if (!report || !run || !target) {
+        return fail("Reflection context not found.", "NOT_FOUND");
+      }
+      const decision = state.revisionDecisions.find(
+        (item) => item.reportId === reportId,
+      );
+      if (decision?.status !== "REJECTED") {
+        return fail(
+          "Developer changes require a rejected evaluation.",
+          "CONFLICT",
+        );
+      }
+      if (target.currentRevisionId !== run.targetRevisionId) {
+        return fail(
+          "This rejected evaluation has already been superseded by a newer Target revision.",
+          "CONFLICT",
+        );
       }
       replaceState((snapshot) => ({
         ...snapshot,
@@ -1377,6 +1593,7 @@ export function createEvaluationLayerStore(
         targetRevisionId: template.targetRevisionId,
         datasetId: template.datasetId,
         datasetRevisionId: template.datasetRevisionId,
+        guardrailTemplateIds: [...template.guardrailTemplateIds],
         evaluatorIds: state.evaluators
           .filter((item) => item.enabled)
           .map((item) => item.id),
