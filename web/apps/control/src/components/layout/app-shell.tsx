@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   CircleDollarSign,
   CircleHelp,
-  Eye,
   FileLock2,
   FileClock,
   Fingerprint,
@@ -52,7 +51,11 @@ import {
   useEffectiveProjectRole,
   useProjectPermissions,
 } from "@/hooks/use-project-permissions";
-import { DemoRoleProvider, useDemoRole } from "@/hooks/use-demo-role";
+import {
+  DemoRoleProvider,
+  useDemoRole,
+  type DemoPersona,
+} from "@/hooks/use-demo-role";
 import type { ProjectRole } from "@/types/project";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -222,6 +225,29 @@ export const projectNavGroups: Array<{
   },
 ];
 
+export function visibleProjectNavGroups(
+  role: ProjectRole,
+  persona: DemoPersona,
+  canViewAuditLogs: boolean,
+) {
+  if (persona === "end-user") {
+    return projectNavGroups
+      .filter((group) => group.label === "Agentic")
+      .map((group) => ({ ...group, items: [...group.items] }));
+  }
+
+  return projectNavGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) =>
+          navItemVisibleForRole(item, role) &&
+          (item.to !== "/$projectId/audit-logs" || canViewAuditLogs),
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
 export function itemIsActive(item: NavItemDefinition, pathname: string, projectId: string) {
   const target = item.to.replace("$projectId", encodeURIComponent(projectId));
   if (
@@ -277,40 +303,6 @@ function DisabledNav({ icon: Icon, label }: { icon: LucideIcon; label: string })
   );
 }
 
-function DemoRoleSwitcher({ actualRole }: { actualRole: ProjectRole }) {
-  const { roleOverride, setRoleOverride } = useDemoRole();
-  return (
-    <div className="px-2 pb-1 group-data-[collapsible=icon]:hidden">
-      <label className="grid gap-1.5 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <Eye className="size-3.5" />
-          Demo · View as role
-        </span>
-        <select
-          aria-label="Demo role override"
-          className="h-8 rounded-md border bg-background px-2 text-xs text-foreground"
-          value={roleOverride ?? ""}
-          onChange={(event) =>
-            setRoleOverride(
-              event.target.value === ""
-                ? null
-                : (event.target.value as ProjectRole),
-            )
-          }
-        >
-          <option value="">Actual ({actualRole})</option>
-          <option value="admin">admin</option>
-          <option value="member">member</option>
-          <option value="compliance">compliance</option>
-          <option value="ada">ADA</option>
-          <option value="frt">FRT</option>
-          <option value="iss">ISS</option>
-        </select>
-      </label>
-    </div>
-  );
-}
-
 function ProjectSidebar({ logout, pathname, user }: {
   logout: () => void | Promise<void>;
   pathname: string;
@@ -327,17 +319,12 @@ function ProjectSidebar({ logout, pathname, user }: {
   const projectId = currentProject?.id ?? "individual";
   const role = useEffectiveProjectRole(currentProject?.role);
   const permissions = useProjectPermissions(currentProject?.role);
-  const visibleGroups = projectNavGroups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter(
-        (item) =>
-          navItemVisibleForRole(item, role) &&
-          (item.to !== "/$projectId/audit-logs" ||
-            permissions.canViewAuditLogs),
-      ),
-    }))
-    .filter((group) => group.items.length > 0);
+  const { persona } = useDemoRole();
+  const visibleGroups = visibleProjectNavGroups(
+    role,
+    persona,
+    permissions.canViewAuditLogs,
+  );
   return (
     <ToastProvider duration={3_000} swipeDirection="right">
       <Sidebar collapsible="icon">
@@ -376,7 +363,6 @@ function ProjectSidebar({ logout, pathname, user }: {
           </nav>
         </SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border p-2">
-          <DemoRoleSwitcher actualRole={currentProject?.role ?? "member"} />
           <SidebarMenu>
             <DisabledNav icon={CircleHelp} label="Help & documentation" />
           </SidebarMenu>

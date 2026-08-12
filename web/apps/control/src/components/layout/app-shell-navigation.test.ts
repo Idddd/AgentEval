@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectRole } from "@/types/project";
-import { itemIsActive, navItemVisibleForRole, projectNavGroups } from "./app-shell";
+import {
+  itemIsActive,
+  navItemVisibleForRole,
+  projectNavGroups,
+  visibleProjectNavGroups,
+} from "./app-shell";
 
 function visibleLabels(groupLabel: string, role: ProjectRole) {
   return projectNavGroups
@@ -73,6 +78,30 @@ describe("Guard Governance navigation", () => {
 });
 
 describe("Role-based navigation whitelist", () => {
+  it("shows End user only the complete Agentic group", () => {
+    const groups = visibleProjectNavGroups("frt", "end-user", true);
+
+    expect(groups.map((group) => group.label)).toEqual(["Agentic"]);
+    expect(groups[0]!.items.map((item) => item.label)).toEqual([
+      "Agent Garden",
+      "Instances",
+      "Skills",
+      "MCP Servers",
+      "Knowledge Base",
+      "Memory",
+    ]);
+  });
+
+  it("keeps Agent Wizard on the existing ADA navigation permissions", () => {
+    const groups = visibleProjectNavGroups("ada", "agent-wizard", true);
+    const labels = (group: string) =>
+      groups.find((item) => item.label === group)?.items.map((item) => item.label) ?? [];
+
+    expect(labels("Agentic")).toEqual(["Skills", "MCP Servers"]);
+    expect(labels("Evaluation")).toEqual(["Eval", "Behavior"]);
+    expect(labels("Observer")).toEqual(["Traces", "Overview"]);
+  });
+
   it("shows every item to admin", () => {
     for (const group of projectNavGroups) {
       expect(visibleLabels(group.label, "admin")).toEqual(

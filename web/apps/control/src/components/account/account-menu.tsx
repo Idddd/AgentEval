@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { DEMO_PERSONAS, useDemoRole } from "@/hooks/use-demo-role";
 
 type AccountMenuProps = {
   collapsed?: boolean;
@@ -56,6 +57,7 @@ export function AccountMenu({
   projectId,
   user,
 }: AccountMenuProps) {
+  const { persona, setPersona } = useDemoRole();
   const displayName = user?.displayName || user?.username || "User";
   const accountLabel =
     user?.provider === "sso" ? "SSO account" : "Local account";
@@ -102,6 +104,26 @@ export function AccountMenu({
             </span>
           </span>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <div className="px-2 py-2">
+          <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+            View as
+            <select
+              aria-label="View as"
+              value={persona}
+              className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+              onChange={(event) =>
+                setPersona(event.target.value as typeof persona)
+              }
+            >
+              {DEMO_PERSONAS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link to="/$projectId/profile" params={{ projectId }}>
