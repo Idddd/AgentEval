@@ -72,6 +72,34 @@ describe('Evaluation report Developer changes', () => {
     expect(usage.queryByText('Trace count')).toBeNull();
   });
 
+  it('keeps Tool Evidence compact and expands one output at a time', async () => {
+    render(reportView('hidden'));
+    const evidence = within(
+      screen.getByText('Tool Evidence').closest('[data-slot="card"]')! as HTMLElement,
+    );
+    const firstTrace = 'demo-weather-guest-allow';
+    const secondTrace = 'demo-employee-dept-hr-allow';
+
+    expect(evidence.queryByText(/The weather in Paris is sunny/)).toBeNull();
+    const first = evidence.getByRole('button', { name: `View output for ${firstTrace}` });
+    expect(first.getAttribute('aria-expanded')).toBe('false');
+
+    await userEvent.click(first);
+    expect(evidence.getByText(/The weather in Paris is sunny/)).not.toBeNull();
+    expect(evidence.getByRole('button', { name: `Hide output for ${firstTrace}` })).not.toBeNull();
+
+    await userEvent.click(
+      evidence.getByRole('button', { name: `View output for ${secondTrace}` }),
+    );
+    expect(evidence.queryByText(/The weather in Paris is sunny/)).toBeNull();
+    expect(evidence.getByText(/Alice works in Platform Engineering/)).not.toBeNull();
+
+    await userEvent.click(
+      evidence.getByRole('button', { name: `Hide output for ${secondTrace}` }),
+    );
+    expect(evidence.queryByText(/Alice works in Platform Engineering/)).toBeNull();
+  });
+
   it('allows only the Developer role to apply Reflection after rejection', async () => {
     const view = render(reportView());
 

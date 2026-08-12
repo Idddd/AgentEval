@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { FileChartColumn } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -211,6 +211,7 @@ export function EvaluationReportDetail({
   embedded?: boolean;
   decisionMode?: RevisionDecisionMode;
 }) {
+  const [expandedToolEvidenceKey, setExpandedToolEvidenceKey] = useState<string>();
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
   const projectId = useCurrentProjectId();
@@ -596,8 +597,12 @@ export function EvaluationReportDetail({
             </tr>
           </thead>
           <tbody>
-            {toolEvidenceRows.map((evidence) => (
-                <tr key={evidence.key}>
+            {toolEvidenceRows.map((evidence) => {
+              const expanded = expandedToolEvidenceKey === evidence.key;
+
+              return (
+                <Fragment key={evidence.key}>
+                  <tr>
                   <td>
                     <div className="flex items-center gap-2">
                       <span>{evidence.traceId}</span>
@@ -618,10 +623,29 @@ export function EvaluationReportDetail({
                       : evidence.effectVerified ? "Yes" : "No"}
                   </td>
                   <td>
-                    <JsonPreview value={evidence.output} />
+                    <Button
+                      type="button"
+                      size="xs"
+                      className="bg-blue-600 text-white hover:bg-blue-700"
+                      aria-label={`${expanded ? "Hide output" : "View output"} for ${evidence.traceId}`}
+                      aria-expanded={expanded}
+                      onClick={() => setExpandedToolEvidenceKey(expanded ? undefined : evidence.key)}
+                    >
+                      {expanded ? "Hide output" : "View output"}
+                      <span className="sr-only">{" "}for {evidence.traceId}</span>
+                    </Button>
                   </td>
-                </tr>
-              ))}
+                  </tr>
+                  {expanded ? (
+                    <tr>
+                      <td colSpan={7} className="bg-muted/20 p-3">
+                        <JsonPreview value={evidence.output} />
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
           </tbody>
         </EvaluationTable>
       </EvaluationSection>
