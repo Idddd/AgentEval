@@ -175,4 +175,3 @@ Use test-driven development and verify each test fails for the missing behavior 
 - Run Control type checking.
 - Verify Catalog, Overview, Trace, report, account menu, and narrow Overview in the browser.
 - Run the full workspace test suite and separately retry only known 5-second timeout files if parallel load causes the existing flake.
-
