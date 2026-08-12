@@ -128,7 +128,7 @@ describe('Catalog discovery', () => {
     expect(firstLifecycle().textContent).toContain('Onboarding Assistant');
     expect(firstLifecycle().textContent).toContain('Not started');
     expect(firstLifecycle().textContent).toContain('Demo Default Dataset');
-    expect(firstLifecycle().textContent).toContain('6 draft cases');
+    expect(firstLifecycle().textContent).toContain('Published R1');
 
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Sort' }), 'name');
     expect(firstLifecycle().textContent).toContain('Onboarding Assistant');
@@ -291,10 +291,12 @@ describe('Catalog drawer progressive disclosure', () => {
     const dataset = coverage.getByRole('radio', { name: /Demo Default Dataset/ }) as HTMLInputElement;
 
     expect(dataset.checked).toBe(true);
-    expect(coverage.getByRole('radio', { name: /Published Demo Dataset/ })).not.toBeNull();
+    expect(coverage.queryByRole('radio', { name: /Published Demo Dataset/ })).toBeNull();
     expect(coverage.getByRole('button', { name: 'New Dataset' })).not.toBeNull();
     expect(coverage.queryByRole('button', { name: 'Create Dataset' })).toBeNull();
-    expect(coverage.getByText(/6 draft cases/)).not.toBeNull();
+    const defaultCard = within(dataset.closest('label')!);
+    expect(defaultCard.getByText('Published')).not.toBeNull();
+    expect(defaultCard.getByText('6 cases')).not.toBeNull();
     const packs = within(coverage.getByRole('group', { name: 'Guardrail Test Packs' }));
     const required = packs.getByRole('checkbox', { name: 'Select Universal Safety Baseline' }) as HTMLInputElement;
     const optional = packs.getByRole('checkbox', { name: 'Select Agent Prompt Injection' }) as HTMLInputElement;
@@ -312,6 +314,29 @@ describe('Catalog drawer progressive disclosure', () => {
 
     await userEvent.click(coverage.getByRole('button', { name: 'New Dataset' }));
     expect(screen.getByRole('dialog', { name: 'Create dataset' })).not.toBeNull();
+  });
+
+  it('keeps every Dataset card and Guardrail pack visible after switching selection', async () => {
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationCatalogPage />
+      </EvaluationLayerProvider>,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Onboarding Assistant demo-onboarding-assistant' }),
+    );
+    const drawer = within(screen.getByRole('dialog', { name: 'Onboarding Assistant' }));
+    const coverage = within(drawer.getByRole('region', { name: 'Current step: Test coverage' }));
+
+    await userEvent.click(coverage.getByRole('button', { name: 'New Dataset' }));
+    const createDialog = within(screen.getByRole('dialog', { name: 'Create dataset' }));
+    await userEvent.type(createDialog.getByRole('textbox', { name: 'Name *' }), 'Persistent Dataset');
+    await userEvent.click(createDialog.getByRole('button', { name: 'Create dataset' }));
+
+    await userEvent.click(coverage.getByRole('radio', { name: /Demo Default Dataset/ }));
+    expect(coverage.getByRole('radio', { name: /Demo Default Dataset/ })).not.toBeNull();
+    expect(coverage.getByRole('radio', { name: /Persistent Dataset/ })).not.toBeNull();
+    expect(coverage.getByRole('group', { name: 'Guardrail Test Packs' })).not.toBeNull();
   });
 
   it('moves the current action above long stage content when details are open', async () => {
@@ -405,7 +430,7 @@ describe('Catalog drawer progressive disclosure', () => {
     const nextStep = within(drawer.getByRole('region', { name: 'Next workflow step' }));
     const currentStage = within(drawer.getByRole('region', { name: 'Current step: Test coverage' }));
 
-    expect(nextStep.getByText('Prepare and publish Test Cases')).not.toBeNull();
+    expect(nextStep.getByText('Confirm Test coverage')).not.toBeNull();
     expect(nextStep.getByRole('button', { name: 'Next' })).not.toBeNull();
     expect(currentStage.queryByText('Current step')).toBeNull();
     expect(drawer.queryByRole('region', { name: 'Test coverage details' })).toBeNull();

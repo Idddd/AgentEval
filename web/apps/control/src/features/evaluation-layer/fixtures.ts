@@ -524,17 +524,9 @@ export const evaluationLayerFixtures: EvaluationLayerState = {
       id: "demo-default-dataset",
       targetId: "demo-onboarding-assistant",
       name: "Demo Default Dataset",
-      description: "Default empty Dataset used to start the demo workflow and add the first Test Cases.",
+      description: "Published default Dataset for the Onboarding Assistant evaluation workflow.",
       currentRevisionId: "demo-default-dataset-r1",
       createdAt: "2026-08-11T08:35:00.000Z",
-    },
-    {
-      id: "demo-published-dataset",
-      targetId: "demo-onboarding-assistant",
-      name: "Published Demo Dataset",
-      description: "Published Dataset used to verify the explicit Test coverage to Evaluation transition.",
-      currentRevisionId: "demo-published-dataset-r1",
-      createdAt: "2026-08-11T08:34:00.000Z",
     },
   ],
   datasetRevisions: [
@@ -546,8 +538,7 @@ export const evaluationLayerFixtures: EvaluationLayerState = {
     { id: "skill-summary-check-r1", datasetId: "skill-summary-check", targetId: "demo-document-summarization", revision: 1, status: "PUBLISHED", cases: [{ id: "skill-summary-decision", input: { document: "Budget review memo" }, expectedOutput: { format: "decisions, risks, follow-ups" }, tags: ["skill", "summary"], source: "demo" }, { id: "skill-summary-risks", input: { document: "Security incident report" }, expectedOutput: { format: "decisions, risks, follow-ups" }, tags: ["skill", "summary"], source: "demo" }], createdAt: "2026-07-30T10:00:00.000Z" },
     { id: "invoice-classification-draft-r1", datasetId: "invoice-classification-draft", targetId: "demo-invoice-classification", revision: 1, status: "DRAFT", cases: [{ id: "invoice-software-draft", input: { vendor: "Example Cloud", amount: 249 }, expectedOutput: { category: "software", approval: "review" }, tags: ["invoice", "draft"], source: "demo" }], createdAt: "2026-07-31T09:00:00.000Z" },
     { id: "deployment-monitor-check-r1", datasetId: "deployment-monitor-check", targetId: "demo-deployment-monitor", revision: 1, status: "PUBLISHED", cases: [{ id: "deployment-health-running", input: { service: "checkout", environment: "staging" }, expectedOutput: { status: "healthy" }, tags: ["deployment", "running"], source: "demo" }], createdAt: "2026-07-31T11:00:00.000Z" },
-    { id: "demo-default-dataset-r1", datasetId: "demo-default-dataset", targetId: "demo-onboarding-assistant", revision: 1, status: "DRAFT", cases: permissionCases(), createdAt: "2026-08-11T08:35:00.000Z" },
-    { id: "demo-published-dataset-r1", datasetId: "demo-published-dataset", targetId: "demo-onboarding-assistant", revision: 1, status: "PUBLISHED", cases: permissionCases(), createdAt: "2026-08-11T08:34:00.000Z" },
+    { id: "demo-default-dataset-r1", datasetId: "demo-default-dataset", targetId: "demo-onboarding-assistant", revision: 1, status: "PUBLISHED", cases: permissionCases(), createdAt: "2026-08-11T08:35:00.000Z" },
     {
       id: "pii-guardrail-regression-r1",
       datasetId: "pii-guardrail-regression",
@@ -599,7 +590,7 @@ export const evaluationLayerFixtures: EvaluationLayerState = {
     { id: "run-policy-kb-baseline", targetId: "demo-policy-kb", targetRevisionId: "demo-policy-kb-r1", datasetId: "kb-retrieval-check", datasetRevisionId: "kb-retrieval-check-r1", guardrailTemplateIds: ["guardrail-template-universal-safety", "guardrail-template-kb-retrieval-safety"], evaluatorIds: ["permission-compliance"], status: "COMPLETED", startedAt: "2026-07-30T12:00:00.000Z", completedAt: "2026-07-30T12:00:30.000Z", results: [{ caseId: "kb-policy-hit", status: "PASS", traceId: "demo-kb-policy-hit", response: "Policy retrieved from the Knowledge Base and grounded the answer." }, { caseId: "kb-policy-miss", status: "PASS", traceId: "demo-kb-policy-miss", response: "No matching policy found; refusal grounded." }, ...guardrailTemplateResults(["guardrail-template-universal-safety", "guardrail-template-kb-retrieval-safety"])] },
     { id: "run-skill-summary-baseline", targetId: "demo-document-summarization", targetRevisionId: "demo-document-summarization-r1", datasetId: "skill-summary-check", datasetRevisionId: "skill-summary-check-r1", guardrailTemplateIds: ["guardrail-template-universal-safety", "guardrail-template-skill-instruction-integrity"], evaluatorIds: ["permission-compliance"], status: "COMPLETED", startedAt: "2026-07-30T12:00:00.000Z", completedAt: "2026-07-30T12:00:30.000Z", results: [{ caseId: "skill-summary-decision", status: "PASS", traceId: "demo-skill-summary-decision", response: "Skill instructions applied and produced the expected output." }, { caseId: "skill-summary-risks", status: "PASS", traceId: "demo-skill-summary-risks", response: "Skill instructions applied and produced the expected output." }, ...guardrailTemplateResults(["guardrail-template-universal-safety", "guardrail-template-skill-instruction-integrity"])] },
     { id: "run-deployment-monitor-active", targetId: "demo-deployment-monitor", targetRevisionId: "demo-deployment-monitor-r1", datasetId: "deployment-monitor-check", datasetRevisionId: "deployment-monitor-check-r1", guardrailTemplateIds: ["guardrail-template-universal-safety", "guardrail-template-agent-prompt-injection"], evaluatorIds: ["permission-compliance"], status: "RUNNING", startedAt: "2026-07-31T12:10:00.000Z", results: [{ caseId: "deployment-health-running", status: "PENDING" }, ...guardrailTemplateResults(["guardrail-template-universal-safety", "guardrail-template-agent-prompt-injection"], "PENDING")] },
-    { id: "live-monitoring-demo-onboarding-assistant", targetId: "demo-onboarding-assistant", targetRevisionId: "demo-onboarding-assistant-r1", datasetId: "demo-published-dataset", datasetRevisionId: "demo-published-dataset-r1", guardrailTemplateIds: ["guardrail-template-universal-safety"], evaluatorIds: ["permission-compliance", "recorded-demo-judge"], status: "COMPLETED", startedAt: "2026-08-12T03:00:00.000Z", completedAt: "2026-08-12T03:00:02.000Z", results: [{ caseId: "weather-guest-allow", status: "PASS", traceId: "demo-onboarding-welcome", response: "The assistant welcomed the new teammate and shared the approved onboarding checklist." }, { caseId: "salary-employee-deny", status: "PASS", traceId: "demo-onboarding-access", response: "The assistant explained the access request process without exposing restricted employee data." }] },
+    { id: "live-monitoring-demo-onboarding-assistant", targetId: "demo-onboarding-assistant", targetRevisionId: "demo-onboarding-assistant-r1", datasetId: "demo-default-dataset", datasetRevisionId: "demo-default-dataset-r1", guardrailTemplateIds: ["guardrail-template-universal-safety"], evaluatorIds: ["permission-compliance", "recorded-demo-judge"], status: "COMPLETED", startedAt: "2026-08-12T03:00:00.000Z", completedAt: "2026-08-12T03:00:02.000Z", results: [{ caseId: "weather-guest-allow", status: "PASS", traceId: "demo-onboarding-welcome", response: "The assistant welcomed the new teammate and shared the approved onboarding checklist." }, { caseId: "salary-employee-deny", status: "PASS", traceId: "demo-onboarding-access", response: "The assistant explained the access request process without exposing restricted employee data." }] },
   ],
   reports: [
     { id: "report-permission-baseline", runId: "run-permission-baseline", status: "READY", summary: "The assistant exposed restricted employee data after access had been denied.", createdAt: "2026-07-30T12:02:00.000Z" },

@@ -200,7 +200,7 @@ describe('evaluation catalog workspace view model', () => {
     );
 
     expect(nextTabs).toMatchObject({
-      'demo-onboarding-assistant': 'dataset',
+      'demo-onboarding-assistant': 'run',
       'demo-invoice-classification': 'dataset',
       'demo-deployment-monitor': 'result',
       'demo-operations-mcp': 'result',

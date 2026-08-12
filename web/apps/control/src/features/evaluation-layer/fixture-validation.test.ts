@@ -120,6 +120,32 @@ describe("Evaluation layer fixtures", () => {
     expect(validateEvaluationLayerState(evaluationLayerFixtures)).toEqual([]);
   });
 
+  it("uses one published default Dataset for the Onboarding showcase", () => {
+    const datasets = evaluationLayerFixtures.datasets.filter(
+      (dataset) => dataset.targetId === "demo-onboarding-assistant",
+    );
+    expect(datasets.map((dataset) => dataset.id)).toEqual([
+      "demo-default-dataset",
+    ]);
+
+    const revision = evaluationLayerFixtures.datasetRevisions.find(
+      (item) => item.id === "demo-default-dataset-r1",
+    );
+    expect(revision).toMatchObject({
+      datasetId: "demo-default-dataset",
+      status: "PUBLISHED",
+    });
+
+    const run = evaluationLayerFixtures.runs.find(
+      (item) => item.id === "live-monitoring-demo-onboarding-assistant",
+    );
+    expect(run).toMatchObject({
+      datasetId: "demo-default-dataset",
+      datasetRevisionId: "demo-default-dataset-r1",
+    });
+    expect(validateEvaluationLayerState(evaluationLayerFixtures)).toEqual([]);
+  });
+
   it("rejects evaluator alert settings outside their mock contract", () => {
     const invalidThreshold = cloneEvaluationLayerFixtures();
     invalidThreshold.evaluators[0]!.minimumScore = 101;

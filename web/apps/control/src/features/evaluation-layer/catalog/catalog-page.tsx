@@ -929,7 +929,7 @@ function WorkspaceDrawer({
       setDetailsOpen(false);
       setActiveReportId(undefined);
       setExpandedDetailSections([]);
-      setDatasetSelectionPending(false);
+      setDatasetSelectionPending(row?.target.id === FIRST_WORKFLOW_TARGET_ID);
       previousWorkspaceRef.current = {
         stage: row?.stage,
         targetId: row?.target.id,
@@ -976,18 +976,9 @@ function WorkspaceDrawer({
   }, [detailsOpen, focusSection, open, row?.stage, row?.target.id]);
   if (!row) return null;
 
-  const datasetIdsWithGuardrailCoverage = new Set(
-    state.runs
-      .filter((run) => run.guardrailTemplateIds.length > 0)
-      .map((run) => run.datasetId),
+  const targetDatasets = state.datasets.filter(
+    (dataset) => dataset.targetId === row.target.id,
   );
-  const targetDatasets = state.datasets.filter((dataset) => (
-    dataset.targetId === row.target.id
-    && (
-      datasetIdsWithGuardrailCoverage.has(dataset.id)
-      || (dataset.id === row.selectedDataset?.id && selectedGuardrailTemplateIds.length > 0)
-    )
-  ));
   const selectedGuardrailTemplates = state.guardrailTemplates.filter((template) => selectedGuardrailTemplateIds.includes(template.id));
   const selectedGuardrailCaseCount = selectedGuardrailTemplates.reduce((sum, template) => sum + template.cases.length, 0);
   const latestResultTraceIds = new Set(row.latestRun?.results.map((result) => result.traceId).filter(Boolean) ?? []);
@@ -1161,7 +1152,7 @@ function WorkspaceDrawer({
         description: 'A current revision is required before an evaluation can run.',
       };
     }
-    if (datasetSelectionPending) {
+    if (datasetSelectionPending && row.selectedDataset) {
       return {
         tab: 'dataset',
         label: 'Confirm Test coverage',
@@ -1418,7 +1409,7 @@ function WorkspaceDrawer({
               />
             </div>
             {detailsOpen && row.selectedDataset ? <EvaluationDatasetDetail key={row.selectedDataset.id} datasetId={row.selectedDataset.id} embedded showEvaluateAction={false} showDetailsToggle onEvaluate={() => focusSection('run')} /> : null}
-            {detailsOpen || !row.publishedRevision || !selectedGuardrailTemplateIds.length ? <GuardrailTemplatePicker targetKind={row.target.kind} selectedIds={selectedGuardrailTemplateIds} onSelectedIdsChange={setSelectedGuardrailTemplateIds} disabled={guardrailEvaluationRestricted} /> : null}
+            <GuardrailTemplatePicker targetKind={row.target.kind} selectedIds={selectedGuardrailTemplateIds} onSelectedIdsChange={setSelectedGuardrailTemplateIds} disabled={guardrailEvaluationRestricted} />
             {detailsOpen ? <p className='text-xs text-muted-foreground'>Combined coverage: {row.publishedRevision?.cases.length ?? 0} business cases + {selectedGuardrailCaseCount} Guardrail cases.</p> : null}
           </WorkspaceSection> : null}
 
