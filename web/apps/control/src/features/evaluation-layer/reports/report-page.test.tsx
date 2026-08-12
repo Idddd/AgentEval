@@ -123,6 +123,9 @@ describe('Evaluation report Developer changes', () => {
 
     expect(suggestion).not.toBeNull();
     expect(action.disabled).toBe(false);
+    expect(action.className).toContain('bg-blue-600');
+    expect(action.className).toContain('text-white');
+    expect(action.className).toContain('hover:bg-blue-700');
     await userEvent.click(action);
     expect(suggestion.isConnected).toBe(true);
   });

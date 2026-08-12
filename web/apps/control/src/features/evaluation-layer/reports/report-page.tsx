@@ -394,7 +394,11 @@ export function EvaluationReportDetail({
               Status: {reflection.status}
             </p>
           </div>
-          <Button type="button" size="sm" variant="outline" className="shrink-0">
+          <Button
+            type="button"
+            size="sm"
+            className="shrink-0 bg-blue-600 text-white hover:bg-blue-700"
+          >
             Action
           </Button>
         </div>
@@ -424,7 +428,11 @@ export function EvaluationReportDetail({
               </span>
             </span>
           </label>
-          <Button type="button" size="sm" variant="outline" className="shrink-0">
+          <Button
+            type="button"
+            size="sm"
+            className="shrink-0 bg-blue-600 text-white hover:bg-blue-700"
+          >
             Action
           </Button>
         </div>
