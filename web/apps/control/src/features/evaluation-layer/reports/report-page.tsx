@@ -635,10 +635,9 @@ export function EvaluationReportDetail({
                       className="bg-blue-600 text-white hover:bg-blue-700"
                       aria-label={`${expanded ? "Hide output" : "View output"} for ${evidence.traceId}`}
                       aria-expanded={expanded}
-                      onClick={() => setExpandedToolEvidence({
-                        reportId,
-                        key: expanded ? undefined : evidence.key,
-                      })}
+                      onClick={() => setExpandedToolEvidence(
+                        expanded ? { reportId } : { reportId, key: evidence.key },
+                      )}
                     >
                       {expanded ? "Hide output" : "View output"}
                       <span className="sr-only">{" "}for {evidence.traceId}</span>
