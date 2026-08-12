@@ -65,7 +65,12 @@ export function EvaluationOverviewPage() {
     () =>
       state.traces
         .filter((trace) => targetId === "all" || trace.targetId === targetId)
-        .sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
+        .sort((a, b) => {
+          const onboardingOrder =
+            Number(b.targetId === "demo-onboarding-assistant") -
+            Number(a.targetId === "demo-onboarding-assistant");
+          return onboardingOrder || b.startedAt.localeCompare(a.startedAt);
+        }),
     [state.traces, targetId],
   );
   const traceStatuses = useMemo(

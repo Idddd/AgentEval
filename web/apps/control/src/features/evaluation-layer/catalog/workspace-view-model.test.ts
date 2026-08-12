@@ -12,6 +12,17 @@ const OFFICE_TARGET_ID = 'demo-permission-compliance';
 const ADMIN_ACTOR = { name: 'Local Administrator', role: 'admin' };
 
 describe('evaluation catalog workspace view model', () => {
+  it('keeps live Onboarding showcase traces out of the Catalog lifecycle', () => {
+    const state = cloneEvaluationLayerFixtures();
+    const onboarding = workspaceTargetView(state, 'demo-onboarding-assistant');
+
+    expect(onboarding).toMatchObject({
+      latestRun: undefined,
+      stage: 'NOT_EVALUATED',
+      result: 'Not evaluated',
+    });
+  });
+
   it('joins every Target to its selected Dataset and latest Evaluation graph', () => {
     const state = cloneEvaluationLayerFixtures();
     const rows = workspaceRows(state);

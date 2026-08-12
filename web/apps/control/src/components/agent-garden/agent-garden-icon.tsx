@@ -21,6 +21,7 @@ import {
   ScanSearch,
   ShieldCheck,
   ShoppingBasket,
+  UserPlus,
   Waypoints,
   Workflow,
   type LucideIcon,
@@ -46,6 +47,7 @@ const catalogIcons: Record<string, LucideIcon> = {
   "scan-search": ScanSearch,
   "shield-check": ShieldCheck,
   "shopping-basket": ShoppingBasket,
+  "user-plus": UserPlus,
 };
 
 const brandAssets: Partial<Record<AgentGardenIntegrationType, string>> = {
@@ -85,6 +87,8 @@ export function AgentGardenIcon({
       aria-hidden="true"
       className={cn(
         "grid size-11 shrink-0 place-items-center rounded-md border bg-background shadow-xs",
+        catalogIcon === "user-plus" &&
+          "border-cyan-400/70 bg-cyan-50 ring-2 ring-cyan-400/20 dark:bg-cyan-950/40",
         className,
       )}
     >
@@ -102,7 +106,13 @@ export function AgentGardenIcon({
           <path d={simpleIcon.path} />
         </svg>
       ) : (
-        <Icon className={cn("size-5 text-primary", iconClassName)} />
+        <Icon
+          className={cn(
+            "size-5 text-primary",
+            catalogIcon === "user-plus" && "size-6 text-cyan-600 dark:text-cyan-300",
+            iconClassName,
+          )}
+        />
       )}
     </span>
   );

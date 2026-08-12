@@ -30,6 +30,14 @@ function renderOverview() {
 }
 
 describe("EvaluationOverviewPage", () => {
+  it("shows Onboarding Assistant as the first trace example", () => {
+    renderOverview();
+
+    const traceTables = screen.getAllByRole("table");
+    const firstTraceRow = within(traceTables.at(-1)!).getAllByRole("row")[1]!;
+    expect(firstTraceRow.textContent).toContain("Onboarding Assistant");
+  });
+
   it("puts row-scoped evaluator policy and compact Sampling inside one section", () => {
     renderOverview();
 

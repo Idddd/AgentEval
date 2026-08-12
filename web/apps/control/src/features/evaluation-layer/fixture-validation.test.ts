@@ -106,6 +106,20 @@ describe("Evaluation layer fixtures", () => {
     });
   });
 
+  it("includes fixture-valid showcase traces for Onboarding Assistant", () => {
+    const onboardingTraces = evaluationLayerFixtures.traces.filter(
+      (trace) => trace.targetId === "demo-onboarding-assistant",
+    );
+
+    expect(onboardingTraces.length).toBeGreaterThanOrEqual(2);
+    expect(
+      onboardingTraces.every((trace) =>
+        trace.runId.startsWith("live-monitoring-"),
+      ),
+    ).toBe(true);
+    expect(validateEvaluationLayerState(evaluationLayerFixtures)).toEqual([]);
+  });
+
   it("rejects evaluator alert settings outside their mock contract", () => {
     const invalidThreshold = cloneEvaluationLayerFixtures();
     invalidThreshold.evaluators[0]!.minimumScore = 101;
@@ -136,14 +150,18 @@ describe("Evaluation layer fixtures", () => {
     );
 
     const wrongTraceTarget = cloneEvaluationLayerFixtures();
-    wrongTraceTarget.traces[0]!.targetId =
+    wrongTraceTarget.traces.find(
+      (trace) => trace.id === "demo-weather-guest-allow",
+    )!.targetId =
       "demo-permission-compliance-baseline";
     expect(validateEvaluationLayerState(wrongTraceTarget)).toContain(
       "traces.demo-weather-guest-allow.targetId: demo-permission-compliance-baseline",
     );
 
     const missingTool = cloneEvaluationLayerFixtures();
-    missingTool.traces[0]!.toolEvidence[0]!.toolId = "missing-tool";
+    missingTool.traces.find(
+      (trace) => trace.id === "demo-weather-guest-allow",
+    )!.toolEvidence[0]!.toolId = "missing-tool";
     expect(validateEvaluationLayerState(missingTool)).toContain(
       "traces.demo-weather-guest-allow.toolEvidence.demo-weather-guest-allow-call.toolId: missing-tool",
     );

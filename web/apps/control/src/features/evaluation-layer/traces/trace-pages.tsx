@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { BellRing, ChevronRight, Waypoints } from 'lucide-react';
+import { AgentGardenIcon } from '@/components/agent-garden/agent-garden-icon';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -41,6 +42,9 @@ export function EvaluationTraceDetail({ traceId }: { traceId: string }) {
   const [alertSent, setAlertSent] = useState(false);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const trace = state.traces.find((item) => item.id === traceId);
+  const target = trace
+    ? state.targets.find((item) => item.id === trace.targetId)
+    : undefined;
   const rows = useMemo(() => (trace ? spanRows(trace) : []), [trace]);
   const selectedSpan =
     rows.find((row) => row.span.id === selectedSpanId)?.span ?? rows[0]?.span;
@@ -66,8 +70,14 @@ export function EvaluationTraceDetail({ traceId }: { traceId: string }) {
   return (
     <div className='space-y-6'>
       <div className='flex flex-wrap items-start justify-between gap-3'>
-        <div>
-          <h2 className='font-mono text-xl font-semibold'>{trace.id}</h2>
+        <div className='flex items-start gap-3'>
+          <AgentGardenIcon type='custom' catalogIcon={target?.icon} />
+          <div>
+          <h2 className='font-heading text-xl font-semibold'>
+            {target?.name ?? 'Unknown Agent'}
+          </h2>
+          <p className='text-sm text-muted-foreground'>{trace.targetId}</p>
+          <p className='mt-1 font-mono text-sm font-medium'>{trace.id}</p>
           <p className='mt-1 text-sm text-muted-foreground'>
             Case {trace.caseId} · Evaluation {trace.runId}
           </p>
@@ -80,6 +90,7 @@ export function EvaluationTraceDetail({ traceId }: { traceId: string }) {
               Alert sent to {TRACE_ALERT_EMAIL}.
             </p>
           ) : null}
+          </div>
         </div>
         <div className='flex flex-wrap gap-2'>
           <Button onClick={() => setAlertSent(true)}>

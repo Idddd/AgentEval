@@ -24,6 +24,18 @@ vi.mock('@tanstack/react-router', async () => {
 afterEach(cleanup);
 
 describe('Trace detail actions', () => {
+  it('shows the Onboarding Assistant identity as the primary trace context', () => {
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationTraceDetail traceId='demo-onboarding-welcome' />
+      </EvaluationLayerProvider>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Onboarding Assistant' })).not.toBeNull();
+    expect(screen.getByText('demo-onboarding-assistant')).not.toBeNull();
+    expect(screen.getByText('demo-onboarding-welcome')).not.toBeNull();
+  });
+
   it('shows analysis immediately and sends a demo alert', async () => {
     render(
       <EvaluationLayerProvider projectId='individual'>
