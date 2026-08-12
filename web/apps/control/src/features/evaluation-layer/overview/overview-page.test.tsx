@@ -30,7 +30,7 @@ function renderOverview() {
 }
 
 describe("EvaluationOverviewPage", () => {
-  it("puts Sampling and evaluator policy inside one Evaluators section", () => {
+  it("puts row-scoped evaluator policy and compact Sampling inside one section", () => {
     renderOverview();
 
     const evaluators = within(
@@ -42,28 +42,45 @@ describe("EvaluationOverviewPage", () => {
       evaluators.getByRole("slider", { name: "Sampling rate" }),
     ).toBeTruthy();
     expect(
-      evaluators.getByRole("slider", { name: "Minimum score threshold" }),
+      evaluators.getByRole("spinbutton", {
+        name: "Minimum score for Permission compliance",
+      }),
     ).toBeTruthy();
     expect(
-      evaluators.getByRole("checkbox", { name: "Send alert" }),
+      evaluators.getByRole("checkbox", {
+        name: "Send alert for Permission compliance",
+      }),
     ).toBeTruthy();
-    expect(evaluators.getByText("Captured")).toBeTruthy();
-    expect(evaluators.getByText("Dropped failures")).toBeTruthy();
+    expect(evaluators.queryByText("Captured")).toBeNull();
+    expect(evaluators.queryByText("Estimated capture cost")).toBeNull();
+    expect(evaluators.queryByText("Estimated saving")).toBeNull();
+    expect(evaluators.queryByText("Dropped failures")).toBeNull();
+    expect(evaluators.queryByTestId("sampling-progress")).toBeNull();
   });
 
-  it("updates threshold and mock alert settings through real store commands", async () => {
+  it("updates only the selected evaluator's threshold and mock alert", async () => {
     const user = userEvent.setup();
     const store = renderOverview();
 
-    await user.click(screen.getByRole("checkbox", { name: "Send alert" }));
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Send alert for Permission compliance",
+      }),
+    );
     const threshold = screen.getByRole("spinbutton", {
-      name: "Minimum score threshold value",
+      name: "Minimum score for Permission compliance",
     });
     await user.clear(threshold);
     await user.type(threshold, "90");
 
-    expect(store.getState().settings.sendEvaluatorAlert).toBe(true);
-    expect(store.getState().settings.minimumEvaluatorScore).toBe(90);
+    expect(store.getState().evaluators[0]).toMatchObject({
+      sendAlert: true,
+      minimumScore: 90,
+    });
+    expect(store.getState().evaluators[1]).toMatchObject({
+      sendAlert: false,
+      minimumScore: 80,
+    });
   });
 
   it("shows Score before Status with evaluator pass totals", async () => {
@@ -92,7 +109,11 @@ describe("EvaluationOverviewPage", () => {
     const user = userEvent.setup();
     renderOverview();
 
-    await user.click(screen.getByRole("checkbox", { name: "Send alert" }));
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Send alert for Recorded demo judge",
+      }),
+    );
     const failedRow = screen.getByText("jailbreak-guard-bypass").closest("tr")!;
     expect(within(failedRow).getByText("Alert triggered")).toBeTruthy();
 

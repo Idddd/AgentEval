@@ -68,21 +68,15 @@ export function EvaluationOverviewPage() {
         .sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
     [state.traces, targetId],
   );
-  const minimumEvaluatorScore = state.settings.minimumEvaluatorScore;
-  const sendEvaluatorAlert = state.settings.sendEvaluatorAlert;
   const traceStatuses = useMemo(
     () =>
       new Map(
         scoped.map((trace) => [
           trace.id,
-          overviewTraceStatus(
-            trace,
-            state.evaluators,
-            minimumEvaluatorScore,
-          ),
+          overviewTraceStatus(trace, state.evaluators),
         ]),
       ),
-    [scoped, state.evaluators, minimumEvaluatorScore],
+    [scoped, state.evaluators],
   );
   const traces =
     statusFilter === "ALL"
@@ -111,23 +105,6 @@ export function EvaluationOverviewPage() {
   );
 
   const samplingRate = state.settings.samplingRate;
-  const sampling = useMemo(() => {
-    const captured = scoped.filter((trace) =>
-      traceSampledAtRate(trace.id, samplingRate),
-    );
-    const dropped = scoped.filter(
-      (trace) => !traceSampledAtRate(trace.id, samplingRate),
-    );
-    return {
-      captured: captured.length,
-      total: scoped.length,
-      droppedFailures: dropped.filter(
-        (trace) => traceStatuses.get(trace.id) === "FAIL",
-      ).length,
-      capturedCost: captured.reduce((sum, trace) => sum + trace.costUsd, 0),
-      totalCost: cost,
-    };
-  }, [scoped, samplingRate, cost, traceStatuses]);
 
   const enabledEvaluators = state.evaluators.filter(
     (evaluator) => evaluator.enabled,
@@ -277,6 +254,8 @@ export function EvaluationOverviewPage() {
                   <th>Source</th>
                   <th>Version</th>
                   <th>Enabled</th>
+                  <th>Minimum score</th>
+                  <th>Send alert</th>
                 </tr>
               </thead>
               <tbody>
@@ -302,71 +281,42 @@ export function EvaluationOverviewPage() {
                         }
                       />
                     </td>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={evaluator.minimumScore}
+                          aria-label={`Minimum score for ${evaluator.name}`}
+                          className="h-8 w-16 rounded-md border bg-background px-2 text-right text-sm"
+                          onChange={(event) =>
+                            store.setEvaluatorMinimumScore(
+                              evaluator.id,
+                              Number(event.target.value),
+                            )
+                          }
+                        />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </div>
+                    </td>
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`Send alert for ${evaluator.name}`}
+                        checked={evaluator.sendAlert}
+                        onChange={(event) =>
+                          store.setEvaluatorSendAlert(
+                            evaluator.id,
+                            event.target.checked,
+                          )
+                        }
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </EvaluationTable>
-
-            <div className="grid gap-4 border-t pt-5 lg:grid-cols-[minmax(280px,1fr)_minmax(240px,.8fr)]">
-              <div className="space-y-3 rounded-md border p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <Label htmlFor="minimum-evaluator-score">
-                    Minimum score threshold
-                  </Label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="minimum-evaluator-score-value"
-                      aria-label="Minimum score threshold value"
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={minimumEvaluatorScore}
-                      className="h-8 w-20 rounded-md border bg-background px-2 text-right text-sm"
-                      onChange={(event) =>
-                        store.setMinimumEvaluatorScore(
-                          Number(event.target.value),
-                        )
-                      }
-                    />
-                    <span className="text-sm text-muted-foreground">%</span>
-                  </div>
-                </div>
-                <input
-                  id="minimum-evaluator-score"
-                  aria-label="Minimum score threshold"
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={minimumEvaluatorScore}
-                  className="w-full"
-                  onChange={(event) =>
-                    store.setMinimumEvaluatorScore(Number(event.target.value))
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Every enabled evaluator must meet this normalized score.
-                </p>
-              </div>
-
-              <Label className="flex items-start gap-3 rounded-md border p-4">
-                <input
-                  type="checkbox"
-                  aria-label="Send alert"
-                  checked={sendEvaluatorAlert}
-                  onChange={(event) =>
-                    store.setSendEvaluatorAlert(event.target.checked)
-                  }
-                />
-                <span className="space-y-1">
-                  <strong className="block text-sm">Send alert</strong>
-                  <span className="block text-xs font-normal text-muted-foreground">
-                    Flag scored Traces that do not pass every enabled
-                    evaluator. Mock preview only.
-                  </span>
-                </span>
-              </Label>
-            </div>
 
             <div className="space-y-4 border-t pt-5">
               <div>
@@ -393,67 +343,6 @@ export function EvaluationOverviewPage() {
                   {samplingRate}%
                 </span>
               </Label>
-              <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full bg-emerald-500"
-                  style={{
-                    width: `${
-                      (sampling.captured / Math.max(sampling.total, 1)) * 100
-                    }%`,
-                  }}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <div className="rounded-md border p-3">
-                  <p className="text-xs text-muted-foreground">Captured</p>
-                  <p className="mt-1 text-xl font-semibold">
-                    {sampling.captured}/{sampling.total}
-                  </p>
-                </div>
-                <div className="rounded-md border p-3">
-                  <p className="text-xs text-muted-foreground">
-                    Estimated capture cost
-                  </p>
-                  <p className="mt-1 text-xl font-semibold">
-                    {formatCost(sampling.capturedCost)}
-                  </p>
-                </div>
-                <div className="rounded-md border p-3">
-                  <p className="text-xs text-muted-foreground">
-                    Estimated saving
-                  </p>
-                  <p className="mt-1 text-xl font-semibold">
-                    {formatCost(sampling.totalCost - sampling.capturedCost)}
-                  </p>
-                </div>
-                <div
-                  className={cn(
-                    "rounded-md border p-3",
-                    sampling.droppedFailures > 0 &&
-                      "border-amber-500/40 bg-amber-500/5",
-                  )}
-                >
-                  <p className="text-xs text-muted-foreground">
-                    Dropped failures
-                  </p>
-                  <p
-                    className={cn(
-                      "mt-1 text-xl font-semibold",
-                      sampling.droppedFailures > 0 &&
-                        "text-amber-700 dark:text-amber-300",
-                    )}
-                  >
-                    {sampling.droppedFailures}
-                  </p>
-                </div>
-              </div>
-              {sampling.droppedFailures > 0 ? (
-                <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-                  ⚠ At {samplingRate}% sampling, {sampling.droppedFailures}{" "}
-                  failure trace{sampling.droppedFailures === 1 ? "" : "s"}{" "}
-                  would not be captured.
-                </p>
-              ) : null}
             </div>
           </div>
         </EvaluationSection>
@@ -505,8 +394,6 @@ export function EvaluationOverviewPage() {
                   <TraceScoreCell
                     trace={trace}
                     evaluators={state.evaluators}
-                    threshold={minimumEvaluatorScore}
-                    sendAlert={sendEvaluatorAlert}
                   />
                 </td>
                 <td>
@@ -564,26 +451,17 @@ export function EvaluationOverviewPage() {
 function TraceScoreCell({
   trace,
   evaluators,
-  threshold,
-  sendAlert,
 }: {
   trace: EvaluationLayerTrace;
   evaluators: EvaluationLayerEvaluator[];
-  threshold: number;
-  sendAlert: boolean;
 }) {
-  const summary = traceEvaluatorSummary(trace, evaluators, threshold);
+  const summary = traceEvaluatorSummary(trace, evaluators);
   if (!summary.evaluatedAny) {
     return (
       <span className="text-xs text-muted-foreground">Not evaluated</span>
     );
   }
-  const alertTriggered = traceEvaluatorAlertTriggered(
-    trace,
-    evaluators,
-    threshold,
-    sendAlert,
-  );
+  const alertTriggered = traceEvaluatorAlertTriggered(trace, evaluators);
 
   return (
     <div className="space-y-1">
@@ -611,7 +489,7 @@ function TraceScoreCell({
             <div>
               <p className="font-medium">Evaluator results</p>
               <p className="text-xs text-muted-foreground">
-                Passing threshold: {threshold}%
+                Each evaluator uses its configured minimum score.
               </p>
             </div>
             {summary.details.map((detail) => (
