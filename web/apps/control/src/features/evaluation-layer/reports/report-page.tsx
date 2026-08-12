@@ -386,38 +386,48 @@ export function EvaluationReportDetail({
       {reflections.map((reflection) => reflectionActionsHidden ? (
         <div
           key={reflection.id}
-          className={cn("rounded-md border", embedded ? "p-2" : "p-4")}
+          className={cn("flex items-start justify-between gap-3 rounded-md border", embedded ? "p-2" : "p-4")}
         >
-          <p className="font-medium">{reflection.suggestion}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Status: {reflection.status}
-          </p>
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">{reflection.suggestion}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Status: {reflection.status}
+            </p>
+          </div>
+          <Button type="button" size="sm" variant="outline" className="shrink-0">
+            Action
+          </Button>
         </div>
       ) : (
-        <label
+        <div
           key={reflection.id}
           className={cn("flex items-start rounded-md border", embedded ? "gap-2 p-2" : "gap-3 p-4")}
         >
-          <input
-            type="checkbox"
-            className="mt-1"
-            disabled={reflection.status !== "OPEN" || !canApplyReflection}
-            checked={selected.includes(reflection.id)}
-            onChange={(event) =>
-              setSelected((current) =>
-                event.target.checked
-                  ? [...current, reflection.id]
-                  : current.filter((id) => id !== reflection.id),
-              )
-            }
-          />
-          <span>
-            <span className="font-medium">{reflection.suggestion}</span>
-            <span className="mt-1 block text-xs text-muted-foreground">
-              Status: {reflection.status}
+          <label className={cn("flex min-w-0 flex-1 items-start", embedded ? "gap-2" : "gap-3")}>
+            <input
+              type="checkbox"
+              className="mt-1"
+              disabled={reflection.status !== "OPEN" || !canApplyReflection}
+              checked={selected.includes(reflection.id)}
+              onChange={(event) =>
+                setSelected((current) =>
+                  event.target.checked
+                    ? [...current, reflection.id]
+                    : current.filter((id) => id !== reflection.id),
+                )
+              }
+            />
+            <span className="min-w-0">
+              <span className="font-medium">{reflection.suggestion}</span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Status: {reflection.status}
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+          <Button type="button" size="sm" variant="outline" className="shrink-0">
+            Action
+          </Button>
+        </div>
       ))}
       {canApplyReflection ? (
         <div className="flex flex-wrap justify-end gap-2">

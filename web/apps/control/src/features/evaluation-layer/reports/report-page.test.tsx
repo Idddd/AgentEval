@@ -111,15 +111,19 @@ describe('Evaluation report Developer changes', () => {
     expect(screen.getByText('Suggestions can be applied by Developers in the standalone report.')).not.toBeNull();
   });
 
-  it('presents evidence-backed Suggestions in natural language', () => {
+  it('presents evidence-backed Suggestions with an enabled no-op Action', async () => {
     render(reportView('hidden'));
 
     expect(screen.getByText('Suggestion')).not.toBeNull();
     expect(screen.queryByText('Reflection')).toBeNull();
-    expect(
-      screen.getByText(
-        'Run the permission guard before EmployeeQueryTool execution to prevent restricted data exposure.',
-      ),
-    ).not.toBeNull();
+    const suggestion = screen.getByText(
+      'Run the permission guard before EmployeeQueryTool execution to prevent restricted data exposure.',
+    );
+    const action = screen.getByRole('button', { name: 'Action' }) as HTMLButtonElement;
+
+    expect(suggestion).not.toBeNull();
+    expect(action.disabled).toBe(false);
+    await userEvent.click(action);
+    expect(suggestion.isConnected).toBe(true);
   });
 });

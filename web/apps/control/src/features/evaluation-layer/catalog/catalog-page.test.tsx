@@ -366,6 +366,9 @@ describe('Catalog drawer progressive disclosure', () => {
     const report = within(drawer.getByRole('region', { name: 'Report details' }));
     expect(report.getByText('Test Results')).not.toBeNull();
     expect(report.getByText('Tool Evidence')).not.toBeNull();
+    const navigation = within(drawer.getByRole('region', { name: 'Report navigation' }));
+    expect(navigation.getByRole('button', { name: 'Approve evaluation' })).not.toBeNull();
+    expect(report.queryByRole('button', { name: 'Approve evaluation' })).toBeNull();
     expect(drawer.queryByRole('region', { name: 'Current step: Result' })).toBeNull();
     await userEvent.click(drawer.getByRole('button', { name: 'Back to Result' }));
     expect(drawer.getByRole('region', { name: 'Current step: Result' })).not.toBeNull();

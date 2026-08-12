@@ -1329,13 +1329,25 @@ function WorkspaceDrawer({
                 <ArrowLeft />
                 Back to Result
               </Button>
-              <div className='min-w-0 text-right'>
-                <p className='text-sm font-semibold'>Evaluation report</p>
-                <p className='truncate text-xs text-muted-foreground'>{row.selectedDataset?.name ?? row.target.name}</p>
+              <div className='flex min-w-0 items-center gap-3'>
+                <div className='min-w-0 text-right'>
+                  <p className='text-sm font-semibold'>Evaluation report</p>
+                  <p className='truncate text-xs text-muted-foreground'>{row.selectedDataset?.name ?? row.target.name}</p>
+                </div>
+                {row.decisionStatus === 'PENDING' && role === 'admin' ? (
+                  <Button
+                    size='sm'
+                    variant={row.decisionRecommendation === 'APPROVED' ? 'default' : 'destructive'}
+                    onClick={() => decideRevision(row.decisionRecommendation === 'APPROVED' ? 'APPROVED' : 'REJECTED')}
+                  >
+                    {row.decisionRecommendation === 'APPROVED' ? <Check /> : <XCircle />}
+                    {row.decisionRecommendation === 'APPROVED' ? 'Approve evaluation' : 'Reject evaluation'}
+                  </Button>
+                ) : null}
               </div>
             </section>
             <section role='region' aria-label='Report details'>
-              <EvaluationReportDetail reportId={activeReportId} embedded />
+              <EvaluationReportDetail reportId={activeReportId} embedded decisionMode='status-only' />
             </section>
           </div>
         ) : (
