@@ -239,6 +239,10 @@ export interface EvaluationLayerEvaluator {
   provider: "BUILT_IN" | "LANGFUSE";
   version: string;
   enabled: boolean;
+  /** This evaluator's normalized pass threshold (0-100). */
+  minimumScore: number;
+  /** Frontend-only alert preview for failures from this evaluator. */
+  sendAlert: boolean;
 }
 
 export interface EvaluationLayerSettings {
@@ -248,10 +252,6 @@ export interface EvaluationLayerSettings {
   showRawSpans: boolean;
   /** Trace sampling rate (0-100); what-if preview only, no data is dropped. */
   samplingRate: number;
-  /** Global enabled-evaluator pass threshold (0-100). */
-  minimumEvaluatorScore: number;
-  /** Frontend-only alert preview; no notification API is called. */
-  sendEvaluatorAlert: boolean;
   provider: string;
   baseUrl: string;
   model: string;

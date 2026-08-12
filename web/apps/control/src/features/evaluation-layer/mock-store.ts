@@ -120,8 +120,8 @@ export interface EvaluationLayerStore {
   saveSettings(input: EvaluationLayerSettings): CommandResult;
   setEvaluatorEnabled(evaluatorId: string, enabled: boolean): CommandResult;
   setSamplingRate(rate: number): CommandResult;
-  setMinimumEvaluatorScore(score: number): CommandResult;
-  setSendEvaluatorAlert(enabled: boolean): CommandResult;
+  setEvaluatorMinimumScore(evaluatorId: string, score: number): CommandResult;
+  setEvaluatorSendAlert(evaluatorId: string, enabled: boolean): CommandResult;
   /** Live-monitoring demo: simulate one monitoring tick (new trace + events). */
   tickSimulation(): CommandResult<{ traceId: string }>;
   /** Live-monitoring demo: start/stop periodic ticks; safe to call repeatedly. */
@@ -1570,7 +1570,10 @@ export function createEvaluationLayerStore(
       }));
       return { ok: true, value: undefined };
     },
-    setMinimumEvaluatorScore(score) {
+    setEvaluatorMinimumScore(evaluatorId, score) {
+      if (!state.evaluators.some((item) => item.id === evaluatorId)) {
+        return fail("Evaluator not found.", "NOT_FOUND");
+      }
       if (!Number.isFinite(score)) {
         return fail(
           "Minimum evaluator score must be a number between 0 and 100.",
@@ -1580,14 +1583,21 @@ export function createEvaluationLayerStore(
       const clamped = Math.min(100, Math.max(0, Math.round(score)));
       replaceState((snapshot) => ({
         ...snapshot,
-        settings: { ...snapshot.settings, minimumEvaluatorScore: clamped },
+        evaluators: snapshot.evaluators.map((item) =>
+          item.id === evaluatorId ? { ...item, minimumScore: clamped } : item,
+        ),
       }));
       return { ok: true, value: undefined };
     },
-    setSendEvaluatorAlert(enabled) {
+    setEvaluatorSendAlert(evaluatorId, enabled) {
+      if (!state.evaluators.some((item) => item.id === evaluatorId)) {
+        return fail("Evaluator not found.", "NOT_FOUND");
+      }
       replaceState((snapshot) => ({
         ...snapshot,
-        settings: { ...snapshot.settings, sendEvaluatorAlert: enabled },
+        evaluators: snapshot.evaluators.map((item) =>
+          item.id === evaluatorId ? { ...item, sendAlert: enabled } : item,
+        ),
       }));
       return { ok: true, value: undefined };
     },

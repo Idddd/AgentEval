@@ -728,27 +728,32 @@ describe("EvaluationLayerStore", () => {
     expect(store.setSamplingRate(Number.NaN).ok).toBe(false);
   });
 
-  it('clamps the evaluator threshold and toggles mock alerts', () => {
+  it('updates threshold and mock alerts for only the selected evaluator', () => {
     const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+    const [first, second] = store.getState().evaluators;
 
-    expect(store.getState().settings.minimumEvaluatorScore).toBe(80);
-    expect(store.getState().settings.sendEvaluatorAlert).toBe(false);
-    expect(store.setMinimumEvaluatorScore(120)).toEqual({
+    expect(first?.minimumScore).toBe(80);
+    expect(first?.sendAlert).toBe(false);
+    expect(store.setEvaluatorMinimumScore(first!.id, 120)).toEqual({
       ok: true,
       value: undefined,
     });
-    expect(store.getState().settings.minimumEvaluatorScore).toBe(100);
-    expect(store.setMinimumEvaluatorScore(-7)).toEqual({
+    expect(store.getState().evaluators[0]!.minimumScore).toBe(100);
+    expect(store.getState().evaluators[1]!.minimumScore).toBe(second!.minimumScore);
+    expect(store.setEvaluatorMinimumScore(first!.id, -7)).toEqual({
       ok: true,
       value: undefined,
     });
-    expect(store.getState().settings.minimumEvaluatorScore).toBe(0);
-    expect(store.setMinimumEvaluatorScore(Number.NaN).ok).toBe(false);
-    expect(store.setSendEvaluatorAlert(true)).toEqual({
+    expect(store.getState().evaluators[0]!.minimumScore).toBe(0);
+    expect(store.setEvaluatorMinimumScore(first!.id, Number.NaN).ok).toBe(false);
+    expect(store.setEvaluatorMinimumScore('missing', 80).ok).toBe(false);
+    expect(store.setEvaluatorSendAlert(first!.id, true)).toEqual({
       ok: true,
       value: undefined,
     });
-    expect(store.getState().settings.sendEvaluatorAlert).toBe(true);
+    expect(store.getState().evaluators[0]!.sendAlert).toBe(true);
+    expect(store.getState().evaluators[1]!.sendAlert).toBe(second!.sendAlert);
+    expect(store.setEvaluatorSendAlert('missing', true).ok).toBe(false);
   });
 
   it('toggles evaluators used by the next Evaluation', () => {

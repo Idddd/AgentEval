@@ -8,6 +8,7 @@ export type TraceEvaluatorDetail = {
   evaluatorName: string;
   normalizedScore: number | null;
   passed: boolean | null;
+  sendAlert: boolean;
   rawScores: Record<string, number> | null;
 };
 
@@ -41,7 +42,6 @@ function evaluatorScores(
 export function traceEvaluatorSummary(
   trace: EvaluationLayerTrace,
   evaluators: EvaluationLayerEvaluator[],
-  threshold: number,
 ): TraceEvaluatorSummary {
   const details = evaluators
     .filter((evaluator) => evaluator.enabled)
@@ -57,7 +57,8 @@ export function traceEvaluatorSummary(
         evaluatorId: evaluator.id,
         evaluatorName: evaluator.name,
         normalizedScore: average === null ? null : Math.round(average * 10) / 10,
-        passed: average === null ? null : average >= threshold,
+        passed: average === null ? null : average >= evaluator.minimumScore,
+        sendAlert: evaluator.sendAlert,
         rawScores,
       };
     });
@@ -80,20 +81,18 @@ export function traceEvaluatorSummary(
 export function overviewTraceStatus(
   trace: EvaluationLayerTrace,
   evaluators: EvaluationLayerEvaluator[],
-  threshold: number,
 ): "PASS" | "FAIL" | "ERROR" {
   if (trace.status === "ERROR") return "ERROR";
-  const summary = traceEvaluatorSummary(trace, evaluators, threshold);
+  const summary = traceEvaluatorSummary(trace, evaluators);
   return summary.evaluatedAny && !summary.allPassed ? "FAIL" : "PASS";
 }
 
 export function traceEvaluatorAlertTriggered(
   trace: EvaluationLayerTrace,
   evaluators: EvaluationLayerEvaluator[],
-  threshold: number,
-  sendAlert: boolean,
 ) {
-  if (!sendAlert) return false;
-  const summary = traceEvaluatorSummary(trace, evaluators, threshold);
-  return summary.evaluatedAny && !summary.allPassed;
+  const summary = traceEvaluatorSummary(trace, evaluators);
+  return summary.details.some(
+    (detail) => detail.passed === false && detail.sendAlert,
+  );
 }

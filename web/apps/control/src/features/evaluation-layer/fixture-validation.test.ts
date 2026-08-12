@@ -88,9 +88,15 @@ describe("Evaluation layer fixtures", () => {
       "guardrail-agent-instruction-override",
     ]);
     expect(run.results.some((item) => item.status === "PENDING")).toBe(false);
+    expect(evaluationLayerFixtures.evaluators).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          minimumScore: 80,
+          sendAlert: false,
+        }),
+      ]),
+    );
     expect(evaluationLayerFixtures.settings).toMatchObject({
-      minimumEvaluatorScore: 80,
-      sendEvaluatorAlert: false,
       provider: "Recorded demo judge",
       baseUrl: "http://localhost:3000",
       model: "Recorded demo judge",
@@ -102,15 +108,15 @@ describe("Evaluation layer fixtures", () => {
 
   it("rejects evaluator alert settings outside their mock contract", () => {
     const invalidThreshold = cloneEvaluationLayerFixtures();
-    invalidThreshold.settings.minimumEvaluatorScore = 101;
+    invalidThreshold.evaluators[0]!.minimumScore = 101;
     expect(validateEvaluationLayerState(invalidThreshold)).toContain(
-      "settings.minimumEvaluatorScore: 101",
+      `evaluators.${invalidThreshold.evaluators[0]!.id}.minimumScore: 101`,
     );
 
     const invalidAlert = cloneEvaluationLayerFixtures();
-    invalidAlert.settings.sendEvaluatorAlert = "yes" as unknown as boolean;
+    invalidAlert.evaluators[0]!.sendAlert = "yes" as unknown as boolean;
     expect(validateEvaluationLayerState(invalidAlert)).toContain(
-      "settings.sendEvaluatorAlert: yes",
+      `evaluators.${invalidAlert.evaluators[0]!.id}.sendAlert: yes`,
     );
   });
 

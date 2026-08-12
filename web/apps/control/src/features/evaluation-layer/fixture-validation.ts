@@ -167,19 +167,19 @@ export function validateEvaluationLayerState(state: EvaluationLayerState): strin
   ) {
     errors.push(`settings.samplingRate: ${state.settings.samplingRate}`);
   }
-  if (
-    !Number.isFinite(state.settings.minimumEvaluatorScore) ||
-    state.settings.minimumEvaluatorScore < 0 ||
-    state.settings.minimumEvaluatorScore > 100
-  ) {
-    errors.push(
-      `settings.minimumEvaluatorScore: ${state.settings.minimumEvaluatorScore}`,
-    );
-  }
-  if (typeof state.settings.sendEvaluatorAlert !== "boolean") {
-    errors.push(
-      `settings.sendEvaluatorAlert: ${state.settings.sendEvaluatorAlert}`,
-    );
+  for (const evaluator of state.evaluators) {
+    if (
+      !Number.isFinite(evaluator.minimumScore) ||
+      evaluator.minimumScore < 0 ||
+      evaluator.minimumScore > 100
+    ) {
+      errors.push(
+        `evaluators.${evaluator.id}.minimumScore: ${evaluator.minimumScore}`,
+      );
+    }
+    if (typeof evaluator.sendAlert !== "boolean") {
+      errors.push(`evaluators.${evaluator.id}.sendAlert: ${evaluator.sendAlert}`);
+    }
   }
   const traceIds = new Set(state.traces.map((trace) => trace.id));
   for (const event of state.activity) {

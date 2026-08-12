@@ -24,7 +24,7 @@ describe("Overview evaluator policy", () => {
       },
     };
 
-    const summary = traceEvaluatorSummary(trace, state.evaluators, 80);
+    const summary = traceEvaluatorSummary(trace, state.evaluators);
 
     expect(summary).toMatchObject({
       passed: 1,
@@ -52,13 +52,13 @@ describe("Overview evaluator policy", () => {
       item.provider === "LANGFUSE" ? { ...item, enabled: false } : item,
     );
 
-    expect(traceEvaluatorSummary(trace, withJudgeDisabled, 80)).toMatchObject({
+    expect(traceEvaluatorSummary(trace, withJudgeDisabled)).toMatchObject({
       passed: 1,
       evaluated: 1,
       totalEnabled: 1,
       allPassed: true,
     });
-    expect(traceEvaluatorSummary(trace, state.evaluators, 80)).toMatchObject({
+    expect(traceEvaluatorSummary(trace, state.evaluators)).toMatchObject({
       passed: 1,
       evaluated: 1,
       totalEnabled: 2,
@@ -75,14 +75,14 @@ describe("Overview evaluator policy", () => {
       status: "FAIL" as const,
     };
 
-    expect(traceEvaluatorSummary(trace, state.evaluators, 80)).toMatchObject({
+    expect(traceEvaluatorSummary(trace, state.evaluators)).toMatchObject({
       passed: 0,
       evaluated: 0,
       totalEnabled: 2,
       allPassed: false,
       evaluatedAny: false,
     });
-    expect(overviewTraceStatus(trace, state.evaluators, 80)).toBe("PASS");
+    expect(overviewTraceStatus(trace, state.evaluators)).toBe("PASS");
   });
 
   it("preserves ERROR and otherwise derives status from evaluators", () => {
@@ -95,14 +95,13 @@ describe("Overview evaluator policy", () => {
     )!;
     const runtimeError = state.traces.find((item) => item.status === "ERROR")!;
 
-    expect(overviewTraceStatus(passing, state.evaluators, 80)).toBe("PASS");
-    expect(overviewTraceStatus(failing, state.evaluators, 80)).toBe("FAIL");
-    expect(overviewTraceStatus(runtimeError, state.evaluators, 80)).toBe("ERROR");
+    expect(overviewTraceStatus(passing, state.evaluators)).toBe("PASS");
+    expect(overviewTraceStatus(failing, state.evaluators)).toBe("FAIL");
+    expect(overviewTraceStatus(runtimeError, state.evaluators)).toBe("ERROR");
     expect(
       overviewTraceStatus(
         { ...passing, status: "FAIL", markedFailed: true },
         state.evaluators,
-        80,
       ),
     ).toBe("PASS");
   });
@@ -116,14 +115,39 @@ describe("Overview evaluator policy", () => {
       (item) => item.id === "demo-jailbreak-guard-bypass",
     )!;
 
-    expect(
-      traceEvaluatorAlertTriggered(failing, state.evaluators, 80, true),
-    ).toBe(true);
-    expect(
-      traceEvaluatorAlertTriggered(failing, state.evaluators, 80, false),
-    ).toBe(false);
-    expect(
-      traceEvaluatorAlertTriggered(passing, state.evaluators, 80, true),
-    ).toBe(false);
+    const alertOnFailingJudge = state.evaluators.map((evaluator) => ({
+      ...evaluator,
+      sendAlert: evaluator.provider === "LANGFUSE",
+    }));
+    const alertOnPassingBuiltIn = state.evaluators.map((evaluator) => ({
+      ...evaluator,
+      sendAlert: evaluator.provider === "BUILT_IN",
+      minimumScore: evaluator.provider === "BUILT_IN" ? 0 : evaluator.minimumScore,
+    }));
+
+    expect(traceEvaluatorAlertTriggered(failing, alertOnFailingJudge)).toBe(true);
+    expect(traceEvaluatorAlertTriggered(failing, alertOnPassingBuiltIn)).toBe(false);
+    expect(traceEvaluatorAlertTriggered(passing, alertOnFailingJudge)).toBe(false);
+  });
+
+  it("uses each evaluator's own minimum score", () => {
+    const state = cloneEvaluationLayerFixtures();
+    const fixtureTrace = state.traces.find(
+      (item) => item.id === "demo-jailbreak-guard-bypass",
+    )!;
+    const trace = {
+      ...fixtureTrace,
+      deterministicScores: { permission_compliance: 0.75 },
+      judge: { ...fixtureTrace.judge!, scores: { correctness: 4.5 } },
+    };
+    const evaluators = state.evaluators.map((evaluator) => ({
+      ...evaluator,
+      minimumScore: evaluator.provider === "BUILT_IN" ? 70 : 95,
+    }));
+
+    expect(traceEvaluatorSummary(trace, evaluators).details.map((detail) => detail.passed)).toEqual([
+      true,
+      false,
+    ]);
   });
 });
