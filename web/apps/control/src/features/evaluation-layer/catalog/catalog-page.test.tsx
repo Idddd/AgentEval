@@ -316,6 +316,40 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(screen.getByRole('dialog', { name: 'Create dataset' })).not.toBeNull();
   });
 
+  it('opens the selected Dataset detail from the card action', async () => {
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationCatalogPage />
+      </EvaluationLayerProvider>,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Onboarding Assistant demo-onboarding-assistant' }),
+    );
+    const drawer = within(screen.getByRole('dialog', { name: 'Onboarding Assistant' }));
+    const coverage = within(drawer.getByRole('region', { name: 'Current step: Test coverage' }));
+
+    await userEvent.click(coverage.getByRole('button', { name: 'New Dataset' }));
+    const createDialog = within(screen.getByRole('dialog', { name: 'Create dataset' }));
+    await userEvent.type(createDialog.getByRole('textbox', { name: 'Name *' }), 'Alternate Dataset');
+    await userEvent.click(createDialog.getByRole('button', { name: 'Create dataset' }));
+    expect(
+      (coverage.getByRole('radio', { name: /Alternate Dataset/ }) as HTMLInputElement).checked,
+    ).toBe(true);
+
+    await userEvent.click(
+      coverage.getByRole('button', { name: 'Open Demo Default Dataset details' }),
+    );
+
+    const details = within(drawer.getByRole('region', { name: 'Test coverage details' }));
+    expect(details.getByRole('button', { name: 'Collapse Test coverage' })).not.toBeNull();
+    expect(details.getByRole('heading', { name: 'Demo Default Dataset' })).not.toBeNull();
+    expect(details.getByText('Draft cases')).not.toBeNull();
+    expect(details.getByText('Evaluation history')).not.toBeNull();
+    expect(
+      (details.getByRole('radio', { name: /Demo Default Dataset/ }) as HTMLInputElement).checked,
+    ).toBe(true);
+  });
+
   it('keeps every Dataset card and Guardrail pack visible after switching selection', async () => {
     render(
       <EvaluationLayerProvider projectId='individual'>

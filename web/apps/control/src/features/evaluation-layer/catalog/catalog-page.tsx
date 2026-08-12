@@ -1415,6 +1415,17 @@ function WorkspaceDrawer({
                   const result = store.selectActiveDataset(datasetId);
                   if (result.ok) setDatasetSelectionPending(true);
                 }}
+                onOpenDetails={(datasetId) => {
+                  const result = store.selectActiveDataset(datasetId);
+                  if (!result.ok) {
+                    setWorkspaceNotice({ message: result.error, section: 'dataset' });
+                    focusSection('dataset');
+                    return;
+                  }
+                  setDatasetSelectionPending(true);
+                  setWorkspaceNotice(undefined);
+                  openDetailsSection('dataset');
+                }}
                 onCreate={onCreateDataset}
               />
             </div>

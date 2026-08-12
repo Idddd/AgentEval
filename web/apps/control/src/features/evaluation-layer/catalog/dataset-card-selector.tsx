@@ -39,6 +39,7 @@ export type DatasetCardSelectorProps = {
   revisions: EvaluationLayerDatasetRevision[];
   selectedDatasetId: string;
   onSelect(datasetId: string): void;
+  onOpenDetails(datasetId: string): void;
   onCreate(): void;
 };
 
@@ -47,6 +48,7 @@ export function DatasetCardSelector({
   revisions,
   selectedDatasetId,
   onSelect,
+  onOpenDetails,
   onCreate,
 }: DatasetCardSelectorProps) {
   return (
@@ -57,36 +59,45 @@ export function DatasetCardSelector({
           const selected = dataset.id === selectedDatasetId;
           const summary = datasetCardSummary(dataset, revisions);
           return (
-            <label
-              key={dataset.id}
-              className={cn(
-                "relative min-h-32 cursor-pointer rounded-lg border bg-background p-4 transition-colors hover:border-cyan-500/60 hover:bg-cyan-500/[0.03] focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring",
-                selected && "border-cyan-500 bg-cyan-500/[0.06] ring-1 ring-cyan-500/25",
-              )}
-            >
-              <input
-                className="peer sr-only"
-                type="radio"
-                name="evaluation-dataset"
-                value={dataset.id}
-                checked={selected}
-                onChange={() => onSelect(dataset.id)}
-              />
-              <span className="flex items-start justify-between gap-3">
-                <strong className="text-sm font-medium text-foreground">{dataset.name}</strong>
-                {selected
-                  ? <CircleCheck className="size-4 shrink-0 text-cyan-600" aria-hidden="true" />
-                  : <CircleDot className="size-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />}
-              </span>
-              <span className="mt-2 block text-xs leading-5 text-muted-foreground">
-                {dataset.description.trim() || "No description"}
-              </span>
-              <span className="mt-4 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                <span className="rounded-md border bg-muted/30 px-1.5 py-0.5">{summary.revisionLabel}</span>
-                {summary.statusLabel ? <span>{summary.statusLabel}</span> : null}
-                <span>{summary.caseLabel}</span>
-              </span>
-            </label>
+            <div key={dataset.id} className="relative min-h-32">
+              <label
+                className={cn(
+                  "block h-full min-h-32 cursor-pointer rounded-lg border bg-background p-4 pb-12 transition-colors hover:border-cyan-500/60 hover:bg-cyan-500/[0.03] focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring",
+                  selected && "border-cyan-500 bg-cyan-500/[0.06] ring-1 ring-cyan-500/25",
+                )}
+              >
+                <input
+                  className="peer sr-only"
+                  type="radio"
+                  name="evaluation-dataset"
+                  value={dataset.id}
+                  checked={selected}
+                  onChange={() => onSelect(dataset.id)}
+                />
+                <span className="flex items-start justify-between gap-3">
+                  <strong className="text-sm font-medium text-foreground">{dataset.name}</strong>
+                  {selected
+                    ? <CircleCheck className="size-4 shrink-0 text-cyan-600" aria-hidden="true" />
+                    : <CircleDot className="size-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />}
+                </span>
+                <span className="mt-2 block text-xs leading-5 text-muted-foreground">
+                  {dataset.description.trim() || "No description"}
+                </span>
+                <span className="mt-4 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                  <span className="rounded-md border bg-muted/30 px-1.5 py-0.5">{summary.revisionLabel}</span>
+                  {summary.statusLabel ? <span>{summary.statusLabel}</span> : null}
+                  <span>{summary.caseLabel}</span>
+                </span>
+              </label>
+              <button
+                type="button"
+                aria-label={`Open ${dataset.name} details`}
+                className="absolute bottom-3 right-3 z-10 grid size-8 place-items-center rounded-md border bg-background text-cyan-600 shadow-sm transition-colors hover:border-cyan-500 hover:bg-cyan-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                onClick={() => onOpenDetails(dataset.id)}
+              >
+                <Plus className="size-4" aria-hidden="true" />
+              </button>
+            </div>
           );
         })}
         <button

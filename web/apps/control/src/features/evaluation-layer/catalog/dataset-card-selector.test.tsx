@@ -93,6 +93,7 @@ describe("DatasetCardSelector", () => {
   it("selects an existing Dataset and opens New Dataset separately", async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
+    const onOpenDetails = vi.fn();
     const onCreate = vi.fn();
     render(
       <DatasetCardSelector
@@ -100,6 +101,7 @@ describe("DatasetCardSelector", () => {
         revisions={revisions}
         selectedDatasetId="dataset-a"
         onSelect={onSelect}
+        onOpenDetails={onOpenDetails}
         onCreate={onCreate}
       />,
     );
@@ -120,5 +122,33 @@ describe("DatasetCardSelector", () => {
     await user.click(screen.getByRole("button", { name: "New Dataset" }));
     expect(onCreate).toHaveBeenCalledOnce();
     expect(screen.queryByRole("radio", { name: /New Dataset/ })).toBeNull();
+  });
+
+  it("opens a Dataset detail without triggering card selection", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    const onOpenDetails = vi.fn();
+    render(
+      <DatasetCardSelector
+        datasets={datasets}
+        revisions={revisions}
+        selectedDatasetId="dataset-a"
+        onSelect={onSelect}
+        onOpenDetails={onOpenDetails}
+        onCreate={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Open Support Dataset details" }),
+    ).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Open Empty Dataset details" }),
+    ).not.toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Open Empty Dataset details" }),
+    );
+    expect(onOpenDetails).toHaveBeenCalledWith("dataset-b");
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });
