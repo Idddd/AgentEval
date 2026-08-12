@@ -36,6 +36,36 @@ afterEach(() => {
 });
 
 describe('Catalog discovery', () => {
+  it('uses the configured Onboarding Assistant icon in every catalog view and drawer', async () => {
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationCatalogPage />
+      </EvaluationLayerProvider>,
+    );
+
+    const expectUserPlusIcon = (element: HTMLElement | null) => {
+      expect(element).not.toBeNull();
+      expect(element?.querySelector('.lucide-user-plus')).not.toBeNull();
+    };
+
+    const lifecycle = screen.getByRole('button', {
+      name: 'Onboarding Assistant demo-onboarding-assistant',
+    });
+    expectUserPlusIcon(lifecycle);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cards' }));
+    expectUserPlusIcon(screen.getByText('Onboarding Assistant').closest('[role="button"]'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'List' }));
+    expectUserPlusIcon(screen.getByText('Onboarding Assistant').closest('tr'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lifecycle' }));
+    await userEvent.click(screen.getByRole('button', {
+      name: 'Onboarding Assistant demo-onboarding-assistant',
+    }));
+    expectUserPlusIcon(screen.getByRole('dialog', { name: 'Onboarding Assistant' }));
+  });
+
   it('does not offer manual target creation in the evaluation catalog', () => {
     render(
       <EvaluationLayerProvider projectId='individual'>

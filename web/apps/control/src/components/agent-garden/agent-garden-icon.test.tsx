@@ -9,6 +9,7 @@ describe("AgentGardenIcon", () => {
       <AgentGardenIcon type="custom" catalogIcon="user-plus" />,
     );
 
+    expect(container.querySelector(".lucide-user-plus")).not.toBeNull();
     expect(container.firstElementChild?.className).toContain("bg-cyan");
     expect(container.querySelector("svg")?.className.baseVal).toContain(
       "text-cyan",

@@ -30,6 +30,7 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
+import { AgentGardenIcon } from '@/components/agent-garden/agent-garden-icon';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -123,7 +124,26 @@ const STAGE_ORDER: StageFilter[] = [
   'NEEDS_RE_EVALUATION',
 ];
 
-function KindMark({ kind, size = 'default' }: { kind: EvaluationLayerTargetKind; size?: 'default' | 'large' }) {
+function KindMark({
+  kind,
+  catalogIcon,
+  size = 'default',
+}: {
+  kind: EvaluationLayerTargetKind;
+  catalogIcon?: string | undefined;
+  size?: 'default' | 'large';
+}) {
+  if (kind === 'agent') {
+    return (
+      <AgentGardenIcon
+        type='custom'
+        catalogIcon={catalogIcon}
+        className={size === 'large' ? 'size-12 rounded-lg' : 'size-10 rounded-lg'}
+        iconClassName={size === 'large' ? 'size-6' : 'size-5'}
+      />
+    );
+  }
+
   const meta = KIND_META[kind];
   const Icon = meta.icon;
   return (
@@ -736,7 +756,7 @@ function CatalogCard({ row, onOpen }: { row: WorkspaceRow; onOpen(row: Workspace
     >
       <CardHeader>
         <div className='flex min-w-0 items-start gap-3'>
-          <KindMark kind={row.target.kind} />
+          <KindMark kind={row.target.kind} catalogIcon={row.target.icon} />
           <div className='min-w-0 flex-1'>
             <CardDescription>{KIND_META[row.target.kind].label} · {row.target.id}</CardDescription>
             <CardTitle className='mt-1 truncate text-base'>{row.target.name}</CardTitle>
@@ -800,7 +820,7 @@ export function CatalogList({
             }
           }}
         >
-          <td><div className='flex min-w-56 items-center gap-3'><KindMark kind={row.target.kind} /><div className='min-w-0'><p className='truncate font-medium text-foreground'>{row.target.name}</p><p className='truncate text-xs text-muted-foreground'>{row.target.id}</p></div></div></td>
+          <td><div className='flex min-w-56 items-center gap-3'><KindMark kind={row.target.kind} catalogIcon={row.target.icon} /><div className='min-w-0'><p className='truncate font-medium text-foreground'>{row.target.name}</p><p className='truncate text-xs text-muted-foreground'>{row.target.id}</p></div></div></td>
           <td>{KIND_META[row.target.kind].label}</td>
           <td>R{row.currentRevision?.revision ?? '—'}</td>
           <td>{datasetCountSummary(row)}</td>
@@ -824,7 +844,7 @@ function LifecycleList({ rows, onOpen }: { rows: WorkspaceRow[]; onOpen(row: Wor
           <li key={row.target.id}>
             <button aria-label={`${row.target.name} ${row.target.id}`} type='button' onClick={() => onOpen(row)} className='grid w-full gap-5 rounded-lg border border-border/65 bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/35 hover:bg-muted/15 lg:grid-cols-[minmax(13rem,1fr)_minmax(36rem,3fr)_auto] lg:items-center'>
               <div className='flex min-w-0 items-start gap-3'>
-                <KindMark kind={row.target.kind} />
+                <KindMark kind={row.target.kind} catalogIcon={row.target.icon} />
                 <div className='min-w-0'><p className='truncate font-medium'>{row.target.name}</p><p className='mt-0.5 text-xs text-muted-foreground'>{KIND_META[row.target.kind].label} · {row.target.id}</p><p className='mt-1 truncate text-xs text-muted-foreground'>{configurationSummary(row)}</p></div>
               </div>
               <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
@@ -1293,7 +1313,7 @@ function WorkspaceDrawer({
       >
         <SheetHeader className='border-b p-5 pr-16'>
           <div className='flex items-start gap-3'>
-            <KindMark kind={row.target.kind} size='large' />
+            <KindMark kind={row.target.kind} catalogIcon={row.target.icon} size='large' />
             <div className='min-w-0 flex-1'>
               <SheetDescription>{KIND_META[row.target.kind].label} · {row.target.id}</SheetDescription>
               <SheetTitle className='mt-1 truncate text-xl'>{row.target.name}</SheetTitle>
@@ -1559,7 +1579,7 @@ function UnifiedWorkspace({
       <Card>
         <CardContent className='space-y-4'>
           <div className='grid gap-4 lg:grid-cols-[auto_1fr] lg:items-center'>
-            <KindMark kind={row.target.kind} size='large' />
+            <KindMark kind={row.target.kind} catalogIcon={row.target.icon} size='large' />
             <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
               <div><p className='text-xs text-muted-foreground'>{KIND_META[row.target.kind].label} revision</p><p className='font-medium'>R{row.currentRevision?.revision ?? '—'}</p></div>
               <div><p className='text-xs text-muted-foreground'>Test Case</p><p className='truncate font-medium'>{row.selectedDataset?.name ?? 'Not created'}</p></div>
