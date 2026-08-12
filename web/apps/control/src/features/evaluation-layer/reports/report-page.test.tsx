@@ -49,7 +49,7 @@ describe('Evaluation report Developer changes', () => {
     expect(screen.getAllByText('guardrail-agent-instruction-override').length).toBeGreaterThanOrEqual(2);
 
     const failure = screen.getByText('Failure reasons').closest('[data-slot="card"]');
-    const reflection = screen.getByText('Reflection').closest('[data-slot="card"]');
+    const reflection = screen.getByText('Suggestion').closest('[data-slot="card"]');
     const results = screen.getByText('Test Results').closest('[data-slot="card"]');
     expect(failure?.parentElement).toBe(reflection?.parentElement);
     expect(failure!.compareDocumentPosition(results!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
@@ -100,10 +100,26 @@ describe('Evaluation report Developer changes', () => {
     roleState.value = 'member';
     view.rerender(reportView('hidden'));
 
-    expect(screen.getByText('Run the permission guard before EmployeeQueryTool execution.')).not.toBeNull();
+    expect(
+      screen.getByText(
+        'Run the permission guard before EmployeeQueryTool execution to prevent restricted data exposure.',
+      ),
+    ).not.toBeNull();
     expect(screen.queryByRole('checkbox', { name: /Run the permission guard/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Finish without changes' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Apply selected changes' })).toBeNull();
-    expect(screen.getByText('Reflection changes are available to Developers in the standalone report.')).not.toBeNull();
+    expect(screen.getByText('Suggestions can be applied by Developers in the standalone report.')).not.toBeNull();
+  });
+
+  it('presents evidence-backed Suggestions in natural language', () => {
+    render(reportView('hidden'));
+
+    expect(screen.getByText('Suggestion')).not.toBeNull();
+    expect(screen.queryByText('Reflection')).toBeNull();
+    expect(
+      screen.getByText(
+        'Run the permission guard before EmployeeQueryTool execution to prevent restricted data exposure.',
+      ),
+    ).not.toBeNull();
   });
 });

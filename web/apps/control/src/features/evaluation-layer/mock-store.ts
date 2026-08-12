@@ -1315,7 +1315,7 @@ export function createEvaluationLayerStore(
               id: dependencies.id(),
               reportId: report.id,
               targetId: run.targetId,
-              suggestion: "Move permission checks before privileged Tool execution.",
+              suggestion: "Move permission checks before privileged Tool execution to prevent policy bypasses.",
               status: "OPEN" as const,
               createdAt: dependencies.now(),
             }

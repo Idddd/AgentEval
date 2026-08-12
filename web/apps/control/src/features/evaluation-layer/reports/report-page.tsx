@@ -375,7 +375,7 @@ export function EvaluationReportDetail({
     decision?.status === "REJECTED" &&
     target.currentRevisionId === run.targetRevisionId;
   const reflectionUnavailableMessage = reflectionActionsHidden
-    ? "Reflection changes are available to Developers in the standalone report."
+    ? "Suggestions can be applied by Developers in the standalone report."
     : decision?.status !== "REJECTED"
       ? "Developer changes become available after an Admin rejects this evaluation."
       : !isDeveloper
@@ -545,7 +545,7 @@ export function EvaluationReportDetail({
           </EvaluationSection> : null}
           {reflectionContent ? (
             <EvaluationSection
-              title="Reflection"
+              title="Suggestion"
               description="Evidence-backed improvements for the next Target revision."
             >
               {reflectionContent}

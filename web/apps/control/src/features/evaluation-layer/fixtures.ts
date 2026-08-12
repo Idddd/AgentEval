@@ -610,7 +610,7 @@ export const evaluationLayerFixtures: EvaluationLayerState = {
   ],
   revisionDecisions: [],
   reflections: [
-    { id: "reflection-guard-order", reportId: "report-permission-baseline", targetId: "demo-permission-compliance", suggestion: "Run the permission guard before EmployeeQueryTool execution.", status: "OPEN", createdAt: "2026-07-30T12:03:00.000Z" },
+    { id: "reflection-guard-order", reportId: "report-permission-baseline", targetId: "demo-permission-compliance", suggestion: "Run the permission guard before EmployeeQueryTool execution to prevent restricted data exposure.", status: "OPEN", createdAt: "2026-07-30T12:03:00.000Z" },
   ],
   traces: [
     {
