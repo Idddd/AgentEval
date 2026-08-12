@@ -36,7 +36,10 @@ describe("BehaviorPage", () => {
   it("marks compliant behavior clear after review", async () => {
     const user = userEvent.setup();
     render(<BehaviorPage />);
-    const clearRow = screen.getByText("weather-guest-allow").closest("tr")!;
+    const clearRow = screen
+      .getAllByText("weather-guest-allow")
+      .map((item) => item.closest("tr"))
+      .find((row) => row?.textContent?.includes("Office Assistant"))!;
     await user.click(within(clearRow).getByRole("button", { name: "Inspect" }));
     await user.click(screen.getByRole("button", { name: "Review with LLM" }));
     expect(screen.getAllByText("No violation detected").length).toBeGreaterThan(0);

@@ -498,7 +498,11 @@ describe('Catalog drawer progressive disclosure', () => {
 
     await userEvent.click(nextStep.getByRole('button', { name: 'Next' }));
     await waitFor(() => {
-      const run = store.getState().runs.find((item) => item.targetId === targetId);
+      const run = store.getState().runs.find(
+        (item) =>
+          item.targetId === targetId &&
+          !item.id.startsWith('live-monitoring-'),
+      );
       expect(run?.results).toHaveLength(4);
       expect(run?.results.filter((result) => Boolean(result.guardrailTemplateId))).toHaveLength(2);
     });
