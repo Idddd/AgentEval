@@ -9,7 +9,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { useCurrentProjectId } from "@/hooks/use-project";
 import { AgentGardenIcon } from "@/components/agent-garden/agent-garden-icon";
@@ -23,7 +22,11 @@ import type {
   EvaluationLayerTrace,
 } from "../model";
 import { EvaluationLayerStatusBadge } from "../shared/evaluation-status";
-import { traceScoreJson } from "../traces/trace-view-model";
+import {
+  overviewTraceStatus,
+  traceEvaluatorAlertTriggered,
+  traceEvaluatorSummary,
+} from "./overview-evaluator-policy";
 import {
   EvaluationSection,
   EvaluationTable,
@@ -65,23 +68,42 @@ export function EvaluationOverviewPage() {
         .sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
     [state.traces, targetId],
   );
+  const minimumEvaluatorScore = state.settings.minimumEvaluatorScore;
+  const sendEvaluatorAlert = state.settings.sendEvaluatorAlert;
+  const traceStatuses = useMemo(
+    () =>
+      new Map(
+        scoped.map((trace) => [
+          trace.id,
+          overviewTraceStatus(
+            trace,
+            state.evaluators,
+            minimumEvaluatorScore,
+          ),
+        ]),
+      ),
+    [scoped, state.evaluators, minimumEvaluatorScore],
+  );
   const traces =
     statusFilter === "ALL"
       ? scoped
-      : scoped.filter((trace) => trace.status === statusFilter);
+      : scoped.filter((trace) => traceStatuses.get(trace.id) === statusFilter);
 
   const observations = scoped.reduce(
     (sum, trace) => sum + observationCount(trace),
     0,
   );
   const failures = scoped.filter(
-    (trace) => trace.status !== "PASS" || trace.markedFailed,
+    (trace) => traceStatuses.get(trace.id) === "FAIL",
   ).length;
   const cost = scoped.reduce((sum, trace) => sum + trace.costUsd, 0);
   const counts = {
-    PASS: scoped.filter((trace) => trace.status === "PASS").length,
-    FAIL: scoped.filter((trace) => trace.status === "FAIL").length,
-    ERROR: scoped.filter((trace) => trace.status === "ERROR").length,
+    PASS: scoped.filter((trace) => traceStatuses.get(trace.id) === "PASS")
+      .length,
+    FAIL: scoped.filter((trace) => traceStatuses.get(trace.id) === "FAIL")
+      .length,
+    ERROR: scoped.filter((trace) => traceStatuses.get(trace.id) === "ERROR")
+      .length,
   };
 
   const flashing = useFlashingKeys(
@@ -100,12 +122,12 @@ export function EvaluationOverviewPage() {
       captured: captured.length,
       total: scoped.length,
       droppedFailures: dropped.filter(
-        (trace) => trace.status !== "PASS" || trace.markedFailed,
+        (trace) => traceStatuses.get(trace.id) === "FAIL",
       ).length,
       capturedCost: captured.reduce((sum, trace) => sum + trace.costUsd, 0),
       totalCost: cost,
     };
-  }, [scoped, samplingRate, cost]);
+  }, [scoped, samplingRate, cost, traceStatuses]);
 
   const enabledEvaluators = state.evaluators.filter(
     (evaluator) => evaluator.enabled,
@@ -241,17 +263,13 @@ export function EvaluationOverviewPage() {
         </div>
       </div>
 
-      {/* Configuration layer: evaluators + sampling what-if */}
-      <Tabs defaultValue="evaluators">
-        <TabsList>
-          <TabsTrigger value="evaluators">Evaluators</TabsTrigger>
-          <TabsTrigger value="sampling">Sampling</TabsTrigger>
-        </TabsList>
-        <TabsContent value="evaluators">
-          <EvaluationSection
-            title="Evaluators"
-            description={`${enabledEvaluators}/${state.evaluators.length} evaluators will be used by the next Evaluation.`}
-          >
+      {/* Configuration layer: evaluators, policy, and sampling what-if */}
+      <section role="region" aria-label="Evaluators">
+        <EvaluationSection
+          title="Evaluators"
+          description={`${enabledEvaluators}/${state.evaluators.length} evaluators will be used by the next Evaluation.`}
+        >
+          <div className="space-y-5">
             <EvaluationTable>
               <thead>
                 <tr>
@@ -288,14 +306,76 @@ export function EvaluationOverviewPage() {
                 ))}
               </tbody>
             </EvaluationTable>
-          </EvaluationSection>
-        </TabsContent>
-        <TabsContent value="sampling">
-          <EvaluationSection
-            title="Sampling rate"
-            description="What-if preview: how many of the current traces would be captured at this rate. No data is dropped."
-          >
-            <div className="space-y-4">
+
+            <div className="grid gap-4 border-t pt-5 lg:grid-cols-[minmax(280px,1fr)_minmax(240px,.8fr)]">
+              <div className="space-y-3 rounded-md border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <Label htmlFor="minimum-evaluator-score">
+                    Minimum score threshold
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="minimum-evaluator-score-value"
+                      aria-label="Minimum score threshold value"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={minimumEvaluatorScore}
+                      className="h-8 w-20 rounded-md border bg-background px-2 text-right text-sm"
+                      onChange={(event) =>
+                        store.setMinimumEvaluatorScore(
+                          Number(event.target.value),
+                        )
+                      }
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                  </div>
+                </div>
+                <input
+                  id="minimum-evaluator-score"
+                  aria-label="Minimum score threshold"
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={minimumEvaluatorScore}
+                  className="w-full"
+                  onChange={(event) =>
+                    store.setMinimumEvaluatorScore(Number(event.target.value))
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Every enabled evaluator must meet this normalized score.
+                </p>
+              </div>
+
+              <Label className="flex items-start gap-3 rounded-md border p-4">
+                <input
+                  type="checkbox"
+                  aria-label="Send alert"
+                  checked={sendEvaluatorAlert}
+                  onChange={(event) =>
+                    store.setSendEvaluatorAlert(event.target.checked)
+                  }
+                />
+                <span className="space-y-1">
+                  <strong className="block text-sm">Send alert</strong>
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    Flag scored Traces that do not pass every enabled
+                    evaluator. Mock preview only.
+                  </span>
+                </span>
+              </Label>
+            </div>
+
+            <div className="space-y-4 border-t pt-5">
+              <div>
+                <h3 className="font-medium">Sampling</h3>
+                <p className="text-sm text-muted-foreground">
+                  What-if preview: how many current Traces would be captured.
+                  No data is dropped.
+                </p>
+              </div>
               <Label className="flex items-center gap-4">
                 <input
                   type="range"
@@ -303,7 +383,7 @@ export function EvaluationOverviewPage() {
                   max={100}
                   step={5}
                   value={samplingRate}
-                  className="w-64"
+                  className="w-64 max-w-full"
                   aria-label="Sampling rate"
                   onChange={(event) =>
                     store.setSamplingRate(Number(event.target.value))
@@ -370,14 +450,14 @@ export function EvaluationOverviewPage() {
               {sampling.droppedFailures > 0 ? (
                 <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
                   ⚠ At {samplingRate}% sampling, {sampling.droppedFailures}{" "}
-                  failure trace{sampling.droppedFailures === 1 ? "" : "s"} would
-                  not be captured.
+                  failure trace{sampling.droppedFailures === 1 ? "" : "s"}{" "}
+                  would not be captured.
                 </p>
               ) : null}
             </div>
-          </EvaluationSection>
-        </TabsContent>
-      </Tabs>
+          </div>
+        </EvaluationSection>
+      </section>
 
       {/* Work layer: the single trace table */}
       <EvaluationTable>
@@ -386,12 +466,12 @@ export function EvaluationOverviewPage() {
             <th>Trace</th>
             <th>Agent</th>
             <th>Case</th>
+            <th className="w-[150px]">Score</th>
             <th>Status</th>
             <th>Observations</th>
             <th>Latency</th>
             <th>Cost</th>
             <th>Sampled</th>
-            <th className="w-[150px]">Score</th>
             <th>Started</th>
             <th />
           </tr>
@@ -399,6 +479,7 @@ export function EvaluationOverviewPage() {
         <tbody>
           {traces.map((trace) => {
             const sampled = traceSampledAtRate(trace.id, samplingRate);
+            const status = traceStatuses.get(trace.id) ?? "PASS";
             const agent = state.targets.find(
               (target) => target.id === trace.targetId,
             );
@@ -421,7 +502,15 @@ export function EvaluationOverviewPage() {
                 </td>
                 <td>{trace.caseId}</td>
                 <td>
-                  <EvaluationLayerStatusBadge status={trace.status} />
+                  <TraceScoreCell
+                    trace={trace}
+                    evaluators={state.evaluators}
+                    threshold={minimumEvaluatorScore}
+                    sendAlert={sendEvaluatorAlert}
+                  />
+                </td>
+                <td>
+                  <EvaluationLayerStatusBadge status={status} />
                 </td>
                 <td>{observationCount(trace)}</td>
                 <td>
@@ -438,9 +527,6 @@ export function EvaluationOverviewPage() {
                       — dropped
                     </span>
                   )}
-                </td>
-                <td className="max-w-[150px]">
-                  <TraceScoreCell trace={trace} evaluators={state.evaluators} />
                 </td>
                 <td className="whitespace-nowrap text-xs text-muted-foreground">
                   {formatRelativeTime(trace.startedAt)}
@@ -472,37 +558,97 @@ export function EvaluationOverviewPage() {
 }
 
 /**
- * Score column cell: a one-line truncated JSON preview that never stretches
- * the table; the full per-evaluator JSON opens in a bounded popover.
+ * Score column cell: a compact policy summary with normalized and raw
+ * per-evaluator details in a bounded popover.
  */
 function TraceScoreCell({
   trace,
   evaluators,
+  threshold,
+  sendAlert,
 }: {
   trace: EvaluationLayerTrace;
   evaluators: EvaluationLayerEvaluator[];
+  threshold: number;
+  sendAlert: boolean;
 }) {
-  const json = traceScoreJson(trace, evaluators);
-  if (!json) {
-    return <span className="text-xs text-muted-foreground">—</span>;
+  const summary = traceEvaluatorSummary(trace, evaluators, threshold);
+  if (!summary.evaluatedAny) {
+    return (
+      <span className="text-xs text-muted-foreground">Not evaluated</span>
+    );
   }
+  const alertTriggered = traceEvaluatorAlertTriggered(
+    trace,
+    evaluators,
+    threshold,
+    sendAlert,
+  );
+
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          title="View evaluator scores"
-          className="block w-full max-w-[150px] truncate whitespace-nowrap text-left font-mono text-xs hover:underline"
+    <div className="space-y-1">
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Evaluator score: ${summary.passed} of ${summary.totalEnabled} passed`}
+            title="View evaluator scores"
+            className={cn(
+              "whitespace-nowrap text-left text-xs font-semibold hover:underline",
+              summary.allPassed
+                ? "text-emerald-700 dark:text-emerald-300"
+                : "text-red-700 dark:text-red-300",
+            )}
+          >
+            {summary.passed}/{summary.totalEnabled} passed
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="max-h-96 w-80 overflow-auto p-3"
         >
-          {JSON.stringify(json)}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="max-h-80 w-auto max-w-sm overflow-auto p-3"
-      >
-        <JsonPreview value={json} />
-      </PopoverContent>
-    </Popover>
+          <div className="space-y-3">
+            <div>
+              <p className="font-medium">Evaluator results</p>
+              <p className="text-xs text-muted-foreground">
+                Passing threshold: {threshold}%
+              </p>
+            </div>
+            {summary.details.map((detail) => (
+              <div
+                key={detail.evaluatorId}
+                className="space-y-2 rounded-md border p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-medium">{detail.evaluatorName}</p>
+                  <span
+                    className={cn(
+                      "whitespace-nowrap text-xs font-semibold",
+                      detail.passed === null
+                        ? "text-muted-foreground"
+                        : detail.passed
+                          ? "text-emerald-700 dark:text-emerald-300"
+                          : "text-red-700 dark:text-red-300",
+                    )}
+                  >
+                    {detail.normalizedScore === null
+                      ? "Not evaluated"
+                      : `${detail.normalizedScore}% · ${detail.passed ? "PASS" : "FAIL"}`}
+                  </span>
+                </div>
+                {detail.rawScores ? (
+                  <JsonPreview value={detail.rawScores} />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+      {alertTriggered ? (
+        <p className="whitespace-nowrap text-[11px] font-medium text-red-700 dark:text-red-300">
+          Alert triggered
+        </p>
+      ) : null}
+    </div>
   );
 }
