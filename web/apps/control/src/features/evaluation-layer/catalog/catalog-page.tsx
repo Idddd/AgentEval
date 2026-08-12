@@ -986,7 +986,7 @@ function WorkspaceDrawer({
   const latestResultCost = latestResultTraces.reduce((sum, trace) => sum + traceCost(trace), 0);
   const nextStep = workspaceNextStep(row);
   const guardrailEvaluationRestricted = row.target.kind === 'guardrail' && role !== 'admin';
-  const startEvaluation = () => {
+  const startEvaluation = (datasetRevisionId = row.publishedRevision?.id) => {
     if (guardrailEvaluationRestricted) {
       setWorkspaceNotice({
         message: 'Guardrail evaluation is restricted to the Admin role.',
@@ -1003,7 +1003,7 @@ function WorkspaceDrawer({
       focusSection('agent');
       return;
     }
-    if (!row.publishedRevision) {
+    if (!datasetRevisionId) {
       setWorkspaceNotice({
         message: 'Publish the selected Test Cases before starting an Evaluation.',
         section: 'dataset',
@@ -1038,7 +1038,7 @@ function WorkspaceDrawer({
     }
     const result = store.createRun({
       targetRevisionId: row.currentRevision.id,
-      datasetRevisionId: row.publishedRevision.id,
+      datasetRevisionId,
       evaluatorIds,
       guardrailTemplateIds: selectedGuardrailTemplateIds,
     });
@@ -1077,10 +1077,6 @@ function WorkspaceDrawer({
     focusSection('agent');
   };
 
-  const advanceToWorkflowSection = (section: WorkspaceSectionKey) => {
-    if (detailsOpen) setExpandedDetailSections([section]);
-    window.setTimeout(() => focusSection(section), 0);
-  };
   const continueWithSelectedDataset = () => {
     if (!row.selectedDataset) return;
     if (!selectedGuardrailTemplateIds.length) {
@@ -1091,6 +1087,7 @@ function WorkspaceDrawer({
       focusSection('dataset');
       return;
     }
+    let datasetRevisionId = row.publishedRevision?.id;
     if (!row.publishedRevision || datasetSelectionPending) {
       const shouldPublishDraft = Boolean(
         row.draftRevision
@@ -1108,6 +1105,7 @@ function WorkspaceDrawer({
           focusSection('dataset');
           return;
         }
+        datasetRevisionId = published.value.revisionId;
       } else if (!row.publishedRevision) {
         setWorkspaceNotice({
           message: 'The selected Dataset does not have a draft that can be prepared.',
@@ -1119,7 +1117,7 @@ function WorkspaceDrawer({
     }
     setDatasetSelectionPending(false);
     setWorkspaceNotice(undefined);
-    advanceToWorkflowSection('run');
+    startEvaluation(datasetRevisionId);
   };
   const datasetTone: WorkspaceSectionTone = row.publishedRevision && selectedGuardrailTemplateIds.length
     ? 'ready'
@@ -1230,9 +1228,9 @@ function WorkspaceDrawer({
   } else if (!row.selectedDataset) {
     footerAction = <Button disabled>Next<ArrowRight /></Button>;
   } else if (datasetSelectionPending) {
-    footerAction = <Button onClick={continueWithSelectedDataset}>Next<ArrowRight /></Button>;
+    footerAction = <Button onClick={continueWithSelectedDataset}><Play />Run evaluation</Button>;
   } else if (!row.publishedRevision) {
-    footerAction = <Button onClick={continueWithSelectedDataset}>Next<ArrowRight /></Button>;
+    footerAction = <Button onClick={continueWithSelectedDataset}><Play />Run evaluation</Button>;
   } else if (!selectedGuardrailTemplateIds.length) {
     footerAction = undefined;
   } else if (row.stage === 'RUNNING') {
@@ -1240,7 +1238,7 @@ function WorkspaceDrawer({
   } else if (row.stage === 'NEEDS_RE_EVALUATION' && guardrailEvaluationRestricted) {
     footerAction = <Button onClick={() => openDetailsSection('result')}>View outdated result<ArrowRight /></Button>;
   } else if (row.stage === 'NEEDS_RE_EVALUATION') {
-    footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={startEvaluation}><Play />Run evaluation again</Button>;
+    footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={() => startEvaluation()}><Play />Run evaluation again</Button>;
   } else if (row.decisionStatus === 'PENDING' && role === 'admin') {
     const approve = row.decisionRecommendation === 'APPROVED';
     footerAction = (
@@ -1269,13 +1267,13 @@ function WorkspaceDrawer({
   } else if (guardrailEvaluationRestricted) {
     footerAction = <Button disabled variant='outline'><ShieldAlert />Admin only</Button>;
   } else if (row.stage === 'FAILED') {
-    footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={startEvaluation}><Play />Retry evaluation</Button>;
+    footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={() => startEvaluation()}><Play />Retry evaluation</Button>;
   } else if (row.stage === 'COMPLETED' && row.latestReport) {
     footerAction = <Button onClick={() => openDetailsSection('result')}>View results<ArrowRight /></Button>;
   } else if (row.latestRun) {
     footerAction = <Button onClick={() => focusSection('run')}>View evaluation<ArrowRight /></Button>;
   } else {
-    footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={startEvaluation}><Play />{detailsOpen ? 'Run evaluation' : 'Next'}</Button>;
+    footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={() => startEvaluation()}><Play />{detailsOpen ? 'Run evaluation' : 'Next'}</Button>;
   }
   const detailsAction = (
     <Button

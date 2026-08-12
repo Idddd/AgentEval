@@ -420,7 +420,7 @@ describe('Catalog drawer progressive disclosure', () => {
     });
   });
 
-  it('keeps Details closed while Next advances an existing Dataset to Evaluation', async () => {
+  it('starts Evaluation directly from ready Test coverage with Details closed', async () => {
     render(
       <EvaluationLayerProvider projectId='individual'>
         <EvaluationCatalogPage />
@@ -434,24 +434,24 @@ describe('Catalog drawer progressive disclosure', () => {
     const currentStage = within(drawer.getByRole('region', { name: 'Current step: Test coverage' }));
 
     expect(nextStep.getByText('Confirm Test coverage')).not.toBeNull();
-    expect(nextStep.getByRole('button', { name: 'Next' })).not.toBeNull();
+    expect(nextStep.getByRole('button', { name: 'Run evaluation' })).not.toBeNull();
+    expect(nextStep.queryByRole('button', { name: 'Next' })).toBeNull();
     expect(currentStage.queryByText('Current step')).toBeNull();
     expect(drawer.queryByRole('region', { name: 'Test coverage details' })).toBeNull();
 
-    await userEvent.click(nextStep.getByRole('button', { name: 'Next' }));
+    await userEvent.click(nextStep.getByRole('button', { name: 'Run evaluation' }));
 
+    await waitFor(() => {
+      expect(nextStep.getByLabelText(/Evaluation \d+% complete/)).not.toBeNull();
+      expect(drawer.getByRole('region', { name: 'Current step: Result' })).not.toBeNull();
+    });
     expect(drawer.queryByRole('region', { name: 'Test coverage details' })).toBeNull();
     expect(drawer.queryByRole('button', { name: 'Hide details' })).toBeNull();
-    expect(drawer.getByRole('region', { name: 'Current step: Evaluation' })).not.toBeNull();
-    expect(nextStep.getByText('Start evaluation')).not.toBeNull();
-    expect(nextStep.getByRole('button', { name: 'Next' })).not.toBeNull();
-
-    await userEvent.click(nextStep.getByRole('button', { name: 'Details' }));
-    const details = within(drawer.getByRole('region', { name: 'Evaluation details' }));
-    expect(details.getByRole('button', { name: 'Collapse Evaluation' })).not.toBeNull();
+    expect(drawer.queryByRole('region', { name: 'Current step: Evaluation' })).toBeNull();
+    expect(nextStep.queryByText('Start evaluation')).toBeNull();
   });
 
-  it('keeps Details open while Next advances the detailed workflow', async () => {
+  it('starts Evaluation directly from ready Test coverage with Details open', async () => {
     render(
       <EvaluationLayerProvider projectId='individual'>
         <EvaluationCatalogPage />
@@ -467,21 +467,28 @@ describe('Catalog drawer progressive disclosure', () => {
       within(drawer.getByRole('region', { name: 'Test coverage details' }))
         .getByRole('button', { name: 'Collapse Test coverage' }),
     ).not.toBeNull();
+    expect(nextStep.getByRole('button', { name: 'Run evaluation' })).not.toBeNull();
+    expect(nextStep.queryByRole('button', { name: 'Next' })).toBeNull();
 
-    await userEvent.click(nextStep.getByRole('button', { name: 'Next' }));
+    await userEvent.click(nextStep.getByRole('button', { name: 'Run evaluation' }));
 
     await waitFor(() => {
       expect(nextStep.getByRole('button', { name: 'Hide details' })).not.toBeNull();
-      expect(nextStep.getByRole('button', { name: 'Run evaluation' })).not.toBeNull();
+      expect(nextStep.getByLabelText(/Evaluation \d+% complete/)).not.toBeNull();
       expect(
-        within(drawer.getByRole('region', { name: 'Evaluation details' }))
-          .getByRole('button', { name: 'Collapse Evaluation' }),
+        within(drawer.getByRole('region', { name: 'Result details' }))
+          .getByRole('button', { name: 'Collapse Result' }),
       ).not.toBeNull();
     });
     expect(drawer.queryByRole('region', { name: /Current step:/ })).toBeNull();
+    expect(
+      within(drawer.getByRole('region', { name: 'Evaluation details' }))
+        .getByRole('button', { name: 'Expand Evaluation' }),
+    ).not.toBeNull();
+    expect(nextStep.queryByText('Start evaluation')).toBeNull();
   });
 
-  it('requires Dataset selection before Next can advance without opening Details', async () => {
+  it('requires Dataset selection before Run evaluation becomes available', async () => {
     const initialState = cloneEvaluationLayerFixtures();
     const targetId = 'demo-onboarding-assistant';
     const removedDatasetIds = new Set(
@@ -522,7 +529,7 @@ describe('Catalog drawer progressive disclosure', () => {
 
     await waitFor(() => {
       expect(drawer.getByRole('region', { name: 'Current step: Test coverage' })).not.toBeNull();
-      expect((nextStep.getByRole('button', { name: 'Next' }) as HTMLButtonElement).disabled).toBe(false);
+      expect((nextStep.getByRole('button', { name: 'Run evaluation' }) as HTMLButtonElement).disabled).toBe(false);
     });
     const createdDataset = store.getState().datasets.find(
       (dataset) => dataset.targetId === targetId,
