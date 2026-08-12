@@ -47,7 +47,7 @@ describe("Overview evaluator policy", () => {
 
   it("excludes disabled evaluators and reports missing enabled results", () => {
     const state = cloneEvaluationLayerFixtures();
-    const trace = { ...state.traces[0]!, judge: undefined };
+    const { judge: _judge, ...trace } = state.traces[0]!;
     const withJudgeDisabled = state.evaluators.map((item) =>
       item.provider === "LANGFUSE" ? { ...item, enabled: false } : item,
     );
@@ -68,10 +68,10 @@ describe("Overview evaluator policy", () => {
 
   it("does not fail a Trace when no enabled evaluator has a result", () => {
     const state = cloneEvaluationLayerFixtures();
+    const { judge: _judge, ...withoutJudge } = state.traces[0]!;
     const trace = {
-      ...state.traces[0]!,
+      ...withoutJudge,
       deterministicScores: {},
-      judge: undefined,
       status: "FAIL" as const,
     };
 
