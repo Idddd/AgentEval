@@ -100,6 +100,44 @@ describe('Evaluation report Developer changes', () => {
     expect(evidence.queryByText(/Alice works in Platform Engineering/)).toBeNull();
   });
 
+  it('starts Tool Evidence compact when the report changes despite a reused evidence id', async () => {
+    const view = render(reportView('hidden'));
+    const firstTrace = 'demo-salary-employee-deny';
+    const secondTrace = 'demo-salary-employee-deny-error';
+    const firstEvidence = within(
+      screen.getByText('Tool Evidence').closest('[data-slot="card"]')! as HTMLElement,
+    );
+
+    await userEvent.click(
+      firstEvidence.getByRole('button', { name: `View output for ${firstTrace}` }),
+    );
+    expect(firstEvidence.getByRole('button', { name: `Hide output for ${firstTrace}` })).not.toBeNull();
+
+    view.rerender(reportView('hidden', 'report-tool-error'));
+
+    const secondEvidence = within(
+      screen.getByText('Tool Evidence').closest('[data-slot="card"]')! as HTMLElement,
+    );
+    const output = secondEvidence.getByRole('button', { name: `View output for ${secondTrace}` });
+    expect(output.getAttribute('aria-expanded')).toBe('false');
+    expect(secondEvidence.queryByText('EmployeeQueryTool connection failed.')).toBeNull();
+  });
+
+  it('renders a recorded null Tool Evidence output without inventing fallback data', async () => {
+    render(reportView('hidden', 'report-tool-error'));
+    const evidence = within(
+      screen.getByText('Tool Evidence').closest('[data-slot="card"]')! as HTMLElement,
+    );
+
+    await userEvent.click(
+      evidence.getByRole('button', { name: 'View output for demo-salary-employee-deny-error' }),
+    );
+
+    expect(evidence.getByText('null')).not.toBeNull();
+    expect(evidence.queryByText('No output recorded')).toBeNull();
+    expect(evidence.queryByText('EmployeeQueryTool connection failed.')).toBeNull();
+  });
+
   it('allows only the Developer role to apply Reflection after rejection', async () => {
     const view = render(reportView());
 
@@ -139,22 +177,25 @@ describe('Evaluation report Developer changes', () => {
     expect(screen.getByText('Suggestions can be applied by Developers in the standalone report.')).not.toBeNull();
   });
 
-  it('presents evidence-backed Suggestions with an enabled no-op Action', async () => {
-    render(reportView('hidden'));
+  it.each(['hidden', 'inline'] as const)(
+    'presents evidence-backed Suggestions with an enabled no-op Action in %s mode',
+    async (decisionMode) => {
+      render(reportView(decisionMode));
 
-    expect(screen.getByText('Suggestion')).not.toBeNull();
-    expect(screen.queryByText('Reflection')).toBeNull();
-    const suggestion = screen.getByText(
-      'Run the permission guard before EmployeeQueryTool execution to prevent restricted data exposure.',
-    );
-    const action = screen.getByRole('button', { name: 'Action' }) as HTMLButtonElement;
+      expect(screen.getByText('Suggestion')).not.toBeNull();
+      expect(screen.queryByText('Reflection')).toBeNull();
+      const suggestion = screen.getByText(
+        'Run the permission guard before EmployeeQueryTool execution to prevent restricted data exposure.',
+      );
+      const action = screen.getByRole('button', { name: 'Action' }) as HTMLButtonElement;
 
-    expect(suggestion).not.toBeNull();
-    expect(action.disabled).toBe(false);
-    expect(action.className).toContain('bg-blue-600');
-    expect(action.className).toContain('text-white');
-    expect(action.className).toContain('hover:bg-blue-700');
-    await userEvent.click(action);
-    expect(suggestion.isConnected).toBe(true);
-  });
+      expect(suggestion).not.toBeNull();
+      expect(action.disabled).toBe(false);
+      expect(action.className).toContain('bg-blue-600');
+      expect(action.className).toContain('text-white');
+      expect(action.className).toContain('hover:bg-blue-700');
+      await userEvent.click(action);
+      expect(suggestion.isConnected).toBe(true);
+    },
+  );
 });

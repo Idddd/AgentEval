@@ -211,7 +211,13 @@ export function EvaluationReportDetail({
   embedded?: boolean;
   decisionMode?: RevisionDecisionMode;
 }) {
-  const [expandedToolEvidenceKey, setExpandedToolEvidenceKey] = useState<string>();
+  const [expandedToolEvidence, setExpandedToolEvidence] = useState<{
+    reportId: string;
+    key?: string;
+  }>({ reportId });
+  const expandedToolEvidenceKey = expandedToolEvidence.reportId === reportId
+    ? expandedToolEvidence.key
+    : undefined;
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
   const projectId = useCurrentProjectId();
@@ -332,7 +338,7 @@ export function EvaluationReportDetail({
       executed: evidence.executed,
       succeeded: evidence.succeeded,
       effectVerified: evidence.effectVerified,
-      output: evidence.output ?? evidence.error ?? { status: "No output recorded" },
+      output: evidence.output,
       simulated: false,
     }))
   ));
@@ -629,7 +635,10 @@ export function EvaluationReportDetail({
                       className="bg-blue-600 text-white hover:bg-blue-700"
                       aria-label={`${expanded ? "Hide output" : "View output"} for ${evidence.traceId}`}
                       aria-expanded={expanded}
-                      onClick={() => setExpandedToolEvidenceKey(expanded ? undefined : evidence.key)}
+                      onClick={() => setExpandedToolEvidence({
+                        reportId,
+                        key: expanded ? undefined : evidence.key,
+                      })}
                     >
                       {expanded ? "Hide output" : "View output"}
                       <span className="sr-only">{" "}for {evidence.traceId}</span>
