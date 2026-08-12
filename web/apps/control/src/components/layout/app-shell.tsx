@@ -13,8 +13,6 @@ import {
   FileLock2,
   FileClock,
   Fingerprint,
-  ListFilter,
-  LockKeyhole,
   Network,
   Search,
   ServerCog,
@@ -164,7 +162,7 @@ export const projectNavGroups: Array<{
       {
         icon: ShieldAlert,
         label: "Guardrails",
-        to: "/$projectId/guardrails",
+        to: "/$projectId/governance/guardrails",
         roles: GUARDRAIL_ADMIN_ROLES,
       },
       {
@@ -175,36 +173,6 @@ export const projectNavGroups: Array<{
       },
       { icon: FileLock2, label: "Runtime Policies", to: "/$projectId/runtime-policies", roles: POLICY_ROLES },
       { icon: FileClock, label: "Audit Logs", to: "/$projectId/audit-logs" },
-    ],
-  },
-  {
-    label: "Guard Governance",
-    items: [
-      {
-        icon: ShieldCheck,
-        label: "Guardrails",
-        to: "/$projectId/governance/guardrails",
-      },
-      {
-        icon: ListFilter,
-        label: "Assignments",
-        to: "/$projectId/governance/assignments",
-      },
-      {
-        icon: LockKeyhole,
-        label: "Enforcements",
-        to: "/$projectId/governance/enforcements",
-      },
-      {
-        icon: Network,
-        label: "Integrations",
-        to: "/$projectId/governance/integrations",
-      },
-      {
-        icon: Activity,
-        label: "Evidence",
-        to: "/$projectId/governance/evidence",
-      },
     ],
   },
   {

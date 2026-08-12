@@ -213,8 +213,9 @@ describe('Catalog drawer progressive disclosure', () => {
 
     expect(panel.queryByText('Business Dataset')).toBeNull();
     expect(panel.queryByText('Your representative functional and business scenarios.')).toBeNull();
-    expect(panel.getByRole('combobox', { name: 'Dataset' })).not.toBeNull();
-    expect(panel.getByRole('button', { name: 'Generate Dataset' })).not.toBeNull();
+    expect(panel.queryByRole('combobox', { name: 'Dataset' })).toBeNull();
+    expect(panel.getByRole('radiogroup', { name: 'Dataset' })).not.toBeNull();
+    expect(panel.queryByRole('button', { name: 'Generate Dataset' })).toBeNull();
     expect(panel.getByRole('group', { name: 'Guardrail Test Packs' })).not.toBeNull();
     expect((panel.getByRole('checkbox', { name: 'Select Universal Safety Baseline' }) as HTMLInputElement).checked).toBe(true);
     expect(panel.getByText(/2 selected · \d+ safety cases/)).not.toBeNull();
@@ -235,18 +236,14 @@ describe('Catalog drawer progressive disclosure', () => {
     const drawer = within(screen.getByRole('dialog', { name: 'Invoice Classification' }));
     const current = within(drawer.getByRole('region', { name: 'Current step: Test coverage' }));
 
-    const generate = current.getByRole('button', { name: 'Generate Dataset' });
-    const dataset = current.getByRole('combobox', { name: 'Dataset' });
-    expect(generate.compareDocumentPosition(dataset) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(current.getByRole('option', { name: '+ New Dataset' })).not.toBeNull();
-    expect(current.getAllByRole('button', { name: 'Generate Dataset' })).toHaveLength(1);
+    const dataset = current.getByRole('radiogroup', { name: 'Dataset' });
+    expect(dataset).not.toBeNull();
+    expect(current.getByRole('button', { name: 'New Dataset' })).not.toBeNull();
+    expect(current.queryByRole('button', { name: 'Generate Dataset' })).toBeNull();
     expect(current.getByRole('group', { name: 'Guardrail Test Packs' })).not.toBeNull();
     expect(current.queryByText(/Combined coverage:/)).toBeNull();
-
-    await userEvent.click(generate);
-    await waitFor(() => {
-      expect(within(drawer.getByRole('region', { name: 'Current step: Test coverage' })).getByText(/3 draft cases/)).not.toBeNull();
-    });
+    expect(current.queryByText('Draft cases')).toBeNull();
+    expect(current.queryByText('Evaluation history')).toBeNull();
   });
 
   it('configures a new Dataset with one required Guardrail and optional packs', async () => {
@@ -260,12 +257,12 @@ describe('Catalog drawer progressive disclosure', () => {
     );
     const drawer = within(screen.getByRole('dialog', { name: 'Onboarding Assistant' }));
     const coverage = within(drawer.getByRole('region', { name: 'Current step: Test coverage' }));
-    const dataset = coverage.getByRole('combobox', { name: 'Dataset' }) as HTMLSelectElement;
+    expect(coverage.queryByRole('combobox', { name: 'Dataset' })).toBeNull();
+    const dataset = coverage.getByRole('radio', { name: /Demo Default Dataset/ }) as HTMLInputElement;
 
-    expect(dataset.value).toBe('demo-default-dataset');
-    expect(coverage.getByRole('option', { name: 'Demo Default Dataset' })).not.toBeNull();
-    expect(coverage.queryByRole('option', { name: 'Published Demo Dataset' })).toBeNull();
-    expect(coverage.getByRole('option', { name: '+ New Dataset' })).not.toBeNull();
+    expect(dataset.checked).toBe(true);
+    expect(coverage.getByRole('radio', { name: /Published Demo Dataset/ })).not.toBeNull();
+    expect(coverage.getByRole('button', { name: 'New Dataset' })).not.toBeNull();
     expect(coverage.queryByRole('button', { name: 'Create Dataset' })).toBeNull();
     expect(coverage.getByText(/6 draft cases/)).not.toBeNull();
     const packs = within(coverage.getByRole('group', { name: 'Guardrail Test Packs' }));
@@ -283,7 +280,7 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(optional.checked).toBe(false);
     expect(packs.getByText(/1 selected · \d+ safety cases/)).not.toBeNull();
 
-    await userEvent.selectOptions(dataset, '__create_dataset__');
+    await userEvent.click(coverage.getByRole('button', { name: 'New Dataset' }));
     expect(screen.getByRole('dialog', { name: 'Create dataset' })).not.toBeNull();
   });
 
@@ -351,10 +348,7 @@ describe('Catalog drawer progressive disclosure', () => {
     const coverage = within(drawer.getByRole('region', { name: 'Test coverage details' }));
     expect(coverage.getByRole('button', { name: 'Collapse Test coverage' })).not.toBeNull();
 
-    await userEvent.selectOptions(
-      coverage.getByRole('combobox', { name: 'Dataset' }),
-      '__create_dataset__',
-    );
+    await userEvent.click(coverage.getByRole('button', { name: 'New Dataset' }));
     const createDialog = within(screen.getByRole('dialog', { name: 'Create dataset' }));
     await userEvent.type(createDialog.getByRole('textbox', { name: 'Name *' }), 'One-stop Eval Dataset');
     await userEvent.click(createDialog.getByRole('button', { name: 'Create dataset' }));
@@ -362,10 +356,9 @@ describe('Catalog drawer progressive disclosure', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'Create dataset' })).toBeNull();
       expect(drawer.getByRole('region', { name: 'Test coverage details' })).not.toBeNull();
-      expect(
-        within(drawer.getByRole('region', { name: 'Test coverage details' }))
-          .getByRole('button', { name: 'Collapse Test coverage' }),
-      ).not.toBeNull();
+      const updatedCoverage = within(drawer.getByRole('region', { name: 'Test coverage details' }));
+      expect(updatedCoverage.getByRole('button', { name: 'Collapse Test coverage' })).not.toBeNull();
+      expect((updatedCoverage.getByRole('radio', { name: /One-stop Eval Dataset/ }) as HTMLInputElement).checked).toBe(true);
     });
   });
 
@@ -461,14 +454,13 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(coverage.getByText(/Select a Dataset below/)).not.toBeNull();
     const next = nextStep.getByRole('button', { name: 'Next' }) as HTMLButtonElement;
     expect(next.disabled).toBe(true);
-    const datasetSelect = coverage.getByRole('combobox', { name: 'Dataset' }) as HTMLSelectElement;
-    expect(datasetSelect.value).toBe('');
-    expect(coverage.getByRole('option', { name: 'Select Dataset' })).not.toBeNull();
-    expect(coverage.getByRole('option', { name: '+ New Dataset' })).not.toBeNull();
-
-    const generate = coverage.getByRole('button', { name: 'Generate Dataset' });
-    expect(generate.compareDocumentPosition(datasetSelect) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    await userEvent.click(generate);
+    expect(coverage.getByRole('radiogroup', { name: 'Dataset' })).not.toBeNull();
+    expect(coverage.queryAllByRole('radio')).toHaveLength(0);
+    expect(coverage.queryByRole('button', { name: 'Generate Dataset' })).toBeNull();
+    await userEvent.click(coverage.getByRole('button', { name: 'New Dataset' }));
+    const createDialog = within(screen.getByRole('dialog', { name: 'Create dataset' }));
+    await userEvent.type(createDialog.getByRole('textbox', { name: 'Name *' }), 'Onboarding Assistant Dataset');
+    await userEvent.click(createDialog.getByRole('button', { name: 'Create dataset' }));
 
     await waitFor(() => {
       expect(drawer.getByRole('region', { name: 'Current step: Test coverage' })).not.toBeNull();
@@ -480,33 +472,12 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(createdDataset?.name).toBe('Onboarding Assistant Dataset');
     expect(store.getState().datasetRevisions.find(
       (revision) => revision.datasetId === createdDataset?.id && revision.status === 'DRAFT',
-    )?.cases).toHaveLength(2);
+    )?.cases).toHaveLength(0);
     expect(store.getState().datasetRevisions.some(
       (revision) => revision.datasetId === createdDataset?.id && revision.status === 'PUBLISHED',
     )).toBe(false);
     expect(drawer.queryByRole('region', { name: /details$/i })).toBeNull();
 
-    await userEvent.click(nextStep.getByRole('button', { name: 'Next' }));
-    await waitFor(() => {
-      expect(drawer.getByRole('region', { name: 'Current step: Evaluation' })).not.toBeNull();
-    });
-    const published = store.getState().datasetRevisions.find(
-      (revision) => revision.datasetId === createdDataset?.id && revision.status === 'PUBLISHED',
-    );
-    expect(published?.cases).toHaveLength(2);
-    expect(drawer.queryByRole('region', { name: /details$/i })).toBeNull();
-
-    await userEvent.click(nextStep.getByRole('button', { name: 'Next' }));
-    await waitFor(() => {
-      const run = store.getState().runs.find(
-        (item) =>
-          item.targetId === targetId &&
-          !item.id.startsWith('live-monitoring-'),
-      );
-      expect(run?.results).toHaveLength(4);
-      expect(run?.results.filter((result) => Boolean(result.guardrailTemplateId))).toHaveLength(2);
-    });
-    expect(drawer.queryByRole('region', { name: /details$/i })).toBeNull();
   });
 
   it('runs an evaluation directly from expanded Evaluation details', async () => {

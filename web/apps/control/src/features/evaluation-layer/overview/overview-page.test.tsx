@@ -49,6 +49,15 @@ describe("EvaluationOverviewPage", () => {
     expect(
       evaluators.getByRole("slider", { name: "Sampling rate" }),
     ).toBeTruthy();
+    const sampling = evaluators.getByRole("slider", { name: "Sampling rate" });
+    const evaluatorTable = evaluators.getByRole("table");
+    expect(
+      sampling.compareDocumentPosition(evaluatorTable) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(
+      evaluators.getAllByRole("heading", { name: "Sampling" }),
+    ).toHaveLength(1);
     expect(
       evaluators.getByRole("spinbutton", {
         name: "Minimum score for Permission compliance",

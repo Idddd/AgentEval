@@ -250,8 +250,35 @@ export function EvaluationOverviewPage() {
         <EvaluationSection
           title="Evaluators"
           description={`${enabledEvaluators}/${state.evaluators.length} evaluators will be used by the next Evaluation.`}
+          action={(
+            <div className="flex w-full max-w-lg flex-wrap items-center justify-between gap-3 lg:w-[32rem]">
+              <div>
+                <h3 className="font-medium">Sampling</h3>
+                <p className="text-xs text-muted-foreground">
+                  What-if preview. No data is dropped.
+                </p>
+              </div>
+              <Label className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={samplingRate}
+                  className="w-48 max-w-full"
+                  aria-label="Sampling rate"
+                  onChange={(event) =>
+                    store.setSamplingRate(Number(event.target.value))
+                  }
+                />
+                <span className="w-12 text-lg font-semibold">
+                  {samplingRate}%
+                </span>
+              </Label>
+            </div>
+          )}
         >
-          <div className="space-y-5">
+          <div>
             <EvaluationTable>
               <thead>
                 <tr>
@@ -323,32 +350,6 @@ export function EvaluationOverviewPage() {
               </tbody>
             </EvaluationTable>
 
-            <div className="space-y-4 border-t pt-5">
-              <div>
-                <h3 className="font-medium">Sampling</h3>
-                <p className="text-sm text-muted-foreground">
-                  What-if preview: how many current Traces would be captured.
-                  No data is dropped.
-                </p>
-              </div>
-              <Label className="flex items-center gap-4">
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={samplingRate}
-                  className="w-64 max-w-full"
-                  aria-label="Sampling rate"
-                  onChange={(event) =>
-                    store.setSamplingRate(Number(event.target.value))
-                  }
-                />
-                <span className="w-12 text-lg font-semibold">
-                  {samplingRate}%
-                </span>
-              </Label>
-            </div>
           </div>
         </EvaluationSection>
       </section>

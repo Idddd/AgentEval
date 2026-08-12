@@ -44,28 +44,17 @@ describe("Evaluation navigation", () => {
 });
 
 describe("Guard Governance navigation", () => {
-  it("adds five isolated governance entries without replacing Security Guardrails", () => {
-    expect(
-      projectNavGroups
-        .find((group) => group.label === "Guard Governance")
-        ?.items.map((item) => item.label),
-    ).toEqual([
-      "Guardrails",
-      "Assignments",
-      "Enforcements",
-      "Integrations",
-      "Evidence",
-    ]);
-    expect(
-      projectNavGroups
-        .find((group) => group.label === "Security")
-        ?.items.some((item) => item.to === "/$projectId/guardrails"),
-    ).toBe(true);
+  it("replaces Security Guardrails with the governance page and hides its old group", () => {
+    expect(projectNavGroups.some((group) => group.label === "Guard Governance")).toBe(false);
+    const securityGuardrails = projectNavGroups
+      .find((group) => group.label === "Security")!
+      .items.find((item) => item.label === "Guardrails");
+    expect(securityGuardrails?.to).toBe("/$projectId/governance/guardrails");
   });
 
   it("keeps Guardrails active on a governance detail route", () => {
     const guardrails = projectNavGroups
-      .find((group) => group.label === "Guard Governance")!
+      .find((group) => group.label === "Security")!
       .items.find((item) => item.label === "Guardrails")!;
     expect(
       itemIsActive(
@@ -119,7 +108,6 @@ describe("Role-based navigation whitelist", () => {
       );
     }
     expect(visibleLabels("Security", "member")).not.toContain("Guardrails");
-    expect(visibleLabels("Guard Governance", "member")).toContain("Guardrails");
   });
 
   it("restricts compliance to policy, behavior, and traceability surfaces", () => {

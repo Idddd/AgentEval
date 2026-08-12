@@ -25,7 +25,6 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
   Workflow,
   Wrench,
   XCircle,
@@ -62,11 +61,7 @@ import type {
   EvaluationLayerTargetKind,
 } from '../model';
 import { useEvaluationLayerState, useEvaluationLayerStore } from '../mock-provider';
-import {
-  DEFAULT_DATASET_COLUMNS,
-  DatasetEditor,
-  EvaluationDatasetDetail,
-} from '../datasets/dataset-pages';
+import { DatasetEditor, EvaluationDatasetDetail } from '../datasets/dataset-pages';
 import { isLiveMonitoringRun } from '../mock-store';
 import { EvaluationReportDetail } from '../reports/report-page';
 import {
@@ -91,6 +86,7 @@ import {
   type WorkspaceRow,
   type WorkspaceStage,
 } from './workspace-view-model';
+import { DatasetCardSelector } from './dataset-card-selector';
 
 type CatalogView = 'cards' | 'list' | 'lifecycle';
 type CatalogSort = 'updated' | 'name' | 'stage';
@@ -98,12 +94,6 @@ type KindFilter = 'all' | EvaluationLayerTargetKind;
 type StageFilter = 'ALL' | WorkspaceStage;
 
 const FIRST_WORKFLOW_TARGET_ID = 'demo-onboarding-assistant';
-const CREATE_DATASET_VALUE = '__create_dataset__';
-
-function generatedDatasetName(targetName: string) {
-  const suffix = ' Dataset';
-  return `${targetName.slice(0, 50 - suffix.length).trimEnd()}${suffix}`;
-}
 
 const KIND_META: Record<
   EvaluationLayerTargetKind,
@@ -1120,39 +1110,6 @@ function WorkspaceDrawer({
     setWorkspaceNotice(undefined);
     advanceToWorkflowSection('run');
   };
-  const generateDatasetCases = () => {
-    let datasetId = row.selectedDataset?.id;
-    if (!datasetId) {
-      const created = store.createDataset({
-        targetId: row.target.id,
-        name: generatedDatasetName(row.target.name),
-        description: `Generated Test Cases for the ${row.target.name} evaluation workflow.`,
-        schema: DEFAULT_DATASET_COLUMNS,
-      });
-      if (!created.ok) {
-        setWorkspaceNotice({ message: created.error, section: 'dataset' });
-        focusSection('dataset');
-        return;
-      }
-      datasetId = created.value.datasetId;
-      const selected = store.selectActiveDataset(datasetId);
-      if (!selected.ok) {
-        setWorkspaceNotice({ message: selected.error, section: 'dataset' });
-        focusSection('dataset');
-        return;
-      }
-    }
-    const generated = store.generateCases(datasetId);
-    if (!generated.ok) {
-      setWorkspaceNotice({ message: generated.error, section: 'dataset' });
-      focusSection('dataset');
-      return;
-    }
-    setDatasetSelectionPending(true);
-    setWorkspaceNotice(undefined);
-    if (detailsOpen) setExpandedDetailSections(['dataset']);
-    window.setTimeout(() => focusSection('dataset'), 0);
-  };
   const datasetTone: WorkspaceSectionTone = row.publishedRevision && selectedGuardrailTemplateIds.length
     ? 'ready'
     : row.draftRevision
@@ -1428,36 +1385,19 @@ function WorkspaceDrawer({
                 Select a Dataset below, or choose + New Dataset to create one. You can continue after a Dataset is selected.
               </p>
             ) : null}
-            <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/10 p-3'>
-              <Button variant='outline' onClick={generateDatasetCases}><Sparkles />Generate Dataset</Button>
-              <p className='text-xs text-muted-foreground'>
-                {row.selectedDataset
-                  ? `Generate additional cases for ${row.selectedDataset.name}.`
-                  : `Create ${generatedDatasetName(row.target.name)} with generated cases.`}
-              </p>
-            </div>
             <div className='rounded-lg border bg-muted/10 p-3'>
-              <label className='grid min-w-64 flex-1 gap-2 text-xs font-medium text-muted-foreground'>
-                Dataset
-                <select
-                  className='h-10 rounded-md border bg-background px-3 text-sm text-foreground'
-                  value={row.selectedDataset?.id ?? ''}
-                  onChange={(event) => {
-                    if (event.target.value === CREATE_DATASET_VALUE) {
-                      onCreateDataset();
-                      return;
-                    }
-                    const result = store.selectActiveDataset(event.target.value);
-                    if (result.ok) setDatasetSelectionPending(true);
-                  }}
-                >
-                  {!row.selectedDataset ? <option value='' disabled>Select Dataset</option> : null}
-                  {targetDatasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}
-                  <option value={CREATE_DATASET_VALUE}>+ New Dataset</option>
-                </select>
-              </label>
+              <DatasetCardSelector
+                datasets={targetDatasets}
+                revisions={state.datasetRevisions}
+                selectedDatasetId={row.selectedDataset?.id ?? ''}
+                onSelect={(datasetId) => {
+                  const result = store.selectActiveDataset(datasetId);
+                  if (result.ok) setDatasetSelectionPending(true);
+                }}
+                onCreate={onCreateDataset}
+              />
             </div>
-            {row.selectedDataset ? <EvaluationDatasetDetail key={row.selectedDataset.id} datasetId={row.selectedDataset.id} compact={!detailsOpen} embedded showEvaluateAction={false} showDetailsToggle={detailsOpen} showGenerateAction={false} onEvaluate={() => focusSection('run')} /> : null}
+            {detailsOpen && row.selectedDataset ? <EvaluationDatasetDetail key={row.selectedDataset.id} datasetId={row.selectedDataset.id} embedded showEvaluateAction={false} showDetailsToggle onEvaluate={() => focusSection('run')} /> : null}
             {detailsOpen || !row.publishedRevision || !selectedGuardrailTemplateIds.length ? <GuardrailTemplatePicker targetKind={row.target.kind} selectedIds={selectedGuardrailTemplateIds} onSelectedIdsChange={setSelectedGuardrailTemplateIds} disabled={guardrailEvaluationRestricted} /> : null}
             {detailsOpen ? <p className='text-xs text-muted-foreground'>Combined coverage: {row.publishedRevision?.cases.length ?? 0} business cases + {selectedGuardrailCaseCount} Guardrail cases.</p> : null}
           </WorkspaceSection> : null}
