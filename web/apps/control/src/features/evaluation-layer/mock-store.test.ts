@@ -728,6 +728,29 @@ describe("EvaluationLayerStore", () => {
     expect(store.setSamplingRate(Number.NaN).ok).toBe(false);
   });
 
+  it('clamps the evaluator threshold and toggles mock alerts', () => {
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+
+    expect(store.getState().settings.minimumEvaluatorScore).toBe(80);
+    expect(store.getState().settings.sendEvaluatorAlert).toBe(false);
+    expect(store.setMinimumEvaluatorScore(120)).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(store.getState().settings.minimumEvaluatorScore).toBe(100);
+    expect(store.setMinimumEvaluatorScore(-7)).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(store.getState().settings.minimumEvaluatorScore).toBe(0);
+    expect(store.setMinimumEvaluatorScore(Number.NaN).ok).toBe(false);
+    expect(store.setSendEvaluatorAlert(true)).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(store.getState().settings.sendEvaluatorAlert).toBe(true);
+  });
+
   it('toggles evaluators used by the next Evaluation', () => {
     const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
     const evaluator = store.getState().evaluators[0]!;

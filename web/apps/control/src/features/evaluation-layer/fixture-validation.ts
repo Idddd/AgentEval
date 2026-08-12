@@ -167,6 +167,20 @@ export function validateEvaluationLayerState(state: EvaluationLayerState): strin
   ) {
     errors.push(`settings.samplingRate: ${state.settings.samplingRate}`);
   }
+  if (
+    !Number.isFinite(state.settings.minimumEvaluatorScore) ||
+    state.settings.minimumEvaluatorScore < 0 ||
+    state.settings.minimumEvaluatorScore > 100
+  ) {
+    errors.push(
+      `settings.minimumEvaluatorScore: ${state.settings.minimumEvaluatorScore}`,
+    );
+  }
+  if (typeof state.settings.sendEvaluatorAlert !== "boolean") {
+    errors.push(
+      `settings.sendEvaluatorAlert: ${state.settings.sendEvaluatorAlert}`,
+    );
+  }
   const traceIds = new Set(state.traces.map((trace) => trace.id));
   for (const event of state.activity) {
     requireReference(`activity.${event.id}.targetId`, event.targetId, targetIds);

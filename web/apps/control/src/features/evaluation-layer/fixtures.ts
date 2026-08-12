@@ -726,5 +726,5 @@ export const evaluationLayerFixtures: EvaluationLayerState = {
     { id: "log-skill-008", runId: "run-skill-summary-baseline", at: "2026-07-30T12:00:30.000Z", actor: "system", action: "run_completed", outcome: "info", detail: "Evaluation completed · 2/2 passed" },
   ],
   activity: [],
-  settings: { activeTargetId: "demo-permission-compliance", activeDatasetId: "permission-compliance-regression", selectedRunId: "run-permission-baseline", showRawSpans: true, samplingRate: 100, provider: "Recorded demo judge", baseUrl: "http://localhost:3000", model: "Recorded demo judge", apiKey: "", testOutcome: "SUCCESS", testFingerprint: "demo-connection-v1" },
+  settings: { activeTargetId: "demo-permission-compliance", activeDatasetId: "permission-compliance-regression", selectedRunId: "run-permission-baseline", showRawSpans: true, samplingRate: 100, minimumEvaluatorScore: 80, sendEvaluatorAlert: false, provider: "Recorded demo judge", baseUrl: "http://localhost:3000", model: "Recorded demo judge", apiKey: "", testOutcome: "SUCCESS", testFingerprint: "demo-connection-v1" },
 };

@@ -89,6 +89,8 @@ describe("Evaluation layer fixtures", () => {
     ]);
     expect(run.results.some((item) => item.status === "PENDING")).toBe(false);
     expect(evaluationLayerFixtures.settings).toMatchObject({
+      minimumEvaluatorScore: 80,
+      sendEvaluatorAlert: false,
       provider: "Recorded demo judge",
       baseUrl: "http://localhost:3000",
       model: "Recorded demo judge",
@@ -96,6 +98,20 @@ describe("Evaluation layer fixtures", () => {
       testOutcome: "SUCCESS",
       testFingerprint: "demo-connection-v1",
     });
+  });
+
+  it("rejects evaluator alert settings outside their mock contract", () => {
+    const invalidThreshold = cloneEvaluationLayerFixtures();
+    invalidThreshold.settings.minimumEvaluatorScore = 101;
+    expect(validateEvaluationLayerState(invalidThreshold)).toContain(
+      "settings.minimumEvaluatorScore: 101",
+    );
+
+    const invalidAlert = cloneEvaluationLayerFixtures();
+    invalidAlert.settings.sendEvaluatorAlert = "yes" as unknown as boolean;
+    expect(validateEvaluationLayerState(invalidAlert)).toContain(
+      "settings.sendEvaluatorAlert: yes",
+    );
   });
 
   it("rejects ownership and Tool evidence that disconnect a graph", () => {

@@ -120,6 +120,8 @@ export interface EvaluationLayerStore {
   saveSettings(input: EvaluationLayerSettings): CommandResult;
   setEvaluatorEnabled(evaluatorId: string, enabled: boolean): CommandResult;
   setSamplingRate(rate: number): CommandResult;
+  setMinimumEvaluatorScore(score: number): CommandResult;
+  setSendEvaluatorAlert(enabled: boolean): CommandResult;
   /** Live-monitoring demo: simulate one monitoring tick (new trace + events). */
   tickSimulation(): CommandResult<{ traceId: string }>;
   /** Live-monitoring demo: start/stop periodic ticks; safe to call repeatedly. */
@@ -1565,6 +1567,27 @@ export function createEvaluationLayerStore(
       replaceState((snapshot) => ({
         ...snapshot,
         settings: { ...snapshot.settings, samplingRate: clamped },
+      }));
+      return { ok: true, value: undefined };
+    },
+    setMinimumEvaluatorScore(score) {
+      if (!Number.isFinite(score)) {
+        return fail(
+          "Minimum evaluator score must be a number between 0 and 100.",
+          "INVALID_INPUT",
+        );
+      }
+      const clamped = Math.min(100, Math.max(0, Math.round(score)));
+      replaceState((snapshot) => ({
+        ...snapshot,
+        settings: { ...snapshot.settings, minimumEvaluatorScore: clamped },
+      }));
+      return { ok: true, value: undefined };
+    },
+    setSendEvaluatorAlert(enabled) {
+      replaceState((snapshot) => ({
+        ...snapshot,
+        settings: { ...snapshot.settings, sendEvaluatorAlert: enabled },
       }));
       return { ok: true, value: undefined };
     },
