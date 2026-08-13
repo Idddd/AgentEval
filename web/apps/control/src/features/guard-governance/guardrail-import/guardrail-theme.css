@@ -1,0 +1,62 @@
+.guardrail-import {
+  --background: #f7f8fa;
+  --foreground: #182230;
+  --card: #ffffff;
+  --card-foreground: #182230;
+  --popover: #ffffff;
+  --popover-foreground: #182230;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f4f7;
+  --secondary-foreground: #344054;
+  --muted: #f2f4f7;
+  --muted-foreground: #667085;
+  --accent: #eff4ff;
+  --accent-foreground: #1849a9;
+  --destructive: #d92d20;
+  --border: #e4e7ec;
+  --input: #d0d5dd;
+  --ring: #2e90fa;
+  --radius-badge: 0.375rem;
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+  --radius-large: 1rem;
+  --shadow-surface:
+    0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.08);
+  --shadow-overlay: 0 12px 32px rgb(16 24 40 / 0.16);
+  color: var(--foreground);
+}
+
+.dark .guardrail-import {
+  --background: #101828;
+  --foreground: #f2f4f7;
+  --card: #1d2939;
+  --card-foreground: #f2f4f7;
+  --popover: #1d2939;
+  --popover-foreground: #f2f4f7;
+  --primary: #84adff;
+  --primary-foreground: #102a56;
+  --secondary: #344054;
+  --secondary-foreground: #f2f4f7;
+  --muted: #344054;
+  --muted-foreground: #98a2b3;
+  --accent: #102a56;
+  --accent-foreground: #d1e0ff;
+  --destructive: #f97066;
+  --border: #475467;
+  --input: #667085;
+  --ring: #84adff;
+}
+
+.guardrail-import ::selection {
+  background: #dbeafe;
+  color: #1849a9;
+}
+
+.guardrail-import h1,
+.guardrail-import h2,
+.guardrail-import h3,
+.guardrail-import h4 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
