@@ -18,6 +18,9 @@ import { renderImported } from "./test-utils";
 it("renders the original registry hierarchy without AgentEval metric cards", async () => {
   renderImported(<GuardrailsPage projectId="individual" />);
   expect(await screen.findByText(/Guardrail registry.*4/)).not.toBeNull();
+  expect(
+    screen.getByText(/Protect public model traffic/).classList.contains("max-h-10"),
+  ).toBe(true);
   expect(screen.queryByText("Tested current")).toBeNull();
   expect(
     screen.getByRole("columnheader", { name: "Test evidence" }),
@@ -68,13 +71,11 @@ it("combines multiple selected templates into one editable safety intent", async
   expect(screen.getAllByLabelText("Selected template")).toHaveLength(2);
   await user.click(screen.getByRole("button", { name: "Continue" }));
 
-  const purpose = screen.getByLabelText("Business purpose") as HTMLTextAreaElement;
-  expect(purpose.value).toContain(
-    "Advanced PII Protection (Australia)",
-  );
-  expect(purpose.value).toContain("Prompt Injection Protection");
-  expect(screen.getByLabelText("Allowed business domains")).not.toBeNull();
-  expect(screen.getByLabelText("Restricted domains")).not.toBeNull();
+  expect(screen.queryByLabelText("Business purpose")).toBeNull();
+  expect(screen.queryByLabelText("Allowed business domains")).toBeNull();
+  expect(screen.queryByLabelText("Restricted domains")).toBeNull();
+  expect(screen.getByText("Advanced PII Protection (Australia)")).not.toBeNull();
+  expect(screen.getByText("Prompt Injection Protection")).not.toBeNull();
 });
 
 it("describes custom intent creation without upload and mock-analyzes its purpose", async () => {
@@ -94,7 +95,10 @@ it("describes custom intent creation without upload and mock-analyzes its purpos
 
   const purpose = screen.getByLabelText("Business purpose");
   expect((purpose as HTMLTextAreaElement).value).toContain(
-    "authorized business users",
+    "ISS requires this AI assistant",
+  );
+  expect((purpose as HTMLTextAreaElement).value).toContain(
+    "retain evidence",
   );
   await user.click(
     await screen.findByRole("button", { name: "Analyze protection intent" }),
@@ -125,4 +129,23 @@ it("renders all parameter controls for an imported Guard template", async () => 
   expect(screen.getByPlaceholderText("One competitor per line").tagName).toBe(
     "TEXTAREA",
   );
+});
+
+it("does not repeat template summaries on the Controls step", async () => {
+  const user = userEvent.setup();
+  renderImported(<GuardrailsPage projectId="individual" />);
+
+  await user.click(
+    await screen.findByRole("button", { name: "Create Guardrail" }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: /Baseline PII Protection/ }),
+  );
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+  expect(screen.getByText("Baseline PII Protection")).not.toBeNull();
+
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+
+  expect(screen.queryByText("Baseline PII Protection")).toBeNull();
+  expect(screen.getByText("Controls to enforce")).not.toBeNull();
 });

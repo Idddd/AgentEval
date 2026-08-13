@@ -79,7 +79,7 @@ const defaultControls: GuardrailControl[] = [
 ];
 
 const defaultCustomPurpose =
-  "authorized business users use this AI assistant to review approved internal documents and business data, summarize facts, answer questions within documented policies, and support auditable decisions. It must protect personal data, credentials, confidential records, and system instructions; refuse unsafe, unlawful, or out-of-scope advice or actions; escalate ambiguous high-risk requests to a human reviewer; and record material enforcement decisions for audit.";
+  "ISS requires this AI assistant to be used only by authorized business users for approved internal-document review, fact summarization, policy-grounded question answering, and auditable decision support. Access must be limited to the minimum data and capabilities required for the assigned business purpose. Personal data, credentials, confidential records, and system instructions must not be disclosed, altered, or used outside the approved scope. Unsafe, unlawful, unauthorized, ambiguous, or high-risk requests must be blocked or escalated to the designated human owner. The service owner must retain evidence of material access, policy enforcement, exceptions, escalations, and approvals for ISS review.";
 
 export function GuardrailsPage({ projectId }: { projectId: string }) {
   const { t, i18n } = useTranslation();
@@ -187,7 +187,7 @@ export function GuardrailsPage({ projectId }: { projectId: string }) {
                           </span>
                         ) : null}
                       </span>
-                      <span className="mt-1 block max-w-xl line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      <span className="mt-1 block max-h-10 max-w-xl overflow-hidden text-xs leading-5 text-muted-foreground">
                         {guardrailDisplayPurpose(guardrail, t)}
                       </span>
                     </Link>
@@ -383,9 +383,22 @@ function GuardrailDetail({
 
   const testCases = casesQuery.data?.items ?? [];
   const versions = versionsQuery.data?.items ?? [];
-  const template = templatesQuery.data?.items.find(
+  const templates = templatesQuery.data?.items ?? [];
+  const template = templates.find(
     (item) => item.id === guardrail.source_template_id,
   );
+  const sourceTemplates = guardrail.source_template_ids
+    .map((id) => templates.find((item) => item.id === id))
+    .filter((item): item is GuardrailTemplate => Boolean(item));
+  const templateDefaults = sourceTemplates.length
+    ? composeTemplates(sourceTemplates)
+    : null;
+  const allowedTopics = guardrail.allowed_topics.length
+    ? guardrail.allowed_topics
+    : (templateDefaults?.allowedTopics ?? []);
+  const restrictedTopics = guardrail.restricted_topics.length
+    ? guardrail.restricted_topics
+    : (templateDefaults?.restrictedTopics ?? []);
   const definitions = controlsQuery.data?.items ?? [];
   return (
     <section className="min-w-0 py-6 sm:py-8">
@@ -515,7 +528,7 @@ function GuardrailDetail({
           >
             <TopicPanel
               title={t("guardrails.allowedDomains")}
-              items={guardrail.allowed_topics}
+              items={allowedTopics}
               empty={t(
                 template
                   ? "guardrails.templateDefined"
@@ -524,7 +537,7 @@ function GuardrailDetail({
             />
             <TopicPanel
               title={t("guardrails.restrictedDomains")}
-              items={guardrail.restricted_topics}
+              items={restrictedTopics}
               empty={t(
                 template
                   ? "guardrails.templateDefined"
@@ -532,35 +545,6 @@ function GuardrailDetail({
               )}
               danger
             />
-            <section className="rounded-lg border bg-card p-4 xl:col-span-2">
-              <h3 className="text-lg">{t("guardrails.decisionPosture")}</h3>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <Fact
-                  label={t("guardrails.evaluation")}
-                  value={
-                    guardrail.local_only
-                      ? t("guardrails.localDeterministic")
-                      : t(
-                          guardrail.safety_level === "strict"
-                            ? "guardrails.strict"
-                            : "guardrails.balanced",
-                        )
-                  }
-                />
-                <Fact
-                  label={t("guardrails.modelOutput")}
-                  value={deliveryLabel(guardrail.output_delivery, t)}
-                />
-                <Fact
-                  label={t("guardrails.ownership")}
-                  value={t(
-                    guardrail.system_managed
-                      ? "guardrails.productManagedBaseline"
-                      : "guardrails.organizationOwned",
-                  )}
-                />
-              </div>
-            </section>
             <InfoNotice title={t("guardrails.runtimeBoundary")}>
               {t(
                 guardrail.local_only
@@ -1177,25 +1161,6 @@ function CreateGuardrailSheet({
             </Field>
             {mode === "template" && selectedTemplates.length ? (
               <>
-                <Field
-                  label={t("guardrails.businessPurpose")}
-                  hint={t("guardrails.businessPurposeHint")}
-                >
-                  <Textarea
-                    aria-label={t("guardrails.businessPurpose")}
-                    className="min-h-32 rounded-lg bg-card"
-                    value={purpose}
-                    onChange={(event) => setPurpose(event.target.value)}
-                  />
-                </Field>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label={t("guardrails.allowedDomains")} hint={t("guardrails.onePerLine")}>
-                    <Textarea aria-label={t("guardrails.allowedDomains")} className="min-h-36 rounded-lg bg-card" value={allowed} onChange={(event) => setAllowed(event.target.value)} />
-                  </Field>
-                  <Field label={t("guardrails.restrictedDomains")} hint={t("guardrails.restrictedHint")}>
-                    <Textarea aria-label={t("guardrails.restrictedDomains")} className="min-h-36 rounded-lg bg-card" value={restricted} onChange={(event) => setRestricted(event.target.value)} />
-                  </Field>
-                </div>
                 {selectedTemplates.map((template) => (
                   <section key={template.id} className="grid gap-4">
                     <TemplateControlSummary
@@ -1360,7 +1325,7 @@ function CreateGuardrailSheet({
                   >
                     <Textarea
                       aria-label={t("guardrails.allowedDomains")}
-                      className="min-h-36 rounded-lg bg-card"
+                      className="min-h-36 rounded-lg bg-card placeholder:text-muted-foreground/50"
                       value={allowed}
                       onChange={(event) => setAllowed(event.target.value)}
                       placeholder={
@@ -1374,7 +1339,7 @@ function CreateGuardrailSheet({
                   >
                     <Textarea
                       aria-label={t("guardrails.restrictedDomains")}
-                      className="min-h-36 rounded-lg bg-card"
+                      className="min-h-36 rounded-lg bg-card placeholder:text-muted-foreground/50"
                       value={restricted}
                       onChange={(event) => setRestricted(event.target.value)}
                       placeholder={
@@ -1393,15 +1358,6 @@ function CreateGuardrailSheet({
             <InfoNotice title={t("guardrails.reviewBefore")}>
               {t("guardrails.reviewBeforeDescription")}
             </InfoNotice>
-            {mode === "template"
-              ? selectedTemplates.map((template) => (
-                  <TemplateControlSummary
-                    key={template.id}
-                    template={template}
-                    parameters={parameters[template.id] ?? {}}
-                  />
-                ))
-              : null}
             <ControlEditor
               definitions={definitions}
               risks={risks}

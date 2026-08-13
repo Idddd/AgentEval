@@ -1,6 +1,6 @@
 import type { GuardrailTemplate } from "../model";
 
-export const guardTemplateFixtures = [
+const guardTemplateDefinitions = [
   {
     id: "advanced-au-pii-protection",
     name: "Advanced PII Protection (Australia)",
@@ -695,3 +695,83 @@ export const guardTemplateFixtures = [
     parameters: [],
   },
 ] satisfies GuardrailTemplate[];
+
+const templateTopicDefaults: Record<
+  string,
+  { allowedTopics: string[]; restrictedTopics: string[] }
+> = {
+  "advanced-au-pii-protection": {
+    allowedTopics: ["Approved Australian business operations", "Authorized employee and customer support", "Compliant financial and identity workflows"],
+    restrictedTopics: ["Unauthorized disclosure of Australian identifiers", "Credential or financial-data exposure", "Use of protected-class data outside approved purposes"],
+  },
+  "baseline-pii-protection": {
+    allowedTopics: ["Approved internal tools and testing", "Authorized business-data processing", "Non-sensitive operational support"],
+    restrictedTopics: ["Credential or API-key disclosure", "High-risk personal identifier exposure", "Unapproved use of financial information"],
+  },
+  "nsfw-content-filter-australia": {
+    allowedTopics: ["Approved business and customer-support conversations", "Age-appropriate educational content", "Safety and wellbeing support"],
+    restrictedTopics: ["Sexual or explicit content", "Self-harm encouragement", "Child sexual abuse material or solicitation", "Abusive Australian slang and hate content"],
+  },
+  "nsfw-content-filter-basic": {
+    allowedTopics: ["General business assistance", "Age-appropriate informational content", "Customer-support conversations"],
+    restrictedTopics: ["Sexual or explicit requests", "Self-harm encouragement", "Child sexual abuse material", "Profanity, slurs, and sexual solicitation"],
+  },
+  "nsfw-content-filter-all-regions": {
+    allowedTopics: ["Global business assistance", "Multilingual customer support", "Age-appropriate informational content"],
+    restrictedTopics: ["Multilingual sexual or explicit content", "Self-harm encouragement", "Child sexual abuse material", "Regional profanity, slurs, and hate content"],
+  },
+  "gdpr-eu-pii-protection": {
+    allowedTopics: ["Authorized EU customer and employee services", "Approved GDPR-compliant data processing", "Lawful financial and identity workflows"],
+    restrictedTopics: ["Unauthorized EU personal-data disclosure", "Unmasked national identifiers, IBANs, or passports", "Processing without a documented lawful purpose"],
+  },
+  "eu-ai-act-article5": {
+    allowedTopics: ["Lawful and transparent AI assistance", "Human-reviewed business decisions", "Approved low-risk automation"],
+    restrictedTopics: ["Manipulative or deceptive AI practices", "Social scoring", "Prohibited biometric categorization", "Exploitation of vulnerable persons"],
+  },
+  "airline-passenger-data-protection-uae": {
+    allowedTopics: ["Authorized UAE passenger services", "Approved booking and itinerary support", "Lawful aviation operations"],
+    restrictedTopics: ["Unauthorized passenger-record disclosure", "Passport, visa, or payment-data exposure", "Use of travel data outside the approved journey purpose"],
+  },
+  "aviation-operations-security": {
+    allowedTopics: ["Approved airline operations", "Authorized flight and ground-service support", "Documented safety procedures"],
+    restrictedTopics: ["Operational-security bypass instructions", "Unauthorized access to aviation systems", "Disclosure of restricted airport or flight procedures"],
+  },
+  "airline-off-topic-restriction": {
+    allowedTopics: ["Bookings, fares, baggage, and check-in", "Flight status and disruption support", "Approved airline policies and services"],
+    restrictedTopics: ["Unrelated professional or technical advice", "Political persuasion and campaigning", "Requests outside airline customer service"],
+  },
+  "uae-regulatory-compliance": {
+    allowedTopics: ["Approved UAE-regulated business services", "Documented compliance guidance", "Authorized customer and operational support"],
+    restrictedTopics: ["Regulatory evasion", "Unlicensed legal or financial advice", "Disclosure of regulated or confidential records"],
+  },
+  "competitor-mention-detection": {
+    allowedTopics: ["Approved brand and product information", "Neutral market-category education", "Authorized competitive analysis"],
+    restrictedTopics: ["Unapproved competitor promotion", "Comparative claims without reviewed evidence", "Competitor disparagement or confidential intelligence"],
+  },
+  "topic-filtering": {
+    allowedTopics: ["Configured approved topics", "Documented business workflows", "Authorized customer assistance"],
+    restrictedTopics: ["Configured prohibited topics", "Requests outside the documented business purpose", "Attempts to bypass topic boundaries"],
+  },
+  "prompt-injection-protection": {
+    allowedTopics: ["Approved user instructions", "Authorized system-guided tasks", "Business requests within documented policy"],
+    restrictedTopics: ["Prompt injection and jailbreak attempts", "System-prompt or hidden-instruction extraction", "Instruction-hierarchy override requests"],
+  },
+  "pdpa-singapore": {
+    allowedTopics: ["Authorized Singapore customer and employee services", "Consent-based personal-data processing", "Approved business and regulatory workflows"],
+    restrictedTopics: ["Personal-data use without consent or purpose", "NRIC, contact, or financial-data disclosure", "Retention or transfer outside approved PDPA controls"],
+  },
+  "mas-ai-risk-management": {
+    allowedTopics: ["Approved financial-services assistance", "Human-reviewed risk and compliance workflows", "Documented model-supported decisions"],
+    restrictedTopics: ["Unreviewed high-impact financial decisions", "Bias or unfair customer treatment", "Opaque recommendations without required explanation", "Model-security control bypass"],
+  },
+  "claims-agent-safety": {
+    allowedTopics: ["Authorized healthcare claims support", "Benefits and claim-status explanation", "Approved prior-authorization guidance"],
+    restrictedTopics: ["Fraud coaching or document forgery", "Unauthorized PHI disclosure", "Prior-authorization gaming", "Medical diagnosis or treatment advice", "System override attempts"],
+  },
+};
+
+export const guardTemplateFixtures = guardTemplateDefinitions.map((template) => {
+  const topics = templateTopicDefaults[template.id];
+  if (!topics) throw new Error(`Missing topic defaults for ${template.id}`);
+  return { ...template, ...topics };
+}) satisfies GuardrailTemplate[];

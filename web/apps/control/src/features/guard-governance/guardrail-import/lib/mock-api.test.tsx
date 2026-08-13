@@ -156,6 +156,8 @@ describe("Guard-compatible mock API", () => {
     for (const template of templates.items) {
       expect(template.description).not.toBe("");
       expect(template.domain).not.toBe("");
+      expect(template.allowed_topics.length).toBeGreaterThan(0);
+      expect(template.restricted_topics.length).toBeGreaterThan(0);
       expect(template.collections?.length).toBeGreaterThan(0);
       expect(template.tags?.length).toBeGreaterThan(0);
       expect(template.limitations?.length).toBeGreaterThan(0);
