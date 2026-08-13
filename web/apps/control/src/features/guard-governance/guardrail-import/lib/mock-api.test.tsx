@@ -68,6 +68,33 @@ describe("Guard-compatible mock API", () => {
     expect(versions.items.at(0)?.active).toBe(true);
   });
 
+  it("persists every source when one Guardrail combines multiple templates", async () => {
+    const { result } = renderHook(() => useGuardrailApi(), { wrapper });
+
+    const created = await act(async () =>
+      result.current.createGuardrail({
+        name: "Combined Protection",
+        template_ids: [
+          "baseline-pii-protection",
+          "prompt-injection-protection",
+        ],
+        template_parameters: {
+          "baseline-pii-protection": {},
+          "prompt-injection-protection": {},
+        },
+      }),
+    );
+
+    expect(created.source_template_ids).toEqual([
+      "baseline-pii-protection",
+      "prompt-injection-protection",
+    ]);
+    expect(created.source_template_id).toBe("baseline-pii-protection");
+    expect(created.controls.length).toBeGreaterThan(0);
+    expect(created.purpose).toContain("Baseline PII Protection");
+    expect(created.purpose).toContain("Prompt Injection Protection");
+  });
+
   it("provides deterministic empty and error scenarios", async () => {
     const emptyHook = renderHook(() => useGuardrailApi(), {
       wrapper: scenarioWrapper("empty"),

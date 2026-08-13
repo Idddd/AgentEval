@@ -42,7 +42,7 @@ export function composeTemplates(
   return {
     name:
       names.length === 1
-        ? names[0]
+        ? names[0]!
         : `${names.slice(0, 2).join(" + ")}${names.length > 2 ? ` + ${names.length - 2} more` : ""}`,
     purpose: buildPurpose(ordered),
     allowedTopics: uniqueText(ordered.flatMap((item) => item.allowed_topics)),

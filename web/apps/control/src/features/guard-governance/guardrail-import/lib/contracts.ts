@@ -162,7 +162,9 @@ export type Guardrail = {
   safety_level: SafetyLevel;
   output_delivery: OutputDelivery;
   source_template_id: string | null;
+  source_template_ids: string[];
   template_parameters: Record<string, string>;
+  template_parameters_by_template: Record<string, Record<string, string>>;
   updated_at: string;
   status: "needs_testing" | "ready" | "protected";
   latest_test_run: TestRun | null;
@@ -269,7 +271,10 @@ export type CreateGuardrailInput = {
   name: string;
   purpose?: string;
   template_id?: string;
-  template_parameters?: Record<string, string>;
+  template_ids?: string[];
+  template_parameters?:
+    | Record<string, string>
+    | Record<string, Record<string, string>>;
   allowed_topics?: string[];
   restricted_topics?: string[];
   controls?: GuardrailControl[];

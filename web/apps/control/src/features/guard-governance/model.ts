@@ -198,7 +198,9 @@ export type Guardrail = {
   testCases: GuardrailTestCase[];
   latestTestRun?: GuardrailTestRun;
   sourceTemplateId: string | null;
+  sourceTemplateIds: string[];
   templateParameters: Record<string, string>;
+  templateParametersByTemplate: Record<string, Record<string, string>>;
   draftVersion: number;
   activeVersion: number | null;
   assignmentCount: number;
@@ -421,7 +423,12 @@ export type EvidenceFilters = {
 export type CreateGuardrailInput = Pick<
   Guardrail,
   "name" | "purpose" | "safetyLevel" | "outputDelivery" | "allowedTopics" | "restrictedTopics" | "controls"
-> & { sourceTemplateId?: string | null; templateParameters?: Record<string, string> };
+> & {
+  sourceTemplateId?: string | null;
+  sourceTemplateIds?: string[];
+  templateParameters?: Record<string, string>;
+  templateParametersByTemplate?: Record<string, Record<string, string>>;
+};
 
 export type CreateAssignmentInput = Pick<
   GuardrailAssignment,

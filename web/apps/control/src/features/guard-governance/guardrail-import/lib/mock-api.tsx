@@ -6,6 +6,7 @@ import type {
   EvidenceTraceStep as ModelTraceStep,
   Guardrail as ModelGuardrail,
   GuardrailControl as ModelControl,
+  GuardrailTemplate as ModelGuardrailTemplate,
   GuardrailTestCase as ModelTestCase,
   GuardrailTestRun as ModelTestRun,
   TrafficScopeExpression as ModelTrafficScopeExpression,
@@ -34,6 +35,7 @@ import type {
   TrafficScopeField,
   UpdateGuardrailInput,
 } from "./contracts";
+import { composeTemplates } from "./template-composition";
 
 export type MockScenario = "populated" | "loading" | "empty" | "error";
 
@@ -230,7 +232,9 @@ function guardrail(item: ModelGuardrail): Guardrail {
         ? "window_buffered"
         : item.outputDelivery,
     source_template_id: item.sourceTemplateId,
+    source_template_ids: item.sourceTemplateIds,
     template_parameters: item.templateParameters,
+    template_parameters_by_template: item.templateParametersByTemplate,
     updated_at: item.updatedAt,
     status:
       item.status === "PROTECTED"
@@ -246,6 +250,31 @@ function guardrail(item: ModelGuardrail): Guardrail {
     system_managed: item.systemManaged,
     local_only: item.localOnly,
     coverage: item.coverage,
+  };
+}
+
+function guardrailTemplate(item: ModelGuardrailTemplate): GuardrailTemplate {
+  return {
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    purpose: item.purpose,
+    allowed_topics: item.allowedTopics,
+    restricted_topics: item.restrictedTopics,
+    default_controls: item.defaultControls.map(control),
+    safety_level: item.safetyLevel === "strict" ? "strict" : "balanced",
+    output_delivery:
+      item.outputDelivery === "windowed"
+        ? "window_buffered"
+        : item.outputDelivery,
+    source: item.source,
+    version: item.version,
+    domain: item.domain,
+    collections: item.collections,
+    tags: item.tags,
+    limitations: item.limitations,
+    controls: item.controls,
+    parameters: item.parameters,
   };
 }
 
@@ -294,28 +323,7 @@ function createGuardrailApi(
     getGuardrailTemplates: () =>
       wait(() =>
         collection(
-          empty(store.getState().templates).map((item) => ({
-            id: item.id,
-            name: item.name,
-            description: item.description,
-            purpose: item.purpose,
-            allowed_topics: item.allowedTopics,
-            restricted_topics: item.restrictedTopics,
-            default_controls: item.defaultControls.map(control),
-            safety_level: item.safetyLevel === "strict" ? "strict" : "balanced",
-            output_delivery:
-              item.outputDelivery === "windowed"
-                ? "window_buffered"
-                : item.outputDelivery,
-            source: item.source,
-            version: item.version,
-            domain: item.domain,
-            collections: item.collections,
-            tags: item.tags,
-            limitations: item.limitations,
-            controls: item.controls,
-            parameters: item.parameters,
-          })),
+          empty(store.getState().templates).map(guardrailTemplate),
         ),
       ),
     getControlDefinitions: () =>
@@ -352,30 +360,60 @@ function createGuardrailApi(
       }),
     createGuardrail: (input) =>
       wait(() => {
-        const template = input.template_id
-          ? store
-              .getState()
-              .templates.find((item) => item.id === input.template_id)
-          : undefined;
+        const templateIds = [
+          ...new Set(input.template_ids ?? (input.template_id ? [input.template_id] : [])),
+        ].sort();
+        const templates = templateIds.map((templateId) => {
+          const template = store
+            .getState()
+            .templates.find((item) => item.id === templateId);
+          if (!template)
+            throw new Error(`Unknown Guardrail template: ${templateId}`);
+          return template;
+        });
+        const composed = templates.length
+          ? composeTemplates(templates.map(guardrailTemplate))
+          : null;
+        const nestedParameters = input.template_parameters
+          ? Object.values(input.template_parameters).some(
+              (value) => typeof value === "object",
+            )
+            ? (input.template_parameters as Record<
+                string,
+                Record<string, string>
+              >)
+            : templateIds[0]
+              ? {
+                  [templateIds[0]]: input.template_parameters as Record<
+                    string,
+                    string
+                  >,
+                }
+              : {}
+          : {};
         return guardrail(
           store.createGuardrail({
             name: input.name,
-            purpose: input.purpose ?? template?.purpose ?? input.name,
+            purpose: input.purpose ?? composed?.purpose ?? input.name,
             safetyLevel:
-              input.safety_level ?? template?.safetyLevel ?? "balanced",
+              input.safety_level ?? composed?.safetyLevel ?? "balanced",
             outputDelivery:
               input.output_delivery ??
-              template?.outputDelivery ??
+              composed?.outputDelivery ??
               "interruptible",
             allowedTopics:
-              input.allowed_topics ?? template?.allowedTopics ?? [],
+              input.allowed_topics ?? composed?.allowedTopics ?? [],
             restrictedTopics:
-              input.restricted_topics ?? template?.restrictedTopics ?? [],
-            controls: (input.controls ?? template?.defaultControls ?? []).map(
+              input.restricted_topics ?? composed?.restrictedTopics ?? [],
+            controls: (input.controls ?? composed?.controls ?? []).map(
               modelControl,
             ),
-            sourceTemplateId: input.template_id ?? null,
-            templateParameters: input.template_parameters ?? {},
+            sourceTemplateId: templateIds[0] ?? null,
+            sourceTemplateIds: templateIds,
+            templateParameters: templateIds[0]
+              ? nestedParameters[templateIds[0]] ?? {}
+              : {},
+            templateParametersByTemplate: nestedParameters,
           }),
         );
       }),

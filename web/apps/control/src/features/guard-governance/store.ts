@@ -197,8 +197,19 @@ export function createGuardGovernanceStore(
         restrictedTopics: structuredClone(input.restrictedTopics),
         controls: structuredClone(input.controls),
         testCases: [],
-        sourceTemplateId: input.sourceTemplateId ?? null,
+        sourceTemplateId:
+          input.sourceTemplateIds?.[0] ?? input.sourceTemplateId ?? null,
+        sourceTemplateIds: structuredClone(
+          input.sourceTemplateIds ??
+            (input.sourceTemplateId ? [input.sourceTemplateId] : []),
+        ),
         templateParameters: structuredClone(input.templateParameters ?? {}),
+        templateParametersByTemplate: structuredClone(
+          input.templateParametersByTemplate ??
+            (input.sourceTemplateId
+              ? { [input.sourceTemplateId]: input.templateParameters ?? {} }
+              : {}),
+        ),
         draftVersion: 1,
         activeVersion: null,
         assignmentCount: 0,
