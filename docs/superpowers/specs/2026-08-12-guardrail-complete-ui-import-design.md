@@ -1,173 +1,213 @@
-# Guardrail Complete UI Import Design
+# Guardrail Source-Direct UI Import Design
 
 ## Goal
 
-Replace the rewritten Guard Governance Guardrail experience in AgentEval with the complete internal Guardrail UI from `tasklattice-guard`, while keeping the existing AgentEval application shell and using mock data only.
+Reproduce the TaskLattice Guard Guardrail experience inside AgentEval by directly copying the Guard source implementation. Pixel and interaction fidelity apply to the Guardrail content area; AgentEval keeps its existing authentication, project sidebar, top bar, breadcrumb, and route shell.
 
-The imported experience must preserve the information architecture, visual hierarchy, responsive behavior, and user interactions of the Guard reference UI. It must not modify the existing AgentEval Security Guardrails feature or any unrelated AgentEval behavior.
+The imported feature uses mock data only. It must not call the Guard backend, Prisma, SQLite, or any other real API. It must not modify the existing AgentEval Security Guardrails feature or the independent Guard Governance Assignment, Enforcement, Integration, and Evidence pages.
 
-## Product Boundary
+## Fidelity Boundary
 
-AgentEval remains responsible for:
+The following Guardrail content is copied, not re-created:
 
-- authentication and the active project context;
-- the project sidebar, header, breadcrumb, and account controls;
-- routes under `/$projectId/governance/guardrails`;
-- the Guard Governance mock provider lifecycle.
+- registry header, loading, error, empty, and table states;
+- complete Create Guardrail sheet and three-step creation flow;
+- Guardrail detail header, product notice, workflow, metrics, and actions;
+- Safety Intent, Controls, Test Cases, Versions, and Assignments tabs;
+- Edit Guardrail, Add Test Case, and Create Assignment sheets opened from the Guardrail page;
+- complete coverage, test evidence, finding, grounding, claim, reasoning, and execution-trace presentation;
+- responsive class names, control sizes, spacing, radii, colors, shadows, focus states, disabled states, and dark-mode behavior;
+- Guardrail-related English and Simplified Chinese copy.
 
-The imported Guardrail feature remains responsible for everything inside the page content area:
+The following are intentionally different:
 
-- Guardrail registry and its loading, error, and empty states;
-- complete creation flow;
-- Guardrail detail header and workflow status;
-- intent, controls, test cases, versions, and assignments tabs;
-- editing intent, adding and deleting test cases, and running reviewed tests;
-- complete test evidence, risk coverage, findings, grounding, reasoning, input/output evidence, and execution traces.
+- AgentEval provides the surrounding application shell;
+- canonical routes include `/$projectId/governance`;
+- all data and mutations are in memory;
+- the independent Guard Governance pages are not imported or changed.
 
-The Guard visual treatment may remain different from AgentEval. Blue accents, Guard spacing, larger corner radii, typography hierarchy, localized copy, and responsive table behavior are intentionally retained inside the feature boundary.
+Opening the original Create Assignment sheet from within Guardrail detail is part of the Guardrail-page replica. This does not import or change the independent Assignment page.
 
-## Architecture
+## Source-Direct Architecture
 
-The implementation is a component-level import, not an iframe and not a visual approximation.
+The Guard source is copied into an isolated AgentEval feature namespace:
 
-The Guard route implementation is split into focused AgentEval feature modules instead of copying the original 911-line route as one file. Presentation components retain the Guard DOM structure and class names. AgentEval-specific route parameters and provider access are passed through narrow props and hooks.
+```text
+web/apps/control/src/features/guard-governance/guardrail-import/
+  guardrails.tsx
+  i18n.ts
+  guardrail-theme.css
+  components/
+    creation-flow.tsx
+    entity-sheet.tsx
+    product-shell.tsx
+    traffic-scope.tsx
+    assignment-sheet.tsx
+    ui/
+  lib/
+    auth-compat.tsx
+    mock-api.tsx
+    query-keys.ts
+    utils.ts
+```
 
-A mock adapter exposes Guard-compatible view models and operations. Imported components consume the same snake_case shapes used by the Guard UI, including nullable API fields. The adapter maps these operations to the existing in-memory Guard Governance store, so no HTTP request or real Guard API is introduced.
+`guardrails.tsx` begins as a direct copy of `tasklattice-guard/web/src/routes/guardrails.tsx`. Its DOM structure and Tailwind class names remain unchanged. Supporting Guard components and every Guard UI primitive used by this page are copied into the same namespace instead of resolving to AgentEval components with the same filenames.
 
-The existing camelCase AgentEval domain model may remain the store's internal representation. The adapter is the only boundary that converts between internal mock entities and the Guard UI contracts. This avoids spreading mixed naming conventions through the imported components.
+This isolation prevents Guard component variants or theme tokens from changing existing AgentEval pages. It also avoids visually significant substitutions: AgentEval and Guard have similarly named Button, Sheet, Select, Tabs, and other primitives, but their implementations are not identical.
 
-## Page Structure
+## Allowed Source Changes
+
+Changes to copied Guard source are limited to four boundaries.
+
+### Route Boundary
+
+Original routes:
+
+```text
+/guardrails
+/guardrails/$guardrailId
+```
+
+AgentEval routes:
+
+```text
+/$projectId/governance/guardrails
+/$projectId/governance/guardrails/$guardrailId
+```
+
+The AgentEval file routes remain thin wrappers. They pass `projectId` and, for detail, `guardrailId` to the copied feature. Internal links and navigation use typed TanStack Router destinations with those parameters. No plain anchor is used for internal Guardrail navigation.
+
+### Mock API Boundary
+
+The copied page keeps its React Query lifecycle and mutation behavior. Its API import is redirected to `lib/mock-api.tsx`, which exports a `GuardrailMockApiProvider` and a `useGuardrailApi()` interface with Guard-compatible operations:
+
+```ts
+export type GuardrailApi = {
+  getGuardrails(): Promise<Collection<Guardrail>>;
+  getGuardrail(id: string): Promise<Guardrail>;
+  getGuardrailTemplates(): Promise<Collection<GuardrailTemplate>>;
+  getControlDefinitions(): Promise<Collection<ControlDefinition>>;
+  getIntentAnalysisStatus(): Promise<IntentAnalysisStatus>;
+  analyzeGuardrailIntent(input: AnalyzeIntentInput): Promise<IntentAnalysis>;
+  createGuardrail(input: CreateGuardrailInput): Promise<Guardrail>;
+  updateGuardrail(id: string, input: UpdateGuardrailInput): Promise<Guardrail>;
+  getTestCases(guardrailId: string): Promise<Collection<TestCase>>;
+  createTestCase(guardrailId: string, input: CreateTestCaseInput): Promise<TestCase>;
+  deleteTestCase(id: string): Promise<void>;
+  createTestRun(guardrailId: string): Promise<TestRun>;
+  getGuardrailVersions(guardrailId: string): Promise<Collection<GuardrailVersion>>;
+  getAssignments(): Promise<Collection<GuardrailAssignment>>;
+  createAssignment(input: CreateAssignmentInput): Promise<GuardrailAssignment>;
+  getTrafficScopeFields(): Promise<Collection<TrafficScopeField>>;
+};
+```
+
+The provider adapts the existing Guard Governance in-memory store to the exact snake_case contracts used by Guard. The copied page changes only the API acquisition calls needed to obtain this interface. Query keys, pending states, invalidation, error rendering, success toasts, and disabled-button behavior remain structurally identical to Guard.
+
+The adapter returns promises and supports deterministic loading, success, failure, and empty scenarios in tests. It never calls `fetch`.
+
+### Localization and Auth Boundary
+
+The Guardrail translation resources are copied from Guard without rewriting individual labels. The feature is wrapped by its own scoped i18next provider so it can retain the original `useTranslation()` calls without migrating the whole AgentEval application.
+
+The language is selected from AgentEval's active language when one exists, then from the current local account preference, and finally defaults to English. Date formatting receives the same locale string used by the copied Guard page.
+
+`auth-compat.tsx` exposes only the `preferred_language` value required by the original Create Guardrail flow. It does not replace AgentEval authentication or create a second login system.
+
+### Scoped Theme and Portal Boundary
+
+The Guard theme values are copied exactly, including:
+
+```css
+--primary: #2563eb;
+--radius-badge: 0.375rem;
+--radius-control: 0.5rem;
+--radius-card: 0.75rem;
+--radius-large: 1rem;
+```
+
+The values and remaining Guard color/shadow tokens are scoped under `.guardrail-import` rather than applied to `:root`.
+
+Radix Sheet, Select, Dropdown, Tooltip, and other portal content renders outside the page wrapper. Copied portal primitives therefore add the same `.guardrail-import` class to their portal content roots. This ensures sheets, menus, overlays, focus rings, and dark-mode surfaces receive the Guard tokens without leaking those tokens globally.
+
+## Mock Data Fidelity
+
+Mock records use the complete Guard API structure. Fixtures cover:
+
+- product-managed default Guardrail and immutable default Assignment;
+- protected and ready custom Guardrails;
+- a Guardrail that needs testing;
+- templates, parameters, Control definitions, limitations, and reasoning-policy bindings;
+- prompt-injection, grounding, and automated-reasoning test cases;
+- passing, failing, and incomplete test runs;
+- risk coverage;
+- trusted instruction, untrusted target, model output, decision facts, grounding scores, claims, reasoning proofs, findings, and multi-stage traces;
+- active and archived immutable versions;
+- matched Traffic Scopes and paused/protected Assignment states.
+
+Fixture richness may exceed the single default record in a fresh Guard database. This changes displayed content, not UI structure or behavior.
+
+## Guardrail Page Behavior
 
 ### Registry
 
-The registry matches the Guard reference page:
+The registry uses the original Guard page hierarchy. It does not include AgentEval's added summary metric cards. The entire Guardrail name/purpose region opens detail through TanStack Router without a full-page reload or fallback redirect.
 
-- Guard eyebrow, title, description, and create action;
-- loading skeleton, error notice, and empty-state variants;
-- compact registry header with item count and open-detail hint;
-- responsive table columns and row-level detail links;
-- localized display name and purpose for the default Guardrail;
-- status, control count, test evidence, assignment count, and updated timestamp;
-- no AgentEval-only summary metric cards above the registry.
+### Create and Edit
 
-Mock fixtures include the system default plus ready, needs-testing, and disabled examples so all supported states remain visible without a backend.
+The source creation flow retains template search, template parameters, blank intent, analysis availability, analysis pending/success/stale states, review notes, allowed and restricted topics, Control editing, action selection, reasoning-policy configuration, topic validation, and final review.
 
-### Creation Flow
-
-The complete Guard creation sheet is imported:
-
-- choose a reviewed template or blank intent;
-- enter template parameters or describe business intent;
-- run deterministic mock intent analysis;
-- review allowed and restricted topics;
-- review configured Controls and automated-reasoning bindings;
-- validate required fields and invalid reasoning-policy configuration;
-- create the Guardrail in the in-memory store and refresh the registry immediately.
-
-Loading and error states are represented locally by the adapter. No external evaluator is called.
-
-### Detail and Workflow
-
-The detail route reproduces the Guard reference hierarchy:
-
-- back link, status, last-updated timestamp, and context actions;
-- system-managed baseline notice;
-- Guardrail workflow status from intent through traffic assignment;
-- Controls, Test Cases, Test Status, and Assignments metrics;
-- tabs for Safety Intent, Controls, Test Cases, Versions, and Assignments.
-
-The default Guardrail remains immutable and product-managed. User-created mock Guardrails can be edited, tested, and assigned.
-
-### Intent and Controls
-
-The intent tab includes allowed domains, restricted domains, decision posture, ownership, output delivery, and runtime boundary notices.
-
-The Controls tab includes template provenance, version and parameter information, control definitions, model boundary or evaluation phase, detected action, limitations, and automated-reasoning policy bindings.
+Edit retains all source fields and validation. Successful mutations update the in-memory repository, invalidate the same query keys, close the sheet, and show the original toast copy.
 
 ### Test Cases and Evidence
 
-The test-case tab includes the complete reviewed-case list, creation sheet, deletion action, and mock test run action. Each case retains trusted instruction, untrusted target, phase, target source, expected decision, grounding query and sources, and optional automated-reasoning expectation.
+The copied conditional form behavior remains intact for prompt security, contextual grounding, and automated reasoning. Test execution produces deterministic mock results and versions.
 
-The latest evidence view includes:
-
-- compliance, false-positive, deep-escalation, and P95 latency metrics;
-- per-risk coverage progress;
-- expandable pass and failure rows;
-- trusted instruction, test input, test output, and grounding content;
-- expected and actual decisions, action, and reached stage;
-- expected and actual automated-reasoning result;
-- decision reason, triggered findings, grounding scores, claims and rule proofs;
-- complete execution trace with per-stage duration.
-
-Fixtures must provide at least one result exercising each complex evidence block so the imported UI is visibly complete.
+Evidence retains the original expandable layout and every nested block. Mock fixtures exercise each block so visual verification does not mistake missing data for a missing UI implementation.
 
 ### Versions and Assignments
 
-The Versions tab displays immutable version metadata, including source draft, compiler version, checksum, creation time, and active state.
+Versions retain the original table and empty/loading states. The Assignments tab retains the original Traffic Scope badges, empty state, Apply action, and Create Assignment sheet. Creation mutates mock state only.
 
-The Assignments tab is retained as part of the Guardrail detail UI and displays read-only mock assignment summaries. It does not import the independent Assignment page or its creation sheet. Tested-current eligibility and immutable default-assignment state remain visible without adding cross-module behavior.
+## Dependency Policy
 
-## Routing
+Dependencies already match between the two projects for React, React DOM, TanStack Router, TanStack Query, Tailwind, Radix UI, Lucide, CVA, clsx, and tailwind-merge.
 
-Registry and detail navigation use TanStack Router `Link` components rather than plain anchors. The canonical paths are:
+Add the exact Guard-compatible versions of `i18next`, `react-i18next`, and `sonner` to AgentEval if they are not already available. Do not replace them with approximate local implementations because doing so would alter copied source and observable behavior.
 
-- `/$projectId/governance/guardrails`
-- `/$projectId/governance/guardrails/$guardrailId`
+## Testing and Visual Acceptance
 
-Opening a registry row must render the Guardrail detail component without a full-page reload or fallback redirect. Back navigation returns to the same project's registry.
+Behavior tests cover:
 
-## Localization
+- loading, error, empty, and populated registry states;
+- internal registry-to-detail and back navigation;
+- every creation step and validation branch;
+- edit and mutation invalidation;
+- conditional test-case forms and deletion;
+- passing, failing, and incomplete test runs;
+- all five detail tabs;
+- complete nested evidence;
+- default immutability;
+- Assignment sheet creation within detail;
+- English and Simplified Chinese rendering;
+- assertion that mock operations do not call `fetch`.
 
-Guardrail feature copy is imported in English and Simplified Chinese. The feature follows the active application language when it is available; otherwise it defaults to English. Default Guardrail display copy is localized without mutating the underlying fixture identity.
+Visual acceptance compares AgentEval's content region with the running Guard reference at fixed desktop and mobile viewports:
 
-No global AgentEval translation migration is included.
+- `1440 × 900`
+- `390 × 844`
 
-## Mock Data and State
+Required states include registry, all three creation steps, default detail, custom detail, all five tabs, expanded evidence, Edit sheet, each conditional Add Test Case form, Create Assignment sheet, loading, empty, and error states.
 
-All operations remain in memory and reset with the Guard Governance provider. The mock adapter supports:
+Screenshots are cropped to the Guardrail content region, excluding both products' surrounding sidebars and headers. Differences in fixture text and timestamps are acceptable; DOM hierarchy, spacing, dimensions, styling, visibility, and interaction states must match.
 
-- list and detail reads;
-- templates, Control definitions, test cases, versions, and assignments;
-- intent analysis and status;
-- Guardrail create and edit;
-- test-case create and delete;
-- reviewed test execution and immutable version creation;
-- read-only Assignment relationships used inside Guardrail detail.
-
-The adapter exposes explicit loading, empty, and error fixtures for component tests. Production rendering uses the populated fixture by default. It does not use `fetch`, React Query network functions, SQLite, Prisma, or the Guard backend.
-
-## Error and Permission Behavior
-
-- Missing Guardrails render the imported not-found empty state.
-- Invalid creation or edit input stays in the open sheet with an inline error.
-- Tests cannot run without at least one reviewed case.
-- Assignment relationships are read-only within this import.
-- Product-managed default intent and controls cannot be edited.
-- Existing AgentEval project and role access rules remain authoritative; this import does not grant new permissions.
-
-## Testing
-
-Component tests verify the visible Guard behavior rather than implementation details:
-
-- the registry matches the Guard structure and excludes the AgentEval metric-card rewrite;
-- default, ready, needs-testing, and disabled states render from mock data;
-- creation supports template and blank-intent paths;
-- registry links reach the detail route without fallback redirection;
-- all five detail tabs render their complete information;
-- the default Guardrail is immutable;
-- custom cases can be added and deleted;
-- running tests renders full evidence and creates a version when passing;
-- Guardrail detail renders complete read-only Assignment relationships;
-- English and Simplified Chinese feature copy are available;
-- no Guard API request is made.
-
-Verification consists of focused Guard Governance tests, Control app type checking, a production build, and browser comparison against the running Guard reference at desktop and narrow widths.
+Verification also includes focused Guardrail tests, Control type checking, production build, and `git diff --check`.
 
 ## Out of Scope
 
-- embedding Guard as an iframe or separate microfrontend;
-- connecting AgentEval to the Guard backend or database;
-- replacing AgentEval authentication or application navigation;
-- changing the existing Security Guardrails feature;
-- importing or changing the independent Assignment, Enforcement, Integration, or Evidence pages;
-- changing Guard policy evaluation algorithms.
+- copying the Guard sidebar, account menu, login, overview, or global application shell;
+- connecting to a real Guard service or database;
+- importing independent Guard Governance routes or navigation entries;
+- changing AgentEval's existing Security Guardrails;
+- redesigning or refactoring copied Guard UI;
+- substituting AgentEval components where the Guard component implementation differs.
