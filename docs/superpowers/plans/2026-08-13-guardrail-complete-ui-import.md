@@ -1,367 +1,694 @@
-# Guardrail Complete UI Import Implementation Plan
+# Guardrail Source-Direct UI Import Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace only AgentEval's Guard Governance Guardrail registry and detail experience with the complete TaskLattice Guard UI, backed entirely by in-memory mock data.
+**Goal:** Copy the TaskLattice Guard Guardrail content UI directly into AgentEval, preserving its source DOM, classes, components, interactions, and responsive behavior while replacing only routing, data, localization/auth, and scoped-theme boundaries.
 
-**Architecture:** Keep AgentEval's application shell and canonical project routes. Add a Guard-compatible snake_case view-model adapter over the existing camelCase mock store, then port the Guard registry, creation flow, detail workflow, five detail tabs, and complete evidence presentation into focused components. The Assignments tab remains read-only; the independent Assignment, Enforcement, Integration, and Evidence pages are untouched.
+**Architecture:** Place the copied Guard feature and all visually relevant dependencies under `guardrail-import/` so no AgentEval component or global token is overwritten. Keep the copied page's React Query lifecycle and use a context-provided in-memory API with the exact Guard snake_case contracts. AgentEval file routes remain thin wrappers around the copied registry and detail exports.
 
-**Tech Stack:** React 19, TypeScript, TanStack Router, Vitest, Testing Library, Tailwind CSS, existing shadcn/Radix components, existing Guard Governance in-memory store.
+**Tech Stack:** React 19.2.7, TypeScript 7, TanStack Router 1.170.18, TanStack Query 5.101.2, Tailwind CSS 4.3.2, Radix UI 1.6.2, i18next 26.3.6, react-i18next 17.0.11, sonner 2.0.7, Vitest, Testing Library.
 
 ## Global Constraints
 
-- Import only the Guardrail registry, creation flow, and Guardrail detail UI.
-- Do not change the independent Assignment, Enforcement, Integration, or Evidence pages.
-- Keep AgentEval authentication, project sidebar, header, breadcrumb, and project routing.
-- Use mock data and in-memory mutations only; do not call the Guard API or add a real API.
-- Preserve Guard information hierarchy, responsive behavior, blue accents, spacing, corner radii, and complete evidence blocks inside the page boundary.
-- Preserve the existing AgentEval Security Guardrails feature and all unrelated functionality.
-- Use TanStack Router links for registry/detail navigation; do not use plain anchors for internal routes.
-- Treat the existing modified `web/apps/control/src/features/evaluation-layer/overview/behavior-page.test.tsx` as user-owned and do not stage or edit it.
+- Pixel and interaction fidelity apply to the Guardrail content region; do not copy the Guard sidebar, login, account menu, or global shell.
+- Begin `guardrails.tsx` from `tasklattice-guard/web/src/routes/guardrails.tsx`; do not redesign or decompose its rendered UI.
+- Copy Guard supporting components and UI primitives into the isolated `guardrail-import` namespace; do not substitute AgentEval components with the same names.
+- Allowed changes to copied source are limited to project routes, mock API acquisition, scoped localization/auth, and scoped theme/portal handling.
+- Keep the original Create Assignment sheet used inside Guardrail detail; do not import or modify the independent Assignment page.
+- Use in-memory mock data only. No `fetch`, Guard API, Prisma, or SQLite access is permitted.
+- Do not change AgentEval's existing Security Guardrails or independent Assignment, Enforcement, Integration, and Evidence routes.
+- Preserve the user-owned modification in `web/apps/control/src/features/evaluation-layer/overview/behavior-page.test.tsx`; do not edit or stage it.
+- Use failing tests before each production change.
 
 ---
 
-### Task 1: Guard-Compatible Mock View Model
+### Task 1: Install Exact Guard Dependencies and Copy the Scoped Visual Foundation
 
 **Files:**
-- Create: `web/apps/control/src/features/guard-governance/guardrails/guardrail-view-model.ts`
-- Create: `web/apps/control/src/features/guard-governance/guardrails/guardrail-view-model.test.ts`
+- Modify: `web/apps/control/package.json`
+- Modify: `web/package-lock.json`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/guardrail-theme.css`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/creation-flow.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/entity-sheet.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/product-shell.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/alert.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/badge.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/button.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/card.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/checkbox.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/input.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/label.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/progress.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/radio-group.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/select.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/sheet.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/skeleton.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/sonner.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/switch.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/table.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/tabs.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/ui/textarea.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/lib/utils.ts`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/source-fidelity.test.tsx`
+
+**Interfaces:**
+- Consumes: exact source files under `tasklattice-guard/web/src/components` and Guard theme tokens in `tasklattice-guard/web/src/styles.css`.
+- Produces: namespaced Guard components with unchanged rendered class names and `.guardrail-import` theme propagation through Radix portals.
+
+- [ ] **Step 1: Write a failing fidelity test for source component behavior and exact tokens**
+
+```tsx
+/** @vitest-environment jsdom */
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { CreationFlow } from "./components/creation-flow";
+import { EntitySheet } from "./components/entity-sheet";
+import themeCss from "./guardrail-theme.css?raw";
+
+describe("Guard source visual foundation", () => {
+  it("keeps the original creation step and sheet dimensions", () => {
+    render(<CreationFlow currentStep={0} onStepChange={() => undefined} progressLabel="Create" steps={[{ label: "Start", description: "Choose source" }]}><div>Body</div></CreationFlow>);
+    expect(screen.getByRole("button", { name: /Start/ }).className).toContain("min-h-20");
+  });
+
+  it("copies exact Guard theme values", () => {
+    expect(themeCss).toContain("--primary: #2563eb");
+    expect(themeCss).toContain("--radius-card: 0.75rem");
+    expect(themeCss).toContain("--radius-large: 1rem");
+  });
+
+  it("marks portal content with the Guard namespace", () => {
+    render(<EntitySheet open onOpenChange={() => undefined} title="Create" description="Description" width="xl"><div>Body</div></EntitySheet>);
+    expect(document.querySelector(".guardrail-import")).not.toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run the foundation test and verify RED**
+
+Run: `npm test --workspace @tasklattice/control -- source-fidelity.test.tsx`
+
+Expected: FAIL because the isolated Guard components and theme do not exist.
+
+- [ ] **Step 3: Add the exact Guard dependency versions**
+
+Run from `web/`:
+
+```powershell
+npm install --save-exact --workspace @tasklattice/control i18next@26.3.6 react-i18next@17.0.11 sonner@2.0.7 react-querybuilder@8.22.4
+```
+
+Expected: `web/apps/control/package.json` and `web/package-lock.json` contain those exact compatible versions.
+
+- [ ] **Step 4: Copy supporting component source without visual substitutions**
+
+Use `apply_patch` to add the exact contents of these Guard sources under the namespaced paths listed above:
+
+```text
+tasklattice-guard/web/src/components/creation-flow.tsx
+tasklattice-guard/web/src/components/entity-sheet.tsx
+tasklattice-guard/web/src/components/product-shell.tsx
+tasklattice-guard/web/src/components/ui/alert.tsx
+tasklattice-guard/web/src/components/ui/badge.tsx
+tasklattice-guard/web/src/components/ui/button.tsx
+tasklattice-guard/web/src/components/ui/card.tsx
+tasklattice-guard/web/src/components/ui/checkbox.tsx
+tasklattice-guard/web/src/components/ui/input.tsx
+tasklattice-guard/web/src/components/ui/label.tsx
+tasklattice-guard/web/src/components/ui/progress.tsx
+tasklattice-guard/web/src/components/ui/radio-group.tsx
+tasklattice-guard/web/src/components/ui/select.tsx
+tasklattice-guard/web/src/components/ui/sheet.tsx
+tasklattice-guard/web/src/components/ui/skeleton.tsx
+tasklattice-guard/web/src/components/ui/sonner.tsx
+tasklattice-guard/web/src/components/ui/switch.tsx
+tasklattice-guard/web/src/components/ui/table.tsx
+tasklattice-guard/web/src/components/ui/tabs.tsx
+tasklattice-guard/web/src/components/ui/textarea.tsx
+tasklattice-guard/web/src/lib/utils.ts
+```
+
+Change imports only from `@/...` to their corresponding namespaced relative paths. Add `className="guardrail-import"` to copied portal overlay/content roots in Sheet and Select so scoped variables reach overlays and menus. In the copied Sonner wrapper, replace the unavailable `next-themes` hook with the fixed `theme="light"` used by AgentEval's root preference and set its root class to `guardrail-import toaster group`; retain the original icons, CSS variables, position, and rich-color behavior. Do not change any other JSX or Tailwind class.
+
+- [ ] **Step 5: Copy the exact theme values into a scoped selector**
+
+```css
+.guardrail-import {
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --radius-badge: 0.375rem;
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+  --radius-large: 1rem;
+}
+```
+
+Copy the remaining light/dark Guard tokens from `tasklattice-guard/web/src/styles.css` into `.guardrail-import` and `.dark .guardrail-import`. Do not copy Guard base selectors that would affect elements outside this namespace.
+
+- [ ] **Step 6: Run the foundation test and verify GREEN**
+
+Run: `npm test --workspace @tasklattice/control -- source-fidelity.test.tsx`
+
+Expected: PASS with exact step dimensions, theme values, and portal scoping.
+
+- [ ] **Step 7: Commit the visual foundation**
+
+```powershell
+git add web/apps/control/package.json web/package-lock.json web/apps/control/src/features/guard-governance/guardrail-import
+git commit -m "feat: copy scoped Guard UI foundation"
+```
+
+### Task 2: Build the Guard-Compatible In-Memory API
+
+**Files:**
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/lib/contracts.ts`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/lib/query-keys.ts`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/lib/mock-api.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/lib/mock-api.test.tsx`
 - Modify: `web/apps/control/src/features/guard-governance/model.ts`
 - Modify: `web/apps/control/src/features/guard-governance/fixtures.ts`
+- Modify: `web/apps/control/src/features/guard-governance/store.ts`
 
 **Interfaces:**
-- Consumes: `GuardGovernanceState`, `Guardrail`, `GuardrailTestCase`, `GuardrailTestRun`, `GuardrailVersion`, and `Assignment` from the existing mock domain.
-- Produces: `GuardGuardrail`, `GuardTestCase`, `GuardTestRun`, `GuardVersion`, `GuardAssignmentSummary`, and `toGuardrailViewModel(state, guardrailId?)` using Guard's snake_case property names.
+- Consumes: `GuardGovernanceStore` from `../store.ts` and the complete Guard API types copied from `tasklattice-guard/web/src/lib/api.ts`.
+- Produces: `GuardrailApi`, `GuardrailMockApiProvider`, `useGuardrailApi`, Guard query keys, and deterministic scenario controls.
 
-- [ ] **Step 1: Write the failing adapter tests**
+- [ ] **Step 1: Write failing API contract tests**
 
-```ts
-it("maps the complete Guard evidence shape without losing nested data", () => {
-  const state = cloneGuardGovernanceFixtures("individual");
-  const view = toGuardrailViewModel(state, "guardrail-production");
-  expect(view.guardrail?.latest_test_run?.results[0]).toMatchObject({
-    trusted_instruction: expect.any(String),
-    target_source: expect.any(String),
-    findings: expect.any(Array),
-    trace: expect.any(Array),
-  });
-  expect(view.guardrail?.coverage.length).toBeGreaterThan(0);
-  expect(view.versions.length).toBeGreaterThan(0);
-  expect(view.assignments.length).toBeGreaterThan(0);
+```tsx
+/** @vitest-environment jsdom */
+import { renderHook, act } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import { GuardrailMockApiProvider, useGuardrailApi } from "./mock-api";
+
+it("returns complete snake_case Guard structures without fetch", async () => {
+  const fetchSpy = vi.spyOn(globalThis, "fetch");
+  const wrapper = ({ children }: { children: React.ReactNode }) => <GuardGovernanceProvider projectId="individual"><GuardrailMockApiProvider>{children}</GuardrailMockApiProvider></GuardGovernanceProvider>;
+  const { result } = renderHook(() => useGuardrailApi(), { wrapper });
+  const collection = await result.current.getGuardrails();
+  const detail = await result.current.getGuardrail("guardrail-production");
+  expect(collection.items.length).toBeGreaterThan(1);
+  expect(detail).toMatchObject({ tested_current: true, latest_test_run: { results: expect.any(Array) } });
+  expect(detail.latest_test_run?.results[0]).toMatchObject({ findings: expect.any(Array), trace: expect.any(Array) });
+  expect(fetchSpy).not.toHaveBeenCalled();
 });
 
-it("keeps default, ready, needs-testing, and disabled fixture states", () => {
-  const view = toGuardrailViewModel(cloneGuardGovernanceFixtures("individual"));
-  expect(view.guardrails.map((item) => item.status)).toEqual(
-    expect.arrayContaining(["protected", "ready", "needs_testing", "disabled"]),
-  );
+it("persists mutations and creates immutable versions", async () => {
+  const wrapper = ({ children }: { children: React.ReactNode }) => <GuardGovernanceProvider projectId="individual"><GuardrailMockApiProvider>{children}</GuardrailMockApiProvider></GuardGovernanceProvider>;
+  const { result } = renderHook(() => useGuardrailApi(), { wrapper });
+  await act(() => result.current.createTestRun("guardrail-draft"));
+  const versions = await result.current.getGuardrailVersions("guardrail-draft");
+  expect(versions.items.at(0)?.active).toBe(true);
 });
 ```
 
-- [ ] **Step 2: Run the adapter test and verify RED**
+- [ ] **Step 2: Run the API tests and verify RED**
 
-Run: `npm test --workspace @tasklattice/control -- guardrail-view-model.test.ts`
+Run: `npm test --workspace @tasklattice/control -- mock-api.test.tsx`
 
-Expected: FAIL because `guardrail-view-model.ts` and its exported contracts do not exist.
+Expected: FAIL because the Guard contracts and provider do not exist.
 
-- [ ] **Step 3: Implement the Guard-compatible contracts and pure mapper**
+- [ ] **Step 3: Copy the exact Guard API contracts and query keys**
+
+Copy the Guardrail, test, evidence, version, Assignment, Traffic Scope, template, Control-definition, input, and collection types from `tasklattice-guard/web/src/lib/api.ts` into `contracts.ts` without renaming snake_case properties. Copy relevant keys from `tasklattice-guard/web/src/features/query-keys.ts` into `query-keys.ts`:
 
 ```ts
-export type GuardGuardrail = {
-  id: string;
-  name: string;
-  purpose: string;
-  allowed_topics: string[];
-  restricted_topics: string[];
-  controls: GuardControl[];
-  status: "needs_testing" | "ready" | "protected" | "disabled";
-  latest_test_run: GuardTestRun | null;
-  assignment_count: number;
-  test_case_count: number;
-  tested_current: boolean;
-  is_default: boolean;
-  system_managed: boolean;
-  local_only: boolean;
-  coverage: GuardRiskCoverage[];
-  updated_at: string;
+export const queryKeys = {
+  guardrails: ["resources", "guardrails"] as const,
+  guardrail: (id: string) => ["resources", "guardrails", id] as const,
+  guardrailVersions: (id: string) => ["resources", "guardrail-versions", id] as const,
+  guardrailTemplates: ["resources", "guardrail-templates"] as const,
+  controlDefinitions: ["resources", "control-definitions"] as const,
+  testCases: (id: string) => ["resources", "test-cases", { guardrailId: id }] as const,
+  assignments: ["resources", "assignments"] as const,
+  trafficScopeFields: ["resources", "traffic-scope-fields"] as const,
+  intentAnalysisStatus: ["resources", "intent-analysis-status"] as const,
+  metrics: ["resources", "metrics"] as const,
+};
+```
+
+- [ ] **Step 4: Implement the context API over isolated complete fixtures**
+
+```ts
+export type GuardrailApi = {
+  getGuardrails(): Promise<Collection<Guardrail>>;
+  getGuardrail(id: string): Promise<Guardrail>;
+  getGuardrailTemplates(): Promise<Collection<GuardrailTemplate>>;
+  getControlDefinitions(): Promise<Collection<ControlDefinition>>;
+  getIntentAnalysisStatus(): Promise<IntentAnalysisStatus>;
+  analyzeGuardrailIntent(input: AnalyzeIntentInput): Promise<IntentAnalysis>;
+  createGuardrail(input: CreateGuardrailInput): Promise<Guardrail>;
+  updateGuardrail(id: string, input: UpdateGuardrailInput): Promise<Guardrail>;
+  getTestCases(guardrailId: string): Promise<Collection<TestCase>>;
+  createTestCase(guardrailId: string, input: CreateTestCaseInput): Promise<TestCase>;
+  deleteTestCase(id: string): Promise<void>;
+  createTestRun(guardrailId: string): Promise<TestRun>;
+  getGuardrailVersions(guardrailId: string): Promise<Collection<GuardrailVersion>>;
+  getAssignments(): Promise<Collection<GuardrailAssignment>>;
+  createAssignment(input: CreateAssignmentInput): Promise<GuardrailAssignment>;
+  getTrafficScopeFields(): Promise<Collection<TrafficScopeField>>;
 };
 
-export function toGuardrailViewModel(
-  state: GuardGovernanceState,
-  guardrailId?: string,
-): GuardrailViewModel {
-  const guardrails = state.guardrails.map(mapGuardrail);
-  return {
-    guardrails,
-    guardrail: guardrailId ? guardrails.find((item) => item.id === guardrailId) ?? null : null,
-    test_cases: guardrailId ? state.guardrails.find((item) => item.id === guardrailId)?.testCases.map(mapTestCase) ?? [] : [],
-    versions: state.versions.filter((item) => item.guardrailId === guardrailId).map(mapVersion),
-    assignments: state.assignments.filter((item) => item.guardrailId === guardrailId).map(mapAssignment),
-  };
+export function GuardrailMockApiProvider({ children, scenario = "populated" }: {
+  children: React.ReactNode;
+  scenario?: "populated" | "loading" | "empty" | "error";
+}) {
+  const store = useGuardGovernanceStore();
+  const api = useMemo(() => createGuardrailApi(store, scenario), [store, scenario]);
+  return <GuardrailApiContext.Provider value={api}>{children}</GuardrailApiContext.Provider>;
 }
 ```
 
-Extend fixtures only where necessary so at least one result contains grounding scores, claims, automated-reasoning proofs, input/output content, and a multi-step trace.
+Use `useGuardGovernanceStore()` inside `GuardrailMockApiProvider` and map the existing provider state to the exact Guard contracts at the API boundary. Mutations call the existing store methods so the other mock governance pages retain a single shared in-memory state. All API methods return promises. Expose a test-only `scenario?: "populated" | "loading" | "empty" | "error"` prop; `loading` resolves through a controllable deferred promise and `error` rejects with `new Error("Mock Guardrail request failed")`.
 
-- [ ] **Step 4: Run the adapter tests and verify GREEN**
+- [ ] **Step 5: Populate every original UI branch**
 
-Run: `npm test --workspace @tasklattice/control -- guardrail-view-model.test.ts`
+Extend the existing AgentEval model, fixtures, and store only where fields or mutations are missing. Fixtures must include the default Guardrail, protected custom Guardrail, needs-testing Guardrail, all templates and Control definitions, prompt-security/grounding/reasoning cases, pass/fail/incomplete runs, nested grounding/claims/reasoning findings, active/archived versions, recursive Traffic Scopes, and Assignment states. The API adapter converts these shared camelCase entities to exact Guard snake_case contracts.
 
-Expected: PASS with the complete nested shape preserved.
+- [ ] **Step 6: Run the API tests and verify GREEN**
 
-- [ ] **Step 5: Commit the adapter**
+Run: `npm test --workspace @tasklattice/control -- mock-api.test.tsx`
+
+Expected: PASS for complete structures, persistence, scenario behavior, and zero fetch calls.
+
+- [ ] **Step 7: Commit the mock API**
 
 ```powershell
-git add web/apps/control/src/features/guard-governance/guardrails/guardrail-view-model.ts web/apps/control/src/features/guard-governance/guardrails/guardrail-view-model.test.ts web/apps/control/src/features/guard-governance/model.ts web/apps/control/src/features/guard-governance/fixtures.ts
-git commit -m "feat: add complete guardrail mock view model"
+git add web/apps/control/src/features/guard-governance/guardrail-import/lib web/apps/control/src/features/guard-governance/model.ts web/apps/control/src/features/guard-governance/fixtures.ts web/apps/control/src/features/guard-governance/store.ts
+git commit -m "feat: add Guard-compatible mock API"
 ```
 
-### Task 2: Guard Product Components and Localization
+### Task 3: Copy Guard Localization, Auth Compatibility, and Assignment Dependencies
 
 **Files:**
-- Create: `web/apps/control/src/features/guard-governance/guardrails/guardrail-copy.ts`
-- Create: `web/apps/control/src/features/guard-governance/guardrails/guard-product-ui.tsx`
-- Create: `web/apps/control/src/features/guard-governance/guardrails/guardrail-product.css`
-- Create: `web/apps/control/src/features/guard-governance/guardrails/guard-product-ui.test.tsx`
-- Modify: `web/apps/control/src/styles.css`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/i18n.ts`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/lib/auth-compat.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/guardrail-import-provider.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/traffic-scope/index.ts`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/traffic-scope/model.ts`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/traffic-scope/types.ts`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/traffic-scope/traffic-scope-builder.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/traffic-scope/query-builder.css`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/query-builder/index.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/query-builder/ShadcnActionElement.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/query-builder/ShadcnNotToggle.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/query-builder/ShadcnShiftActions.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/query-builder/ShadcnValueEditor.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/query-builder/ShadcnValueSelector.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/components/assignment-sheet.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/test-utils.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/provider.test.tsx`
 
 **Interfaces:**
-- Consumes: application language if available, otherwise `en`.
-- Produces: `useGuardrailCopy()`, `GuardPageHeader`, `GuardStateBadge`, `GuardMetric`, `GuardInfoNotice`, `GuardEmptyState`, and `GuardWorkflowStatus`.
+- Consumes: Guard translation resources, current AgentEval project ID, optional active language, and the TaskLattice Guard Traffic Scope/Assignment source.
+- Produces: `GuardrailImportProvider`, `useGuardAuth`, `CreateAssignmentSheet`, `TrafficScopeBadges`, and copied Traffic Scope UI.
 
-- [ ] **Step 1: Write failing presentation tests**
+- [ ] **Step 1: Write failing provider and localization tests**
 
 ```tsx
-it("renders the Guard page hierarchy and localized default copy", () => {
-  render(<GuardPageHeader eyebrow="Governance / Model safety" title="Guardrails" description="Complete description" />);
-  expect(screen.getByText("Governance / Model safety")).not.toBeNull();
-  expect(screen.getByRole("heading", { level: 1, name: "Guardrails" })).not.toBeNull();
+function TranslatedProbe() {
+  const { t } = useTranslation();
+  return <span>{t("guardrails.create")}</span>;
+}
+
+it("renders original Guard copy in English and Simplified Chinese", async () => {
+  renderImported(<TranslatedProbe />, { language: "en" });
+  expect(screen.getByText("Create Guardrail")).not.toBeNull();
+  cleanup();
+  renderImported(<TranslatedProbe />, { language: "zh-CN" });
+  expect(await screen.findByText("创建 Guardrail")).not.toBeNull();
 });
 
-it("maps every supported state to visible Guard copy", () => {
-  render(<>{["protected", "ready", "needs_testing", "disabled"].map((state) => <GuardStateBadge key={state} state={state} />)}</>);
-  expect(screen.getByText("Protected")).not.toBeNull();
-  expect(screen.getByText("Needs testing")).not.toBeNull();
-  expect(screen.getByText("Disabled")).not.toBeNull();
+it("exposes only the preferred language through auth compatibility", () => {
+  const wrapper = ({ children }: { children: React.ReactNode }) => <GuardGovernanceProvider projectId="individual"><GuardrailImportProvider projectId="individual" language="zh-CN">{children}</GuardrailImportProvider></GuardGovernanceProvider>;
+  const { result } = renderHook(() => useGuardAuth(), { wrapper });
+  expect(result.current.user?.preferred_language).toBe("zh-CN");
 });
 ```
 
-- [ ] **Step 2: Run the component test and verify RED**
+- [ ] **Step 2: Run provider tests and verify RED**
 
-Run: `npm test --workspace @tasklattice/control -- guard-product-ui.test.tsx`
+Run: `npm test --workspace @tasklattice/control -- provider.test.tsx`
 
-Expected: FAIL because the imported Guard primitives do not exist.
+Expected: FAIL because the scoped translation/auth provider and copied Assignment dependencies do not exist.
 
-- [ ] **Step 3: Port the Guard presentation primitives and scoped theme**
+- [ ] **Step 3: Copy Guardrail-related translation resources without rewriting labels**
+
+Copy the `common`, `states`, `pages.guardrails`, `guardrails`, `assignments`, and `playground.stages` keys for both `en` and `zh-CN` from `tasklattice-guard/web/src/i18n.ts`. Create one i18next instance per provider with `createInstance()` so its language changes do not mutate a global AgentEval instance.
+
+- [ ] **Step 4: Compose the scoped provider**
 
 ```tsx
-export function GuardPageHeader({ eyebrow, title, description, action }: Props) {
-  return <header className="guard-page-header grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]">
-    <div><p className="guard-eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div>
-    {action}
-  </header>;
+export function GuardrailImportProvider({ children, projectId, language = "en", scenario = "populated" }: Props) {
+  return <I18nextProvider i18n={getGuardrailI18n(language)}>
+    <GuardAuthProvider preferredLanguage={language}>
+      <GuardrailMockApiProvider scenario={scenario}>
+        <div className="guardrail-import min-w-0">{children}</div>
+        <Toaster position="bottom-right" richColors />
+      </GuardrailMockApiProvider>
+    </GuardAuthProvider>
+  </I18nextProvider>;
 }
 ```
 
-Scope imported visual tokens under `.guardrail-product` so Guard blue accents and larger radii do not alter the rest of AgentEval.
+Initialize each scoped i18next instance synchronously with `initImmediate: false`, the copied `en` and `zh-CN` resources, `fallbackLng: "en"`, and `interpolation.escapeValue: false`.
 
-- [ ] **Step 4: Run presentation tests and verify GREEN**
-
-Run: `npm test --workspace @tasklattice/control -- guard-product-ui.test.tsx`
-
-Expected: PASS for hierarchy, state copy, and scoped classes.
-
-- [ ] **Step 5: Commit product components**
-
-```powershell
-git add web/apps/control/src/features/guard-governance/guardrails/guardrail-copy.ts web/apps/control/src/features/guard-governance/guardrails/guard-product-ui.tsx web/apps/control/src/features/guard-governance/guardrails/guardrail-product.css web/apps/control/src/features/guard-governance/guardrails/guard-product-ui.test.tsx web/apps/control/src/styles.css
-git commit -m "feat: port guardrail product UI primitives"
-```
-
-### Task 3: Complete Registry and Creation Flow
-
-**Files:**
-- Modify: `web/apps/control/src/features/guard-governance/guardrails/guardrails-page.tsx`
-- Create: `web/apps/control/src/features/guard-governance/guardrails/create-guardrail-sheet.tsx`
-- Modify: `web/apps/control/src/features/guard-governance/guardrails/guardrails-page.test.tsx`
-
-**Interfaces:**
-- Consumes: `toGuardrailViewModel`, `useGuardGovernanceStore`, Guard product components, templates, and Control definitions.
-- Produces: complete `GuardrailsPage` registry and `CreateGuardrailSheet` backed only by mock store operations.
-
-- [ ] **Step 1: Replace registry tests with failing Guard-reference assertions**
+- [ ] **Step 5: Add the shared imported-feature test renderer**
 
 ```tsx
-it("matches the Guard registry structure without AgentEval summary cards", () => {
-  renderGovernance(<GuardrailsPage projectId="individual" />);
-  expect(screen.getByText("Guardrail registry · 4")).not.toBeNull();
-  expect(screen.getByText("Select a Guardrail to view configuration and test evidence.")).not.toBeNull();
+type Options = {
+  language?: "en" | "zh-CN";
+  projectId?: string;
+  scenario?: "populated" | "loading" | "empty" | "error";
+};
+
+export function renderImported(
+  node: React.ReactNode,
+  { language = "en", projectId = "individual", scenario = "populated" }: Options = {},
+) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <GuardGovernanceProvider projectId={projectId}>
+        <GuardrailImportProvider projectId={projectId} language={language} scenario={scenario}>
+          {node}
+        </GuardrailImportProvider>
+      </GuardGovernanceProvider>
+    </QueryClientProvider>,
+  );
+}
+```
+
+- [ ] **Step 6: Copy the complete Traffic Scope and Assignment sheet source**
+
+Copy all listed files directly from:
+
+```text
+tasklattice-guard/web/src/components/traffic-scope/
+tasklattice-guard/web/src/components/query-builder/
+tasklattice-guard/web/src/routes/assignments.tsx
+```
+
+From `assignments.tsx`, retain `CreateAssignmentSheet`, `TrafficScopeBadges`, their private rendering helpers, and their imports. Omit only `AssignmentsPage` and `AssignmentRow`, which belong to the independent route. Redirect API calls through `useGuardrailApi()` and component imports to the isolated namespace. Preserve rendered JSX and class names. Replace the global `react-querybuilder/dist/query-builder.css` import with a copied stylesheet whose selectors are prefixed by `.guardrail-import`, preserving every declaration while preventing global leakage.
+
+- [ ] **Step 7: Run provider tests and verify GREEN**
+
+Run: `npm test --workspace @tasklattice/control -- provider.test.tsx`
+
+Expected: PASS for exact bilingual copy, isolated language state, auth compatibility, and provider composition.
+
+- [ ] **Step 8: Commit scoped provider and Assignment dependencies**
+
+```powershell
+git add web/apps/control/src/features/guard-governance/guardrail-import
+git commit -m "feat: copy Guard localization and assignment UI"
+```
+
+### Task 4: Copy the Original Guardrail Registry and Creation Flow
+
+**Files:**
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/guardrails.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/guardrails-registry.test.tsx`
+- Modify: `web/apps/control/src/routes/$projectId/governance/guardrails/index.tsx`
+
+**Interfaces:**
+- Consumes: copied Guard components, `useGuardrailApi`, query keys, scoped i18n/auth, `projectId`, and React Query context already present in AgentEval.
+- Produces: source-faithful `GuardrailsPage({ projectId })` and complete Create Guardrail flow.
+
+- [ ] **Step 1: Write failing registry and creation tests against original behavior**
+
+```tsx
+it("renders the original registry hierarchy without AgentEval metric cards", async () => {
+  renderImported(<GuardrailsPage projectId="individual" />);
+  expect(await screen.findByText("Guardrail registry · 4")).not.toBeNull();
   expect(screen.queryByText("Tested current")).toBeNull();
-  expect(screen.getByRole("link", { name: /Production Safety/ }).getAttribute("href"))
-    .toBe("/individual/governance/guardrails/guardrail-production");
+  expect(screen.getByRole("columnheader", { name: "Test evidence" })).not.toBeNull();
 });
 
-it("creates a Guardrail with the complete template flow", async () => {
+it.each([
+  ["loading", "skeleton"],
+  ["empty", "No Guardrails yet"],
+  ["error", "Mock Guardrail request failed"],
+] as const)("renders the original %s registry state", async (scenario, expected) => {
+  const { container } = renderImported(<GuardrailsPage projectId="individual" />, { scenario });
+  if (expected === "skeleton") expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+  else expect(await screen.findByText(expected)).not.toBeNull();
+});
+
+it("retains template search, blank analysis, and Control review", async () => {
   const user = userEvent.setup();
-  renderGovernance(<GuardrailsPage projectId="individual" />);
-  await user.click(screen.getByRole("button", { name: "Create Guardrail" }));
+  renderImported(<GuardrailsPage projectId="individual" />);
+  await user.click(await screen.findByRole("button", { name: "Create Guardrail" }));
+  expect(screen.getByRole("navigation", { name: "Create Guardrail" })).not.toBeNull();
+  expect(screen.getByLabelText("Find a local template")).not.toBeNull();
+  await user.click(screen.getByRole("button", { name: /Blank safety intent/ }));
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+  await user.type(screen.getByLabelText("Guardrail name"), "Finance Guard");
+  await user.type(screen.getByLabelText("Business purpose"), "Finance employees analyze approved company financial data.");
+  await user.click(screen.getByRole("button", { name: "Analyze protection intent" }));
+  expect(await screen.findByText("Rule draft generated")).not.toBeNull();
+});
+
+it("retains the complete template parameter and review path", async () => {
+  const user = userEvent.setup();
+  renderImported(<GuardrailsPage projectId="individual" />);
+  await user.click(await screen.findByRole("button", { name: "Create Guardrail" }));
   await user.click(screen.getByRole("button", { name: /Enterprise Safety Baseline/ }));
   await user.click(screen.getByRole("button", { name: "Continue" }));
   await user.type(screen.getByLabelText(/Organization name/), "TaskLattice");
   await user.click(screen.getByRole("button", { name: "Continue" }));
-  expect(screen.getByText("Included Controls")).not.toBeNull();
+  expect(screen.getByText("Included controls")).not.toBeNull();
+  expect(screen.getByText("What happens next")).not.toBeNull();
 });
 ```
 
-- [ ] **Step 2: Run the registry tests and verify RED**
+- [ ] **Step 2: Run registry tests and verify RED**
 
-Run: `npm test --workspace @tasklattice/control -- guardrails-page.test.tsx`
+Run: `npm test --workspace @tasklattice/control -- guardrails-registry.test.tsx`
 
-Expected: FAIL because metric cards still render, links are plain anchors, and the complete creation content is absent.
+Expected: FAIL because the source-direct page does not yet exist.
 
-- [ ] **Step 3: Port the Guard registry DOM and responsive behavior**
+- [ ] **Step 3: Copy `guardrails.tsx` verbatim, then change imports only**
 
-Use `Link` from `@tanstack/react-router`:
+Use `apply_patch` to add the full contents of `tasklattice-guard/web/src/routes/guardrails.tsx`. Redirect imports to the copied namespace. Replace static API imports with:
+
+```ts
+const api = useGuardrailApi();
+```
+
+and use `api.getGuardrails`, `api.createGuardrail`, and corresponding methods as query/mutation functions. Do not alter registry or creation-flow JSX/className strings.
+
+- [ ] **Step 4: Adapt only registry navigation**
+
+Change the row link and post-create navigation to:
 
 ```tsx
 <Link
   to="/$projectId/governance/guardrails/$guardrailId"
   params={{ projectId, guardrailId: guardrail.id }}
-  className="block rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
 >
-  <GuardrailRowContent guardrail={guardrail} />
-</Link>
 ```
 
-Remove the three AgentEval metric cards and reproduce Guard loading, empty, registry header, hidden responsive columns, default localization, and row affordance.
+and:
 
-- [ ] **Step 4: Port the complete creation sheet using mock operations**
-
-Keep template/blank choice, intent analysis, parameters, allowed/restricted topics, Controls review, reasoning-policy validation, inline error state, and local store creation. Do not import React Query or Guard API functions.
-
-- [ ] **Step 5: Run registry tests and verify GREEN**
-
-Run: `npm test --workspace @tasklattice/control -- guardrails-page.test.tsx`
-
-Expected: PASS for structure, internal links, creation flow, and mock-only state updates.
-
-- [ ] **Step 6: Commit registry and creation flow**
-
-```powershell
-git add web/apps/control/src/features/guard-governance/guardrails/guardrails-page.tsx web/apps/control/src/features/guard-governance/guardrails/create-guardrail-sheet.tsx web/apps/control/src/features/guard-governance/guardrails/guardrails-page.test.tsx
-git commit -m "feat: import complete guardrail registry UI"
+```ts
+navigate({
+  to: "/$projectId/governance/guardrails/$guardrailId",
+  params: { projectId, guardrailId: id },
+});
 ```
 
-### Task 4: Complete Guardrail Detail and Evidence
-
-**Files:**
-- Modify: `web/apps/control/src/features/guard-governance/guardrails/guardrail-detail-page.tsx`
-- Create: `web/apps/control/src/features/guard-governance/guardrails/guardrail-workflow.tsx`
-- Create: `web/apps/control/src/features/guard-governance/guardrails/guardrail-evidence.tsx`
-- Create: `web/apps/control/src/features/guard-governance/guardrails/guardrail-test-case-sheet.tsx`
-- Create: `web/apps/control/src/features/guard-governance/guardrails/guardrail-detail-page.test.tsx`
-
-**Interfaces:**
-- Consumes: Guard view model, Guard product components, store update/test-case/test-run operations, and read-only assignment summaries.
-- Produces: complete detail page with Safety Intent, Controls, Test Cases, Versions, and Assignments tabs.
-
-- [ ] **Step 1: Write failing detail completeness tests**
+- [ ] **Step 5: Replace the old route component with the scoped provider wrapper**
 
 ```tsx
-it("renders all five Guard detail tabs and the product workflow", () => {
-  renderGovernance(<GuardrailDetailPage guardrailId="guardrail-production" projectId="individual" />);
-  expect(screen.getByRole("region", { name: "Guardrail workflow" })).not.toBeNull();
-  for (const name of ["Safety Intent", "Controls", "Test Cases", "Versions", "Assignments"]) {
+function GuardrailsRoute() {
+  const { projectId } = Route.useParams();
+  return <GuardrailImportProvider projectId={projectId}>
+    <GuardrailsPage projectId={projectId} />
+  </GuardrailImportProvider>;
+}
+```
+
+- [ ] **Step 6: Run registry tests and verify GREEN**
+
+Run: `npm test --workspace @tasklattice/control -- guardrails-registry.test.tsx`
+
+Expected: PASS for original hierarchy, loading/populated behavior, template and blank creation paths, analysis states, validation, and typed links.
+
+- [ ] **Step 7: Commit registry source import**
+
+```powershell
+git add -- web/apps/control/src/features/guard-governance/guardrail-import/guardrails.tsx web/apps/control/src/features/guard-governance/guardrail-import/guardrails-registry.test.tsx 'web/apps/control/src/routes/$projectId/governance/guardrails/index.tsx'
+git commit -m "feat: directly import Guardrail registry source"
+```
+
+### Task 5: Wire the Original Guardrail Detail, Evidence, and Sheets
+
+**Files:**
+- Modify: `web/apps/control/src/features/guard-governance/guardrail-import/guardrails.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/guardrail-detail.test.tsx`
+- Modify: `web/apps/control/src/routes/$projectId/governance/guardrails/$guardrailId.tsx`
+
+**Interfaces:**
+- Consumes: the detail implementation already present in the copied `guardrails.tsx`, complete mock API, copied Assignment sheet, `projectId`, and `guardrailId`.
+- Produces: source-faithful Guardrail detail with all tabs, actions, conditional forms, evidence, versions, and in-page Assignment creation.
+
+- [ ] **Step 1: Write failing full-detail tests**
+
+```tsx
+it("renders the original workflow and all five tabs", async () => {
+  renderImported(<GuardrailDetailPage projectId="individual" guardrailId="guardrail-production" />);
+  expect(await screen.findByRole("region", { name: "Guardrail workflow" })).not.toBeNull();
+  for (const name of ["Intent", "Controls", "Test cases", "Versions", "Assignments"]) {
     expect(screen.getByRole("tab", { name })).not.toBeNull();
   }
 });
 
-it("renders complete evidence blocks", async () => {
+it("renders every nested evidence block", async () => {
   const user = userEvent.setup();
-  renderGovernance(<GuardrailDetailPage guardrailId="guardrail-production" projectId="individual" />);
-  await user.click(screen.getByRole("tab", { name: "Test Cases" }));
-  expect(screen.getByText("Risk coverage")).not.toBeNull();
+  renderImported(<GuardrailDetailPage projectId="individual" guardrailId="guardrail-production" />);
+  await user.click(await screen.findByRole("tab", { name: "Test cases" }));
+  expect(screen.getByText("Compliance")).not.toBeNull();
   expect(screen.getByText("Trusted instruction")).not.toBeNull();
+  expect(screen.getByText("Grounding sources")).not.toBeNull();
   expect(screen.getByText("Triggered findings")).not.toBeNull();
   expect(screen.getByText("Execution trace")).not.toBeNull();
 });
 
-it("keeps assignments read-only inside Guardrail detail", async () => {
+it("opens the original Create Assignment sheet from detail", async () => {
   const user = userEvent.setup();
-  renderGovernance(<GuardrailDetailPage guardrailId="guardrail-production" projectId="individual" />);
-  await user.click(screen.getByRole("tab", { name: "Assignments" }));
-  expect(screen.getByText("Verified support routes")).not.toBeNull();
-  expect(screen.queryByRole("button", { name: /Create Assignment|Apply/ })).toBeNull();
+  renderImported(<GuardrailDetailPage projectId="individual" guardrailId="guardrail-production" />);
+  await user.click(await screen.findByRole("button", { name: "Create Assignment" }));
+  expect(screen.getByRole("heading", { name: "Create Assignment" })).not.toBeNull();
+  expect(screen.getByText("Traffic characteristics")).not.toBeNull();
+});
+
+it("retains edit, conditional Test Case, and version UI", async () => {
+  const user = userEvent.setup();
+  renderImported(<GuardrailDetailPage projectId="individual" guardrailId="guardrail-production" />);
+  await user.click(await screen.findByRole("button", { name: "Edit intent" }));
+  expect(screen.getByLabelText("Business purpose")).not.toBeNull();
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  await user.click(screen.getByRole("tab", { name: "Test cases" }));
+  await user.click(screen.getByRole("button", { name: "Add case" }));
+  expect(screen.getByText("Prompt trust boundary")).not.toBeNull();
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  await user.click(screen.getByRole("tab", { name: "Versions" }));
+  expect(screen.getByText("sha256:prod-v2-a3c8")).not.toBeNull();
+});
+
+it("keeps the product-managed default immutable", async () => {
+  renderImported(<GuardrailDetailPage projectId="individual" guardrailId="guardrail-default" />);
+  expect(await screen.findByText("Product-managed default Guardrail")).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Edit intent" })).toBeNull();
 });
 ```
 
 - [ ] **Step 2: Run detail tests and verify RED**
 
-Run: `npm test --workspace @tasklattice/control -- guardrail-detail-page.test.tsx`
+Run: `npm test --workspace @tasklattice/control -- guardrail-detail.test.tsx`
 
-Expected: FAIL because the current detail omits Guard workflow styling and complete evidence blocks, and still exposes cross-page Assignment actions.
+Expected: FAIL until detail accepts route props and all API/Assignment imports are wired.
 
-- [ ] **Step 3: Port detail header, workflow, metrics, intent, and Controls**
+- [ ] **Step 3: Adapt only detail parameters and back navigation**
 
-Use TanStack `Link` for Back. Preserve default Guardrail immutability. Render template source, version, parameters, limitations, evaluation phases, actions, and reasoning-policy binding exactly from the view model.
+Change the copied detail export from router parameter discovery to explicit props:
 
-- [ ] **Step 4: Port test case CRUD and complete evidence presentation**
+```ts
+export function GuardrailDetailPage({ projectId, guardrailId }: { projectId: string; guardrailId: string }) {
+  // original detail body remains unchanged
+}
+```
 
-`guardrail-evidence.tsx` must render metrics, risk coverage, expandable result rows, trusted instruction, query/sources, input/output, expected/actual decision, action, reached stage, reasoning results, findings with grounding/claims/rules, decision reason, and full trace.
+Change only the back link:
 
-- [ ] **Step 5: Port versions and read-only Assignment summaries**
+```tsx
+<Link to="/$projectId/governance/guardrails" params={{ projectId }}>
+```
 
-Render version metadata and Guard traffic-scope badges. Do not render a Create Assignment sheet, Apply button, or navigation action into the independent Assignment page.
+Keep WorkflowStatus, EditGuardrailSheet, AddTestCaseSheet, ControlEditor, TestEvidence, TestEvidenceRow, Versions, and Assignment JSX/class names unchanged.
+
+- [ ] **Step 4: Wire all detail queries and mutations through `useGuardrailApi()`**
+
+Use the same query keys and invalidation calls as Guard. Replace only static functions in queryFn/mutationFn expressions, for example:
+
+```ts
+const guardrailQuery = useQuery({ queryKey: queryKeys.guardrail(guardrailId), queryFn: () => api.getGuardrail(guardrailId), enabled: Boolean(guardrailId) });
+const test = useMutation({ mutationFn: () => api.createTestRun(guardrailId), onSuccess: refresh });
+```
+
+- [ ] **Step 5: Wrap the detail route**
+
+```tsx
+function GuardrailDetailRoute() {
+  const { projectId, guardrailId } = Route.useParams();
+  return <GuardrailImportProvider projectId={projectId}>
+    <GuardrailDetailPage projectId={projectId} guardrailId={guardrailId} />
+  </GuardrailImportProvider>;
+}
+```
 
 - [ ] **Step 6: Run detail tests and verify GREEN**
 
-Run: `npm test --workspace @tasklattice/control -- guardrail-detail-page.test.tsx`
+Run: `npm test --workspace @tasklattice/control -- guardrail-detail.test.tsx`
 
-Expected: PASS for all tabs, full evidence, immutability, CRUD, versions, and read-only assignments.
+Expected: PASS for workflow, five tabs, edit/test flows, complete evidence, versions, default immutability, and Create Assignment sheet.
 
-- [ ] **Step 7: Commit detail UI**
+- [ ] **Step 7: Commit complete detail wiring**
 
 ```powershell
-git add web/apps/control/src/features/guard-governance/guardrails/guardrail-detail-page.tsx web/apps/control/src/features/guard-governance/guardrails/guardrail-workflow.tsx web/apps/control/src/features/guard-governance/guardrails/guardrail-evidence.tsx web/apps/control/src/features/guard-governance/guardrails/guardrail-test-case-sheet.tsx web/apps/control/src/features/guard-governance/guardrails/guardrail-detail-page.test.tsx
-git commit -m "feat: import complete guardrail detail UI"
+git add -- web/apps/control/src/features/guard-governance/guardrail-import/guardrails.tsx web/apps/control/src/features/guard-governance/guardrail-import/guardrail-detail.test.tsx 'web/apps/control/src/routes/$projectId/governance/guardrails/$guardrailId.tsx'
+git commit -m "feat: directly import Guardrail detail source"
 ```
 
-### Task 5: Routing Regression and Final Verification
+### Task 6: Route, Scope, Build, and Visual Fidelity Verification
 
 **Files:**
 - Modify: `web/apps/control/src/routes/-guard-governance-routing.test.ts`
-- Modify only if required: `web/apps/control/src/routes/$projectId/governance/guardrails/index.tsx`
-- Modify only if required: `web/apps/control/src/routes/$projectId/governance/guardrails/$guardrailId.tsx`
+- Create: `web/apps/control/src/features/guard-governance/guardrail-import/scope-regression.test.ts`
+- Modify only if generated output is stale: `web/apps/control/src/routeTree.gen.ts`
 
 **Interfaces:**
-- Consumes: canonical Guardrail registry/detail routes and imported page components.
-- Produces: verified SPA navigation with no fallback redirect.
+- Consumes: completed imported Guardrail feature and both running references.
+- Produces: verified route containment, no cross-module modifications, production build, and fixed-viewport visual comparison.
 
-- [ ] **Step 1: Add a failing canonical-route regression test**
+- [ ] **Step 1: Add failing route and scope regression tests**
 
 ```ts
-it("keeps the Guardrail detail route in the generated route tree", () => {
-  expect(routeTreeSource).toContain("/$projectId/governance/guardrails/$guardrailId");
-  expect(guardrailPageSource).toContain('to="/$projectId/governance/guardrails/$guardrailId"');
-  expect(guardrailPageSource).not.toContain("<a href=");
+it("uses only typed project Guardrail routes", () => {
+  expect(importedSource).toContain('to="/$projectId/governance/guardrails/$guardrailId"');
+  expect(importedSource).toContain('to="/$projectId/governance/guardrails"');
+  expect(importedSource).not.toContain('to="/guardrails"');
+  expect(importedSource).not.toContain("<a href=");
+});
+
+it("does not import independent governance route pages", () => {
+  expect(importedSource).not.toContain('from "@/features/guard-governance/assignments');
+  expect(importedSource).not.toContain('from "@/features/guard-governance/enforcements');
+  expect(importedSource).not.toContain('from "@/features/guard-governance/integrations');
+  expect(importedSource).not.toContain('from "@/features/guard-governance/evidence');
 });
 ```
 
-- [ ] **Step 2: Run routing tests and verify RED**
+- [ ] **Step 2: Run route/scope tests and verify RED**
 
-Run: `npm test --workspace @tasklattice/control -- -guard-governance-routing.test.ts`
+Run: `npm test --workspace @tasklattice/control -- -guard-governance-routing.test.ts scope-regression.test.ts`
 
-Expected: FAIL until registry and back navigation contain typed TanStack links and no plain internal anchors.
+Expected: FAIL for any stale hard-coded Guard route or old governance-page import.
 
-- [ ] **Step 3: Make the minimal route integration corrections**
+- [ ] **Step 3: Apply minimal route corrections and remove the rewritten page imports**
 
-Keep the existing route files and correct only component props or link targets needed for canonical SPA navigation. Regenerate `routeTree.gen.ts` only if the route generator reports it stale.
+The two file routes must import only from `guardrail-import`. Existing files under `features/guard-governance/guardrails/` may remain for history but must no longer be reachable from the Guard Governance routes. Do not delete or change independent governance pages.
 
-- [ ] **Step 4: Run focused Guardrail tests**
+- [ ] **Step 4: Run all focused tests**
 
-Run: `npm test --workspace @tasklattice/control -- guardrail-view-model.test.ts guard-product-ui.test.ts guardrails-page.test.tsx guardrail-detail-page.test.tsx -guard-governance-routing.test.ts`
+Run:
 
-Expected: all focused Guardrail tests PASS with zero failures.
+```powershell
+npm test --workspace @tasklattice/control -- source-fidelity.test.tsx mock-api.test.tsx provider.test.tsx guardrails-registry.test.tsx guardrail-detail.test.tsx -guard-governance-routing.test.ts scope-regression.test.ts
+```
+
+Expected: all focused tests PASS with zero failures.
 
 - [ ] **Step 5: Run type checking and production build**
 
@@ -371,26 +698,44 @@ Expected: exit code 0 with no TypeScript errors.
 
 Run: `npm run build:control`
 
-Expected: exit code 0 and a generated Control production bundle.
+Expected: exit code 0 with a generated Control production bundle.
 
-- [ ] **Step 6: Perform browser comparison**
+- [ ] **Step 6: Compare fixed desktop screenshots**
 
-Compare:
+At `1440 × 900`, compare cropped content regions for:
 
-- `http://localhost:8080/individual/governance/guardrails`
-- `http://localhost:8091/guardrails`
+```text
+http://localhost:8080/individual/governance/guardrails
+http://localhost:8091/guardrails
+```
 
-Verify registry hierarchy, create sheet steps, detail workflow, all five tabs, evidence expansion, default immutability, read-only Assignments, desktop layout, and narrow responsive behavior. Confirm registry row navigation remains under `/individual/governance/guardrails/<id>` and never lands on Evaluation Overview.
+Capture registry, all three Create steps, default detail, custom detail, every tab, expanded evidence, Edit sheet, all conditional Add Test Case states, Create Assignment sheet, loading, empty, and error states. Fixture text and timestamps may differ; layout, spacing, dimensions, styles, visibility, and interaction states must match.
 
-- [ ] **Step 7: Check scope and commit final routing work**
+- [ ] **Step 7: Compare fixed mobile screenshots**
+
+Repeat the same content states at `390 × 844`. Verify hidden table columns, wrapping, sheet width, tab wrapping, scroll containment, and portal styling against Guard.
+
+- [ ] **Step 8: Verify route behavior in the running app**
+
+Click a registry row and verify the URL becomes:
+
+```text
+http://localhost:8080/individual/governance/guardrails/<guardrail-id>
+```
+
+Confirm it renders the imported detail and never redirects to Evaluation Overview. Use the Back control and confirm it returns to the registry without a full-page reload.
+
+- [ ] **Step 9: Audit scope and working tree**
 
 Run: `git diff --check`
 
 Run: `git status --short`
 
-Confirm the pre-existing `behavior-page.test.tsx` modification was neither edited nor staged.
+Confirm `web/apps/control/src/features/evaluation-layer/overview/behavior-page.test.tsx` remains user-owned, unstaged, and unchanged by this work. Confirm no independent Guard Governance page is present in the staged diff.
+
+- [ ] **Step 10: Commit final integration corrections**
 
 ```powershell
-git add web/apps/control/src/routes/-guard-governance-routing.test.ts web/apps/control/src/routes/$projectId/governance/guardrails/index.tsx web/apps/control/src/routes/$projectId/governance/guardrails/$guardrailId.tsx
-git commit -m "fix: preserve guardrail detail navigation"
+git add web/apps/control/src/routes/-guard-governance-routing.test.ts web/apps/control/src/features/guard-governance/guardrail-import/scope-regression.test.ts web/apps/control/src/routeTree.gen.ts
+git commit -m "test: verify Guardrail source import fidelity"
 ```
