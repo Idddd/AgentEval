@@ -40,6 +40,29 @@ it("retains the original template and blank creation choices", async () => {
     screen.getByRole("button", { name: /Blank safety intent/ }),
   ).not.toBeNull();
   expect(
-    screen.getByRole("button", { name: /Enterprise Safety Baseline/ }),
+    screen.getByRole("button", {
+      name: /Advanced PII Protection \(Australia\)/,
+    }),
   ).not.toBeNull();
+  expect(
+    screen.getByRole("button", { name: /Competitor Mention Detection/ }),
+  ).not.toBeNull();
+});
+
+it("renders all parameter controls for an imported Guard template", async () => {
+  const user = userEvent.setup();
+  renderImported(<GuardrailsPage projectId="individual" />);
+
+  await user.click(
+    await screen.findByRole("button", { name: "Create Guardrail" }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: /Competitor Mention Detection/ }),
+  );
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+
+  expect(screen.getByLabelText("Your Brand Name *")).not.toBeNull();
+  expect(screen.getByPlaceholderText("One competitor per line").tagName).toBe(
+    "TEXTAREA",
+  );
 });

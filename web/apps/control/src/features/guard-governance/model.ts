@@ -224,7 +224,7 @@ export type GuardrailVersion = {
 export type GuardrailTemplateParameter = {
   name: string;
   label: string;
-  kind: "text" | "multiline";
+  kind: "text" | "multiline" | "textarea";
   required: boolean;
   placeholder: string;
   description: string;

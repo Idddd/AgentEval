@@ -84,4 +84,55 @@ describe("Guard-compatible mock API", () => {
       "Mock Guardrail request failed",
     );
   });
+
+  it("exposes every built-in Guard policy template with complete metadata", async () => {
+    const { result } = renderHook(() => useGuardrailApi(), { wrapper });
+    const templates = await result.current.getGuardrailTemplates();
+
+    expect(templates.items.map((item) => item.id)).toEqual([
+      "advanced-au-pii-protection",
+      "baseline-pii-protection",
+      "nsfw-content-filter-australia",
+      "nsfw-content-filter-basic",
+      "nsfw-content-filter-all-regions",
+      "gdpr-eu-pii-protection",
+      "eu-ai-act-article5",
+      "airline-passenger-data-protection-uae",
+      "aviation-operations-security",
+      "airline-off-topic-restriction",
+      "uae-regulatory-compliance",
+      "competitor-mention-detection",
+      "topic-filtering",
+      "prompt-injection-protection",
+      "pdpa-singapore",
+      "mas-ai-risk-management",
+      "claims-agent-safety",
+    ]);
+    expect(templates.count).toBe(17);
+    expect(
+      templates.items.find(
+        (item) => item.id === "competitor-mention-detection",
+      ),
+    ).toMatchObject({
+      name: "Competitor Mention Detection",
+      source: "LiteLLM OSS · locally built in",
+      version: "1.95.0",
+      parameters: [
+        { name: "brand_name", required: true },
+        { name: "competitors", kind: "textarea", required: true },
+      ],
+      controls: expect.arrayContaining([
+        "competitor-input-blocker",
+        "competitor-output-blocker",
+      ]),
+    });
+    for (const template of templates.items) {
+      expect(template.description).not.toBe("");
+      expect(template.domain).not.toBe("");
+      expect(template.collections?.length).toBeGreaterThan(0);
+      expect(template.tags?.length).toBeGreaterThan(0);
+      expect(template.limitations?.length).toBeGreaterThan(0);
+      expect(template.controls?.length).toBeGreaterThan(0);
+    }
+  });
 });

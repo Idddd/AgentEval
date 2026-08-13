@@ -1281,7 +1281,8 @@ function CreateGuardrailSheet({
                     label={`${parameter.label}${parameter.required ? " *" : ""}`}
                     hint={parameter.description}
                   >
-                    {parameter.kind === "multiline" ? (
+                    {parameter.kind === "multiline" ||
+                    parameter.kind === "textarea" ? (
                       <Textarea
                         className="min-h-28 rounded-lg bg-card"
                         value={parameters[parameter.name] ?? ""}

@@ -6,100 +6,17 @@ import type {
   GuardIntegration,
   Guardrail,
   GuardrailAssignment,
-  GuardrailTemplate,
   GuardrailTestCase,
   GuardrailTestRun,
   GuardrailVersion,
   TrafficScopeFieldDefinition,
 } from "./model";
+import { guardTemplateFixtures } from "./fixtures/guard-template-fixtures";
 
 const FIXTURE_TIME = "2026-08-11T07:30:00.000Z";
 const EARLIER_TIME = "2026-08-09T10:00:00.000Z";
 
-const templates: GuardrailTemplate[] = [
-  {
-    id: "template-enterprise-safety",
-    name: "Enterprise Safety Baseline",
-    description:
-      "Layered prompt security, privacy, and unsafe-content controls for enterprise assistants.",
-    purpose:
-      "Protect enterprise model traffic from instruction attacks and sensitive-data disclosure.",
-    allowedTopics: [
-      "customer support",
-      "product guidance",
-      "approved enterprise workflows",
-    ],
-    restrictedTopics: ["credential disclosure", "unsafe instructions"],
-    defaultControls: [
-      { risk: "prompt_injection", action: "reject", enabled: true },
-      { risk: "pii", action: "redact", enabled: true },
-      { risk: "content_safety", action: "reject", enabled: true },
-    ],
-    safetyLevel: "strict",
-    outputDelivery: "interruptible",
-    source: "TaskLattice built-in",
-    version: "2026.8",
-    domain: "Enterprise Safety",
-    collections: ["Prompt Security", "Data Protection"],
-    tags: ["enterprise", "recommended"],
-    limitations: [
-      "Semantic controls depend on configured evaluator capabilities.",
-    ],
-    controls: ["Prompt injection", "PII", "Content safety"],
-    parameters: [
-      {
-        name: "organizationName",
-        label: "Organization name",
-        kind: "text",
-        required: true,
-        placeholder: "Acme Corporation",
-        description: "Used in organization-specific policy guidance.",
-      },
-      {
-        name: "approvedDomains",
-        label: "Approved business domains",
-        kind: "multiline",
-        required: false,
-        placeholder: "Customer support\nProduct documentation",
-        description: "One approved domain per line.",
-      },
-    ],
-  },
-  {
-    id: "template-claims-compliance",
-    name: "Claims Compliance",
-    description:
-      "Insurance claims policy, privacy, and automated-reasoning controls.",
-    purpose:
-      "Keep claims interactions within approved policy and evidence boundaries.",
-    allowedTopics: ["claim status", "coverage explanation"],
-    restrictedTopics: ["medical advice", "guaranteed claim outcomes"],
-    defaultControls: [
-      { risk: "company_policy", action: "redirect", enabled: true },
-      { risk: "pii", action: "redact", enabled: true },
-      {
-        risk: "automated_reasoning",
-        action: "clarify",
-        enabled: true,
-        reasoningPolicy: {
-          policyId: "claims-rules",
-          policyVersion: "3",
-          confidenceThreshold: 0.82,
-        },
-      },
-    ],
-    safetyLevel: "strict",
-    outputDelivery: "full_buffered",
-    source: "TaskLattice policy pack",
-    version: "3.1",
-    domain: "Insurance",
-    collections: ["Claims"],
-    tags: ["insurance", "reasoning"],
-    limitations: ["Does not determine final claim eligibility."],
-    controls: ["Company policy", "PII", "Automated reasoning"],
-    parameters: [],
-  },
-];
+const templates = guardTemplateFixtures;
 
 const controlDefinitions: ControlDefinition[] = [
   [
@@ -667,7 +584,7 @@ function fixtureState(projectId: string): GuardGovernanceState {
         { risk: "builtin_content_filter", action: "reject", enabled: true },
       ],
       testCases: [],
-      sourceTemplateId: "template-enterprise-safety",
+      sourceTemplateId: "prompt-injection-protection",
       templateParameters: {},
       draftVersion: 1,
       activeVersion: 1,
@@ -700,11 +617,8 @@ function fixtureState(projectId: string): GuardGovernanceState {
       ],
       testCases: productionCases,
       latestTestRun: productionRun,
-      sourceTemplateId: "template-enterprise-safety",
-      templateParameters: {
-        organizationName: "TaskLattice",
-        approvedDomains: "Customer support\nProduct guidance",
-      },
+      sourceTemplateId: "prompt-injection-protection",
+      templateParameters: {},
       draftVersion: 2,
       activeVersion: 2,
       assignmentCount: 2,
@@ -746,7 +660,7 @@ function fixtureState(projectId: string): GuardGovernanceState {
       ],
       testCases: claimsCases,
       latestTestRun: claimsRun,
-      sourceTemplateId: "template-claims-compliance",
+      sourceTemplateId: "claims-agent-safety",
       templateParameters: {},
       draftVersion: 2,
       activeVersion: null,
