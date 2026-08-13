@@ -51,3 +51,5 @@ export function useGuardAuth() {
   if (!value) throw new Error("useGuardAuth requires GuardAuthProvider");
   return value;
 }
+
+export { useGuardAuth as useAuth };

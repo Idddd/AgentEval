@@ -112,7 +112,10 @@ export function CreateAssignmentSheet({
     queryFn: api.getTrafficScopeFields,
     enabled: open,
   });
-  const definitions = fieldQuery.data?.items ?? [];
+  const definitions = useMemo(
+    () => fieldQuery.data?.items ?? [],
+    [fieldQuery.data?.items],
+  );
   const ready = useMemo(
     () =>
       guardrails.filter((item) => item.tested_current && !item.system_managed),
