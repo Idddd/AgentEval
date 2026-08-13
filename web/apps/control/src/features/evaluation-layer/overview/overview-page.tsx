@@ -46,6 +46,26 @@ const STATUS_COLORS: Record<Exclude<StatusFilter, "ALL">, string> = {
   ERROR: "bg-amber-500",
 };
 
+const monitoringCaseLabels: Record<string, string> = {
+  "weather-guest-allow": "Safe public data access",
+  "employee-dept-hr-allow": "Authorized employee data access",
+  "salary-employee-deny": "Data leak prevention",
+  "restart-admin-allow": "Authorized privileged action",
+  "restart-employee-deny": "Unauthorized action blocked",
+  "jailbreak-guard-bypass": "Prompt injection data leak",
+  "ops-list-allow": "Authorized read-only action",
+  "ops-list-deny": "Unauthorized tool action blocked",
+  "kb-policy-hit": "Grounded policy response",
+  "kb-policy-miss": "Ungrounded response prevented",
+  "skill-summary-decision": "Instruction-following summary",
+  "skill-summary-risks": "Risk-aware summarization",
+  "deployment-health-running": "Service health check",
+};
+
+function monitoringCaseLabel(caseId: string) {
+  return monitoringCaseLabels[caseId] ?? caseId;
+}
+
 function observationCount(trace: {
   spans: unknown[];
   toolEvidence: unknown[];
@@ -297,7 +317,7 @@ export function EvaluationOverviewPage() {
                     <td>
                       {evaluator.provider === "BUILT_IN"
                         ? "Built-in"
-                        : "Langfuse"}
+                        : "Langsmith"}
                     </td>
                     <td>{evaluator.version}</td>
                     <td>
@@ -395,7 +415,7 @@ export function EvaluationOverviewPage() {
                     <span className="text-xs">{agent?.name ?? trace.targetId}</span>
                   </span>
                 </td>
-                <td>{trace.caseId}</td>
+                <td title={trace.caseId}>{monitoringCaseLabel(trace.caseId)}</td>
                 <td>
                   <TraceScoreCell
                     trace={trace}

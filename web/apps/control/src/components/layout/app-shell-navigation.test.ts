@@ -15,7 +15,7 @@ function visibleLabels(groupLabel: string, role: ProjectRole) {
 }
 
 describe("Evaluation navigation", () => {
-  it("keeps evaluation workflows together and moves the merged Overview to Observer", () => {
+  it("labels the merged observer page as Production Monitoring", () => {
     expect(
       projectNavGroups
         .find((group) => group.label === "Evaluation")
@@ -25,7 +25,7 @@ describe("Evaluation navigation", () => {
       projectNavGroups
         .find((group) => group.label === "Observer")
         ?.items.map((item) => item.label),
-    ).toEqual(["Traces", "Overview", "Cost"]);
+    ).toEqual(["Traces", "Production Monitoring", "Cost"]);
   });
 
   it("keeps the Eval active state scoped to the catalog", () => {
@@ -88,7 +88,7 @@ describe("Role-based navigation whitelist", () => {
 
     expect(labels("Agentic")).toEqual(["Skills", "MCP Servers"]);
     expect(labels("Evaluation")).toEqual(["Eval", "Behavior"]);
-    expect(labels("Observer")).toEqual(["Traces", "Overview"]);
+    expect(labels("Observer")).toEqual(["Traces", "Production Monitoring"]);
   });
 
   it("shows every item to admin", () => {
@@ -120,7 +120,7 @@ describe("Role-based navigation whitelist", () => {
     ]);
     expect(visibleLabels("Observer", "compliance")).toEqual([
       "Traces",
-      "Overview",
+      "Production Monitoring",
     ]);
   });
 
@@ -129,7 +129,7 @@ describe("Role-based navigation whitelist", () => {
       expect(visibleLabels("Agentic", role)).toEqual(["Skills", "MCP Servers"]);
       expect(visibleLabels("Evaluation", role)).toEqual(["Eval", "Behavior"]);
       expect(visibleLabels("Security", role)).toEqual(["Audit Logs"]);
-      expect(visibleLabels("Observer", role)).toEqual(["Traces", "Overview"]);
+      expect(visibleLabels("Observer", role)).toEqual(["Traces", "Production Monitoring"]);
     }
   });
 
@@ -148,6 +148,6 @@ describe("Role-based navigation whitelist", () => {
       "Runtime Policies",
       "Audit Logs",
     ]);
-    expect(visibleLabels("Observer", "frt")).toEqual(["Traces", "Overview"]);
+    expect(visibleLabels("Observer", "frt")).toEqual(["Traces", "Production Monitoring"]);
   });
 });

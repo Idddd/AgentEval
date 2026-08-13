@@ -534,12 +534,12 @@ export const resources = {
         builtinTemplate: "Built-in template",
         builtinTemplateDescription:
           "Copy a reviewed, immutable local template into an organization-owned Guardrail.",
-        blankIntent: "Blank safety intent",
+        blankIntent: "Customize Intent Create",
         blankIntentDescription:
-          "Define purpose-aware Topic Control and select additional Controls.",
+          "Create a Guardrail from your entered business-intent document in the next step.",
         findTemplate: "Find a local template",
         localControls: "{{count}} local controls · {{version}}",
-        blankStructured: "Blank does not mean unstructured",
+        blankStructured: "Create from your entered intent document",
         blankStructuredDescription:
           "The next step separates the AI purpose, allowed business domains, and restricted domains. Topic Control uses primary intent, so analyzing a chemical company’s financial report can remain financial rather than being blocked by one keyword.",
         guardrailName: "Guardrail name",

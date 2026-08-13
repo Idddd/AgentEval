@@ -57,8 +57,8 @@ describe('legacy-aligned Trace view model', () => {
     const fixtures = cloneEvaluationLayerFixtures();
     const json = traceScoreJson(passing, fixtures.evaluators);
     expect(json).toEqual({
-      'Permission compliance': passing.deterministicScores,
-      'Recorded demo judge': passing.judge!.scores,
+      'Data leak detection': passing.deterministicScores,
+      'Token efficiency': passing.judge!.scores,
     });
   });
 
@@ -66,7 +66,7 @@ describe('legacy-aligned Trace view model', () => {
     const fixtures = cloneEvaluationLayerFixtures();
     const { judge: _judge, ...withoutJudge } = passing;
     expect(traceScoreJson(withoutJudge, fixtures.evaluators)).toEqual({
-      'Permission compliance': passing.deterministicScores,
+      'Data leak detection': passing.deterministicScores,
     });
   });
 

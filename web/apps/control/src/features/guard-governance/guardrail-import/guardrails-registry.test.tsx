@@ -37,7 +37,7 @@ it("retains the original template and blank creation choices", async () => {
   ).not.toBeNull();
   expect(screen.getByLabelText("Find a local template")).not.toBeNull();
   expect(
-    screen.getByRole("button", { name: /Blank safety intent/ }),
+    screen.getByRole("button", { name: /Customize Intent Create/ }),
   ).not.toBeNull();
   expect(
     screen.getByRole("button", {
@@ -47,6 +47,66 @@ it("retains the original template and blank creation choices", async () => {
   expect(
     screen.getByRole("button", { name: /Competitor Mention Detection/ }),
   ).not.toBeNull();
+});
+
+it("combines multiple selected templates into one editable safety intent", async () => {
+  const user = userEvent.setup();
+  renderImported(<GuardrailsPage projectId="individual" />);
+
+  await user.click(
+    await screen.findByRole("button", { name: "Create Guardrail" }),
+  );
+  await user.click(
+    screen.getByRole("button", {
+      name: /Advanced PII Protection \(Australia\)/,
+    }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: /Prompt Injection Protection/ }),
+  );
+
+  expect(screen.getAllByLabelText("Selected template")).toHaveLength(2);
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+
+  const purpose = screen.getByLabelText("Business purpose") as HTMLTextAreaElement;
+  expect(purpose.value).toContain(
+    "Advanced PII Protection (Australia)",
+  );
+  expect(purpose.value).toContain("Prompt Injection Protection");
+  expect(screen.getByLabelText("Allowed business domains")).not.toBeNull();
+  expect(screen.getByLabelText("Restricted domains")).not.toBeNull();
+});
+
+it("describes custom intent creation without upload and mock-analyzes its purpose", async () => {
+  const user = userEvent.setup();
+  renderImported(<GuardrailsPage projectId="individual" />);
+
+  await user.click(
+    await screen.findByRole("button", { name: "Create Guardrail" }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: /Customize Intent Create/ }),
+  );
+
+  expect(screen.getByText(/entered business-intent document/i)).not.toBeNull();
+  expect(document.querySelector('input[type="file"]')).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+
+  const purpose = screen.getByLabelText("Business purpose");
+  expect((purpose as HTMLTextAreaElement).value).toContain(
+    "authorized business users",
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Analyze protection intent" }),
+  );
+  expect(
+    (await screen.findByLabelText(
+      "Allowed business domains",
+    ) as HTMLTextAreaElement).value,
+  ).not.toBe("");
+  expect(
+    (screen.getByLabelText("Restricted domains") as HTMLTextAreaElement).value,
+  ).not.toBe("");
 });
 
 it("renders all parameter controls for an imported Guard template", async () => {

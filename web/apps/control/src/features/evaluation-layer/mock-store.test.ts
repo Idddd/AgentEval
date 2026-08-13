@@ -806,6 +806,32 @@ describe("EvaluationLayerStore", () => {
     expect(validateEvaluationLayerState(state)).toEqual([]);
   });
 
+  it('makes new live traces pass when every evaluator is disabled', () => {
+    let sequence = 0;
+    const fixtures = cloneEvaluationLayerFixtures();
+    fixtures.targets.forEach((target) => {
+      target.liveStatus = target.id === 'demo-permission-compliance' ? 'ONLINE' : 'OFFLINE';
+    });
+    const store = createEvaluationLayerStore(fixtures, {
+      id: () => `disabled-evaluator-${sequence++}`,
+      now: () => '2026-08-05T10:00:00.000Z',
+      random: () => 0.8,
+    });
+    for (const evaluator of store.getState().evaluators) {
+      store.setEvaluatorEnabled(evaluator.id, false);
+    }
+
+    expect(store.tickSimulation().ok).toBe(true);
+    const withoutEvaluators = store.getState().traces[0]!;
+    expect(withoutEvaluators.status).toBe('PASS');
+    expect(withoutEvaluators.deterministicScores).toEqual({});
+    expect(withoutEvaluators.judge).toBeUndefined();
+
+    store.setEvaluatorEnabled('permission-compliance', true);
+    expect(store.tickSimulation().ok).toBe(true);
+    expect(store.getState().traces[0]!.status).toBe('FAIL');
+  });
+
   it('starts and stops the simulation timer idempotently', () => {
     vi.useFakeTimers();
     try {

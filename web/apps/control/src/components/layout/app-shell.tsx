@@ -187,7 +187,7 @@ export const projectNavGroups: Array<{
     label: "Observer",
     items: [
       { icon: Waypoints, label: "Traces", to: "/$projectId/traces" },
-      { icon: ChartNoAxesCombined, label: "Overview", to: "/$projectId/evaluation/overview" },
+      { icon: ChartNoAxesCombined, label: "Production Monitoring", to: "/$projectId/evaluation/overview" },
       { icon: CircleDollarSign, label: "Cost", to: "/$projectId/cost", roles: AGENT_OPERATOR_ROLES },
     ],
   },

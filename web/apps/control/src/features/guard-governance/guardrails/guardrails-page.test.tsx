@@ -22,7 +22,7 @@ describe("complete Guardrails workflow", () => {
     expect(screen.getByText("100% compliance")).not.toBeNull();
     expect(screen.getByRole("columnheader", { name: "Test evidence" })).not.toBeNull();
     expect(screen.getByRole("columnheader", { name: "Last updated" })).not.toBeNull();
-    expect(screen.getByText("3 reviewed cases")).not.toBeNull();
+    expect(screen.getByText("5 reviewed cases")).not.toBeNull();
   });
 
   it("creates a Guardrail through the three-step template flow", async () => {
@@ -30,11 +30,10 @@ describe("complete Guardrails workflow", () => {
     renderGovernance(<GuardrailsPage projectId="individual" />);
 
     await user.click(screen.getByRole("button", { name: "Create Guardrail" }));
-    await user.click(screen.getByRole("button", { name: /Enterprise Safety Baseline/ }));
+    await user.click(screen.getByRole("button", { name: /Advanced PII Protection \(Australia\)/ }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.clear(screen.getByLabelText("Guardrail name"));
     await user.type(screen.getByLabelText("Guardrail name"), "Claims Protection");
-    await user.type(screen.getByLabelText(/Organization name/), "TaskLattice");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     expect(screen.getByText("Review controls")).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Create" }));

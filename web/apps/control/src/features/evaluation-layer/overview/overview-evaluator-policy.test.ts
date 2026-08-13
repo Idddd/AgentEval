@@ -40,8 +40,8 @@ describe("Overview evaluator policy", () => {
         item.passed,
       ]),
     ).toEqual([
-      ["Permission compliance", 80, true],
-      ["Recorded demo judge", 70, false],
+      ["Data leak detection", 80, true],
+      ["Token efficiency", 70, false],
     ]);
   });
 

@@ -60,12 +60,12 @@ describe("EvaluationOverviewPage", () => {
     ).toHaveLength(1);
     expect(
       evaluators.getByRole("spinbutton", {
-        name: "Minimum score for Permission compliance",
+        name: "Minimum score for Data leak detection",
       }),
     ).toBeTruthy();
     expect(
       evaluators.getByRole("checkbox", {
-        name: "Send alert for Permission compliance",
+        name: "Send alert for Data leak detection",
       }),
     ).toBeTruthy();
     expect(evaluators.queryByText("Captured")).toBeNull();
@@ -81,11 +81,11 @@ describe("EvaluationOverviewPage", () => {
 
     await user.click(
       screen.getByRole("checkbox", {
-        name: "Send alert for Permission compliance",
+        name: "Send alert for Data leak detection",
       }),
     );
     const threshold = screen.getByRole("spinbutton", {
-      name: "Minimum score for Permission compliance",
+      name: "Minimum score for Data leak detection",
     });
     await user.clear(threshold);
     await user.type(threshold, "90");
@@ -109,7 +109,7 @@ describe("EvaluationOverviewPage", () => {
       .map((item) => item.textContent);
     expect(headers.indexOf("Score")).toBeLessThan(headers.indexOf("Status"));
 
-    const failedRow = screen.getByText("jailbreak-guard-bypass").closest("tr")!;
+    const failedRow = screen.getByText("Prompt injection data leak").closest("tr")!;
     const score = within(failedRow).getByRole("button", {
       name: /evaluator score: \d+ of 2 passed/i,
     });
@@ -117,8 +117,8 @@ describe("EvaluationOverviewPage", () => {
     expect(within(failedRow).getByText("FAIL")).toBeTruthy();
 
     await user.click(score);
-    expect(screen.getAllByText("Permission compliance").length).toBeGreaterThan(1);
-    expect(screen.getAllByText("Recorded demo judge").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("Data leak detection").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("Token efficiency").length).toBeGreaterThan(1);
     expect(screen.getAllByText(/%/).length).toBeGreaterThan(0);
   });
 
@@ -128,25 +128,57 @@ describe("EvaluationOverviewPage", () => {
 
     await user.click(
       screen.getByRole("checkbox", {
-        name: "Send alert for Recorded demo judge",
+        name: "Send alert for Token efficiency",
       }),
     );
-    const failedRow = screen.getByText("jailbreak-guard-bypass").closest("tr")!;
+    const failedRow = screen.getByText("Prompt injection data leak").closest("tr")!;
     expect(within(failedRow).getByText("Alert triggered")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: /Failures/ }));
-    expect(screen.getByText("jailbreak-guard-bypass")).toBeTruthy();
-    expect(screen.queryByText("weather-guest-allow")).toBeNull();
+    expect(screen.getByText("Prompt injection data leak")).toBeTruthy();
+    expect(screen.queryByText("Safe public data access")).toBeNull();
   });
 
   it("preserves runtime ERROR when evaluator scores are below threshold", () => {
     renderOverview();
 
     const runtimeError = screen
-      .getAllByText("salary-employee-deny")
+      .getAllByText("Data leak prevention")
       .map((item) => item.closest("tr"))
       .find((row) => row?.textContent?.includes("ERROR"));
     expect(runtimeError).toBeTruthy();
     expect(within(runtimeError!).getByText("ERROR")).toBeTruthy();
+  });
+
+  it("shows clear monitoring labels while preserving case IDs internally", () => {
+    const store = renderOverview();
+    const expectedLabels = [
+      "Safe public data access",
+      "Authorized employee data access",
+      "Data leak prevention",
+      "Authorized privileged action",
+      "Unauthorized action blocked",
+      "Prompt injection data leak",
+      "Authorized read-only action",
+      "Unauthorized tool action blocked",
+      "Grounded policy response",
+      "Ungrounded response prevented",
+      "Instruction-following summary",
+      "Risk-aware summarization",
+    ];
+
+    for (const label of expectedLabels) {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    }
+    expect(screen.queryByText("weather-guest-allow")).toBeNull();
+    expect(store.getState().traces.some((trace) => trace.caseId === "weather-guest-allow")).toBe(true);
+  });
+
+  it("identifies the token evaluator as a Langsmith source", () => {
+    renderOverview();
+
+    const evaluatorRow = screen.getByText("Token efficiency").closest("tr")!;
+    expect(within(evaluatorRow).getByText("Langsmith")).toBeTruthy();
+    expect(within(evaluatorRow).queryByText("Langfuse")).toBeNull();
   });
 });

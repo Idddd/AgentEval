@@ -629,7 +629,14 @@ function simulatedTrace(
     ? cases[Math.floor(dependencies.random() * cases.length)]!.id
     : "live-case";
   const roll = dependencies.random();
-  const status = roll < 0.72 ? "PASS" : roll < 0.88 ? "FAIL" : "ERROR";
+  const anyEvaluatorEnabled = state.evaluators.some((item) => item.enabled);
+  const status = !anyEvaluatorEnabled
+    ? "PASS"
+    : roll < 0.72
+      ? "PASS"
+      : roll < 0.88
+        ? "FAIL"
+        : "ERROR";
   const traceId = dependencies.id();
   const now = dependencies.now();
   const response =

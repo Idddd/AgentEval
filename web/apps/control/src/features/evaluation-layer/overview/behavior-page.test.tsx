@@ -18,30 +18,54 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BehaviorPage", () => {
-  it("shows recorded model calls and explains a policy violation with the LLM review", async () => {
-    const user = userEvent.setup();
+  it("keeps the page focused on the behavior list without call inspection panels", () => {
     render(<BehaviorPage />);
 
     expect(screen.getByText("Model call history")).toBeTruthy();
-    expect(screen.getByText("Runtime log")).toBeTruthy();
-    const failedRow = screen.getByText("jailbreak-guard-bypass").closest("tr")!;
-    await user.click(within(failedRow).getByRole("button", { name: "Inspect" }));
-    await user.click(screen.getByRole("button", { name: "Review with LLM" }));
-
-    expect(screen.getByText("Violation detected")).toBeTruthy();
-    expect(screen.getByText("Authorization boundary")).toBeTruthy();
-    expect(screen.getAllByText(/continued after access should have been denied/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Call inspection")).toBeNull();
+    expect(screen.queryByText("Runtime log")).toBeNull();
   });
 
-  it("marks compliant behavior clear after review", async () => {
+  it("renders four dangerous behavior metrics with risk styling", () => {
+    render(<BehaviorPage />);
+
+    for (const label of ["Prompt injection", "Sensitive data leak", "Unsafe tool calls", "Execution errors"]) {
+      const metric = screen.getAllByText(label).map((item) => item.closest('[data-slot="card"]')).find(Boolean);
+      expect(metric).toBeTruthy();
+      expect(metric?.className).toContain("border-destructive");
+    }
+  });
+
+  it("adds a Risk Agent whose recorded behavior is entirely FAIL or ERROR", async () => {
     const user = userEvent.setup();
     render(<BehaviorPage />);
-    const clearRow = screen
-      .getAllByText("weather-guest-allow")
+
+    await user.type(screen.getByRole("textbox", { name: "Search model calls" }), "Risk Agent");
+    const rows = screen
+      .getAllByText("Risk Agent")
       .map((item) => item.closest("tr"))
-      .find((row) => row?.textContent?.includes("Office Assistant"))!;
-    await user.click(within(clearRow).getByRole("button", { name: "Inspect" }));
-    await user.click(screen.getByRole("button", { name: "Review with LLM" }));
-    expect(screen.getAllByText("No violation detected").length).toBeGreaterThan(0);
+      .filter((row): row is HTMLTableRowElement => row !== null);
+
+    expect(rows).toHaveLength(4);
+    for (const row of rows) {
+      expect(within(row).queryByText("PASS")).toBeNull();
+      expect(within(row).getByText(/FAIL|ERROR/)).toBeTruthy();
+    }
+  });
+
+  it("filters from risk cards and toggles the active card off", async () => {
+    const user = userEvent.setup();
+    render(<BehaviorPage />);
+
+    expect(screen.queryByRole("combobox", { name: "Behavior risk" })).toBeNull();
+    const dataLeakCard = screen.getByRole("button", { name: /Sensitive data leak/i });
+    await user.click(dataLeakCard);
+    expect(screen.getByText("pii-data-exfiltration")).toBeTruthy();
+    expect(screen.queryByText("destructive-tool-escalation")).toBeNull();
+    expect(dataLeakCard.getAttribute("aria-pressed")).toBe("true");
+
+    await user.click(dataLeakCard);
+    expect(screen.getByText("destructive-tool-escalation")).toBeTruthy();
+    expect(dataLeakCard.getAttribute("aria-pressed")).toBe("false");
   });
 });

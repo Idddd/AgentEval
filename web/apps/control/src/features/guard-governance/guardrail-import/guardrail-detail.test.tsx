@@ -15,7 +15,7 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
 }));
 
-it("renders the original workflow and all five tabs", async () => {
+it("omits Assignment controls from the Guardrail detail page", async () => {
   renderImported(
     <GuardrailDetailPage
       projectId="individual"
@@ -23,21 +23,21 @@ it("renders the original workflow and all five tabs", async () => {
     />,
   );
 
-  expect(
-    await screen.findByRole("region", { name: "Guardrail workflow" }),
-  ).not.toBeNull();
-  for (const name of [
-    "Intent",
-    "Controls",
-    "Test cases",
-    "Versions",
-    "Assignments",
-  ]) {
+  const workflow = await screen.findByRole("region", {
+    name: "Guardrail workflow",
+  });
+  expect(workflow.textContent).not.toContain("Assignments");
+  for (const name of ["Intent", "Controls", "Test cases", "Versions"]) {
     expect(screen.getByRole("tab", { name })).not.toBeNull();
   }
+  expect(screen.queryByRole("tab", { name: "Assignments" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Create Assignment" }),
+  ).toBeNull();
+  expect(screen.queryByText("traffic assignments")).toBeNull();
 });
 
-it("renders nested evidence and opens the original Assignment sheet", async () => {
+it("renders nested evidence", async () => {
   const user = userEvent.setup();
   renderImported(
     <GuardrailDetailPage
@@ -50,10 +50,4 @@ it("renders nested evidence and opens the original Assignment sheet", async () =
   expect(screen.getByText("Compliance")).not.toBeNull();
   expect(screen.getAllByText("Triggered findings").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Execution trace").length).toBeGreaterThan(0);
-
-  await user.click(screen.getByRole("button", { name: "Create Assignment" }));
-  expect(
-    screen.getByRole("heading", { name: "Create Assignment" }),
-  ).not.toBeNull();
-  expect(screen.getByText("Traffic characteristics")).not.toBeNull();
 });

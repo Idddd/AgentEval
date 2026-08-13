@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   ArrowRight,
-  Building2,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -59,6 +58,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Textarea } from "./components/ui/textarea";
 import { queryKeys } from "./lib/query-keys";
 import { useAuth } from "./lib/auth-compat";
+import { composeTemplates } from "./lib/template-composition";
 import type {
   GuardrailControl,
   EvaluationCaseResult,
@@ -71,14 +71,15 @@ import type {
 } from "./lib/contracts";
 import { useGuardrailApi } from "./lib/mock-api";
 import { cn } from "./lib/utils";
-import { countTrafficRules } from "./components/traffic-scope";
-import { CreateAssignmentSheet, TrafficScopeBadges } from "./assignment-sheet";
 
 const defaultControls: GuardrailControl[] = [
   { risk: "topic_control", action: "redirect" },
   { risk: "secrets", action: "reject" },
   { risk: "pii", action: "redact" },
 ];
+
+const defaultCustomPurpose =
+  "authorized business users use this AI assistant to review approved internal documents and business data, summarize facts, answer questions within documented policies, and support auditable decisions. It must protect personal data, credentials, confidential records, and system instructions; refuse unsafe, unlawful, or out-of-scope advice or actions; escalate ambiguous high-risk requests to a human reviewer; and record material enforcement decisions for audit.";
 
 export function GuardrailsPage({ projectId }: { projectId: string }) {
   const { t, i18n } = useTranslation();
@@ -332,23 +333,13 @@ function GuardrailDetail({
     queryKey: queryKeys.controlDefinitions,
     queryFn: api.getControlDefinitions,
   });
-  const assignmentsQuery = useQuery({
-    queryKey: queryKeys.assignments,
-    queryFn: api.getAssignments,
-  });
   const [editOpen, setEditOpen] = useState(false);
   const [addCaseOpen, setAddCaseOpen] = useState(false);
-  const [applyOpen, setApplyOpen] = useState(false);
-  const assignmentGuardrails = useMemo(
-    () => (guardrailQuery.data ? [guardrailQuery.data] : []),
-    [guardrailQuery.data],
-  );
 
   const test = useMutation({
     mutationFn: () => api.createTestRun(guardrailId),
     onSuccess: async (run) => {
       await onRefresh();
-      await queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
       toast[run.status === "passed" ? "success" : "error"](
         run.status === "passed"
           ? t("guardrails.testsPassed")
@@ -396,10 +387,6 @@ function GuardrailDetail({
     (item) => item.id === guardrail.source_template_id,
   );
   const definitions = controlsQuery.data?.items ?? [];
-  const assignments = (assignmentsQuery.data?.items ?? []).filter(
-    (item) => item.guardrail_id === guardrail.id,
-  );
-
   return (
     <section className="min-w-0 py-6 sm:py-8">
       <GuardrailBackLink projectId={projectId} />
@@ -425,15 +412,7 @@ function GuardrailDetail({
                   <Save />
                   {t("guardrails.editIntent")}
                 </Button>
-                {guardrail.tested_current ? (
-                  <Button
-                    className="min-h-11"
-                    onClick={() => setApplyOpen(true)}
-                  >
-                    <Building2 />
-                    {t("guardrails.createAssignment")}
-                  </Button>
-                ) : (
+                {!guardrail.tested_current ? (
                   <Button
                     className="min-h-11"
                     disabled={test.isPending || !testCases.length}
@@ -444,9 +423,9 @@ function GuardrailDetail({
                       test.isPending
                         ? "guardrails.runningTests"
                         : "guardrails.runReviewed",
-                    )}
+                      )}
                   </Button>
-                )}
+                ) : null}
               </div>
             )
           }
@@ -472,13 +451,9 @@ function GuardrailDetail({
             })}
           </span>
         </div>
-        <WorkflowStatus
-          guardrail={guardrail}
-          testCaseCount={testCases.length}
-          onApply={() => setApplyOpen(true)}
-        />
+        <WorkflowStatus guardrail={guardrail} testCaseCount={testCases.length} />
 
-        <div className="grid grid-cols-2 gap-3 border-b p-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 border-b p-4 sm:grid-cols-3">
           <Metric
             label={t("guardrails.controls")}
             value={guardrail.controls.length}
@@ -516,11 +491,6 @@ function GuardrailDetail({
                   : t("guardrails.noEvidence")
             }
           />
-          <Metric
-            label={t("guardrails.assignments")}
-            value={guardrail.assignment_count}
-            detail={t("guardrails.trafficAssignments")}
-          />
         </div>
 
         <Tabs defaultValue="intent" className="p-5 sm:p-6">
@@ -536,12 +506,6 @@ function GuardrailDetail({
             </TabsTrigger>
             <TabsTrigger value="versions" className="min-h-8 rounded-md px-3">
               {t("guardrails.versions")}
-            </TabsTrigger>
-            <TabsTrigger
-              value="assignments"
-              className="min-h-8 rounded-md px-3"
-            >
-              {t("guardrails.assignments")}
             </TabsTrigger>
           </TabsList>
 
@@ -715,72 +679,6 @@ function GuardrailDetail({
             />
           </TabsContent>
 
-          <TabsContent value="assignments" className="mt-5 space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-lg">
-                  {t("guardrails.guardrailAssignments")}
-                </h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("guardrails.guardrailAssignmentsDescription")}
-                </p>
-              </div>
-              {guardrail.tested_current && !guardrail.system_managed ? (
-                <Button onClick={() => setApplyOpen(true)}>
-                  <Building2 />
-                  {t("guardrails.apply")}
-                </Button>
-              ) : null}
-            </div>
-            {assignments.length ? (
-              <div className="overflow-hidden rounded-lg border bg-card">
-                <div className="divide-y divide-border">
-                  {assignments.map((item) => (
-                    <div
-                      key={item.id}
-                      className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(240px,1fr)_auto] sm:items-center"
-                    >
-                      <div>
-                        <strong className="text-sm font-medium">
-                          {item.is_default
-                            ? t("assignments.defaultName")
-                            : item.name}
-                        </strong>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {item.is_default
-                            ? t("assignments.defaultDescription")
-                            : t("assignments.conditionCount", {
-                                count: countTrafficRules(item.traffic_scope),
-                              })}
-                        </p>
-                      </div>
-                      <TrafficScopeBadges assignment={item} />
-                      <StateBadge
-                        state={item.enabled ? "protected" : "paused"}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <EmptyState
-                title={t("guardrails.noAssignments")}
-                description={t(
-                  guardrail.tested_current
-                    ? "guardrails.noAssignmentsReady"
-                    : "guardrails.noAssignmentsNotReady",
-                )}
-                action={
-                  guardrail.tested_current && !guardrail.system_managed ? (
-                    <Button onClick={() => setApplyOpen(true)}>
-                      <Building2 />
-                      {t("guardrails.createAssignment")}
-                    </Button>
-                  ) : undefined
-                }
-              />
-            )}
-          </TabsContent>
         </Tabs>
       </div>
 
@@ -802,22 +700,6 @@ function GuardrailDetail({
             onCreated={async () => {
               setAddCaseOpen(false);
               await onRefresh();
-            }}
-          />
-          <CreateAssignmentSheet
-            open={applyOpen}
-            onOpenChange={setApplyOpen}
-            guardrails={assignmentGuardrails}
-            initialGuardrailId={guardrail.id}
-            onCreated={async () => {
-              setApplyOpen(false);
-              await Promise.all([
-                onRefresh(),
-                queryClient.invalidateQueries({
-                  queryKey: queryKeys.assignments,
-                }),
-                queryClient.invalidateQueries({ queryKey: queryKeys.metrics }),
-              ]);
             }}
           />
         </>
@@ -899,11 +781,9 @@ function GuardrailVersions({
 function WorkflowStatus({
   guardrail,
   testCaseCount,
-  onApply,
 }: {
   guardrail: Guardrail;
   testCaseCount: number;
-  onApply: () => void;
 }) {
   const { t } = useTranslation();
   const steps = guardrail.system_managed
@@ -911,7 +791,6 @@ function WorkflowStatus({
         { label: t("guardrails.flowProductDefault"), complete: true },
         { label: t("guardrails.flowLocalOnly"), complete: true },
         { label: t("guardrails.flowBuiltinVerified"), complete: true },
-        { label: t("guardrails.flowDefaultAssignment"), complete: true },
       ]
     : [
         {
@@ -931,19 +810,11 @@ function WorkflowStatus({
           ),
           complete: guardrail.tested_current,
         },
-        {
-          label: guardrail.assignment_count
-            ? t("guardrails.flowAssignments", {
-                count: guardrail.assignment_count,
-              })
-            : t("guardrails.flowApply"),
-          complete: guardrail.assignment_count > 0,
-        },
       ];
   return (
     <section
       aria-label={t("guardrails.workflowLabel")}
-      className="grid border-b bg-muted/20 sm:grid-cols-4"
+      className="grid border-b bg-muted/20 sm:grid-cols-3"
     >
       {steps.map((step, index) => (
         <div
@@ -959,20 +830,7 @@ function WorkflowStatus({
           >
             {step.complete ? <Check className="size-3.5" /> : index + 1}
           </span>
-          {index === 3 &&
-          guardrail.tested_current &&
-          !guardrail.assignment_count &&
-          !guardrail.system_managed ? (
-            <button
-              type="button"
-              className="text-left text-xs font-medium text-primary hover:underline"
-              onClick={onApply}
-            >
-              {step.label}
-            </button>
-          ) : (
-            <span className="text-xs font-medium">{step.label}</span>
-          )}
+          <span className="text-xs font-medium">{step.label}</span>
         </div>
       ))}
     </section>
@@ -1007,14 +865,15 @@ function CreateGuardrailSheet({
     enabled: open && mode === "blank",
     retry: false,
   });
-  const [templateId, setTemplateId] = useState("");
+  const [templateIds, setTemplateIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [allowed, setAllowed] = useState("");
   const [restricted, setRestricted] = useState("");
   const [risks, setRisks] = useState<GuardrailControl[]>(defaultControls);
-  const [parameters, setParameters] = useState<Record<string, string>>({});
+  const [parameters, setParameters] = useState<Record<string, Record<string, string>>>({});
+  const [composedSelectionKey, setComposedSelectionKey] = useState("");
   const [analysis, setAnalysis] = useState<IntentAnalysis | null>(null);
   const [analyzedPurpose, setAnalyzedPurpose] = useState("");
   const creationSteps = [
@@ -1033,7 +892,12 @@ function CreateGuardrailSheet({
   ];
 
   const templates = templatesQuery.data?.items ?? [];
-  const selected = templates.find((item) => item.id === templateId);
+  const selectedTemplates = templates
+    .filter((item) => templateIds.includes(item.id))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const composed = selectedTemplates.length
+    ? composeTemplates(selectedTemplates)
+    : null;
   const visibleTemplates = templates.filter((item) =>
     `${item.name} ${item.description} ${item.domain}`
       .toLowerCase()
@@ -1043,8 +907,10 @@ function CreateGuardrailSheet({
     controlsQuery.data?.items.filter(
       (item) => item.id !== "builtin_content_filter",
     ) ?? [];
-  const missingParameter = selected?.parameters?.some(
-    (item) => item.required && !parameters[item.name]?.trim(),
+  const missingParameter = selectedTemplates.some((template) =>
+    template.parameters?.some(
+      (item) => item.required && !parameters[template.id]?.[item.name]?.trim(),
+    ),
   );
   const invalidCustomTopics =
     mode === "blank" &&
@@ -1053,7 +919,7 @@ function CreateGuardrailSheet({
   const invalidReasoningPolicy = hasInvalidReasoningPolicy(risks);
   const canContinue =
     step === 0
-      ? mode === "blank" || Boolean(templateId)
+      ? mode === "blank" || Boolean(templateIds.length)
       : step === 1
         ? Boolean(name.trim()) &&
           (mode === "template" ? !missingParameter : Boolean(purpose.trim()))
@@ -1097,7 +963,7 @@ function CreateGuardrailSheet({
     if (open) {
       setStep(0);
       setMode("template");
-      setTemplateId("");
+      setTemplateIds([]);
       setSearch("");
       setName("");
       setPurpose("");
@@ -1105,6 +971,7 @@ function CreateGuardrailSheet({
       setRestricted("");
       setRisks(defaultControls);
       setParameters({});
+      setComposedSelectionKey("");
       setAnalysis(null);
       setAnalyzedPurpose("");
     }
@@ -1113,7 +980,21 @@ function CreateGuardrailSheet({
   const submit = () =>
     mutation.mutate(
       mode === "template"
-        ? { name, template_id: templateId, template_parameters: parameters }
+        ? {
+            name,
+            template_ids: templateIds,
+            template_parameters: parameters,
+            purpose,
+            allowed_topics: lines(allowed),
+            restricted_topics: lines(restricted),
+            controls: risks,
+            ...(composed
+              ? {
+                  safety_level: composed.safetyLevel,
+                  output_delivery: composed.outputDelivery,
+                }
+              : {}),
+          }
         : {
             name,
             purpose,
@@ -1128,6 +1009,22 @@ function CreateGuardrailSheet({
               : "window_buffered",
           },
     );
+
+  const continueCreation = () => {
+    if (step === 0 && mode === "template") {
+      const selectionKey = templateIds.join("|");
+      if (composed && selectionKey !== composedSelectionKey) {
+        setName(composed.name);
+        setPurpose(composed.purpose);
+        setAllowed(composed.allowedTopics.join("\n"));
+        setRestricted(composed.restrictedTopics.join("\n"));
+        setRisks(composed.controls);
+        setParameters({});
+        setComposedSelectionKey(selectionKey);
+      }
+    }
+    setStep(step + 1);
+  };
 
   return (
     <EntitySheet
@@ -1153,7 +1050,7 @@ function CreateGuardrailSheet({
             )}
           </Button>
           {step < creationSteps.length - 1 ? (
-            <Button disabled={!canContinue} onClick={() => setStep(step + 1)}>
+            <Button disabled={!canContinue} onClick={continueCreation}>
               {t("guardrails.continue")}
               <ArrowRight />
             </Button>
@@ -1200,7 +1097,15 @@ function CreateGuardrailSheet({
                 icon={FileText}
                 title={t("guardrails.blankIntent")}
                 description={t("guardrails.blankIntentDescription")}
-                onClick={() => setMode("blank")}
+                onClick={() => {
+                  setMode("blank");
+                  setTemplateIds([]);
+                  setName("Custom Safety Guardrail");
+                  setPurpose(defaultCustomPurpose);
+                  setAllowed("");
+                  setRestricted("");
+                  setRisks(defaultControls);
+                }}
               />
             </div>
             {mode === "template" ? (
@@ -1219,21 +1124,23 @@ function CreateGuardrailSheet({
                     <button
                       key={item.id}
                       type="button"
-                      aria-pressed={templateId === item.id}
+                      aria-pressed={templateIds.includes(item.id)}
                       onClick={() => {
-                        setTemplateId(item.id);
-                        setName(item.name);
-                        setParameters({});
+                        setTemplateIds((current) =>
+                          current.includes(item.id)
+                            ? current.filter((id) => id !== item.id)
+                            : [...current, item.id].sort(),
+                        );
                       }}
                       className={cn(
                         "min-h-36 rounded-lg border bg-card p-4 text-left transition-colors hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-ring",
-                        templateId === item.id && "border-primary/40 bg-accent",
+                        templateIds.includes(item.id) && "border-primary/40 bg-accent",
                       )}
                     >
                       <span className="flex items-start justify-between gap-3">
                         <strong className="font-medium">{item.name}</strong>
-                        {templateId === item.id ? (
-                          <Check className="size-4 text-primary" />
+                        {templateIds.includes(item.id) ? (
+                          <Check aria-label="Selected template" className="size-4 text-primary" />
                         ) : null}
                       </span>
                       <span className="mt-2 block text-xs leading-5 text-muted-foreground">
@@ -1268,46 +1175,70 @@ function CreateGuardrailSheet({
                 placeholder="Finance Assistant Guardrail"
               />
             </Field>
-            {mode === "template" && selected ? (
+            {mode === "template" && selectedTemplates.length ? (
               <>
-                <TemplateControlSummary
-                  template={selected}
-                  parameters={parameters}
-                  compact
-                />
-                {selected.parameters?.map((parameter) => (
-                  <Field
-                    key={parameter.name}
-                    label={`${parameter.label}${parameter.required ? " *" : ""}`}
-                    hint={parameter.description}
-                  >
-                    {parameter.kind === "multiline" ||
-                    parameter.kind === "textarea" ? (
-                      <Textarea
-                        className="min-h-28 rounded-lg bg-card"
-                        value={parameters[parameter.name] ?? ""}
-                        onChange={(event) =>
-                          setParameters((current) => ({
-                            ...current,
-                            [parameter.name]: event.target.value,
-                          }))
-                        }
-                        placeholder={parameter.placeholder}
-                      />
-                    ) : (
-                      <Input
-                        className="min-h-11 rounded-lg bg-card"
-                        value={parameters[parameter.name] ?? ""}
-                        onChange={(event) =>
-                          setParameters((current) => ({
-                            ...current,
-                            [parameter.name]: event.target.value,
-                          }))
-                        }
-                        placeholder={parameter.placeholder}
-                      />
-                    )}
+                <Field
+                  label={t("guardrails.businessPurpose")}
+                  hint={t("guardrails.businessPurposeHint")}
+                >
+                  <Textarea
+                    aria-label={t("guardrails.businessPurpose")}
+                    className="min-h-32 rounded-lg bg-card"
+                    value={purpose}
+                    onChange={(event) => setPurpose(event.target.value)}
+                  />
+                </Field>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label={t("guardrails.allowedDomains")} hint={t("guardrails.onePerLine")}>
+                    <Textarea aria-label={t("guardrails.allowedDomains")} className="min-h-36 rounded-lg bg-card" value={allowed} onChange={(event) => setAllowed(event.target.value)} />
                   </Field>
+                  <Field label={t("guardrails.restrictedDomains")} hint={t("guardrails.restrictedHint")}>
+                    <Textarea aria-label={t("guardrails.restrictedDomains")} className="min-h-36 rounded-lg bg-card" value={restricted} onChange={(event) => setRestricted(event.target.value)} />
+                  </Field>
+                </div>
+                {selectedTemplates.map((template) => (
+                  <section key={template.id} className="grid gap-4">
+                    <TemplateControlSummary
+                      template={template}
+                      parameters={parameters[template.id] ?? {}}
+                      compact
+                    />
+                    {template.parameters?.map((parameter) => (
+                      <Field
+                        key={`${template.id}-${parameter.name}`}
+                        label={`${parameter.label}${parameter.required ? " *" : ""}`}
+                        hint={parameter.description}
+                      >
+                        {parameter.kind === "multiline" || parameter.kind === "textarea" ? (
+                          <Textarea
+                            className="min-h-28 rounded-lg bg-card"
+                            value={parameters[template.id]?.[parameter.name] ?? ""}
+                            onChange={(event) => setParameters((current) => ({
+                              ...current,
+                              [template.id]: {
+                                ...(current[template.id] ?? {}),
+                                [parameter.name]: event.target.value,
+                              },
+                            }))}
+                            placeholder={parameter.placeholder}
+                          />
+                        ) : (
+                          <Input
+                            className="min-h-11 rounded-lg bg-card"
+                            value={parameters[template.id]?.[parameter.name] ?? ""}
+                            onChange={(event) => setParameters((current) => ({
+                              ...current,
+                              [template.id]: {
+                                ...(current[template.id] ?? {}),
+                                [parameter.name]: event.target.value,
+                              },
+                            }))}
+                            placeholder={parameter.placeholder}
+                          />
+                        )}
+                      </Field>
+                    ))}
+                  </section>
                 ))}
               </>
             ) : (
@@ -1317,6 +1248,7 @@ function CreateGuardrailSheet({
                   hint={t("guardrails.businessPurposeHint")}
                 >
                   <Textarea
+                    aria-label={t("guardrails.businessPurpose")}
                     className="min-h-32 rounded-lg bg-card"
                     value={purpose}
                     onChange={(event) => setPurpose(event.target.value)}
@@ -1427,6 +1359,7 @@ function CreateGuardrailSheet({
                     hint={t("guardrails.onePerLine")}
                   >
                     <Textarea
+                      aria-label={t("guardrails.allowedDomains")}
                       className="min-h-36 rounded-lg bg-card"
                       value={allowed}
                       onChange={(event) => setAllowed(event.target.value)}
@@ -1440,6 +1373,7 @@ function CreateGuardrailSheet({
                     hint={t("guardrails.restrictedHint")}
                   >
                     <Textarea
+                      aria-label={t("guardrails.restrictedDomains")}
                       className="min-h-36 rounded-lg bg-card"
                       value={restricted}
                       onChange={(event) => setRestricted(event.target.value)}
@@ -1456,28 +1390,28 @@ function CreateGuardrailSheet({
 
         {step === 2 ? (
           <div className="space-y-5">
-            {mode === "template" && selected ? (
-              <TemplateControlSummary
-                template={selected}
-                parameters={parameters}
-              />
-            ) : (
-              <>
-                <InfoNotice title={t("guardrails.reviewBefore")}>
-                  {t("guardrails.reviewBeforeDescription")}
-                </InfoNotice>
-                <ControlEditor
-                  definitions={definitions}
-                  risks={risks}
-                  onChange={setRisks}
-                />
-                {invalidCustomTopics ? (
-                  <p className="text-sm text-destructive">
-                    {t("guardrails.topicRequired")}
-                  </p>
-                ) : null}
-              </>
-            )}
+            <InfoNotice title={t("guardrails.reviewBefore")}>
+              {t("guardrails.reviewBeforeDescription")}
+            </InfoNotice>
+            {mode === "template"
+              ? selectedTemplates.map((template) => (
+                  <TemplateControlSummary
+                    key={template.id}
+                    template={template}
+                    parameters={parameters[template.id] ?? {}}
+                  />
+                ))
+              : null}
+            <ControlEditor
+              definitions={definitions}
+              risks={risks}
+              onChange={setRisks}
+            />
+            {invalidCustomTopics ? (
+              <p className="text-sm text-destructive">
+                {t("guardrails.topicRequired")}
+              </p>
+            ) : null}
             <InfoNotice title={t("guardrails.nextTitle")}>
               {t("guardrails.nextDescription")}
             </InfoNotice>

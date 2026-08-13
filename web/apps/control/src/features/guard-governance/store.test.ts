@@ -35,7 +35,7 @@ describe("Guard Governance store", () => {
     const result = store.runGuardrailTest("guardrail-production");
 
     expect(result.status).toBe("PASSED");
-    expect(result.metrics).toMatchObject({ total: 3, passed: 3, complianceRate: 100 });
+    expect(result.metrics).toMatchObject({ total: 5, passed: 5, complianceRate: 100 });
     expect(store.getState().versions).toHaveLength(beforeVersions + 1);
     expect(store.getState().auditEvents).toHaveLength(beforeAudit + 2);
     expect(store.getState().auditEvents[0]?.kind).toBe("guardrail.version.created");
