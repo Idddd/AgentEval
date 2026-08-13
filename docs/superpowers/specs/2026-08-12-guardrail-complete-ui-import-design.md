@@ -21,7 +21,7 @@ The imported Guardrail feature remains responsible for everything inside the pag
 - complete creation flow;
 - Guardrail detail header and workflow status;
 - intent, controls, test cases, versions, and assignments tabs;
-- editing intent, adding and deleting test cases, running reviewed tests, and applying a tested Guardrail;
+- editing intent, adding and deleting test cases, and running reviewed tests;
 - complete test evidence, risk coverage, findings, grounding, reasoning, input/output evidence, and execution traces.
 
 The Guard visual treatment may remain different from AgentEval. Blue accents, Guard spacing, larger corner radii, typography hierarchy, localized copy, and responsive table behavior are intentionally retained inside the feature boundary.
@@ -105,7 +105,7 @@ Fixtures must provide at least one result exercising each complex evidence block
 
 The Versions tab displays immutable version metadata, including source draft, compiler version, checksum, creation time, and active state.
 
-The Assignments tab uses the Guard assignment summary and opens the complete create-assignment sheet from the detail page. It continues to use AgentEval mock traffic-scope definitions and store mutations. Tested-current eligibility and the immutable default assignment rules remain enforced.
+The Assignments tab is retained as part of the Guardrail detail UI and displays read-only mock assignment summaries. It does not import the independent Assignment page or its creation sheet. Tested-current eligibility and immutable default-assignment state remain visible without adding cross-module behavior.
 
 ## Routing
 
@@ -132,7 +132,7 @@ All operations remain in memory and reset with the Guard Governance provider. Th
 - Guardrail create and edit;
 - test-case create and delete;
 - reviewed test execution and immutable version creation;
-- Assignment creation.
+- read-only Assignment relationships used inside Guardrail detail.
 
 The adapter exposes explicit loading, empty, and error fixtures for component tests. Production rendering uses the populated fixture by default. It does not use `fetch`, React Query network functions, SQLite, Prisma, or the Guard backend.
 
@@ -141,7 +141,7 @@ The adapter exposes explicit loading, empty, and error fixtures for component te
 - Missing Guardrails render the imported not-found empty state.
 - Invalid creation or edit input stays in the open sheet with an inline error.
 - Tests cannot run without at least one reviewed case.
-- Assignments cannot be created for an untested or system-managed Guardrail.
+- Assignment relationships are read-only within this import.
 - Product-managed default intent and controls cannot be edited.
 - Existing AgentEval project and role access rules remain authoritative; this import does not grant new permissions.
 
@@ -157,7 +157,7 @@ Component tests verify the visible Guard behavior rather than implementation det
 - the default Guardrail is immutable;
 - custom cases can be added and deleted;
 - running tests renders full evidence and creates a version when passing;
-- tested Guardrails can open and complete Assignment creation;
+- Guardrail detail renders complete read-only Assignment relationships;
 - English and Simplified Chinese feature copy are available;
 - no Guard API request is made.
 
@@ -169,5 +169,5 @@ Verification consists of focused Guard Governance tests, Control app type checki
 - connecting AgentEval to the Guard backend or database;
 - replacing AgentEval authentication or application navigation;
 - changing the existing Security Guardrails feature;
-- making the remaining four Guard Governance pages pixel-identical in this change;
+- importing or changing the independent Assignment, Enforcement, Integration, or Evidence pages;
 - changing Guard policy evaluation algorithms.
