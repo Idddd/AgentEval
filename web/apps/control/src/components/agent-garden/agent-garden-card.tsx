@@ -173,7 +173,7 @@ export function AgentGardenCard({
               className="h-11"
               onClick={onCreateInstance}
             >
-              Create Instance <ArrowRight />
+              Apply Instance <ArrowRight />
             </Button>
           ) : null}
           {connectAction ? (
