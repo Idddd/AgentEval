@@ -555,6 +555,14 @@ function GuardrailDetail({
           </TabsContent>
 
           <TabsContent value="controls" className="mt-5 space-y-5">
+            {!guardrail.system_managed ? (
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setEditOpen(true)}>
+                  <ShieldCheck />
+                  {t("guardrails.editControls")}
+                </Button>
+              </div>
+            ) : null}
             {template ? (
               <TemplateControlSummary
                 template={template}
@@ -837,10 +845,6 @@ function CreateGuardrailSheet({
     queryKey: queryKeys.guardrailTemplates,
     queryFn: api.getGuardrailTemplates,
   });
-  const controlsQuery = useQuery({
-    queryKey: queryKeys.controlDefinitions,
-    queryFn: api.getControlDefinitions,
-  });
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<"template" | "blank">("template");
   const intentAnalysisStatusQuery = useQuery({
@@ -869,10 +873,6 @@ function CreateGuardrailSheet({
       label: t("guardrails.stepIntent"),
       description: t("guardrails.stepIntentDescription"),
     },
-    {
-      label: t("guardrails.stepControls"),
-      description: t("guardrails.stepControlsDescription"),
-    },
   ];
 
   const templates = templatesQuery.data?.items ?? [];
@@ -887,20 +887,11 @@ function CreateGuardrailSheet({
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
-  const definitions =
-    controlsQuery.data?.items.filter(
-      (item) => item.id !== "builtin_content_filter",
-    ) ?? [];
   const missingParameter = selectedTemplates.some((template) =>
     template.parameters?.some(
       (item) => item.required && !parameters[template.id]?.[item.name]?.trim(),
     ),
   );
-  const invalidCustomTopics =
-    mode === "blank" &&
-    risks.some((item) => item.risk === "topic_control") &&
-    (!lines(allowed).length || !lines(restricted).length);
-  const invalidReasoningPolicy = hasInvalidReasoningPolicy(risks);
   const canContinue =
     step === 0
       ? mode === "blank" || Boolean(templateIds.length)
@@ -1043,8 +1034,6 @@ function CreateGuardrailSheet({
               disabled={
                 !name.trim() ||
                 !risks.length ||
-                invalidCustomTopics ||
-                invalidReasoningPolicy ||
                 mutation.isPending
               }
               onClick={submit}
@@ -1353,26 +1342,6 @@ function CreateGuardrailSheet({
           </div>
         ) : null}
 
-        {step === 2 ? (
-          <div className="space-y-5">
-            <InfoNotice title={t("guardrails.reviewBefore")}>
-              {t("guardrails.reviewBeforeDescription")}
-            </InfoNotice>
-            <ControlEditor
-              definitions={definitions}
-              risks={risks}
-              onChange={setRisks}
-            />
-            {invalidCustomTopics ? (
-              <p className="text-sm text-destructive">
-                {t("guardrails.topicRequired")}
-              </p>
-            ) : null}
-            <InfoNotice title={t("guardrails.nextTitle")}>
-              {t("guardrails.nextDescription")}
-            </InfoNotice>
-          </div>
-        ) : null}
       </CreationFlow>
     </EntitySheet>
   );

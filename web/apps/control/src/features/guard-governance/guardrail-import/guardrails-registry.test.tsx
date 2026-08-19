@@ -131,21 +131,21 @@ it("renders all parameter controls for an imported Guard template", async () => 
   );
 });
 
-it("does not repeat template summaries on the Controls step", async () => {
+it("creates from Safety intent without a separate Controls step", async () => {
   const user = userEvent.setup();
   renderImported(<GuardrailsPage projectId="individual" />);
 
   await user.click(
     await screen.findByRole("button", { name: "Create Guardrail" }),
   );
+  expect(screen.queryByText("Review enforcement")).toBeNull();
   await user.click(
     screen.getByRole("button", { name: /Baseline PII Protection/ }),
   );
   await user.click(screen.getByRole("button", { name: "Continue" }));
   expect(screen.getByText("Baseline PII Protection")).not.toBeNull();
 
-  await user.click(screen.getByRole("button", { name: "Continue" }));
-
-  expect(screen.queryByText("Baseline PII Protection")).toBeNull();
-  expect(screen.getByText("Controls to enforce")).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+  expect(screen.queryByText("Controls to enforce")).toBeNull();
+  expect(screen.getAllByRole("button", { name: "Create Guardrail" }).length).toBeGreaterThan(0);
 });

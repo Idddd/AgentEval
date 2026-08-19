@@ -413,6 +413,25 @@ async function createConfiguredInstance(
   });
 }
 
+describe("Guided demo preset", () => {
+  it("creates a ready Instance without external model or runtime setup", async () => {
+    const setup = await configuredService();
+    const agent = await createConfiguredInstance(setup, {
+      modelRoutingId: "demo-default-routing",
+      name: "My General Assistant",
+    });
+
+    expect(agent).toMatchObject({
+      name: "My General Assistant",
+      modelRoutingId: "demo-default-routing",
+      modelRoutingStatus: "READY",
+      status: "READY",
+    });
+    expect(setup.runner.createSandbox).not.toHaveBeenCalled();
+    expect(await setup.store.get(agent.id)).toMatchObject({ status: "READY" });
+  });
+});
+
 describe("Instance Access Policy lifecycle", () => {
   it("provisions native Memory without adding an embedding model to the Instance key", async () => {
     const setup = await configuredService();

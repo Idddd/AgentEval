@@ -45,8 +45,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { formatPlatformDateTime } from "@/lib/platform-preferences";
 import { useCurrentProjectId } from "@/hooks/use-project";
-import { useProjectPermissions } from "@/hooks/use-project-permissions";
 import { useProjectQueryScope } from "@/hooks/use-project-query-scope";
+import { useDemoRole } from "@/hooks/use-demo-role";
 
 export const Route = createFileRoute(
   "/$projectId/agent-garden/$agentId",
@@ -71,7 +71,7 @@ function parseStringArray(value: string | undefined): string[] {
 function AgentMarketplaceDetail() {
   const { agentId } = Route.useParams();
   const projectId = useCurrentProjectId();
-  const permissions = useProjectPermissions();
+  const { persona } = useDemoRole();
   const scope = useProjectQueryScope();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -236,7 +236,8 @@ function AgentMarketplaceDetail() {
 
         <MarketplaceActions
           agent={agent}
-          canManage={permissions.canManageResources}
+          canCreateInstance={persona === "end-user"}
+          canManage={false}
           connectionCount={connectionCount}
           onConnect={() => setConnectOpen(true)}
           onCreateInstance={createInstance}
@@ -433,6 +434,7 @@ function AgentMarketplaceDetail() {
 
 function MarketplaceActions({
   agent,
+  canCreateInstance,
   canManage,
   connectionCount,
   onConnect,
@@ -440,6 +442,7 @@ function MarketplaceActions({
   onTry,
 }: {
   agent: AgentGardenEntry;
+  canCreateInstance: boolean;
   canManage: boolean;
   connectionCount: number;
   onConnect: () => void;
@@ -459,7 +462,7 @@ function MarketplaceActions({
         )}
       </div>
       <div className="mt-4 grid gap-2">
-        {agent.usageCapabilities.acceptsDelegation ? (
+        {canManage && agent.usageCapabilities.acceptsDelegation ? (
           <Button
             type="button"
             className="h-11 w-full"
@@ -481,7 +484,7 @@ function MarketplaceActions({
             Try preview
           </Button>
         ) : null}
-        {agent.source === "BUILT_IN" &&
+        {canCreateInstance && agent.source === "BUILT_IN" &&
         agent.usageCapabilities.interactive ? (
           <Button
             type="button"

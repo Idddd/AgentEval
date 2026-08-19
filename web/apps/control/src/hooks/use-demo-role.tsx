@@ -15,13 +15,13 @@ export const DEMO_PERSONAS: ReadonlyArray<{
 ];
 
 export function projectRoleForDemoPersona(persona: DemoPersona): ProjectRole {
-  if (persona === "agent-wizard") return "ada";
+  if (persona === "agent-wizard") return "member";
   if (persona === "end-user") return "frt";
   return "admin";
 }
 
 function personaForLegacyRole(role: ProjectRole | null): DemoPersona {
-  if (role === "ada" || role === "iss") return "agent-wizard";
+  if (role === "member" || role === "ada" || role === "iss") return "agent-wizard";
   if (role === "frt") return "end-user";
   return "admin";
 }

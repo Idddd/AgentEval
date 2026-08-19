@@ -18,16 +18,13 @@ import {
   Bot,
   ChevronDown,
   LoaderCircle,
-  Plus,
   Search,
   Trash2,
 } from "lucide-react";
 import { AgentDetailSheet } from "@/components/agent-garden/agent-detail-sheet";
-import { AgentApprovalQueue } from "@/components/agent-garden/agent-approval-queue";
 import { AgentGardenCard } from "@/components/agent-garden/agent-garden-card";
 import { agentGardenFacetGroups } from "@/components/agent-garden/agent-garden-facets";
 import { ConnectAgentSheet } from "@/components/agent-garden/connect-agent-sheet";
-import { RegisterAgentSheet } from "@/components/agent-garden/register-agent-sheet";
 import { TryDemoAgentSheet } from "@/components/agent-garden/try-demo-agent-sheet";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -53,7 +50,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useProjectQueryScope } from "@/hooks/use-project-query-scope";
 import { useCurrentProjectId } from "@/hooks/use-project";
-import { useProjectPermissions } from "@/hooks/use-project-permissions";
+import { useDemoRole } from "@/hooks/use-demo-role";
+import { useSessionApprovedAgents } from "@/features/agent-garden/session-approved-agents";
 
 export const Route = createFileRoute("/$projectId/agent-garden/")({
   validateSearch: z.object({ coordinator: z.string().optional() }),
@@ -74,7 +72,8 @@ function toggleCapability(
 function AgentGarden() {
   const routeSearch = Route.useSearch();
   const projectId = useCurrentProjectId();
-  const permissions = useProjectPermissions();
+  const { persona } = useDemoRole();
+  const sessionApprovedAgents = useSessionApprovedAgents(projectId);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const scope = useProjectQueryScope();
@@ -91,13 +90,21 @@ function AgentGarden() {
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [mobileCapabilitiesOpen, setMobileCapabilitiesOpen] =
     useState(false);
-  const [registrationOpen, setRegistrationOpen] = useState(false);
   const [detailId, setDetailId] = useState("");
   const [connectId, setConnectId] = useState("");
   const [tryId, setTryId] = useState("");
   const [removingId, setRemovingId] = useState("");
   const [notice, setNotice] = useState("");
-  const allAgents = garden.data?.agents ?? [];
+  const allAgents = useMemo(() => {
+    const seen = new Set<string>();
+    return [...sessionApprovedAgents, ...(garden.data?.agents ?? [])].filter(
+      (agent) => {
+        if (seen.has(agent.id)) return false;
+        seen.add(agent.id);
+        return true;
+      },
+    );
+  }, [garden.data?.agents, sessionApprovedAgents]);
   const connections = garden.data?.connections ?? [];
   const selectedAgent = allAgents.find(
     (agent) => agent.id === detailId,
@@ -130,6 +137,7 @@ function AgentGarden() {
   const visibleAgents = useMemo(() => {
     const query = search.trim().toLowerCase();
     const filtered = allAgents.filter((agent) => {
+      if (agent.status !== "READY") return false;
       const searchable = [
         agent.name,
         agent.description,
@@ -229,16 +237,13 @@ function AgentGarden() {
     <div className="space-y-6">
       <PageHeader
         title="Agent Garden"
-        description="Discover ready-to-use Agents for this Project, or register a remote Agent built with another platform."
-        actions={(
-          <Button
-            className="h-11"
-            disabled={!permissions.canManageResources}
-            onClick={() => setRegistrationOpen(true)}
-          >
-            <Plus /> Register Agent
-          </Button>
-        )}
+        description={
+          persona === "end-user"
+            ? "Choose an approved capability and create an instance—no technical setup required."
+            : persona === "agent-wizard"
+              ? "See how approved capabilities are presented to the people who use them."
+              : "Inspect the approved capabilities currently available to your organization."
+        }
       />
 
       {garden.error || instances.error ? (
@@ -265,8 +270,6 @@ function AgentGarden() {
           {(refresh.error ?? remove.error)?.message}
         </p>
       ) : null}
-
-      <AgentApprovalQueue onNotice={setNotice} />
 
       <div className="flex flex-col gap-3 border-b py-4 sm:flex-row sm:items-end">
         <label className="relative min-w-0 flex-1 sm:max-w-xl">
@@ -381,7 +384,8 @@ function AgentGarden() {
                 <AgentGardenCard
                   key={agent.id}
                   agent={agent}
-                  canManage={permissions.canManageResources}
+                  canCreateInstance={persona === "end-user"}
+                  canManage={false}
                   connectionCount={
                     connections.filter(
                       (connection) =>
@@ -405,26 +409,14 @@ function AgentGarden() {
         </main>
       </div>
 
-      <RegisterAgentSheet
-        open={registrationOpen}
-        onOpenChange={setRegistrationOpen}
-        onRegistered={(agent) => {
-          setDetailId(agent.id);
-          void refreshGarden(
-            agent.status === "READY"
-              ? `${agent.name} was registered and is ready.`
-              : `${agent.name} was saved, but discovery needs attention.`,
-          );
-        }}
-      />
-
       <AgentDetailSheet
         open={Boolean(detailId)}
         onOpenChange={(open) => {
           if (!open) setDetailId("");
         }}
         agent={selectedAgent}
-        canManage={permissions.canManageResources}
+        canCreateInstance={persona === "end-user"}
+        canManage={false}
         connections={connections}
         instances={instances.data ?? []}
         refreshing={refresh.isPending}

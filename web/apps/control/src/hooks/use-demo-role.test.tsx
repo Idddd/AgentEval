@@ -28,7 +28,7 @@ describe("demo personas", () => {
       { value: "end-user", label: "End user" },
     ]);
     expect(projectRoleForDemoPersona("admin")).toBe("admin");
-    expect(projectRoleForDemoPersona("agent-wizard")).toBe("ada");
+    expect(projectRoleForDemoPersona("agent-wizard")).toBe("member");
     expect(projectRoleForDemoPersona("end-user")).toBe("frt");
   });
 
@@ -40,7 +40,7 @@ describe("demo personas", () => {
     );
 
     await userEvent.click(screen.getByRole("button"));
-    expect(screen.getByRole("button").textContent).toBe("agent-wizard:ada");
+    expect(screen.getByRole("button").textContent).toBe("agent-wizard:member");
     expect(window.localStorage.getItem("tasklattice.demo-role")).toBe(
       "agent-wizard",
     );

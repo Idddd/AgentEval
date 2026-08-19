@@ -31,6 +31,7 @@ import {
 
 export function AgentDetailSheet({
   agent,
+  canCreateInstance,
   canManage,
   connections,
   instances,
@@ -44,6 +45,7 @@ export function AgentDetailSheet({
   refreshing,
 }: {
   agent: AgentGardenEntry | undefined;
+  canCreateInstance: boolean;
   canManage: boolean;
   connections: AgentConnection[];
   instances: Agent[];
@@ -105,7 +107,7 @@ export function AgentDetailSheet({
               {refreshing ? "Discovering…" : "Refresh discovery"}
             </Button>
           ) : null}
-          {agent?.usageCapabilities.interactive &&
+          {canCreateInstance && agent?.usageCapabilities.interactive &&
           agent.status === "READY" &&
           agent.source === "PROJECT_REGISTERED" &&
           agent.endpoint ? (

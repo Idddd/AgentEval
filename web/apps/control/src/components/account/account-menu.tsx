@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, CircleUserRound, LogOut } from "lucide-react";
 
 import type { AuthUser } from "@/components/auth/auth-provider";
@@ -58,6 +58,7 @@ export function AccountMenu({
   user,
 }: AccountMenuProps) {
   const { persona, setPersona } = useDemoRole();
+  const navigate = useNavigate();
   const displayName = user?.displayName || user?.username || "User";
   const accountLabel =
     user?.provider === "sso" ? "SSO account" : "Local account";
@@ -112,9 +113,17 @@ export function AccountMenu({
               aria-label="View as"
               value={persona}
               className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
-              onChange={(event) =>
-                setPersona(event.target.value as typeof persona)
-              }
+              onChange={(event) => {
+                const nextPersona = event.target.value as typeof persona;
+                setPersona(nextPersona);
+                void navigate({
+                  to:
+                    nextPersona === "end-user"
+                      ? "/$projectId/agent-garden"
+                      : "/$projectId/evaluation/catalog",
+                  params: { projectId },
+                });
+              }}
             >
               {DEMO_PERSONAS.map((option) => (
                 <option key={option.value} value={option.value}>

@@ -12,7 +12,7 @@ export function permissionsForRole(role: ProjectRole): ProjectPermissions {
   const isReadOnlyEvaluator = role === "ada" || role === "iss";
   const isFirstResponse = role === "frt";
   return {
-    canCreateAgents: !isCompliance && !isReadOnlyEvaluator,
+    canCreateAgents: role === "admin" || role === "member",
     canCreateProject: isManager,
     canDeleteProject: role === "admin",
     canInviteMembers: isManager,

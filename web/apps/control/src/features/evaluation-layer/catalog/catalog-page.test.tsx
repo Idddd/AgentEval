@@ -73,7 +73,7 @@ describe('Catalog discovery', () => {
       </EvaluationLayerProvider>,
     );
 
-    expect(screen.getByRole('heading', { name: 'Evaluations' })).not.toBeNull();
+    expect(screen.getByRole('heading', { name: 'Reviews' })).not.toBeNull();
     expect(screen.queryByRole('button', { name: 'Create target' })).toBeNull();
     expect(screen.queryByText('Frontend demo')).toBeNull();
   });
@@ -733,10 +733,14 @@ describe('Catalog drawer progressive disclosure', () => {
     roleState.value = 'member';
     const drawer = await openCompletedSkill();
 
-    expect(drawer.getByText('Awaiting Admin decision')).not.toBeNull();
+    expect(drawer.getByText('Send report to Admin')).not.toBeNull();
     expect(drawer.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(drawer.queryByRole('button', { name: 'Reject' })).toBeNull();
+    await userEvent.click(drawer.getByRole('button', { name: 'Send to Admin' }));
+    expect(drawer.getByText('Awaiting Admin decision')).not.toBeNull();
     expect(drawer.getByRole('button', { name: 'View results' })).not.toBeNull();
+    await userEvent.click(drawer.getByRole('button', { name: 'View results' }));
+    expect(drawer.getByRole('region', { name: 'Report details' })).not.toBeNull();
   });
 });
 

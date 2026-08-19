@@ -11,7 +11,7 @@ export const Route = createFileRoute("/$projectId/evaluation/overview")({
 
 function EvaluationOverview() {
   return (
-    <EvaluationLayerPageFrame title="Overview" description={productionMonitoringDescription}>
+    <EvaluationLayerPageFrame title="Production Monitoring" description={productionMonitoringDescription}>
       <EvaluationOverviewPage />
     </EvaluationLayerPageFrame>
   );

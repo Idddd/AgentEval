@@ -88,10 +88,7 @@ export interface EvaluationLayerDatasetRevision {
   createdAt: string;
 }
 
-/**
- * A built-in, immutable demo test pack. Unlike a Guardrail Target, a template
- * is test input that can be reused across compatible Target kinds.
- */
+/** A runnable snapshot of the test cases maintained by Guard Governance. */
 export interface EvaluationLayerGuardrailTemplate {
   id: string;
   name: string;
@@ -101,6 +98,11 @@ export interface EvaluationLayerGuardrailTemplate {
   cases: EvaluationLayerCase[];
   /** Target kinds for which the UI should preselect this template. */
   defaultFor: EvaluationLayerTargetKind[];
+  /** The owning Guardrail. New packs are created and edited in Guardrails. */
+  sourceGuardrailId?: string;
+  /** Historical snapshots remain resolvable by reports but are not selectable. */
+  available?: boolean;
+  required?: boolean;
 }
 
 export interface EvaluationLayerRun {

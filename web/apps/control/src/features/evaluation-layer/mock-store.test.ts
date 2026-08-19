@@ -9,6 +9,45 @@ const ADMIN_ACTOR = { name: "Local Administrator", role: "admin" };
 const DEVELOPER_ACTOR = { name: "Developer", role: "member" };
 
 describe("EvaluationLayerStore", () => {
+  it("syncs selectable packs from Guardrails while retaining report history", () => {
+    const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+    const historicalId = store.getState().runs[0]!.guardrailTemplateIds[0]!;
+
+    store.syncGuardrailTemplates([
+      {
+        id: "guardrail-live",
+        sourceGuardrailId: "guardrail-live",
+        name: "Live Guardrail",
+        description: "Maintained in Guardrails.",
+        version: "3",
+        applicableTargetKinds: ["agent"],
+        defaultFor: ["agent"],
+        available: true,
+        cases: [
+          {
+            id: "guardrail-live:case-1",
+            input: { prompt: "unsafe request" },
+            expectedOutput: { guardrail_decision: "BLOCK" },
+            tags: ["guardrail-test-pack"],
+            source: "guardrail:guardrail-live",
+          },
+        ],
+      },
+    ]);
+
+    expect(
+      store.getState().guardrailTemplates.filter((item) => item.available !== false),
+    ).toEqual([expect.objectContaining({ id: "guardrail-live" })]);
+    expect(store.getState().guardrailTemplates).toContainEqual(
+      expect.objectContaining({ id: historicalId, available: false }),
+    );
+
+    store.resetDemo();
+    expect(store.getState().guardrailTemplates).toContainEqual(
+      expect.objectContaining({ id: "guardrail-live", available: true }),
+    );
+  });
+
   it('ships reusable Guardrail Test Pack presets and a runnable sample', () => {
     const state = cloneEvaluationLayerFixtures();
     const kinds = ['agent', 'mcp', 'kb', 'skill', 'guardrail'] as const;

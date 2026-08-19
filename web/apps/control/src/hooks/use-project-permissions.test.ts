@@ -56,9 +56,9 @@ describe("permissionsForRole", () => {
     }
   });
 
-  it("lets FRT operate agents without project management capabilities", () => {
+  it("keeps end users away from build controls", () => {
     expect(permissionsForRole("frt")).toEqual({
-      canCreateAgents: true,
+      canCreateAgents: false,
       canCreateProject: false,
       canDeleteProject: false,
       canInviteMembers: false,

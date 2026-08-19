@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 
 export function AgentGardenCard({
   agent,
+  canCreateInstance,
   canManage,
   connectionCount,
   onConnect,
@@ -28,6 +29,7 @@ export function AgentGardenCard({
   onTry,
 }: {
   agent: AgentGardenEntry;
+  canCreateInstance: boolean;
   canManage: boolean;
   connectionCount: number;
   onConnect: () => void;
@@ -165,7 +167,7 @@ export function AgentGardenCard({
               </a>
             </Button>
           ) : null}
-          {interactiveAction && agent.source === "BUILT_IN" ? (
+          {canCreateInstance && interactiveAction && agent.source === "BUILT_IN" ? (
             <Button
               type="button"
               className="h-11"

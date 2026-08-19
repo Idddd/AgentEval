@@ -8,7 +8,7 @@ export const Route = createFileRoute("/$projectId/evaluation/behavior")({
 
 function BehaviorRoute() {
   return (
-    <EvaluationLayerPageFrame title="Behavior" description="Monitor model calls, logs, and policy compliance.">
+    <EvaluationLayerPageFrame title="Behavior" description="Observe live behavior, emerging risks, alerts, and operating health.">
       <BehaviorPage />
     </EvaluationLayerPageFrame>
   );

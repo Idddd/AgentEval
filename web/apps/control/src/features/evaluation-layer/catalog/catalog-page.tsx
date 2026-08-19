@@ -31,6 +31,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AgentGardenIcon } from '@/components/agent-garden/agent-garden-icon';
+import { publishSessionApprovedAgent } from '@/features/agent-garden/session-approved-agents';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,6 +54,7 @@ import {
 } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCurrentProjectId } from '@/hooks/use-project';
+import { useDemoRole } from '@/hooks/use-demo-role';
 import { useEffectiveProjectRole } from '@/hooks/use-project-permissions';
 import { cn } from '@/lib/utils';
 import type {
@@ -886,6 +888,7 @@ function WorkspaceDrawer({
   const [expandedDetailSections, setExpandedDetailSections] = useState<WorkspaceSectionKey[]>([]);
   const [selectedGuardrailTemplateIds, setSelectedGuardrailTemplateIds] = useState<string[]>([]);
   const [datasetSelectionPending, setDatasetSelectionPending] = useState(false);
+  const [submittedReportId, setSubmittedReportId] = useState('');
   const knownTargetDatasetIdsRef = useRef<Set<string>>(new Set());
   const agentSectionRef = useRef<HTMLElement>(null);
   const datasetSectionRef = useRef<HTMLElement>(null);
@@ -929,6 +932,7 @@ function WorkspaceDrawer({
       setDetailsOpen(false);
       setActiveReportId(undefined);
       setExpandedDetailSections([]);
+      setSubmittedReportId('');
       setDatasetSelectionPending(row?.target.id === FIRST_WORKFLOW_TARGET_ID);
       previousWorkspaceRef.current = {
         stage: row?.stage,
@@ -985,6 +989,13 @@ function WorkspaceDrawer({
   const latestResultTraces = state.traces.filter((trace) => latestResultTraceIds.has(trace.id));
   const latestResultCost = latestResultTraces.reduce((sum, trace) => sum + traceCost(trace), 0);
   const nextStep = workspaceNextStep(row);
+  const openLatestReport = () => {
+    if (row.latestReport) {
+      setActiveReportId(row.latestReport.id);
+      return;
+    }
+    openDetailsSection('result');
+  };
   const guardrailEvaluationRestricted = row.target.kind === 'guardrail' && role !== 'admin';
   const startEvaluation = (datasetRevisionId = row.publishedRevision?.id) => {
     if (guardrailEvaluationRestricted) {
@@ -1068,7 +1079,15 @@ function WorkspaceDrawer({
       focusSection('result');
       return;
     }
-    setWorkspaceNotice(undefined);
+    if (status === 'APPROVED' && row.target.kind === 'agent' && row.currentRevision) {
+      publishSessionApprovedAgent(projectId, row.target, row.currentRevision);
+      setWorkspaceNotice({
+        message: `${row.target.name} is now available in Agent Garden for this demo session.`,
+        section: 'result',
+      });
+    } else {
+      setWorkspaceNotice(undefined);
+    }
     focusSection('result');
   };
   const reviewRejectedTarget = () => {
@@ -1161,12 +1180,13 @@ function WorkspaceDrawer({
     }
     if (!row.publishedRevision || row.stage === 'RUNNING') return nextStep;
     if (row.decisionStatus === 'PENDING' && role !== 'admin') {
+      const reportSent = submittedReportId === row.latestReport?.id;
       return {
         tab: 'result',
-        label: 'Awaiting Admin decision',
-        description: row.decisionRecommendation === 'APPROVED'
-          ? 'The evaluation passed and is waiting for Admin approval.'
-          : 'The evaluation failed or contains findings and is waiting for Admin rejection.',
+        label: reportSent ? 'Awaiting Admin decision' : 'Send report to Admin',
+        description: reportSent
+          ? 'The report is in the Admin review queue.'
+          : 'The self-evaluation is complete. Send its report for an independent release decision.',
       };
     }
     if (row.decisionStatus === 'REJECTED') {
@@ -1259,9 +1279,14 @@ function WorkspaceDrawer({
         ? <Button onClick={reviewRejectedTarget}><Wrench />Update target revision</Button>
         : undefined;
   } else if (row.decisionStatus === 'PENDING') {
-    footerAction = <Button onClick={() => openDetailsSection('result')}>View results<ArrowRight /></Button>;
+    footerAction = role === 'member' && submittedReportId !== row.latestReport?.id
+      ? <Button onClick={() => {
+          setSubmittedReportId(row.latestReport?.id ?? 'submitted');
+          setWorkspaceNotice({ message: 'Evaluation report sent to Admin for review.', section: 'result' });
+        }}><ArrowRight />Send to Admin</Button>
+      : <Button onClick={openLatestReport}>View results<ArrowRight /></Button>;
   } else if (guardrailEvaluationRestricted && row.latestReport) {
-    footerAction = <Button onClick={() => openDetailsSection('result')}>View results<ArrowRight /></Button>;
+    footerAction = <Button onClick={openLatestReport}>View results<ArrowRight /></Button>;
   } else if (guardrailEvaluationRestricted && row.latestRun) {
     footerAction = <Button onClick={() => focusSection('run')}>View evaluation<ArrowRight /></Button>;
   } else if (guardrailEvaluationRestricted) {
@@ -1269,7 +1294,7 @@ function WorkspaceDrawer({
   } else if (row.stage === 'FAILED') {
     footerAction = <Button disabled={!selectedGuardrailTemplateIds.length} onClick={() => startEvaluation()}><Play />Retry evaluation</Button>;
   } else if (row.stage === 'COMPLETED' && row.latestReport) {
-    footerAction = <Button onClick={() => openDetailsSection('result')}>View results<ArrowRight /></Button>;
+    footerAction = <Button onClick={openLatestReport}>View results<ArrowRight /></Button>;
   } else if (row.latestRun) {
     footerAction = <Button onClick={() => focusSection('run')}>View evaluation<ArrowRight /></Button>;
   } else {
@@ -1675,6 +1700,7 @@ function EmptyCatalog({ filtered }: { filtered: boolean }) {
 export function EvaluationCatalogPage() {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
+  const { persona } = useDemoRole();
   const rows = useMemo(() => workspaceRows(state), [state]);
   const [view, setView] = useState<CatalogView>('lifecycle');
   const [query, setQuery] = useState('');
@@ -1690,13 +1716,30 @@ export function EvaluationCatalogPage() {
   const baseRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return rows.filter((row) => {
+      if (persona !== 'admin' && row.target.kind === 'guardrail') return false;
       if (kind !== 'all' && row.target.kind !== kind) return false;
       if (!needle) return true;
       return [row.target.name, row.target.id, row.target.description, KIND_META[row.target.kind].label, row.selectedDataset?.name, row.result, row.risk.label]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
-  }, [kind, query, rows]);
+  }, [kind, persona, query, rows]);
+  const lifecycleSummary = useMemo(() => {
+    const count = (predicate: (row: WorkspaceRow) => boolean) => baseRows.filter(predicate).length;
+    return persona === 'admin'
+      ? [
+          { label: 'Needs review', value: count((row) => row.decisionStatus === 'PENDING'), tone: 'text-amber-700' },
+          { label: 'Verification running', value: count((row) => row.stage === 'RUNNING'), tone: 'text-primary' },
+          { label: 'Changes requested', value: count((row) => row.decisionStatus === 'REJECTED'), tone: 'text-destructive' },
+          { label: 'Approved', value: count((row) => row.decisionStatus === 'APPROVED'), tone: 'text-emerald-700' },
+        ]
+      : [
+          { label: 'Action required', value: count((row) => row.stage === 'FAILED' || row.decisionStatus === 'REJECTED' || row.stage === 'NOT_EVALUATED'), tone: 'text-destructive' },
+          { label: 'In progress', value: count((row) => row.stage === 'RUNNING'), tone: 'text-primary' },
+          { label: 'Waiting for Admin', value: count((row) => row.decisionStatus === 'PENDING'), tone: 'text-amber-700' },
+          { label: 'Approved', value: count((row) => row.decisionStatus === 'APPROVED'), tone: 'text-emerald-700' },
+        ];
+  }, [baseRows, persona]);
   const stageCounts = useMemo(() => Object.fromEntries(STAGE_ORDER.map((value) => [value, value === 'ALL' ? baseRows.length : baseRows.filter((row) => row.stage === value).length])) as Record<StageFilter, number>, [baseRows]);
   const filteredRows = useMemo(() => {
     const next = stage === 'ALL' ? [...baseRows] : baseRows.filter((row) => row.stage === stage);
@@ -1751,15 +1794,31 @@ export function EvaluationCatalogPage() {
   return (
     <section className='space-y-5 max-sm:[&_[data-slot=button]]:min-h-11'>
       <PageHeader
-        title='Evaluations'
+        title={persona === 'admin' ? 'Reviews' : 'My Builds'}
+        description={
+          persona === 'admin'
+            ? 'Review submitted versions, run independent checks, and approve safe releases.'
+            : 'Build, test, submit, and improve each capability through one guided lifecycle.'
+        }
       />
+
+      <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+        {lifecycleSummary.map((item) => (
+          <Card key={item.label}>
+            <CardContent className='py-4'>
+              <p className='text-xs font-medium text-muted-foreground'>{item.label}</p>
+              <p className={cn('mt-2 text-2xl font-semibold tabular-nums', item.tone)}>{item.value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
       <Card>
         <CardContent className='space-y-4'>
           <div className='flex flex-col gap-3 lg:flex-row lg:items-center'>
             <label className='relative flex-1'>
               <Search className='pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground' />
-              <Input className='pl-9' value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search targets, Datasets, results, or IDs' />
+              <Input className='pl-9' value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search capabilities, status, or results' />
             </label>
           </div>
           <div className='flex gap-1 overflow-x-auto border-y py-2'>

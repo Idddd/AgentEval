@@ -37,11 +37,18 @@ function applicableGuardrailTemplates(
   templates: GuardrailTemplate[],
   targetKind: EvaluationLayerTargetKind,
 ) {
-  return templates.filter((template) => template.applicableTargetKinds.includes(targetKind));
+  return templates.filter(
+    (template) =>
+      template.available !== false &&
+      template.applicableTargetKinds.includes(targetKind),
+  );
 }
 
 function requiredGuardrailTemplateIds(templates: GuardrailTemplate[]) {
-  const universal = templates.find((template) => template.id === REQUIRED_GUARDRAIL_TEMPLATE_ID);
+  const universal = templates.find(
+    (template) =>
+      template.required || template.id === REQUIRED_GUARDRAIL_TEMPLATE_ID,
+  );
   return universal ? [universal.id] : templates.slice(0, 1).map((template) => template.id);
 }
 
@@ -79,6 +86,7 @@ export function GuardrailTemplatePicker({
   disabled?: boolean;
 }) {
   const state = useEvaluationLayerState();
+  const projectId = useCurrentProjectId();
   const templates = applicableGuardrailTemplates(state.guardrailTemplates, targetKind);
   const requiredIds = requiredGuardrailTemplateIds(templates);
   const effectiveSelectedIds = [...new Set([...requiredIds, ...selectedIds])];
@@ -97,11 +105,16 @@ export function GuardrailTemplatePicker({
       <div className='flex flex-wrap items-start justify-between gap-2 border-b pb-3'>
         <div>
           <p className='font-sans text-sm font-semibold'>Guardrail test packs</p>
-          <p className='mt-1 text-xs text-muted-foreground'>The baseline pack is required. Add any other compatible packs as needed.</p>
+          <p className='mt-1 text-xs text-muted-foreground'>Synced from Guardrails. Select one or more packs to test this Agent.</p>
         </div>
-        <span className='rounded-full border bg-muted/35 px-2.5 py-1 text-xs font-medium text-muted-foreground'>
-          {selected.length} selected · {caseCount} safety cases
-        </span>
+        <div className='flex items-center gap-2'>
+          <Button asChild size='sm' variant='ghost'>
+            <a href={`/${projectId}/governance/guardrails`}>Manage Guardrails</a>
+          </Button>
+          <span className='rounded-full border bg-muted/35 px-2.5 py-1 text-xs font-medium text-muted-foreground'>
+            {selected.length} selected · {caseCount} safety cases
+          </span>
+        </div>
       </div>
       {templates.length ? (
         <div className='grid gap-2 sm:grid-cols-2'>
@@ -133,14 +146,14 @@ export function GuardrailTemplatePicker({
                     {!required && recommended ? <span className='rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300'>Recommended</span> : null}
                   </span>
                   <span className='mt-1 block text-xs text-muted-foreground'>{template.description}</span>
-                  <span className='mt-1.5 block text-[11px] text-muted-foreground'>v{template.version} · {template.cases.length} cases</span>
+                  <span className='mt-1.5 block text-[11px] text-muted-foreground'>Guardrail version {template.version} · {template.cases.length} cases</span>
                 </span>
               </label>
             );
           })}
         </div>
       ) : (
-        <p className='rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm'>No Guardrail test pack is available for this Target type.</p>
+        <p className='rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm'>No tested Guardrail is available. Add test cases in Guardrails first.</p>
       )}
       {!selected.length ? <p role='alert' className='text-xs font-medium text-amber-700 dark:text-amber-300'>Select at least one Guardrail test pack before running the evaluation.</p> : null}
     </fieldset>

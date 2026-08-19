@@ -13,7 +13,7 @@ const ALL_TARGET_KINDS: EvaluationLayerTargetKind[] = [
   "guardrail",
 ];
 
-/** Fixed Test Pack catalog used by the frontend-only demo. */
+/** Legacy fixture snapshots used by isolated tests and historical demo runs. */
 export const evaluationLayerGuardrailTemplates: EvaluationLayerGuardrailTemplate[] = [
   {
     id: "guardrail-template-universal-safety",

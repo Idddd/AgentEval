@@ -150,6 +150,55 @@ export class AgentService {
     const now = new Date().toISOString();
     const sandboxName = agentSandboxName(input.name, id);
     await this.accessPolicies.assertActivePolicyIds(input.accessPolicyIds);
+    if (input.modelRoutingId === "demo-default-routing") {
+      const demoTokenId = `demo-token-${id.slice(0, 12)}`;
+      const demoAgent: Agent = {
+        schemaVersion: 2,
+        id,
+        ...input,
+        policyId: policy.id,
+        modelDeploymentId: "model-routing:demo-default-routing",
+        providerAccountId: "demo-managed-gateway",
+        providerName: "TaskLattice Demo",
+        model: "tasklattice-demo",
+        modelType: "llm",
+        inferenceMode: "PLATFORM_MANAGED",
+        modelRoutingId: "demo-default-routing",
+        modelRoutingBindingId: "instance-selected:demo-default-routing",
+        modelRoutingStatus: "READY",
+        modelRoutingComplianceDomain: "GLOBAL",
+        modelRoutingCapabilities: {
+          automaticRouting: "ENABLED",
+          routerType: "OTHER",
+          sessionAffinity: "ENABLED",
+          adaptiveRouting: "DISABLED",
+          failover: "ENABLED",
+          generalFallback: "ENABLED",
+          contextWindowFallback: "DISABLED",
+          contentPolicyFallback: "ENABLED",
+          retries: "ENABLED",
+          requestAudit: "ENABLED",
+        },
+        modelRoutingKeyFingerprint: `token:${demoTokenId.slice(-12)}`,
+        costKeyAlias: `tali-demo-${id}`,
+        liteLLMTokenId: demoTokenId,
+        liteLLMTeamId: "demo-team",
+        serviceAccountId: `tali-demo-${id}`,
+        sandboxName,
+        status: "READY",
+        runtimePhase: "READY",
+        createdAt: now,
+        updatedAt: now,
+        logs: [
+          "Demo preset applied.",
+          "Security policies and managed routing are ready.",
+          "Instance is available for guided evaluation.",
+        ],
+      };
+      await this.store.save(demoAgent);
+      await this.store.replaceAgentAccessPolicies(id, input.accessPolicyIds);
+      return demoAgent;
+    }
     const routing = await this.modelRoutings.resolver.resolve(input.modelRoutingId);
     const gateway = await this.store.getInferenceGateway(routing.gatewayId);
     if (!gateway)

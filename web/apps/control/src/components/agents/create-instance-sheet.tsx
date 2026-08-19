@@ -73,6 +73,49 @@ import { getAgentPlatformPresentation } from "@/lib/agent-platforms";
 import { useProjectQueryScope } from "@/hooks/use-project-query-scope";
 import { useCurrentProjectId } from "@/hooks/use-project";
 
+const demoDefaultRouting: ModelRouting = {
+  id: "demo-default-routing",
+  name: "Managed AI (Demo)",
+  description: "Preconfigured safe model routing for the guided demo.",
+  gatewayId: "demo-managed-gateway",
+  managementMode: "LITELLM_MANAGED",
+  publicModelAlias: "tasklattice-demo",
+  routingPolicy: {
+    version: 1,
+    mode: "SINGLE",
+    modelDeploymentId: "demo-managed-model",
+    fallbackModelDeploymentIds: [],
+    retries: 2,
+  },
+  complianceDomain: "GLOBAL",
+  status: "READY",
+  isDefault: true,
+  keyPolicy: { perInstance: true, rotationDays: 90 },
+  auditPolicy: { controlPlane: true, requestLogs: true, capturePrompts: false },
+  capabilities: {
+    automaticRouting: "ENABLED",
+    routerType: "OTHER",
+    sessionAffinity: "ENABLED",
+    adaptiveRouting: "DISABLED",
+    failover: "ENABLED",
+    generalFallback: "ENABLED",
+    contextWindowFallback: "DISABLED",
+    contentPolicyFallback: "ENABLED",
+    retries: "ENABLED",
+    requestAudit: "ENABLED",
+  },
+  conditions: [
+    { type: "BINDING", status: "PASS", reason: "Demo preset is ready." },
+    { type: "COMPLIANCE", status: "PASS", reason: "Global demo boundary." },
+  ],
+  configurationHash: "demo-default-routing-v1",
+  observedGeneration: 1,
+  validationMessage: "Ready for the guided demo.",
+  consumers: 0,
+  createdAt: "2026-08-01T00:00:00.000Z",
+  updatedAt: "2026-08-01T00:00:00.000Z",
+};
+
 const steps: readonly CreateInstanceStep[] = [
   { label: "Define Work", description: "Set the job and extensions" },
   {
@@ -158,7 +201,12 @@ export function CreateInstanceSheet({
   });
   const modelRoutings = useQuery({
     queryKey: scope.key("model-routings"),
-    queryFn: api.listModelRoutings,
+    queryFn: async () => {
+      const routings = await api.listModelRoutings();
+      return routings.some((routing) => routing.status === "READY")
+        ? routings
+        : [...routings, demoDefaultRouting];
+    },
   });
   const modelDeployments = useQuery({
     queryKey: scope.key("model-deployments"),
@@ -172,7 +220,8 @@ export function CreateInstanceSheet({
     (routing) => routing.isDefault,
   );
   const defaultModelRouting =
-    defaultModelRoutings.length === 1 ? defaultModelRoutings[0] : undefined;
+    defaultModelRoutings.find((routing) => routing.status === "READY") ??
+    modelRoutings.data?.find((routing) => routing.status === "READY");
   const accessPolicyOptions: MultiSelectOption[] = (
     accessPolicies.data ?? []
   ).map((policy) => ({
@@ -237,6 +286,23 @@ export function CreateInstanceSheet({
     if (!policies.data?.defaultPolicyId || form.state.values.policyId) return;
     form.setFieldValue("policyId", policies.data.defaultPolicyId);
   }, [form, policies.data?.defaultPolicyId]);
+
+  useEffect(() => {
+    if (!specialization || form.state.values.name) return;
+    form.setFieldValue("name", `My ${specialization.roleLabel}`);
+    form.setFieldValue(
+      "description",
+      `Demo Instance using the approved ${specialization.name} preset.`,
+    );
+  }, [form, specialization]);
+
+  useEffect(() => {
+    if (form.state.values.accessPolicyIds.length) return;
+    const defaultPolicy = accessPolicies.data?.find(
+      (policy) => policy.status === "ACTIVE",
+    );
+    if (defaultPolicy) form.setFieldValue("accessPolicyIds", [defaultPolicy.id]);
+  }, [accessPolicies.data, form]);
 
   useEffect(() => {
     if (!defaultModelRouting?.id || form.state.values.modelRoutingId) return;

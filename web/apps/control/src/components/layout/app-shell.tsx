@@ -5,21 +5,12 @@ import {
   Activity,
   Boxes,
   Bot,
-  BrainCircuit,
   ChartNoAxesCombined,
   CheckCircle2,
-  CircleDollarSign,
   CircleHelp,
-  FileLock2,
-  FileClock,
-  Fingerprint,
-  Network,
   Search,
-  ServerCog,
   ShieldAlert,
-  ShieldCheck,
   Sparkles,
-  Waypoints,
   type LucideIcon,
 } from "lucide-react";
 import type { AuthUser } from "@/components/auth/auth-provider";
@@ -74,6 +65,7 @@ import {
   ToastViewport,
 } from "@/components/ui/toast";
 import { EvaluationMockProvider } from "@/features/evaluations/mock-provider";
+import { GuardGovernanceProvider } from "@/features/guard-governance/mock-provider";
 
 type ProjectRoute =
   | "/$projectId/agent-garden"
@@ -110,120 +102,107 @@ type NavItemDefinition = {
   icon: LucideIcon;
   label: string;
   to: ProjectRoute;
-  /**
-   * Role whitelist: when set, only these project roles see the item.
-   * Omit to show the item to every role. Keeps per-role navigation
-   * extensible without changing the filter logic.
-   */
-  roles?: ProjectRole[];
+  personas?: DemoPersona[];
 };
-
-/** Roles allowed to manage agents and run security evaluations. */
-const AGENT_OPERATOR_ROLES: ProjectRole[] = ["admin", "member"];
-/**
- * Agent Risk Assessment: Agent/Skill security evaluation + MCP tool misuse
- * detection (ADA, FRT, ISS per the role-requirement matrix).
- */
-const SECURITY_EVAL_ROLES: ProjectRole[] = [...AGENT_OPERATOR_ROLES, "ada", "frt", "iss"];
-/** Model behavior monitoring is also available to Compliance reviewers. */
-const BEHAVIOR_MONITOR_ROLES: ProjectRole[] = [...SECURITY_EVAL_ROLES, "compliance"];
-/** Agent ID Management: agent identification/registry (FRT only). */
-const AGENT_IDENTITY_ROLES: ProjectRole[] = [...AGENT_OPERATOR_ROLES, "frt"];
-/** Agent Permission Management: policy compliance + permission control (FRT, Compliance). */
-const POLICY_ROLES: ProjectRole[] = [...AGENT_OPERATOR_ROLES, "frt", "compliance"];
-/** Guardrail management is admin-only. */
-const GUARDRAIL_ADMIN_ROLES: ProjectRole[] = ["admin"];
-
-export function navItemVisibleForRole(
-  item: NavItemDefinition,
-  role: ProjectRole,
-): boolean {
-  return !item.roles || item.roles.includes(role);
-}
 
 export const projectNavGroups: Array<{
   items: NavItemDefinition[];
   label: string;
 }> = [
   {
-    label: "Agentic",
+    label: "Workspace",
     items: [
-      { icon: Bot, label: "Agent Garden", to: "/$projectId/agent-garden", roles: AGENT_IDENTITY_ROLES },
-      { icon: Boxes, label: "Instances", to: "/$projectId/instances", roles: AGENT_IDENTITY_ROLES },
-      { icon: Sparkles, label: "Skills", to: "/$projectId/skills", roles: SECURITY_EVAL_ROLES },
-      { icon: ServerCog, label: "MCP Servers", to: "/$projectId/mcp-servers", roles: SECURITY_EVAL_ROLES },
-      { icon: Network, label: "Knowledge Base", to: "/$projectId/knowledge-base", roles: AGENT_IDENTITY_ROLES },
-      { icon: BrainCircuit, label: "Memory", to: "/$projectId/memory", roles: AGENT_IDENTITY_ROLES },
-    ],
-  },
-  {
-    label: "Security",
-    items: [
+      {
+        icon: Bot,
+        label: "Agent Garden",
+        to: "/$projectId/agent-garden",
+        personas: ["admin", "agent-wizard", "end-user"],
+      },
+      {
+        icon: Boxes,
+        label: "My Instances",
+        to: "/$projectId/instances",
+        personas: ["end-user"],
+      },
+      {
+        icon: Sparkles,
+        label: "My Builds",
+        to: "/$projectId/evaluation/catalog",
+        personas: ["agent-wizard"],
+      },
+      {
+        icon: CheckCircle2,
+        label: "Reviews",
+        to: "/$projectId/evaluation/catalog",
+        personas: ["admin"],
+      },
       {
         icon: ShieldAlert,
         label: "Guardrails",
         to: "/$projectId/governance/guardrails",
-        roles: GUARDRAIL_ADMIN_ROLES,
+        personas: ["admin"],
       },
       {
-        icon: ShieldCheck,
-        label: "Access Policies",
-        to: "/$projectId/access-policies",
-        roles: POLICY_ROLES,
+        icon: Activity,
+        label: "Behavior",
+        to: "/$projectId/evaluation/behavior",
+        personas: ["admin"],
       },
-      { icon: FileLock2, label: "Runtime Policies", to: "/$projectId/runtime-policies", roles: POLICY_ROLES },
-      { icon: FileClock, label: "Audit Logs", to: "/$projectId/audit-logs" },
-    ],
-  },
-  {
-    label: "Evaluation",
-    items: [
-      { icon: CheckCircle2, label: "Eval", to: "/$projectId/evaluation/catalog", roles: SECURITY_EVAL_ROLES },
-      { icon: Activity, label: "Behavior", to: "/$projectId/evaluation/behavior", roles: BEHAVIOR_MONITOR_ROLES },
-      { icon: Fingerprint, label: "ID Management", to: "/$projectId/evaluation/id-management", roles: AGENT_IDENTITY_ROLES },
-    ],
-  },
-  {
-    label: "Observer",
-    items: [
-      { icon: Waypoints, label: "Traces", to: "/$projectId/traces" },
-      { icon: ChartNoAxesCombined, label: "Production Monitoring", to: "/$projectId/evaluation/overview" },
-      { icon: CircleDollarSign, label: "Cost", to: "/$projectId/cost", roles: AGENT_OPERATOR_ROLES },
+      {
+        icon: ChartNoAxesCombined,
+        label: "Production Monitoring",
+        to: "/$projectId/evaluation/overview",
+        personas: ["admin"],
+      },
     ],
   },
 ];
 
-export function visibleProjectNavGroups(
-  role: ProjectRole,
-  persona: DemoPersona,
-  canViewAuditLogs: boolean,
-) {
-  if (persona === "end-user") {
-    return projectNavGroups
-      .filter((group) => group.label === "Agentic")
-      .map((group) => ({ ...group, items: [...group.items] }));
-  }
+const PERSONA_NAV_ORDER: Record<DemoPersona, string[]> = {
+  admin: [
+    "Reviews",
+    "Guardrails",
+    "Behavior",
+    "Production Monitoring",
+    "Agent Garden",
+  ],
+  "agent-wizard": ["My Builds", "Agent Garden"],
+  "end-user": ["Agent Garden", "My Instances"],
+};
 
+export function visibleProjectNavGroups(
+  _role: ProjectRole,
+  persona: DemoPersona,
+  _canViewAuditLogs: boolean,
+) {
+  const order = PERSONA_NAV_ORDER[persona];
   return projectNavGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter(
-        (item) =>
-          navItemVisibleForRole(item, role) &&
-          (item.to !== "/$projectId/audit-logs" || canViewAuditLogs),
-      ),
+      items: group.items
+        .filter((item) => !item.personas || item.personas.includes(persona))
+        .sort((left, right) => order.indexOf(left.label) - order.indexOf(right.label)),
     }))
     .filter((group) => group.items.length > 0);
 }
 
 export function itemIsActive(item: NavItemDefinition, pathname: string, projectId: string) {
   const target = item.to.replace("$projectId", encodeURIComponent(projectId));
+  if (item.to === "/$projectId/evaluation/catalog") {
+    const evaluationRoot = `/${encodeURIComponent(projectId)}/evaluation`;
+    return (
+      pathname.startsWith(evaluationRoot) &&
+      pathname !== `${evaluationRoot}/behavior` &&
+      pathname !== `${evaluationRoot}/overview`
+    );
+  }
   if (
     item.to === "/$projectId/instances" ||
     item.to === "/$projectId/access-policies" ||
     item.to === "/$projectId/evaluations" ||
     item.to === "/$projectId/governance/guardrails" ||
-    item.to.startsWith("/$projectId/evaluation/")
+    item.to === "/$projectId/evaluation/behavior" ||
+    item.to === "/$projectId/evaluation/overview"
   )
     return pathname === target || pathname.startsWith(`${target}/`);
   return pathname === target;
@@ -297,7 +276,13 @@ function ProjectSidebar({ logout, pathname, user }: {
     <ToastProvider duration={3_000} swipeDirection="right">
       <Sidebar collapsible="icon">
         <SidebarHeader className="gap-1.5 border-b border-sidebar-border p-2">
-          <Link to="/$projectId" params={{ projectId }} onClick={() => setOpenMobile(false)} className="flex min-h-11 min-w-0 items-center gap-3 px-2 focus-visible:outline-2 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0" aria-label="TaskLattice home">
+          <Link
+            to={persona === "end-user" ? "/$projectId/agent-garden" : "/$projectId/evaluation/catalog"}
+            params={{ projectId }}
+            onClick={() => setOpenMobile(false)}
+            className="flex min-h-11 min-w-0 items-center gap-3 px-2 focus-visible:outline-2 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+            aria-label="TaskLattice home"
+          >
             <BrandLogo compact={!isMobile && state === "collapsed"} />
           </Link>
           <ProjectSwitcher
@@ -320,7 +305,7 @@ function ProjectSidebar({ logout, pathname, user }: {
                 <SidebarGroupContent>
                   <SidebarMenu>
                     {group.items.map((item) => (
-                      <Fragment key={item.to}>
+                      <Fragment key={`${item.label}:${item.to}`}>
                         <NavigationItem item={item} pathname={pathname} projectId={projectId} />
                       </Fragment>
                     ))}
@@ -466,12 +451,14 @@ export function AppShell() {
                 </Button>
               </section>
             ) : (
-              <EvaluationMockProvider
+              <GuardGovernanceProvider
                 key={currentProject.id}
                 projectId={currentProject.id}
               >
-                <Outlet />
-              </EvaluationMockProvider>
+                <EvaluationMockProvider projectId={currentProject.id}>
+                  <Outlet />
+                </EvaluationMockProvider>
+              </GuardGovernanceProvider>
             )}
           </main>
         </SidebarInset>

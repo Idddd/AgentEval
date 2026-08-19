@@ -4,6 +4,7 @@ import type {
   EvaluationLayerCase,
   EvaluationLayerDatasetColumn,
   EvaluationLayerDatasetRevision,
+  EvaluationLayerGuardrailTemplate,
   EvaluationLayerLogEntry,
   EvaluationLayerResource,
   EvaluationLayerRun,
@@ -84,6 +85,7 @@ export interface PublishDatasetRevisionOptions {
 export interface EvaluationLayerStore {
   getState(): EvaluationLayerState;
   subscribe(listener: () => void): () => void;
+  syncGuardrailTemplates(templates: EvaluationLayerGuardrailTemplate[]): void;
   createTarget(input: CreateTargetInput): CommandResult<{ targetId: string }>;
   createTargetRevision(
     targetId: string,
@@ -820,6 +822,26 @@ export function createEvaluationLayerStore(
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    syncGuardrailTemplates(templates) {
+      const selectable = state.guardrailTemplates.filter(
+        (template) => template.available !== false,
+      );
+      if (JSON.stringify(selectable) === JSON.stringify(templates)) return;
+      const referencedIds = new Set(
+        state.runs.flatMap((run) => run.guardrailTemplateIds),
+      );
+      const incomingIds = new Set(templates.map((template) => template.id));
+      const historical = state.guardrailTemplates
+        .filter(
+          (template) =>
+            referencedIds.has(template.id) && !incomingIds.has(template.id),
+        )
+        .map((template) => ({ ...template, available: false }));
+      replaceState((snapshot) => ({
+        ...snapshot,
+        guardrailTemplates: [...structuredClone(templates), ...historical],
+      }));
     },
     createTarget(input) {
       const kind = input.kind ?? "agent";
@@ -1700,7 +1722,11 @@ export function createEvaluationLayerStore(
       simulationTimer = undefined;
     },
     resetDemo() {
-      state = structuredClone(baseline);
+      const syncedGuardrailTemplates = structuredClone(state.guardrailTemplates);
+      state = {
+        ...structuredClone(baseline),
+        guardrailTemplates: syncedGuardrailTemplates,
+      };
       listeners.forEach((listener) => listener());
     },
   };

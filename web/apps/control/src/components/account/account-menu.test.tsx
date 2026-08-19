@@ -8,6 +8,7 @@ import { AccountMenu } from "./account-menu";
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="#profile">{children}</a>,
+  useNavigate: () => vi.fn(),
 }));
 
 describe("AccountMenu demo persona selector", () => {
