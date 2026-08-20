@@ -22,8 +22,8 @@ describe("role lifecycle navigation", () => {
     expect(labelsFor("end-user")).toEqual(["Agent Garden", "My Instances"]);
   });
 
-  it("gives Agent Wizard one Build workspace followed by Evaluate", () => {
-    expect(labelsFor("agent-wizard")).toEqual(["Build", "Evaluate"]);
+  it("gives Agent Wizard Build, Evaluate, and the published Agent Garden", () => {
+    expect(labelsFor("agent-wizard")).toEqual(["Build", "Evaluate", "Agent Garden"]);
   });
 
   it("gives Admin review, governance, monitoring, and published catalog surfaces", () => {

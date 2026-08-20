@@ -124,7 +124,7 @@ export const projectNavGroups: Array<{
         icon: Bot,
         label: "Agent Garden",
         to: "/$projectId/agent-garden",
-        personas: ["end-user"],
+        personas: ["end-user", "agent-wizard"],
       },
       {
         icon: Boxes,
@@ -172,7 +172,7 @@ const PERSONA_NAV_ORDER: Record<DemoPersona, string[]> = {
     "Guardrails",
     "Monitor",
   ],
-  "agent-wizard": ["Build", "Evaluate"],
+  "agent-wizard": ["Build", "Evaluate", "Agent Garden"],
   "end-user": ["Agent Garden", "My Instances"],
 };
 
