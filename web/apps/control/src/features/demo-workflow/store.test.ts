@@ -240,4 +240,47 @@ describe("DemoWorkflowStore", () => {
       "already stopped",
     );
   });
+
+  it("updates draft resources and blocks deletion while an Agent draft references them", () => {
+    const store = createDemoWorkflowStore("individual", dependencies("session-a"));
+    const mcp = store.createMcpServer(
+      {
+        name: "Customer Records MCP",
+        endpoint: "https://demo.invalid/mcp/customer-records",
+        authType: "bearer_token",
+      },
+      "agent-wizard",
+    );
+    store.updateMcpServer(
+      mcp.id,
+      { ...mcp, endpoint: "https://demo.invalid/mcp/customer-records-v2" },
+      "agent-wizard",
+    );
+    store.createAgent(
+      { ...agentInput, name: "Records Assistant", mcpIds: [mcp.id] },
+      "agent-wizard",
+    );
+
+    expect(store.getState().mcpServers[0]?.endpoint).toBe(
+      "https://demo.invalid/mcp/customer-records-v2",
+    );
+    expect(() => store.deleteMcpServer(mcp.id, "agent-wizard")).toThrow(
+      "referenced by an Agent draft",
+    );
+  });
+
+  it("deletes an unreferenced session resource but never a fixture", () => {
+    const store = createDemoWorkflowStore("individual", dependencies("session-a"));
+    const skill = store.createSkill(
+      { name: "Case Resolution", description: "Resolve cases" },
+      "agent-wizard",
+    );
+
+    store.deleteSkill(skill.id, "agent-wizard");
+
+    expect(store.getState().skills).toEqual([]);
+    expect(() =>
+      store.deleteAgentDraft("fixture-policy-guidance-r1", "agent-wizard"),
+    ).toThrow("Session drafts");
+  });
 });

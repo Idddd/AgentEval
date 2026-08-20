@@ -12,7 +12,9 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ProjectIdIndexRouteImport } from './routes/$projectId/index'
+import { Route as ProjectIdBuildsRouteImport } from './routes/$projectId/builds'
 import { Route as ProjectIdCostRouteImport } from './routes/$projectId/cost'
+import { Route as ProjectIdCreateRouteImport } from './routes/$projectId/create'
 import { Route as ProjectIdEvaluationRouteImport } from './routes/$projectId/evaluation'
 import { Route as ProjectIdGovernanceRouteImport } from './routes/$projectId/governance'
 import { Route as ProjectIdGuardrailsRouteImport } from './routes/$projectId/guardrails'
@@ -81,9 +83,19 @@ const ProjectIdIndexRoute = ProjectIdIndexRouteImport.update({
   path: '/$projectId/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectIdBuildsRoute = ProjectIdBuildsRouteImport.update({
+  id: '/$projectId/builds',
+  path: '/$projectId/builds',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectIdCostRoute = ProjectIdCostRouteImport.update({
   id: '/$projectId/cost',
   path: '/$projectId/cost',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectIdCreateRoute = ProjectIdCreateRouteImport.update({
+  id: '/$projectId/create',
+  path: '/$projectId/create',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectIdEvaluationRoute = ProjectIdEvaluationRouteImport.update({
@@ -385,7 +397,9 @@ const ProjectIdSettingModelRoutingsRoutingIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/$projectId/builds': typeof ProjectIdBuildsRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
+  '/$projectId/create': typeof ProjectIdCreateRoute
   '/$projectId/evaluation': typeof ProjectIdEvaluationRouteWithChildren
   '/$projectId/governance': typeof ProjectIdGovernanceRouteWithChildren
   '/$projectId/guardrails': typeof ProjectIdGuardrailsRoute
@@ -443,7 +457,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/$projectId/builds': typeof ProjectIdBuildsRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
+  '/$projectId/create': typeof ProjectIdCreateRoute
   '/$projectId/governance': typeof ProjectIdGovernanceRouteWithChildren
   '/$projectId/guardrails': typeof ProjectIdGuardrailsRoute
   '/$projectId/knowledge-base': typeof ProjectIdKnowledgeBaseRoute
@@ -501,7 +517,9 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/$projectId/builds': typeof ProjectIdBuildsRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
+  '/$projectId/create': typeof ProjectIdCreateRoute
   '/$projectId/evaluation': typeof ProjectIdEvaluationRouteWithChildren
   '/$projectId/governance': typeof ProjectIdGovernanceRouteWithChildren
   '/$projectId/guardrails': typeof ProjectIdGuardrailsRoute
@@ -561,7 +579,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/$projectId/builds'
     | '/$projectId/cost'
+    | '/$projectId/create'
     | '/$projectId/evaluation'
     | '/$projectId/governance'
     | '/$projectId/guardrails'
@@ -619,7 +639,9 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/$projectId/builds'
     | '/$projectId/cost'
+    | '/$projectId/create'
     | '/$projectId/governance'
     | '/$projectId/guardrails'
     | '/$projectId/knowledge-base'
@@ -676,7 +698,9 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/login'
+    | '/$projectId/builds'
     | '/$projectId/cost'
+    | '/$projectId/create'
     | '/$projectId/evaluation'
     | '/$projectId/governance'
     | '/$projectId/guardrails'
@@ -735,7 +759,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
+  ProjectIdBuildsRoute: typeof ProjectIdBuildsRoute
   ProjectIdCostRoute: typeof ProjectIdCostRoute
+  ProjectIdCreateRoute: typeof ProjectIdCreateRoute
   ProjectIdEvaluationRoute: typeof ProjectIdEvaluationRouteWithChildren
   ProjectIdGovernanceRoute: typeof ProjectIdGovernanceRouteWithChildren
   ProjectIdGuardrailsRoute: typeof ProjectIdGuardrailsRoute
@@ -791,11 +817,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$projectId/builds': {
+      id: '/$projectId/builds'
+      path: '/$projectId/builds'
+      fullPath: '/$projectId/builds'
+      preLoaderRoute: typeof ProjectIdBuildsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/$projectId/cost': {
       id: '/$projectId/cost'
       path: '/$projectId/cost'
       fullPath: '/$projectId/cost'
       preLoaderRoute: typeof ProjectIdCostRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$projectId/create': {
+      id: '/$projectId/create'
+      path: '/$projectId/create'
+      fullPath: '/$projectId/create'
+      preLoaderRoute: typeof ProjectIdCreateRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$projectId/evaluation': {
@@ -1238,7 +1278,9 @@ const ProjectIdGovernanceRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
+  ProjectIdBuildsRoute: ProjectIdBuildsRoute,
   ProjectIdCostRoute: ProjectIdCostRoute,
+  ProjectIdCreateRoute: ProjectIdCreateRoute,
   ProjectIdEvaluationRoute: ProjectIdEvaluationRouteWithChildren,
   ProjectIdGovernanceRoute: ProjectIdGovernanceRouteWithChildren,
   ProjectIdGuardrailsRoute: ProjectIdGuardrailsRoute,

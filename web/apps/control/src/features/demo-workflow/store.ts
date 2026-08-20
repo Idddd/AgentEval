@@ -73,6 +73,22 @@ export function createDemoWorkflowStore(
     }
     return normalized;
   };
+  const updatedUniqueName = (
+    items: Array<{ id: string; name: string }>,
+    id: string,
+    name: string,
+  ) => {
+    const normalized = required(name, "Name");
+    if (
+      items.some(
+        (item) =>
+          item.id !== id && item.name.toLowerCase() === normalized.toLowerCase(),
+      )
+    ) {
+      throw new Error(`A session resource named ${normalized} already exists`);
+    }
+    return normalized;
+  };
   const findRevision = (revisionId: string) => {
     const revision = state.agentRevisions.find((item) => item.id === revisionId);
     if (!revision) throw new Error("Agent revision not found");
@@ -105,6 +121,20 @@ export function createDemoWorkflowStore(
   ) => {
     const event: DemoWorkflowEvent = { ...base(persona), ...input };
     replace({ ...state, events: [...state.events, event] });
+  };
+  const referencedByDraft = (
+    resourceId: string,
+    key: "mcpIds" | "skillIds" | "knowledgeBaseIds",
+  ) => {
+    const activeDraftIds = new Set(
+      state.agents.flatMap((agent) =>
+        agent.activeDraftRevisionId ? [agent.activeDraftRevisionId] : [],
+      ),
+    );
+    return state.agentRevisions.some(
+      (revision) =>
+        activeDraftIds.has(revision.id) && revision[key].includes(resourceId),
+    );
   };
 
   const store: DemoWorkflowStore = {
@@ -147,6 +177,132 @@ export function createDemoWorkflowStore(
       replace({ ...state, knowledgeBases: [...state.knowledgeBases, created] });
       addEvent(persona, { entityType: "knowledge-base", entityId: created.id, action: "created", outcome: "SESSION", audience: "TECHNICAL", label: `${created.name} created`, metadata: {} });
       return created;
+    },
+    updateMcpServer(id, input, persona) {
+      assertPersona(persona, "agent-wizard", "Update MCP Server");
+      const current = state.mcpServers.find((item) => item.id === id);
+      if (!current || current.source !== "SESSION") {
+        throw new Error("Only session MCP Servers can be updated");
+      }
+      const updated: DemoMcpServer = {
+        ...current,
+        name: updatedUniqueName(state.mcpServers, id, input.name),
+        endpoint: required(input.endpoint, "Endpoint"),
+        authType: input.authType,
+        updatedAt: dependencies.now(),
+      };
+      replace({
+        ...state,
+        mcpServers: state.mcpServers.map((item) =>
+          item.id === id ? updated : item,
+        ),
+      });
+      return updated;
+    },
+    updateSkill(id, input, persona) {
+      assertPersona(persona, "agent-wizard", "Update Skill");
+      const current = state.skills.find((item) => item.id === id);
+      if (!current || current.source !== "SESSION") {
+        throw new Error("Only session Skills can be updated");
+      }
+      const updated: DemoSkill = {
+        ...current,
+        name: updatedUniqueName(state.skills, id, input.name),
+        description: required(input.description, "Description"),
+        updatedAt: dependencies.now(),
+      };
+      replace({
+        ...state,
+        skills: state.skills.map((item) => (item.id === id ? updated : item)),
+      });
+      return updated;
+    },
+    updateKnowledgeBase(id, input, persona) {
+      assertPersona(persona, "agent-wizard", "Update Knowledge Base");
+      const current = state.knowledgeBases.find((item) => item.id === id);
+      if (!current || current.source !== "SESSION") {
+        throw new Error("Only session Knowledge Bases can be updated");
+      }
+      const updated: DemoKnowledgeBase = {
+        ...current,
+        name: updatedUniqueName(state.knowledgeBases, id, input.name),
+        sourceType: required(input.sourceType, "Source type"),
+        description: required(input.description, "Description"),
+        updatedAt: dependencies.now(),
+      };
+      replace({
+        ...state,
+        knowledgeBases: state.knowledgeBases.map((item) =>
+          item.id === id ? updated : item,
+        ),
+      });
+      return updated;
+    },
+    deleteMcpServer(id, persona) {
+      assertPersona(persona, "agent-wizard", "Delete MCP Server");
+      const current = state.mcpServers.find((item) => item.id === id);
+      if (!current || current.source !== "SESSION") {
+        throw new Error("Only session MCP Servers can be deleted");
+      }
+      if (referencedByDraft(id, "mcpIds")) {
+        throw new Error("This MCP Server is referenced by an Agent draft");
+      }
+      replace({
+        ...state,
+        mcpServers: state.mcpServers.filter((item) => item.id !== id),
+      });
+    },
+    deleteSkill(id, persona) {
+      assertPersona(persona, "agent-wizard", "Delete Skill");
+      const current = state.skills.find((item) => item.id === id);
+      if (!current || current.source !== "SESSION") {
+        throw new Error("Only session Skills can be deleted");
+      }
+      if (referencedByDraft(id, "skillIds")) {
+        throw new Error("This Skill is referenced by an Agent draft");
+      }
+      replace({
+        ...state,
+        skills: state.skills.filter((item) => item.id !== id),
+      });
+    },
+    deleteKnowledgeBase(id, persona) {
+      assertPersona(persona, "agent-wizard", "Delete Knowledge Base");
+      const current = state.knowledgeBases.find((item) => item.id === id);
+      if (!current || current.source !== "SESSION") {
+        throw new Error("Only session Knowledge Bases can be deleted");
+      }
+      if (referencedByDraft(id, "knowledgeBaseIds")) {
+        throw new Error("This Knowledge Base is referenced by an Agent draft");
+      }
+      replace({
+        ...state,
+        knowledgeBases: state.knowledgeBases.filter((item) => item.id !== id),
+      });
+    },
+    deleteAgentDraft(revisionId, persona) {
+      assertPersona(persona, "agent-wizard", "Delete Agent draft");
+      const revision = findRevision(revisionId);
+      if (revision.source !== "SESSION" || revision.status !== "DRAFT") {
+        throw new Error("Only Session drafts can be deleted");
+      }
+      const agent = findAgent(revision.agentId);
+      if (agent.activeDraftRevisionId !== revisionId) {
+        throw new Error("Only the active Agent draft can be deleted");
+      }
+      replace({
+        ...state,
+        agentRevisions: state.agentRevisions.filter(
+          (item) => item.id !== revisionId,
+        ),
+        agents: agent.currentApprovedRevisionId
+          ? state.agents.map((item) =>
+              item.id === agent.id
+                ? { ...item, activeDraftRevisionId: null }
+                : item,
+            )
+          : state.agents.filter((item) => item.id !== agent.id),
+      });
     },
     createAgent(input, persona) {
       assertPersona(persona, "agent-wizard", "Create Agent");

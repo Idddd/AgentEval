@@ -234,6 +234,25 @@ export interface DemoWorkflowStore {
     input: DemoKnowledgeBaseInput,
     persona: "agent-wizard",
   ): DemoKnowledgeBase;
+  updateMcpServer(
+    id: string,
+    input: DemoMcpInput,
+    persona: "agent-wizard",
+  ): DemoMcpServer;
+  updateSkill(
+    id: string,
+    input: DemoSkillInput,
+    persona: "agent-wizard",
+  ): DemoSkill;
+  updateKnowledgeBase(
+    id: string,
+    input: DemoKnowledgeBaseInput,
+    persona: "agent-wizard",
+  ): DemoKnowledgeBase;
+  deleteMcpServer(id: string, persona: "agent-wizard"): void;
+  deleteSkill(id: string, persona: "agent-wizard"): void;
+  deleteKnowledgeBase(id: string, persona: "agent-wizard"): void;
+  deleteAgentDraft(revisionId: string, persona: "agent-wizard"): void;
   createAgent(input: DemoAgentInput, persona: "agent-wizard"): DemoAgent;
   createAgentRevision(
     agentId: string,
