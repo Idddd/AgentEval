@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { CreatePage } from "@/features/demo-workflow/create/create-page";
+import { BuildWorkspacePage } from "@/features/demo-workflow/build/build-workspace-page";
 
 export const Route = createFileRoute("/$projectId/create")({
-  component: CreatePage,
+  component: BuildWorkspacePage,
 });

@@ -22,12 +22,8 @@ describe("role lifecycle navigation", () => {
     expect(labelsFor("end-user")).toEqual(["Agent Garden", "My Instances"]);
   });
 
-  it("gives Agent Wizard one build lifecycle plus the published garden", () => {
-    expect(labelsFor("agent-wizard")).toEqual([
-      "Create",
-      "My Builds",
-      "Technical Validation",
-    ]);
+  it("gives Agent Wizard one Build workspace followed by Evaluate", () => {
+    expect(labelsFor("agent-wizard")).toEqual(["Build", "Evaluate"]);
   });
 
   it("gives Admin review, governance, monitoring, and published catalog surfaces", () => {
@@ -42,9 +38,10 @@ describe("role lifecycle navigation", () => {
     expect(itemIsActive(navItem("Eval"), "/individual/evaluation/catalog", "individual")).toBe(true);
     expect(itemIsActive(navItem("Eval"), "/individual/evaluation/overview", "individual")).toBe(false);
     expect(itemIsActive(navItem("Monitor"), "/individual/evaluation/overview", "individual")).toBe(true);
-    expect(itemIsActive(navItem("Create"), "/individual/create", "individual")).toBe(true);
-    expect(itemIsActive(navItem("My Builds"), "/individual/builds", "individual")).toBe(true);
-    expect(itemIsActive(navItem("Technical Validation"), "/individual/technical-validation", "individual")).toBe(true);
+    expect(itemIsActive(navItem("Build"), "/individual/create", "individual")).toBe(true);
+    expect(itemIsActive(navItem("Build"), "/individual/builds", "individual")).toBe(true);
+    expect(itemIsActive(navItem("Evaluate"), "/individual/evaluation/catalog", "individual")).toBe(true);
+    expect(itemIsActive(navItem("Evaluate"), "/individual/technical-validation", "individual")).toBe(true);
   });
 
   it("keeps Guardrails active on its detail pages", () => {

@@ -35,7 +35,7 @@ const statusLabel: Record<DemoRevisionStatus, string> = {
   PUBLISHED: "Published",
 };
 
-export function BuildsPage() {
+export function BuildsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const state = useDemoWorkflowState();
   const store = useDemoWorkflowStore();
   const builds = useMemo(() => selectAgentWizardBuilds(state), [state]);
@@ -76,7 +76,7 @@ export function BuildsPage() {
     if (!revision) return;
     try {
       store.markReadyForTechnicalValidation(revision.id, "agent-wizard");
-      setNotice(`R${revision.revision} is ready for Technical Validation.`);
+      setNotice(`R${revision.revision} is ready for Evaluate.`);
       setError("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to prepare revision");
@@ -85,10 +85,12 @@ export function BuildsPage() {
 
   return (
     <div className="space-y-7">
-      <PageHeader
-        title="My Builds"
-        description="Manage immutable Agent revisions, technical dependencies, and the handoff into validation."
-      />
+      {embedded ? null : (
+        <PageHeader
+          title="My Builds"
+          description="Manage immutable Agent revisions, technical dependencies, and the handoff into evaluation."
+        />
+      )}
       <div className="grid gap-4 sm:grid-cols-3">
         <Summary icon={Boxes} label="Agents" value={state.agents.length} />
         <Summary icon={GitBranch} label="Revisions" value={state.agentRevisions.length} />
@@ -133,7 +135,7 @@ export function BuildsPage() {
               </CardContent>
             </Card>
             <section className="space-y-3"><div><h2 className="text-lg font-semibold">Revision comparison</h2><p className="text-sm text-muted-foreground">Field-level change review against the approved base revision.</p></div><RevisionDiff base={baseRevision} revision={revision} /></section>
-            <section className="space-y-3"><div><h2 className="text-lg font-semibold">Technical diagnostics</h2><p className="text-sm text-muted-foreground">Validation evidence remains visible to Agent Wizard only.</p></div>{revision.technicalResult ? <div className="grid gap-3 sm:grid-cols-2">{revision.technicalResult.checks.map((check) => <Card key={check.id}><CardContent className="flex gap-3 p-4"><CheckCircle2 className="mt-0.5 size-5 text-emerald-600" /><div><strong className="text-sm">{check.label} {check.status.toLowerCase()}</strong><p className="mt-1 text-xs text-muted-foreground">{check.detail}</p></div></CardContent></Card>)}</div> : <Card className="border-dashed"><CardContent className="flex min-h-28 items-center gap-3 p-5 text-sm text-muted-foreground"><ServerCog className="size-6" />Run Technical Validation to generate diagnostics.</CardContent></Card>}</section>
+            <section className="space-y-3"><div><h2 className="text-lg font-semibold">Technical diagnostics</h2><p className="text-sm text-muted-foreground">Evaluation evidence remains visible to Agent Wizard only.</p></div>{revision.technicalResult ? <div className="grid gap-3 sm:grid-cols-2">{revision.technicalResult.checks.map((check) => <Card key={check.id}><CardContent className="flex gap-3 p-4"><CheckCircle2 className="mt-0.5 size-5 text-emerald-600" /><div><strong className="text-sm">{check.label} {check.status.toLowerCase()}</strong><p className="mt-1 text-xs text-muted-foreground">{check.detail}</p></div></CardContent></Card>)}</div> : <Card className="border-dashed"><CardContent className="flex min-h-28 items-center gap-3 p-5 text-sm text-muted-foreground"><ServerCog className="size-6" />Run Evaluate to generate diagnostics.</CardContent></Card>}</section>
           </main>
         ) : null}
       </div>

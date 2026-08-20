@@ -868,14 +868,23 @@ function WorkspaceDrawer({
   open,
   onOpenChange,
   onCreateDataset,
+  onSubmitToAdminEval,
+  isAdminEvalEligible,
 }: {
   row: WorkspaceRow | undefined;
   open: boolean;
   onOpenChange(open: boolean): void;
   onCreateDataset(): void;
+  onSubmitToAdminEval?(targetRevisionId: string): void;
+  isAdminEvalEligible?(targetRevisionId: string): boolean;
 }) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
+  const submitsToAdminEval = Boolean(
+    onSubmitToAdminEval
+    && row?.currentRevision
+    && (isAdminEvalEligible?.(row.currentRevision.id) ?? true),
+  );
   const projectId = useCurrentProjectId();
   const role = useEffectiveProjectRole();
   const [workspaceNotice, setWorkspaceNotice] = useState<{
@@ -1181,10 +1190,16 @@ function WorkspaceDrawer({
       const reportSent = submittedReportId === row.latestReport?.id;
       return {
         tab: 'result',
-        label: reportSent ? 'Awaiting Admin decision' : 'Send report to Admin',
+        label: reportSent
+          ? 'Awaiting Admin decision'
+          : submitsToAdminEval
+            ? 'Submit to Admin Eval'
+            : 'Send report to Admin',
         description: reportSent
           ? 'The report is in the Admin review queue.'
-          : 'The self-evaluation is complete. Send its report for an independent release decision.',
+          : submitsToAdminEval
+            ? 'The technical evaluation is complete. Submit this exact Build revision for Business Eval.'
+            : 'The self-evaluation is complete. Send its report for an independent release decision.',
       };
     }
     if (row.decisionStatus === 'REJECTED') {
@@ -1279,9 +1294,17 @@ function WorkspaceDrawer({
   } else if (row.decisionStatus === 'PENDING') {
     footerAction = role === 'member' && submittedReportId !== row.latestReport?.id
       ? <Button onClick={() => {
+          if (submitsToAdminEval && onSubmitToAdminEval && row.currentRevision) {
+            onSubmitToAdminEval(row.currentRevision.id);
+          }
           setSubmittedReportId(row.latestReport?.id ?? 'submitted');
-          setWorkspaceNotice({ message: 'Evaluation report sent to Admin for review.', section: 'result' });
-        }}><ArrowRight />Send to Admin</Button>
+          setWorkspaceNotice({
+            message: submitsToAdminEval
+              ? 'Build revision submitted to Admin Business Eval.'
+              : 'Evaluation report sent to Admin for review.',
+            section: 'result',
+          });
+        }}><ArrowRight />{submitsToAdminEval ? 'Submit to Admin Eval' : 'Send to Admin'}</Button>
       : <Button onClick={openLatestReport}>View results<ArrowRight /></Button>;
   } else if (guardrailEvaluationRestricted && row.latestReport) {
     footerAction = <Button onClick={openLatestReport}>View results<ArrowRight /></Button>;
@@ -1695,10 +1718,18 @@ function EmptyCatalog({ filtered }: { filtered: boolean }) {
   );
 }
 
-export function EvaluationCatalogPage() {
+export function EvaluationCatalogPage({
+  onSubmitToAdminEval,
+  isAdminEvalEligible,
+}: {
+  onSubmitToAdminEval?(targetRevisionId: string): void;
+  isAdminEvalEligible?(targetRevisionId: string): boolean;
+} = {}) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
   const { persona } = useDemoRole();
+  const role = useEffectiveProjectRole();
+  const isAdmin = role === 'admin';
   const rows = useMemo(() => workspaceRows(state), [state]);
   const [view, setView] = useState<CatalogView>('lifecycle');
   const [query, setQuery] = useState('');
@@ -1724,7 +1755,7 @@ export function EvaluationCatalogPage() {
   }, [kind, persona, query, rows]);
   const lifecycleSummary = useMemo(() => {
     const count = (predicate: (row: WorkspaceRow) => boolean) => baseRows.filter(predicate).length;
-    return persona === 'admin'
+    return isAdmin
       ? [
           { label: 'Needs review', value: count((row) => row.decisionStatus === 'PENDING'), tone: 'text-amber-700' },
           { label: 'Verification running', value: count((row) => row.stage === 'RUNNING'), tone: 'text-primary' },
@@ -1737,7 +1768,7 @@ export function EvaluationCatalogPage() {
           { label: 'Waiting for Admin', value: count((row) => row.decisionStatus === 'PENDING'), tone: 'text-amber-700' },
           { label: 'Approved', value: count((row) => row.decisionStatus === 'APPROVED'), tone: 'text-emerald-700' },
         ];
-  }, [baseRows, persona]);
+  }, [baseRows, isAdmin]);
   const stageCounts = useMemo(() => Object.fromEntries(STAGE_ORDER.map((value) => [value, value === 'ALL' ? baseRows.length : baseRows.filter((row) => row.stage === value).length])) as Record<StageFilter, number>, [baseRows]);
   const filteredRows = useMemo(() => {
     const next = stage === 'ALL' ? [...baseRows] : baseRows.filter((row) => row.stage === stage);
@@ -1792,11 +1823,11 @@ export function EvaluationCatalogPage() {
   return (
     <section className='space-y-5 max-sm:[&_[data-slot=button]]:min-h-11'>
       <PageHeader
-        title={persona === 'admin' ? 'Reviews' : 'My Builds'}
+        title={isAdmin ? 'Reviews' : 'Evaluate'}
         description={
-          persona === 'admin'
+          isAdmin
             ? 'Review submitted versions, run independent checks, and approve safe releases.'
-            : 'Build, test, submit, and improve each capability through one guided lifecycle.'
+            : 'Test the exact Build revision, review evidence, and submit it for independent Business Eval.'
         }
       />
 
@@ -1840,6 +1871,8 @@ export function EvaluationCatalogPage() {
       <WorkspaceDrawer
         row={drawerRow}
         open={Boolean(drawerRow)}
+        {...(onSubmitToAdminEval ? { onSubmitToAdminEval } : {})}
+        {...(isAdminEvalEligible ? { isAdminEvalEligible } : {})}
         onOpenChange={(open) => { if (!open) setDrawerTargetId(''); }}
         onCreateDataset={() => {
           if (!drawerRow) return;

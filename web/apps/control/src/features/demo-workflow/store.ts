@@ -21,6 +21,8 @@ import type {
   DemoWorkflowStore,
 } from "./model";
 
+export { createDemoEvaluationBridge } from "./evaluate/build-evaluation-controller";
+
 function defaultId() {
   return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 }

@@ -64,7 +64,10 @@ import {
   ToastViewport,
 } from "@/components/ui/toast";
 import { EvaluationMockProvider } from "@/features/evaluations/mock-provider";
-import { DemoWorkflowProvider } from "@/features/demo-workflow/provider";
+import {
+  BuildEvaluationBridgeProvider,
+  DemoWorkflowProvider,
+} from "@/features/demo-workflow/provider";
 import { GuardrailTestPackBridge } from "@/features/evaluation-layer/guardrail-test-pack-bridge";
 import { EvaluationLayerProvider } from "@/features/evaluation-layer/mock-provider";
 import { GuardGovernanceProvider } from "@/features/guard-governance/mock-provider";
@@ -131,20 +134,14 @@ export const projectNavGroups: Array<{
       },
       {
         icon: Sparkles,
-        label: "Create",
+        label: "Build",
         to: "/$projectId/create",
         personas: ["agent-wizard"],
       },
       {
-        icon: Bot,
-        label: "My Builds",
-        to: "/$projectId/builds",
-        personas: ["agent-wizard"],
-      },
-      {
         icon: CheckCircle2,
-        label: "Technical Validation",
-        to: "/$projectId/technical-validation",
+        label: "Evaluate",
+        to: "/$projectId/evaluation/catalog",
         personas: ["agent-wizard"],
       },
       {
@@ -175,7 +172,7 @@ const PERSONA_NAV_ORDER: Record<DemoPersona, string[]> = {
     "Guardrails",
     "Monitor",
   ],
-  "agent-wizard": ["Create", "My Builds", "Technical Validation"],
+  "agent-wizard": ["Build", "Evaluate"],
   "end-user": ["Agent Garden", "My Instances"],
 };
 
@@ -197,6 +194,12 @@ export function visibleProjectNavGroups(
 
 export function itemIsActive(item: NavItemDefinition, pathname: string, projectId: string) {
   const target = item.to.replace("$projectId", encodeURIComponent(projectId));
+  if (item.label === "Build") {
+    return pathname === target || pathname === `/${encodeURIComponent(projectId)}/builds`;
+  }
+  if (item.label === "Evaluate") {
+    return pathname === target || pathname === `/${encodeURIComponent(projectId)}/technical-validation`;
+  }
   if (item.to === "/$projectId/evaluation/catalog") {
     return pathname === target;
   }
@@ -462,9 +465,11 @@ export function AppShell() {
                 <EvaluationLayerProvider projectId={currentProject.id}>
                   <GuardrailTestPackBridge />
                   <DemoWorkflowProvider projectId={currentProject.id}>
-                    <EvaluationMockProvider projectId={currentProject.id}>
-                      <Outlet />
-                    </EvaluationMockProvider>
+                    <BuildEvaluationBridgeProvider>
+                      <EvaluationMockProvider projectId={currentProject.id}>
+                        <Outlet />
+                      </EvaluationMockProvider>
+                    </BuildEvaluationBridgeProvider>
                   </DemoWorkflowProvider>
                 </EvaluationLayerProvider>
               </GuardGovernanceProvider>

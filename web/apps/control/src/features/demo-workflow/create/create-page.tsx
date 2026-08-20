@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDemoWorkflowState, useDemoWorkflowStore } from "../provider";
 import type { DemoKnowledgeBase, DemoMcpServer, DemoSkill } from "../model";
 import { AgentForm } from "./agent-form";
+import { BuildsPage } from "../builds/builds-page";
 import {
   ResourceFormDialog,
   type ResourceFormKind,
@@ -23,7 +24,7 @@ const tabs = [
   { value: "knowledge-base", label: "Knowledge Base", icon: Database },
 ] as const;
 
-export function CreatePage() {
+function CreateWorkspaceContent() {
   const state = useDemoWorkflowState();
   const store = useDemoWorkflowStore();
   const [tab, setTab] = useState<(typeof tabs)[number]["value"]>("agent");
@@ -77,11 +78,6 @@ export function CreatePage() {
 
   return (
     <div className="space-y-7">
-      <PageHeader
-        title="Create"
-        description="Build the technical resources for an Agent. Everything on this page stays in this browser tab until refresh."
-      />
-
       <div className="grid gap-4 md:grid-cols-3">
         <Metric label="Session resources" value={state.mcpServers.length + state.skills.length + state.knowledgeBases.length} />
         <Metric label="Agent drafts" value={state.agentRevisions.filter((item) => item.source === "SESSION" && item.status === "DRAFT").length} />
@@ -115,6 +111,38 @@ export function CreatePage() {
 
       {resourceDialog ? <ResourceFormDialog kind={resourceDialog} open {...(editing ? { initialValue: editing } : {})} onOpenChange={(open) => { if (!open) { setResourceDialog(null); setEditing(null); } }} onSubmit={(value) => saveResource(resourceDialog, value)} /> : null}
       <AgentForm open={agentOpen} onOpenChange={setAgentOpen} mcpServers={state.mcpServers} skills={state.skills} knowledgeBases={state.knowledgeBases} onSubmit={(input) => { const created = store.createAgent(input, "agent-wizard"); setNotice(`${created.name} R1 draft created.`); }} />
+    </div>
+  );
+}
+
+export function CreatePage({
+  initialTab = "create",
+}: {
+  initialTab?: "create" | "builds";
+} = {}) {
+  const [workspaceTab, setWorkspaceTab] = useState(initialTab);
+
+  return (
+    <div className="space-y-7">
+      <PageHeader
+        title="Build"
+        description="Create technical resources and manage immutable Agent revisions in one session-only workspace."
+      />
+      <Tabs
+        value={workspaceTab}
+        onValueChange={(value) => setWorkspaceTab(value as typeof workspaceTab)}
+      >
+        <TabsList className="h-auto w-full justify-start rounded-lg border bg-card p-1">
+          <TabsTrigger value="create" className="min-h-10 px-5">Create</TabsTrigger>
+          <TabsTrigger value="builds" className="min-h-10 px-5">My Builds</TabsTrigger>
+        </TabsList>
+        <TabsContent value="create" className="mt-6">
+          <CreateWorkspaceContent />
+        </TabsContent>
+        <TabsContent value="builds" className="mt-6">
+          <BuildsPage embedded />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

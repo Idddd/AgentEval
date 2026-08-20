@@ -1,6 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { BuildsPage } from "@/features/demo-workflow/builds/builds-page";
+import { BuildWorkspacePage } from "@/features/demo-workflow/build/build-workspace-page";
+
+function LegacyBuildsRoute() {
+  return <BuildWorkspacePage initialTab="builds" />;
+}
 
 export const Route = createFileRoute("/$projectId/builds")({
-  component: BuildsPage,
+  component: LegacyBuildsRoute,
 });

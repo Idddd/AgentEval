@@ -64,4 +64,6 @@ it("marks a complete draft ready for Technical Validation", async () => {
       ?.status,
   ).toBe("READY_FOR_VALIDATION");
   expect(screen.getAllByText("Ready for validation").length).toBeGreaterThan(0);
+  expect(screen.getByRole("status").textContent).toContain("ready for Evaluate");
+  expect(screen.queryByText(/Run Technical Validation/)).toBeNull();
 });

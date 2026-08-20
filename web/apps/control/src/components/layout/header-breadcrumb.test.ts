@@ -43,6 +43,18 @@ describe("getHeaderBreadcrumbItems", () => {
     ]);
   });
 
+  it("groups the Create and My Builds compatibility URLs under Build", () => {
+    expect(getHeaderBreadcrumbItems("/individual/create")).toEqual([
+      { href: "/individual/create", label: "Build" },
+    ]);
+    expect(getHeaderBreadcrumbItems("/individual/builds")).toEqual([
+      { href: "/individual/builds", label: "Build" },
+    ]);
+    expect(getHeaderBreadcrumbItems("/individual/technical-validation")).toEqual([
+      { href: "/individual/technical-validation", label: "Evaluate" },
+    ]);
+  });
+
   it("uses a stable label for Agent marketplace details", () => {
     expect(
       getHeaderBreadcrumbItems(

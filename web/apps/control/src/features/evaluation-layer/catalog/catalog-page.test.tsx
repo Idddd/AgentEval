@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import type { ComponentType } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EvaluationLayerProvider } from '../mock-provider';
@@ -76,6 +77,18 @@ describe('Catalog discovery', () => {
     expect(screen.getByRole('heading', { name: 'Reviews' })).not.toBeNull();
     expect(screen.queryByRole('button', { name: 'Create target' })).toBeNull();
     expect(screen.queryByText('Frontend demo')).toBeNull();
+  });
+
+  it('restores Evaluate as the Agent Wizard catalog heading', () => {
+    roleState.value = 'member';
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationCatalogPage />
+      </EvaluationLayerProvider>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Evaluate' })).not.toBeNull();
+    expect(screen.queryByRole('heading', { name: 'My Builds' })).toBeNull();
   });
 
   it('places Sort beside the view controls instead of a target count', () => {
@@ -741,6 +754,55 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(drawer.getByRole('button', { name: 'View results' })).not.toBeNull();
     await userEvent.click(drawer.getByRole('button', { name: 'View results' }));
     expect(drawer.getByRole('region', { name: 'Report details' })).not.toBeNull();
+  });
+
+  it('hands a completed Agent Wizard evaluation to the connected Admin Eval workflow', async () => {
+    roleState.value = 'member';
+    const onSubmitToAdminEval = vi.fn();
+    const ConnectedCatalog = EvaluationCatalogPage as ComponentType<{
+      onSubmitToAdminEval(targetRevisionId: string): void;
+    }>;
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <ConnectedCatalog onSubmitToAdminEval={onSubmitToAdminEval} />
+      </EvaluationLayerProvider>,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /Document Summarization demo-document-summarization/ }),
+    );
+    const drawer = within(screen.getByRole('dialog', { name: 'Document Summarization' }));
+
+    await userEvent.click(drawer.getByRole('button', { name: 'Submit to Admin Eval' }));
+
+    expect(onSubmitToAdminEval).toHaveBeenCalledWith('demo-document-summarization-r1');
+    expect(drawer.getByText('Awaiting Admin decision')).not.toBeNull();
+  });
+
+  it('keeps unlinked evaluation fixtures on the original Admin review handoff', async () => {
+    roleState.value = 'member';
+    const onSubmitToAdminEval = vi.fn();
+    const ConnectedCatalog = EvaluationCatalogPage as ComponentType<{
+      onSubmitToAdminEval(targetRevisionId: string): void;
+      isAdminEvalEligible(targetRevisionId: string): boolean;
+    }>;
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <ConnectedCatalog
+          onSubmitToAdminEval={onSubmitToAdminEval}
+          isAdminEvalEligible={() => false}
+        />
+      </EvaluationLayerProvider>,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /Document Summarization demo-document-summarization/ }),
+    );
+    const drawer = within(screen.getByRole('dialog', { name: 'Document Summarization' }));
+
+    expect(drawer.getByText('Send report to Admin')).not.toBeNull();
+    await userEvent.click(drawer.getByRole('button', { name: 'Send to Admin' }));
+
+    expect(onSubmitToAdminEval).not.toHaveBeenCalled();
+    expect(drawer.getByText('Awaiting Admin decision')).not.toBeNull();
   });
 });
 

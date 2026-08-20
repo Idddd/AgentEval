@@ -6,13 +6,19 @@ import {
   useMemo,
   useSyncExternalStore,
 } from "react";
+import {
+  useEvaluationLayerState,
+  useEvaluationLayerStore,
+} from "@/features/evaluation-layer/mock-provider";
 import { createDemoWorkflowActions } from "./simulation";
 import { createDemoWorkflowStore } from "./store";
+import { createDemoEvaluationBridge } from "./evaluate/build-evaluation-controller";
 import type {
   DemoWorkflowActions,
   DemoWorkflowState,
   DemoWorkflowStore,
 } from "./model";
+import type { DemoEvaluationBridge } from "./evaluate/build-evaluation-controller";
 
 interface DemoWorkflowContextValue {
   store: DemoWorkflowStore;
@@ -69,4 +75,39 @@ export function useDemoWorkflowActions(): DemoWorkflowActions {
 export function useDemoWorkflowState(): DemoWorkflowState {
   const store = useDemoWorkflowStore();
   return useSyncExternalStore(store.subscribe, store.getState, store.getState);
+}
+
+const BuildEvaluationBridgeContext = createContext<DemoEvaluationBridge | null>(
+  null,
+);
+
+export function BuildEvaluationBridgeProvider({ children }: { children: ReactNode }) {
+  const workflowStore = useDemoWorkflowStore();
+  const evaluationStore = useEvaluationLayerStore();
+  const workflowState = useDemoWorkflowState();
+  const evaluationState = useEvaluationLayerState();
+  const bridge = useMemo(
+    () => createDemoEvaluationBridge(workflowStore, evaluationStore),
+    [evaluationStore, workflowStore],
+  );
+
+  useEffect(() => {
+    bridge.sync();
+  }, [bridge, evaluationState, workflowState]);
+
+  return (
+    <BuildEvaluationBridgeContext.Provider value={bridge}>
+      {children}
+    </BuildEvaluationBridgeContext.Provider>
+  );
+}
+
+export function useBuildEvaluationBridge(): DemoEvaluationBridge {
+  const bridge = useContext(BuildEvaluationBridgeContext);
+  if (!bridge) {
+    throw new Error(
+      "useBuildEvaluationBridge requires BuildEvaluationBridgeProvider",
+    );
+  }
+  return bridge;
 }

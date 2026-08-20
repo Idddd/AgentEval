@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { TechnicalValidationPage } from "@/features/demo-workflow/validation/technical-validation-page";
+import { AgentWizardEvaluatePage } from "@/features/demo-workflow/evaluate/agent-wizard-evaluate-page";
 
 export const Route = createFileRoute("/$projectId/technical-validation")({
-  component: TechnicalValidationPage,
+  component: AgentWizardEvaluatePage,
 });

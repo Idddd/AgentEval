@@ -82,3 +82,21 @@ it("shows duplicate-name validation without losing the prefilled form", async ()
   expect(screen.getByRole("alert").textContent).toContain("already exists");
   expect(screen.getByDisplayValue("Case Resolution")).not.toBeNull();
 });
+
+it("combines Create and My Builds under one Build workspace", async () => {
+  const user = userEvent.setup();
+  const store = createDemoWorkflowStore("individual", dependencies());
+  render(
+    <DemoWorkflowProvider projectId="individual" store={store}>
+      <CreatePage />
+    </DemoWorkflowProvider>,
+  );
+
+  expect(screen.getByRole("heading", { name: "Build" })).not.toBeNull();
+  expect(screen.getByRole("tab", { name: "Create" }).getAttribute("data-state")).toBe("active");
+
+  await user.click(screen.getByRole("tab", { name: "My Builds" }));
+
+  expect(screen.getByText("Build portfolio")).not.toBeNull();
+  expect(screen.queryByRole("heading", { name: "My Builds" })).toBeNull();
+});

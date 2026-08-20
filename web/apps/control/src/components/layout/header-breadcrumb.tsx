@@ -9,7 +9,9 @@ const routeLabels: Record<string, string> = {
   agent: "Agent",
   agents: "Instances",
   cost: "Cost",
+  create: "Build",
   dashboard: "Overview",
+  builds: "Build",
   datasets: "Datasets",
   evaluations: "Evaluations",
   evaluation: "Evaluation",
@@ -34,6 +36,7 @@ const routeLabels: Record<string, string> = {
   skills: "Skills",
   tickets: "Ticket List",
   targets: "Targets",
+  "technical-validation": "Evaluate",
   traces: "Traces",
   projects: "Projects",
 };
