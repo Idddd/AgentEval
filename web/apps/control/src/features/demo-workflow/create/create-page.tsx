@@ -44,7 +44,7 @@ function CreateWorkspaceContent() {
     }),
     [state.knowledgeBases, state.mcpServers, state.skills],
   );
-  const defaultAgentCases = useMemo(
+  const demoAgentCases = useMemo(
     () => evaluationState.targets
       .filter((target) => target.kind === "agent" && target.id.startsWith("demo-"))
       .map((target) => {
@@ -109,52 +109,32 @@ function CreateWorkspaceContent() {
         </TabsList>
 
         <TabsContent value="agent" className="mt-5">
-          <SectionHeader title="Agents" description="Assemble runtime configuration and attach the session resources this Agent needs." action={<Button onClick={() => setAgentOpen(true)}><Plus />Create Agent</Button>} />
-          <div className="mt-5 space-y-7">
-            <section className="space-y-4" aria-labelledby="default-agent-cases">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <h3 id="default-agent-cases" className="text-lg font-semibold">Default cases</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">Existing Agent cases already available in Evaluate.</p>
-                </div>
-                <Badge variant="secondary">{defaultAgentCases.length} cases</Badge>
-              </div>
-              <div className="grid gap-4 lg:grid-cols-2">
-                {defaultAgentCases.map(({ target, revision, latestRun }) => (
-                  <Card key={target.id} className="bg-muted/15">
-                    <CardHeader>
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <CardTitle className="text-lg">{target.name}</CardTitle>
-                          <p className="mt-1 text-sm text-muted-foreground">{target.description}</p>
-                        </div>
-                        <Badge variant="outline">DEFAULT</Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
-                      <Detail label="Revision" value={`R${revision?.revision ?? 1}`} />
-                      <Detail label="Evaluate status" value={formatEvaluationStatus(latestRun?.status)} />
-                      <Detail label="Runtime" value={revision?.adapter ?? revision?.model ?? "Demo runtime"} />
-                      <Detail label="Tools" value={`${revision?.tools.length ?? 0} configured`} />
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </section>
-
-            <section className="space-y-4 border-t pt-6" aria-labelledby="session-agent-drafts">
-              <div>
-                <h3 id="session-agent-drafts" className="text-lg font-semibold">Session drafts</h3>
-                <p className="mt-1 text-sm text-muted-foreground">New Agents stay in Build until you mark a revision ready for Evaluate from My Builds.</p>
-              </div>
-              <div className="grid gap-4 lg:grid-cols-2">
-                {state.agents.filter((agent) => agent.source === "SESSION").map((agent) => {
-                  const revision = state.agentRevisions.find((item) => item.id === agent.activeDraftRevisionId);
-                  return <Card key={agent.id}><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-lg">{agent.name}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{agent.description}</p></div><Badge variant="outline" className="border-primary/30 text-primary">SESSION</Badge></div></CardHeader><CardContent className="grid gap-3 text-sm sm:grid-cols-2"><Detail label="Owner" value={agent.owner} /><Detail label="Revision" value={`R${revision?.revision ?? 1} · ${revision?.status ?? "DRAFT"}`} /><Detail label="Runtime" value={revision?.runtimeType ?? "—"} /><Detail label="Dependencies" value={`${revision?.mcpIds.length ?? 0} MCP · ${revision?.skillIds.length ?? 0} Skills · ${revision?.knowledgeBaseIds.length ?? 0} KB`} /></CardContent></Card>;
-                })}
-                {!state.agents.some((agent) => agent.source === "SESSION") ? <Empty title="No session Agent drafts" description="Create the supporting resources, then assemble your first Agent." /> : null}
-              </div>
-            </section>
+          <SectionHeader title="Agents" description="Start from an existing demo Agent or create a new session draft to evaluate later." action={<Button onClick={() => setAgentOpen(true)}><Plus />Create Agent</Button>} />
+          <div role="list" aria-label="Agents" className="mt-5 grid gap-4 lg:grid-cols-2">
+            {demoAgentCases.map(({ target, revision, latestRun }) => (
+              <Card role="listitem" key={target.id} className="bg-muted/15">
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-lg">{target.name}</CardTitle>
+                      <p className="mt-1 text-sm text-muted-foreground">{target.description}</p>
+                    </div>
+                    <Badge variant="outline">DEMO</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+                  <Detail label="Revision" value={`R${revision?.revision ?? 1}`} />
+                  <Detail label="Evaluate status" value={formatEvaluationStatus(latestRun?.status)} />
+                  <Detail label="Runtime" value={revision?.adapter ?? revision?.model ?? "Demo runtime"} />
+                  <Detail label="Tools" value={`${revision?.tools.length ?? 0} configured`} />
+                </CardContent>
+              </Card>
+            ))}
+            {state.agents.filter((agent) => agent.source === "SESSION").map((agent) => {
+              const revision = state.agentRevisions.find((item) => item.id === agent.activeDraftRevisionId);
+              return <Card role="listitem" key={agent.id}><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-lg">{agent.name}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{agent.description}</p></div><Badge variant="outline" className="border-primary/30 text-primary">SESSION</Badge></div></CardHeader><CardContent className="grid gap-3 text-sm sm:grid-cols-2"><Detail label="Owner" value={agent.owner} /><Detail label="Revision" value={`R${revision?.revision ?? 1} · ${revision?.status ?? "DRAFT"}`} /><Detail label="Runtime" value={revision?.runtimeType ?? "—"} /><Detail label="Dependencies" value={`${revision?.mcpIds.length ?? 0} MCP · ${revision?.skillIds.length ?? 0} Skills · ${revision?.knowledgeBaseIds.length ?? 0} KB`} /></CardContent></Card>;
+            })}
+            {!demoAgentCases.length && !state.agents.some((agent) => agent.source === "SESSION") ? <Empty title="No Agents yet" description="Create the supporting resources, then assemble your first Agent." /> : null}
           </div>
         </TabsContent>
 

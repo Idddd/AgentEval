@@ -29,21 +29,41 @@ function renderCreatePage(store: ReturnType<typeof createDemoWorkflowStore>) {
   );
 }
 
-it("shows the existing Evaluate Agents as default Build cases", () => {
+it("shows demo and session Agents together in one Build list", () => {
   const store = createDemoWorkflowStore("individual", dependencies());
+  store.createAgent(
+    {
+      name: "Returns Triage Assistant",
+      owner: "Customer Operations",
+      description: "Triages return requests.",
+      businessOutcome: "Resolve returns faster",
+      targetUsers: "Support specialists",
+      typicalScenarios: ["Return eligibility"],
+      runtimeType: "Managed interactive",
+      model: "Demo reasoning model",
+      endpoint: "https://demo.invalid/returns",
+      mcpIds: [],
+      skillIds: [],
+      knowledgeBaseIds: [],
+    },
+    "agent-wizard",
+  );
   renderCreatePage(store);
 
-  expect(screen.getByRole("heading", { name: "Default cases" })).not.toBeNull();
+  const agents = screen.getByRole("list", { name: "Agents" });
   for (const name of [
     "Office Assistant",
     "Customer Service",
     "Onboarding Assistant",
     "Deployment Monitor",
     "Sample Security Assistant",
+    "Returns Triage Assistant",
   ]) {
-    expect(screen.getByText(name)).not.toBeNull();
+    expect(agents.textContent).toContain(name);
   }
-  expect(screen.getByText("Session drafts")).not.toBeNull();
+  expect(screen.queryByRole("heading", { name: "Default cases" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Session drafts" })).toBeNull();
+  expect(screen.getAllByText("DEMO")).toHaveLength(5);
 });
 
 it("creates prefilled technical resources and an Agent draft in memory", async () => {
