@@ -65,6 +65,9 @@ import {
   ToastViewport,
 } from "@/components/ui/toast";
 import { EvaluationMockProvider } from "@/features/evaluations/mock-provider";
+import { DemoWorkflowProvider } from "@/features/demo-workflow/provider";
+import { GuardrailTestPackBridge } from "@/features/evaluation-layer/guardrail-test-pack-bridge";
+import { EvaluationLayerProvider } from "@/features/evaluation-layer/mock-provider";
 import { GuardGovernanceProvider } from "@/features/guard-governance/mock-provider";
 
 type ProjectRoute =
@@ -455,9 +458,14 @@ export function AppShell() {
                 key={currentProject.id}
                 projectId={currentProject.id}
               >
-                <EvaluationMockProvider projectId={currentProject.id}>
-                  <Outlet />
-                </EvaluationMockProvider>
+                <EvaluationLayerProvider projectId={currentProject.id}>
+                  <GuardrailTestPackBridge />
+                  <DemoWorkflowProvider projectId={currentProject.id}>
+                    <EvaluationMockProvider projectId={currentProject.id}>
+                      <Outlet />
+                    </EvaluationMockProvider>
+                  </DemoWorkflowProvider>
+                </EvaluationLayerProvider>
               </GuardGovernanceProvider>
             )}
           </main>
