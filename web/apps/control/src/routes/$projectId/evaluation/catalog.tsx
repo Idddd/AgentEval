@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { EvaluationCatalogPage } from "@/features/evaluation-layer/catalog/catalog-page";
+import { BusinessEvalPage } from "@/features/demo-workflow/eval/business-eval-page";
 
 export const Route = createFileRoute("/$projectId/evaluation/catalog")({
-  component: EvaluationCatalogPage,
+  component: BusinessEvalPage,
 });
