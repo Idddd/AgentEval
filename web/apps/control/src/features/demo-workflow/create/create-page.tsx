@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Bot, Database, Network, Plus, Puzzle, ShieldCheck, Trash2 } from "lucide-react";
+import { ArrowUpRight, Bot, Database, Network, Plus, Puzzle, ShieldCheck, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,10 @@ import { useEvaluationLayerState } from "@/features/evaluation-layer/mock-provid
 import { useDemoWorkflowState, useDemoWorkflowStore } from "../provider";
 import type { DemoKnowledgeBase, DemoMcpServer, DemoSkill } from "../model";
 import { AgentForm } from "./agent-form";
-import { BuildsPage } from "../builds/builds-page";
+import {
+  AgentBuildDetailSheet,
+  type AgentBuildSelection,
+} from "./agent-build-detail-sheet";
 import {
   ResourceFormDialog,
   type ResourceFormKind,
@@ -33,6 +36,7 @@ function CreateWorkspaceContent() {
   const [resourceDialog, setResourceDialog] = useState<ResourceFormKind | null>(null);
   const [editing, setEditing] = useState<Resource | null>(null);
   const [agentOpen, setAgentOpen] = useState(false);
+  const [buildSelection, setBuildSelection] = useState<AgentBuildSelection | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -112,27 +116,62 @@ function CreateWorkspaceContent() {
           <SectionHeader title="Agents" description="Start from an existing demo Agent or create a new session draft to evaluate later." action={<Button onClick={() => setAgentOpen(true)}><Plus />Create Agent</Button>} />
           <div role="list" aria-label="Agents" className="mt-5 grid gap-4 lg:grid-cols-2">
             {demoAgentCases.map(({ target, revision, latestRun }) => (
-              <Card role="listitem" key={target.id} className="bg-muted/15">
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <CardTitle className="text-lg">{target.name}</CardTitle>
-                      <p className="mt-1 text-sm text-muted-foreground">{target.description}</p>
-                    </div>
-                    <Badge variant="outline">DEMO</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
-                  <Detail label="Revision" value={`R${revision?.revision ?? 1}`} />
-                  <Detail label="Evaluate status" value={formatEvaluationStatus(latestRun?.status)} />
-                  <Detail label="Runtime" value={revision?.adapter ?? revision?.model ?? "Demo runtime"} />
-                  <Detail label="Tools" value={`${revision?.tools.length ?? 0} configured`} />
-                </CardContent>
-              </Card>
+              <div role="listitem" key={target.id}>
+                <button
+                  type="button"
+                  aria-label={`View ${target.name} build details`}
+                  className="block h-full w-full rounded-lg text-left outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring/40"
+                  onClick={() => setBuildSelection({ kind: "evaluation", targetId: target.id })}
+                >
+                  <Card className="h-full bg-muted/15 transition-colors hover:border-primary/35 hover:bg-primary/[0.03]">
+                    <CardHeader>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <CardTitle className="text-lg">{target.name}</CardTitle>
+                          <p className="mt-1 text-sm text-muted-foreground">{target.description}</p>
+                        </div>
+                        <Badge variant="outline">DEMO</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+                      <Detail label="Revision" value={`R${revision?.revision ?? 1}`} />
+                      <Detail label="Evaluate status" value={formatEvaluationStatus(latestRun?.status)} />
+                      <Detail label="Runtime" value={revision?.adapter ?? revision?.model ?? "Demo runtime"} />
+                      <Detail label="Tools" value={`${revision?.tools.length ?? 0} configured`} />
+                      <span className="flex items-center gap-1 text-xs font-medium text-primary sm:col-span-2">View build details <ArrowUpRight className="size-3.5" /></span>
+                    </CardContent>
+                  </Card>
+                </button>
+              </div>
             ))}
             {state.agents.filter((agent) => agent.source === "SESSION").map((agent) => {
-              const revision = state.agentRevisions.find((item) => item.id === agent.activeDraftRevisionId);
-              return <Card role="listitem" key={agent.id}><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-lg">{agent.name}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{agent.description}</p></div><Badge variant="outline" className="border-primary/30 text-primary">SESSION</Badge></div></CardHeader><CardContent className="grid gap-3 text-sm sm:grid-cols-2"><Detail label="Owner" value={agent.owner} /><Detail label="Revision" value={`R${revision?.revision ?? 1} · ${revision?.status ?? "DRAFT"}`} /><Detail label="Runtime" value={revision?.runtimeType ?? "—"} /><Detail label="Dependencies" value={`${revision?.mcpIds.length ?? 0} MCP · ${revision?.skillIds.length ?? 0} Skills · ${revision?.knowledgeBaseIds.length ?? 0} KB`} /></CardContent></Card>;
+              const revision = state.agentRevisions.find((item) => item.id === agent.activeDraftRevisionId) ?? state.agentRevisions.find((item) => item.id === agent.currentApprovedRevisionId);
+              return (
+                <div role="listitem" key={agent.id}>
+                  <button
+                    type="button"
+                    aria-label={`View ${agent.name} build details`}
+                    className="block h-full w-full rounded-lg text-left outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring/40"
+                    onClick={() => setBuildSelection({ kind: "workflow", agentId: agent.id })}
+                  >
+                    <Card className="h-full transition-colors hover:border-primary/35 hover:bg-primary/[0.03]">
+                      <CardHeader>
+                        <div className="flex items-start justify-between gap-3">
+                          <div><CardTitle className="text-lg">{agent.name}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{agent.description}</p></div>
+                          <Badge variant="outline" className="border-primary/30 text-primary">SESSION</Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+                        <Detail label="Owner" value={agent.owner} />
+                        <Detail label="Revision" value={`R${revision?.revision ?? 1} · ${revision?.status ?? "DRAFT"}`} />
+                        <Detail label="Runtime" value={revision?.runtimeType ?? "—"} />
+                        <Detail label="Dependencies" value={`${revision?.mcpIds.length ?? 0} MCP · ${revision?.skillIds.length ?? 0} Skills · ${revision?.knowledgeBaseIds.length ?? 0} KB`} />
+                        <span className="flex items-center gap-1 text-xs font-medium text-primary sm:col-span-2">View build details <ArrowUpRight className="size-3.5" /></span>
+                      </CardContent>
+                    </Card>
+                  </button>
+                </div>
+              );
             })}
             {!demoAgentCases.length && !state.agents.some((agent) => agent.source === "SESSION") ? <Empty title="No Agents yet" description="Create the supporting resources, then assemble your first Agent." /> : null}
           </div>
@@ -146,38 +185,19 @@ function CreateWorkspaceContent() {
 
       {resourceDialog ? <ResourceFormDialog kind={resourceDialog} open {...(editing ? { initialValue: editing } : {})} onOpenChange={(open) => { if (!open) { setResourceDialog(null); setEditing(null); } }} onSubmit={(value) => saveResource(resourceDialog, value)} /> : null}
       <AgentForm open={agentOpen} onOpenChange={setAgentOpen} mcpServers={state.mcpServers} skills={state.skills} knowledgeBases={state.knowledgeBases} onSubmit={(input) => { const created = store.createAgent(input, "agent-wizard"); setNotice(`${created.name} R1 draft created.`); }} />
+      <AgentBuildDetailSheet selection={buildSelection} onOpenChange={(open) => { if (!open) setBuildSelection(null); }} />
     </div>
   );
 }
 
-export function CreatePage({
-  initialTab = "create",
-}: {
-  initialTab?: "create" | "builds";
-} = {}) {
-  const [workspaceTab, setWorkspaceTab] = useState(initialTab);
-
+export function CreatePage() {
   return (
     <div className="space-y-7">
       <PageHeader
         title="Build"
         description="Create technical resources and manage immutable Agent revisions in one session-only workspace."
       />
-      <Tabs
-        value={workspaceTab}
-        onValueChange={(value) => setWorkspaceTab(value as typeof workspaceTab)}
-      >
-        <TabsList className="h-auto w-full justify-start rounded-lg border bg-card p-1">
-          <TabsTrigger value="create" className="min-h-10 px-5">Create</TabsTrigger>
-          <TabsTrigger value="builds" className="min-h-10 px-5">My Builds</TabsTrigger>
-        </TabsList>
-        <TabsContent value="create" className="mt-6">
-          <CreateWorkspaceContent />
-        </TabsContent>
-        <TabsContent value="builds" className="mt-6">
-          <BuildsPage embedded />
-        </TabsContent>
-      </Tabs>
+      <CreateWorkspaceContent />
     </div>
   );
 }

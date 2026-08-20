@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 import { EvaluationLayerProvider } from "@/features/evaluation-layer/mock-provider";
@@ -135,16 +135,62 @@ it("shows duplicate-name validation without losing the prefilled form", async ()
   expect(screen.getByDisplayValue("Case Resolution")).not.toBeNull();
 });
 
-it("combines Create and My Builds under one Build workspace", async () => {
+it("opens a demo Agent build in a right-side detail sheet without a My Builds list", async () => {
   const user = userEvent.setup();
   const store = createDemoWorkflowStore("individual", dependencies());
   renderCreatePage(store);
 
   expect(screen.getByRole("heading", { name: "Build" })).not.toBeNull();
-  expect(screen.getByRole("tab", { name: "Create" }).getAttribute("data-state")).toBe("active");
+  expect(screen.queryByRole("tab", { name: "My Builds" })).toBeNull();
+  expect(screen.queryByText("Build portfolio")).toBeNull();
 
-  await user.click(screen.getByRole("tab", { name: "My Builds" }));
+  await user.click(
+    screen.getByRole("button", { name: "View Office Assistant build details" }),
+  );
 
-  expect(screen.getByText("Build portfolio")).not.toBeNull();
-  expect(screen.queryByRole("heading", { name: "My Builds" })).toBeNull();
+  const sheet = screen.getByRole("dialog", { name: "Office Assistant" });
+  expect(within(sheet).getByText("Revision R2")).not.toBeNull();
+  expect(within(sheet).getByText("Deterministic local demo")).not.toBeNull();
+  expect(within(sheet).getByText("3 configured")).not.toBeNull();
+});
+
+it("opens a session Agent draft from Create and sends it to Evaluate", async () => {
+  const user = userEvent.setup();
+  const store = createDemoWorkflowStore("individual", dependencies());
+  store.createAgent(
+    {
+      name: "Returns Triage Assistant",
+      owner: "Customer Operations",
+      description: "Triages return requests.",
+      businessOutcome: "Resolve returns faster",
+      targetUsers: "Support specialists",
+      typicalScenarios: ["Return eligibility"],
+      runtimeType: "Managed interactive",
+      model: "Demo reasoning model",
+      endpoint: "https://demo.invalid/returns",
+      mcpIds: [],
+      skillIds: [],
+      knowledgeBaseIds: [],
+    },
+    "agent-wizard",
+  );
+  renderCreatePage(store);
+
+  await user.click(
+    screen.getByRole("button", {
+      name: "View Returns Triage Assistant build details",
+    }),
+  );
+
+  const sheet = screen.getByRole("dialog", { name: "Returns Triage Assistant" });
+  expect(within(sheet).getByText("Draft")).not.toBeNull();
+  await user.click(
+    within(sheet).getByRole("button", { name: "Mark ready for Evaluate" }),
+  );
+
+  expect(
+    store.getState().agentRevisions.find((revision) => revision.source === "SESSION")
+      ?.status,
+  ).toBe("READY_FOR_VALIDATION");
+  expect(within(sheet).getByText("Ready for validation")).not.toBeNull();
 });
