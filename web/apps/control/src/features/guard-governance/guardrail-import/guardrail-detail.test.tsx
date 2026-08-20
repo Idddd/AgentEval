@@ -23,11 +23,9 @@ it("omits Assignment controls from the Guardrail detail page", async () => {
     />,
   );
 
-  const workflow = await screen.findByRole("region", {
-    name: "Guardrail workflow",
-  });
-  expect(workflow.textContent).not.toContain("Assignments");
-  for (const name of ["Intent", "Controls", "Test cases", "Versions"]) {
+  expect(await screen.findByRole("heading", { name: "Production Safety" })).not.toBeNull();
+  expect(document.body.textContent).not.toContain("Assignments");
+  for (const name of ["Coverage", "Intent", "Controls", "Test cases", "History"]) {
     expect(screen.getByRole("tab", { name })).not.toBeNull();
   }
   expect(screen.queryByRole("tab", { name: "Assignments" })).toBeNull();

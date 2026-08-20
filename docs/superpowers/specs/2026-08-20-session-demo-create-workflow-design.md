@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-20
 
-**Status:** Approved in chat; pending written-spec review
+**Status:** Approved
 **Scope:** Pure UI demo only
 
 ## Purpose
