@@ -25,6 +25,7 @@ import { Route as ProjectIdProfileRouteImport } from './routes/$projectId/profil
 import { Route as ProjectIdRuntimeRouteImport } from './routes/$projectId/runtime'
 import { Route as ProjectIdRuntimePoliciesRouteImport } from './routes/$projectId/runtime-policies'
 import { Route as ProjectIdSkillsRouteImport } from './routes/$projectId/skills'
+import { Route as ProjectIdTechnicalValidationRouteImport } from './routes/$projectId/technical-validation'
 import { Route as ProjectIdTracesRouteImport } from './routes/$projectId/traces'
 import { Route as AuthSsoCompleteRouteImport } from './routes/auth/sso-complete'
 import { Route as ProjectIdAccessPoliciesIndexRouteImport } from './routes/$projectId/access-policies/index'
@@ -149,6 +150,12 @@ const ProjectIdSkillsRoute = ProjectIdSkillsRouteImport.update({
   path: '/$projectId/skills',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectIdTechnicalValidationRoute =
+  ProjectIdTechnicalValidationRouteImport.update({
+    id: '/$projectId/technical-validation',
+    path: '/$projectId/technical-validation',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProjectIdTracesRoute = ProjectIdTracesRouteImport.update({
   id: '/$projectId/traces',
   path: '/$projectId/traces',
@@ -410,6 +417,7 @@ export interface FileRoutesByFullPath {
   '/$projectId/runtime': typeof ProjectIdRuntimeRoute
   '/$projectId/runtime-policies': typeof ProjectIdRuntimePoliciesRoute
   '/$projectId/skills': typeof ProjectIdSkillsRoute
+  '/$projectId/technical-validation': typeof ProjectIdTechnicalValidationRoute
   '/$projectId/traces': typeof ProjectIdTracesRoute
   '/auth/sso-complete': typeof AuthSsoCompleteRoute
   '/$projectId/': typeof ProjectIdIndexRoute
@@ -469,6 +477,7 @@ export interface FileRoutesByTo {
   '/$projectId/runtime': typeof ProjectIdRuntimeRoute
   '/$projectId/runtime-policies': typeof ProjectIdRuntimePoliciesRoute
   '/$projectId/skills': typeof ProjectIdSkillsRoute
+  '/$projectId/technical-validation': typeof ProjectIdTechnicalValidationRoute
   '/$projectId/traces': typeof ProjectIdTracesRoute
   '/auth/sso-complete': typeof AuthSsoCompleteRoute
   '/$projectId': typeof ProjectIdIndexRoute
@@ -530,6 +539,7 @@ export interface FileRoutesById {
   '/$projectId/runtime': typeof ProjectIdRuntimeRoute
   '/$projectId/runtime-policies': typeof ProjectIdRuntimePoliciesRoute
   '/$projectId/skills': typeof ProjectIdSkillsRoute
+  '/$projectId/technical-validation': typeof ProjectIdTechnicalValidationRoute
   '/$projectId/traces': typeof ProjectIdTracesRoute
   '/auth/sso-complete': typeof AuthSsoCompleteRoute
   '/$projectId/': typeof ProjectIdIndexRoute
@@ -592,6 +602,7 @@ export interface FileRouteTypes {
     | '/$projectId/runtime'
     | '/$projectId/runtime-policies'
     | '/$projectId/skills'
+    | '/$projectId/technical-validation'
     | '/$projectId/traces'
     | '/auth/sso-complete'
     | '/$projectId/'
@@ -651,6 +662,7 @@ export interface FileRouteTypes {
     | '/$projectId/runtime'
     | '/$projectId/runtime-policies'
     | '/$projectId/skills'
+    | '/$projectId/technical-validation'
     | '/$projectId/traces'
     | '/auth/sso-complete'
     | '/$projectId'
@@ -711,6 +723,7 @@ export interface FileRouteTypes {
     | '/$projectId/runtime'
     | '/$projectId/runtime-policies'
     | '/$projectId/skills'
+    | '/$projectId/technical-validation'
     | '/$projectId/traces'
     | '/auth/sso-complete'
     | '/$projectId/'
@@ -772,6 +785,7 @@ export interface RootRouteChildren {
   ProjectIdRuntimeRoute: typeof ProjectIdRuntimeRoute
   ProjectIdRuntimePoliciesRoute: typeof ProjectIdRuntimePoliciesRoute
   ProjectIdSkillsRoute: typeof ProjectIdSkillsRoute
+  ProjectIdTechnicalValidationRoute: typeof ProjectIdTechnicalValidationRoute
   ProjectIdTracesRoute: typeof ProjectIdTracesRoute
   AuthSsoCompleteRoute: typeof AuthSsoCompleteRoute
   ProjectIdIndexRoute: typeof ProjectIdIndexRoute
@@ -906,6 +920,13 @@ declare module '@tanstack/react-router' {
       path: '/$projectId/skills'
       fullPath: '/$projectId/skills'
       preLoaderRoute: typeof ProjectIdSkillsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$projectId/technical-validation': {
+      id: '/$projectId/technical-validation'
+      path: '/$projectId/technical-validation'
+      fullPath: '/$projectId/technical-validation'
+      preLoaderRoute: typeof ProjectIdTechnicalValidationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$projectId/traces': {
@@ -1291,6 +1312,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectIdRuntimeRoute: ProjectIdRuntimeRoute,
   ProjectIdRuntimePoliciesRoute: ProjectIdRuntimePoliciesRoute,
   ProjectIdSkillsRoute: ProjectIdSkillsRoute,
+  ProjectIdTechnicalValidationRoute: ProjectIdTechnicalValidationRoute,
   ProjectIdTracesRoute: ProjectIdTracesRoute,
   AuthSsoCompleteRoute: AuthSsoCompleteRoute,
   ProjectIdIndexRoute: ProjectIdIndexRoute,

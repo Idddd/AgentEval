@@ -15,6 +15,10 @@ describe("session demo workflow routes", () => {
   it.each([
     ["/individual/create", "/$projectId/create"],
     ["/individual/builds", "/$projectId/builds"],
+    [
+      "/individual/technical-validation",
+      "/$projectId/technical-validation",
+    ],
   ])("matches %s", (pathname, expected) => {
     expect(routeIds(pathname)).toContain(expected);
   });
