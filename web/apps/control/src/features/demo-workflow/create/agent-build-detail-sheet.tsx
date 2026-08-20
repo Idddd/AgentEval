@@ -62,7 +62,7 @@ export function AgentBuildDetailSheet({
 }) {
   return (
     <Sheet open={selection !== null} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[min(96vw,48rem)] overflow-y-auto p-0 sm:max-w-[48rem]">
+      <SheetContent className="!w-[min(96vw,52rem)] overflow-y-auto p-0 sm:!max-w-[52rem]">
         {selection?.kind === "evaluation" ? (
           <EvaluationBuildDetail targetId={selection.targetId} />
         ) : selection?.kind === "workflow" ? (
