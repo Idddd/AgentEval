@@ -120,6 +120,8 @@ export function AccountMenu({
                   to:
                     nextPersona === "end-user"
                       ? "/$projectId/agent-garden"
+                      : nextPersona === "agent-wizard"
+                        ? "/$projectId/create"
                       : "/$projectId/evaluation/catalog",
                   params: { projectId },
                 });

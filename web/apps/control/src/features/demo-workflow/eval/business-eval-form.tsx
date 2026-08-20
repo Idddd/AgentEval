@@ -158,9 +158,9 @@ export function BusinessEvalForm({
               })}
             </div>
           </div>
-          <Field label="Approval reason">
+          <Field label="Evaluation recommendation">
             <Textarea
-              aria-label="Approval reason"
+              aria-label="Evaluation recommendation"
               rows={3}
               disabled={disabled}
               value={value.approvalReason}

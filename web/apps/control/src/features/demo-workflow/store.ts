@@ -468,7 +468,7 @@ export function createDemoWorkflowStore(
       const completedAt = dependencies.now();
       updateRevision(revisionId, (revision) => ({
         ...revision,
-        status: outcome === "PASSED" ? "PENDING_APPROVAL" : "BUSINESS_EVAL_FAILED",
+        status: "PENDING_APPROVAL",
         businessEvaluation: {
           ...revision.businessEvaluation!,
           outcome,

@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { cloneEvaluationLayerFixtures } from "@/features/evaluation-layer/fixture-validation";
 import { EvaluationLayerProvider } from "@/features/evaluation-layer/mock-provider";
@@ -91,9 +92,61 @@ it("runs a business-only Eval and publishes the approved revision", async () => 
   expect(screen.getByText("Low residual risk")).not.toBeNull();
   expect(screen.getByText("$0.04 estimated cost")).not.toBeNull();
 
+  fireEvent.change(screen.getByRole("textbox", { name: "Decision reason" }), {
+    target: { value: "Approved for the service pilot." },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Approve & Publish" }));
   expect(screen.getAllByText("Published to Agent Garden").length).toBeGreaterThan(0);
   expect(
     store.getState().agentRevisions.find((item) => item.id === revision.id)?.status,
   ).toBe("PUBLISHED");
+});
+
+it("shows pending and rejected cases with a recorded rejection reason", async () => {
+  const store = createDemoWorkflowStore("individual", dependencies());
+  const evaluationStore = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+
+  render(
+    <EvaluationLayerProvider projectId="individual" store={evaluationStore}>
+      <DemoWorkflowProvider projectId="individual" store={store}>
+        <BusinessEvalPage />
+      </DemoWorkflowProvider>
+    </EvaluationLayerProvider>,
+  );
+
+  expect(screen.getByText("Awaiting decision").parentElement?.textContent).toContain("2");
+  expect(screen.getAllByText("Rejected")[0]?.parentElement?.textContent).toContain("1");
+  expect(screen.getAllByText(/Service Recovery Copilot/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Claims Review Assistant/).length).toBeGreaterThan(0);
+  expect(screen.queryByRole("button", { name: "Run Business Eval" })).toBeNull();
+
+  await userEvent.click(screen.getByRole("button", { name: /Fraud Triage Assistant/ }));
+  expect(screen.getByText("Rejected after business review")).not.toBeNull();
+  expect(
+    screen.getByText("The pilot owner requires stronger escalation controls before release."),
+  ).not.toBeNull();
+});
+
+it("lets an Admin record a reason and reject a passed Eval", async () => {
+  const store = createDemoWorkflowStore("individual", dependencies());
+  const evaluationStore = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+
+  render(
+    <EvaluationLayerProvider projectId="individual" store={evaluationStore}>
+      <DemoWorkflowProvider projectId="individual" store={store}>
+        <BusinessEvalPage />
+      </DemoWorkflowProvider>
+    </EvaluationLayerProvider>,
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: /Service Recovery Copilot/ }));
+  expect(screen.getByText("Business Eval passed")).not.toBeNull();
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Decision reason" }),
+    "Business owner declined this rollout window.",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Reject" }));
+
+  expect(screen.getByText("Rejected after business review")).not.toBeNull();
+  expect(screen.getByText("Business owner declined this rollout window.")).not.toBeNull();
 });

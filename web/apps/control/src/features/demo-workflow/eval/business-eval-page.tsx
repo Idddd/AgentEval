@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { useEvaluationLayerState } from "@/features/evaluation-layer/mock-provider";
 import { useDemoWorkflowActions, useDemoWorkflowState, useDemoWorkflowStore } from "../provider";
 import { selectAdminReleaseCandidates } from "../selectors";
@@ -37,6 +38,7 @@ export function BusinessEvalPage() {
   const [selectedId, setSelectedId] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [decisionReason, setDecisionReason] = useState("");
   const [draft, setDraft] = useState<BusinessEvalDraft>(() => ({
     ...DEFAULT_DRAFT,
     datasetId: state.datasets[0]?.id ?? "",
@@ -45,7 +47,10 @@ export function BusinessEvalPage() {
 
   useEffect(() => {
     if (selectedId && candidates.some((candidate) => candidate.revisionKey === selectedId)) return;
-    const preferred = candidates.find((candidate) => candidate.status === "PENDING_EVAL") ?? candidates[0];
+    const preferred =
+      candidates.find((candidate) => candidate.status === "PENDING_EVAL") ??
+      candidates.find((candidate) => candidate.status === "PENDING_APPROVAL") ??
+      candidates[0];
     setSelectedId(preferred?.revisionKey ?? "");
   }, [candidates, selectedId]);
 
@@ -64,6 +69,12 @@ export function BusinessEvalPage() {
   const canRun = revision?.status === "PENDING_EVAL";
   const running = revision?.status === "BUSINESS_EVALUATING";
   const canDecide = revision?.status === "PENDING_APPROVAL";
+
+  useEffect(() => {
+    setDecisionReason(revision?.decisionReason ?? "");
+    setNotice("");
+    setError("");
+  }, [revision?.id]);
 
   const run = () => {
     if (!revision) return;
@@ -95,7 +106,7 @@ export function BusinessEvalPage() {
   const decide = (decision: "APPROVED" | "REJECTED") => {
     if (!revision) return;
     try {
-      store.decideRevision(revision.id, decision, draft.approvalReason, "admin");
+      store.decideRevision(revision.id, decision, decisionReason, "admin");
       setNotice(decision === "APPROVED" ? "Published to Agent Garden" : "Release Candidate rejected");
       setError("");
     } catch (caught) {
@@ -110,10 +121,11 @@ export function BusinessEvalPage() {
         description="Evaluate business outcomes, safety coverage, and approval readiness without technical configuration details."
         badge={<Badge variant="outline">Admin</Badge>}
       />
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Metric label="Pending review" value={candidates.filter((item) => item.status === "PENDING_EVAL").length} />
         <Metric label="Evaluating" value={candidates.filter((item) => item.status === "BUSINESS_EVALUATING").length} />
         <Metric label="Awaiting decision" value={candidates.filter((item) => item.status === "PENDING_APPROVAL").length} />
+        <Metric label="Rejected" value={candidates.filter((item) => item.status === "REJECTED").length} />
         <Metric label="Published" value={candidates.filter((item) => item.status === "PUBLISHED").length} />
       </div>
       {notice ? <p role="status" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><CheckCircle2 className="size-4" />{notice}</p> : null}
@@ -135,15 +147,60 @@ export function BusinessEvalPage() {
           {revision && selected ? (
             <main className="space-y-5">
               <Card>
-                <CardHeader className="border-b"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><CardTitle>{selected.name} · R{selected.revision}</CardTitle><Status status={selected.status} /></div><p className="mt-2 text-sm text-muted-foreground">Owner · {selected.owner}</p></div><Button disabled={!canRun || running} onClick={run}>{running ? <ShieldCheck /> : <Play />}{running ? "Running Eval" : "Run Business Eval"}</Button></div></CardHeader>
+                <CardHeader className="border-b"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><CardTitle>{selected.name} · R{selected.revision}</CardTitle><Status status={selected.status} /></div><p className="mt-2 text-sm text-muted-foreground">Owner · {selected.owner}</p></div>{canRun || running ? <Button disabled={running} onClick={run}>{running ? <ShieldCheck /> : <Play />}{running ? "Running Eval" : "Run Business Eval"}</Button> : null}</div></CardHeader>
                 <CardContent className="grid gap-3 p-5 sm:grid-cols-3"><BusinessFact label="Business outcome" value={selected.businessPurpose} /><BusinessFact label="Audience" value={selected.targetUsers} /><BusinessFact label="Safety coverage" value={selected.guardrailCoverage} /></CardContent>
               </Card>
               {revision.businessEvaluation ? <BusinessEvalReport evaluation={revision.businessEvaluation} /> : null}
-              <BusinessEvalForm value={draft} onChange={setDraft} datasets={state.datasets} templates={templates} disabled={!canRun} />
               {canDecide ? (
-                <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div><strong>Approval decision required</strong><p className="mt-1 text-sm text-muted-foreground">Publish this exact revision or return it with a recorded business reason.</p></div><div className="flex gap-2"><Button variant="outline" onClick={() => decide("REJECTED")}><XCircle />Reject</Button><Button onClick={() => decide("APPROVED")}><Send />Approve &amp; Publish</Button></div></CardContent></Card>
+                <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20">
+                  <CardHeader className="border-b">
+                    <CardTitle>Approval decision required</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Eval results are evidence, not the decision. An Admin may approve a failed Eval or reject a passed Eval with a recorded reason.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 p-5">
+                    <label className="grid gap-2 text-sm font-medium">
+                      Decision reason
+                      <Textarea
+                        aria-label="Decision reason"
+                        rows={3}
+                        value={decisionReason}
+                        placeholder="Record the business rationale, accepted risk, or required remediation."
+                        onChange={(event) => setDecisionReason(event.target.value)}
+                      />
+                    </label>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        disabled={!decisionReason.trim()}
+                        onClick={() => decide("REJECTED")}
+                      >
+                        <XCircle />Reject
+                      </Button>
+                      <Button
+                        disabled={!decisionReason.trim()}
+                        onClick={() => decide("APPROVED")}
+                      >
+                        <Send />Approve &amp; Publish
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               ) : null}
               {revision.status === "PUBLISHED" ? <Card className="border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/20"><CardContent className="flex items-center gap-3 p-5 text-emerald-800 dark:text-emerald-300"><CheckCircle2 className="size-6" /><div><strong>Published to Agent Garden</strong><p className="text-sm">End users can now apply the approved stable version.</p></div></CardContent></Card> : null}
+              {revision.status === "REJECTED" ? (
+                <Card className="border-destructive/30 bg-destructive/5">
+                  <CardContent className="flex items-start gap-3 p-5 text-destructive">
+                    <XCircle className="mt-0.5 size-6 shrink-0" />
+                    <div>
+                      <strong>Rejected after business review</strong>
+                      <p className="mt-1 text-sm text-foreground">{revision.decisionReason}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+              <BusinessEvalForm value={draft} onChange={setDraft} datasets={state.datasets} templates={templates} disabled={!canRun} />
             </main>
           ) : null}
         </div>
@@ -154,4 +211,4 @@ export function BusinessEvalPage() {
 
 function Metric({ label, value }: { label: string; value: number }) { return <Card><CardContent className="p-5"><span className="text-xs uppercase tracking-wider text-muted-foreground">{label}</span><strong className="mt-2 block text-3xl tabular-nums">{value}</strong></CardContent></Card>; }
 function BusinessFact({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border bg-muted/20 p-3"><span className="text-xs text-muted-foreground">{label}</span><strong className="mt-1 block text-sm">{value}</strong></div>; }
-function Status({ status }: { status: DemoRevisionStatus }) { const label = status === "PENDING_EVAL" ? "Pending Eval" : status === "BUSINESS_EVALUATING" ? "Evaluating" : status === "PENDING_APPROVAL" ? "Decision ready" : status === "PUBLISHED" ? "Published" : status.replaceAll("_", " ").toLowerCase(); const good = ["PENDING_APPROVAL", "PUBLISHED"].includes(status); return <Badge variant="outline" className={good ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{label}</Badge>; }
+function Status({ status }: { status: DemoRevisionStatus }) { const label = status === "PENDING_EVAL" ? "Pending Eval" : status === "BUSINESS_EVALUATING" ? "Evaluating" : status === "PENDING_APPROVAL" ? "Decision ready" : status === "PUBLISHED" ? "Published" : status === "REJECTED" ? "Rejected" : status.replaceAll("_", " ").toLowerCase(); const good = ["PENDING_APPROVAL", "PUBLISHED"].includes(status); const rejected = status === "REJECTED"; return <Badge variant="outline" className={good ? "border-emerald-200 bg-emerald-50 text-emerald-700" : rejected ? "border-destructive/30 bg-destructive/5 text-destructive" : ""}>{label}</Badge>; }

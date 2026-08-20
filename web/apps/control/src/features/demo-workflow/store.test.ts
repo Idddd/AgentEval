@@ -192,6 +192,61 @@ describe("DemoWorkflowStore", () => {
     ).toBe(next.id);
   });
 
+  it("allows an Admin to approve a revision whose Business Eval failed", () => {
+    const store = createDemoWorkflowStore("individual", dependencies("session-failed-approval"));
+    const agent = store.createAgent(agentInput, "agent-wizard");
+    const revision = store.getState().agentRevisions.find(
+      (item) => item.agentId === agent.id,
+    )!;
+    store.markReadyForTechnicalValidation(revision.id, "agent-wizard");
+    store.startTechnicalValidation(revision.id, "agent-wizard");
+    store.completeTechnicalValidation(revision.id, "PASSED");
+    store.submitReleaseCandidate(revision.id, "agent-wizard");
+    store.startBusinessEvaluation(
+      revision.id,
+      {
+        businessPurpose: "Review claims with human oversight.",
+        targetUsers: "Claims specialists",
+        criticality: "High",
+        dataSensitivity: "Confidential customer data",
+        successThreshold: 85,
+        datasetId: "dataset-support-readiness",
+        guardrailTemplates: [
+          {
+            id: "guardrail-template:default:R1",
+            sourceGuardrailId: "guardrail-default",
+            sourceGuardrailRevisionId: "guardrail-default:R1",
+            version: "1",
+            name: "Default Protection",
+          },
+        ],
+        approvalReason: "Evidence requires an Admin decision.",
+      },
+      "admin",
+    );
+
+    store.completeBusinessEvaluation(revision.id, "FAILED");
+    expect(
+      store.getState().agentRevisions.find((item) => item.id === revision.id),
+    ).toMatchObject({
+      status: "PENDING_APPROVAL",
+      businessEvaluation: { outcome: "FAILED" },
+    });
+
+    store.decideRevision(
+      revision.id,
+      "APPROVED",
+      "Approved for a supervised pilot despite the failed Eval.",
+      "admin",
+    );
+    expect(
+      store.getState().agentRevisions.find((item) => item.id === revision.id),
+    ).toMatchObject({
+      status: "PUBLISHED",
+      decisionReason: "Approved for a supervised pilot despite the failed Eval.",
+    });
+  });
+
   it("rejects lifecycle skips and persona violations", () => {
     const store = createDemoWorkflowStore("individual", dependencies("session-a"));
     const agent = store.createAgent(agentInput, "agent-wizard");

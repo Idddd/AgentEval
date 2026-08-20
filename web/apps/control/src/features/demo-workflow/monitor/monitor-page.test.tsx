@@ -1,10 +1,19 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import type { ReactNode } from "react";
+import { afterEach, expect, it, vi } from "vitest";
+import { EvaluationLayerProvider } from "@/features/evaluation-layer/mock-provider";
 import type { DemoWorkflowDependencies } from "../model";
 import { DemoWorkflowProvider } from "../provider";
 import { createDemoWorkflowStore } from "../store";
 import { MonitorPage } from "./monitor-page";
+
+vi.mock("@/hooks/use-project", () => ({
+  useCurrentProjectId: () => "individual",
+}));
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children }: { children: ReactNode }) => <a href="#trace">{children}</a>,
+}));
 
 afterEach(cleanup);
 
@@ -17,7 +26,7 @@ function dependencies(): DemoWorkflowDependencies {
   };
 }
 
-it("summarizes session adoption and business health without technical fields", () => {
+it("restores production monitoring controls, evaluator policy, and trace evidence", () => {
   const store = createDemoWorkflowStore("individual", dependencies());
   const instance = store.createInstance(
     {
@@ -32,17 +41,19 @@ it("summarizes session adoption and business health without technical fields", (
   store.markInstanceReady(instance.id);
 
   render(
-    <DemoWorkflowProvider projectId="individual" store={store}>
-      <MonitorPage />
-    </DemoWorkflowProvider>,
+    <EvaluationLayerProvider projectId="individual">
+      <DemoWorkflowProvider projectId="individual" store={store}>
+        <MonitorPage />
+      </DemoWorkflowProvider>
+    </EvaluationLayerProvider>,
   );
 
-  expect(screen.getByRole("heading", { name: "Monitor" })).not.toBeNull();
-  expect(screen.getByText("1 published")).not.toBeNull();
-  expect(screen.getByText("1 active")).not.toBeNull();
-  expect(screen.getByText("92%")).not.toBeNull();
-  expect(screen.getByText("$0.04")).not.toBeNull();
-  expect(screen.getByText("Policy Pilot is ready")).not.toBeNull();
-  expect(screen.queryByText("Endpoint")).toBeNull();
-  expect(screen.queryByText("Model")).toBeNull();
+  expect(screen.getByRole("heading", { name: "Production Monitor" })).not.toBeNull();
+  expect(screen.getByRole("combobox", { name: "Agent" })).not.toBeNull();
+  expect(screen.getByRole("button", { name: "PASS" })).not.toBeNull();
+  expect(screen.getByRole("slider", { name: "Sampling rate" })).not.toBeNull();
+  expect(screen.getByRole("columnheader", { name: "Trace" })).not.toBeNull();
+  expect(screen.getByRole("columnheader", { name: "Score" })).not.toBeNull();
+  expect(screen.getAllByText("Data leak detection").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Published Agents")).toBeNull();
 });
