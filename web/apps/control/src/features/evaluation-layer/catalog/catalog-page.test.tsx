@@ -246,7 +246,7 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(panel.queryByRole('combobox', { name: 'Dataset' })).toBeNull();
     expect(panel.getByRole('radiogroup', { name: 'Dataset' })).not.toBeNull();
     expect(panel.queryByRole('button', { name: 'Generate Dataset' })).toBeNull();
-    expect(panel.getByRole('group', { name: 'Guardrail Test Packs' })).not.toBeNull();
+    expect(panel.getByRole('group', { name: 'Safety checks' })).not.toBeNull();
     expect((panel.getByRole('checkbox', { name: 'Select Universal Safety Baseline' }) as HTMLInputElement).checked).toBe(true);
     expect(panel.getByText(/2 selected · \d+ safety cases/)).not.toBeNull();
     expect(panel.getByText(/Combined coverage: \d+ business cases \+ \d+ Guardrail cases/)).not.toBeNull();
@@ -270,7 +270,7 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(dataset).not.toBeNull();
     expect(current.getByRole('button', { name: 'New Dataset' })).not.toBeNull();
     expect(current.queryByRole('button', { name: 'Generate Dataset' })).toBeNull();
-    expect(current.getByRole('group', { name: 'Guardrail Test Packs' })).not.toBeNull();
+    expect(current.getByRole('group', { name: 'Safety checks' })).not.toBeNull();
     expect(current.queryByText(/Combined coverage:/)).toBeNull();
     expect(current.queryByText('Draft cases')).toBeNull();
     expect(current.queryByText('Evaluation history')).toBeNull();
@@ -297,7 +297,7 @@ describe('Catalog drawer progressive disclosure', () => {
     const defaultCard = within(dataset.closest('label')!);
     expect(defaultCard.getByText('Published')).not.toBeNull();
     expect(defaultCard.getByText('6 cases')).not.toBeNull();
-    const packs = within(coverage.getByRole('group', { name: 'Guardrail Test Packs' }));
+    const packs = within(coverage.getByRole('group', { name: 'Safety checks' }));
     const required = packs.getByRole('checkbox', { name: 'Select Universal Safety Baseline' }) as HTMLInputElement;
     const optional = packs.getByRole('checkbox', { name: 'Select Agent Prompt Injection' }) as HTMLInputElement;
 
@@ -305,7 +305,7 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(required.disabled).toBe(true);
     expect(optional.checked).toBe(true);
     expect(optional.disabled).toBe(false);
-    expect(packs.getByText('Required')).not.toBeNull();
+    expect(packs.getByText('Required by policy')).not.toBeNull();
     expect(packs.getByText('Optional')).not.toBeNull();
 
     await userEvent.click(optional);
@@ -370,7 +370,7 @@ describe('Catalog drawer progressive disclosure', () => {
     await userEvent.click(coverage.getByRole('radio', { name: /Demo Default Dataset/ }));
     expect(coverage.getByRole('radio', { name: /Demo Default Dataset/ })).not.toBeNull();
     expect(coverage.getByRole('radio', { name: /Persistent Dataset/ })).not.toBeNull();
-    expect(coverage.getByRole('group', { name: 'Guardrail Test Packs' })).not.toBeNull();
+    expect(coverage.getByRole('group', { name: 'Safety checks' })).not.toBeNull();
   });
 
   it('moves the current action above long stage content when details are open', async () => {
@@ -787,7 +787,7 @@ describe('Guardrail evaluation access', () => {
     expect(required.disabled).toBe(true);
     await userEvent.click(optional);
     expect(coverage.getByText(/1 selected · \d+ safety cases/)).not.toBeNull();
-    expect(coverage.queryByText('Select at least one Guardrail test pack before running the evaluation.')).toBeNull();
+    expect(coverage.queryByText('Choose at least one safety check before running the evaluation.')).toBeNull();
     await userEvent.click(drawer.getByRole('button', { name: 'Hide details' }));
     expect(drawer.getAllByRole('button', { name: 'Next' })).toHaveLength(1);
     expect(drawer.getByRole('region', { name: 'Current step: Evaluation' })).not.toBeNull();

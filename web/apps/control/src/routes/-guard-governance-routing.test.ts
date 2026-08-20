@@ -14,6 +14,10 @@ function matchRouteIds(pathname: string) {
 describe("Guard Governance routes", () => {
   it.each([
     ["/individual/governance/guardrails", "/$projectId/governance/guardrails/"],
+    [
+      "/individual/governance/guardrails/relay-preview",
+      "/$projectId/governance/guardrails/relay-preview",
+    ],
     ["/individual/governance/assignments", "/$projectId/governance/assignments"],
     ["/individual/governance/enforcements", "/$projectId/governance/enforcements"],
     ["/individual/governance/integrations", "/$projectId/governance/integrations"],

@@ -9,10 +9,12 @@ import type {
   GuardGovernanceState,
   GuardIntegration,
   Guardrail,
+  GuardrailCoverageRow,
   GuardrailAssignment,
   GuardrailTestCase,
   GuardrailTestRun,
   RegisterIntegrationInput,
+  SetGuardrailCoverageInput,
   TrafficScopeExpression,
   TrafficScopeRule,
 } from "./model";
@@ -39,6 +41,7 @@ export type GuardGovernanceStore = {
   runGuardrailTest: (guardrailId: string) => GuardrailTestRun;
   createAssignment: (input: CreateAssignmentInput) => string;
   toggleAssignment: (id: string, enabled: boolean) => void;
+  setGuardrailCoverage: (guardrailId: string, input: SetGuardrailCoverageInput) => void;
   registerIntegration: (input: RegisterIntegrationInput) => { integration: GuardIntegration; credential: string };
   toggleIntegration: (id: string, enabled: boolean) => void;
 };
@@ -172,6 +175,73 @@ export function createGuardGovernanceStore(
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    setGuardrailCoverage(guardrailId, input) {
+      const guardrail = guardrailById(guardrailId);
+      if (guardrail.systemManaged) {
+        throw new Error("System-managed Guardrail coverage cannot be edited");
+      }
+      const resourceKinds = [...new Set(input.resourceKinds)];
+      const directResourceIds = [...new Set(input.directResourceIds)].filter(
+        (resourceId) => state.resources.some((resource) => resource.id === resourceId),
+      );
+      const updatedAt = now();
+      const requirementId = resourceKinds.length ? id() : undefined;
+      const nextRequirements = [
+        ...state.coverageRequirements.filter((item) => item.guardrailId !== guardrailId),
+        ...(requirementId
+          ? [{
+              id: requirementId,
+              projectId: state.projectId,
+              guardrailId,
+              resourceKinds,
+              enabled: true,
+              systemManaged: false,
+              updatedAt,
+            }]
+          : []),
+      ];
+      const requiredResourceIds = new Set(
+        state.resources
+          .filter((resource) => resourceKinds.includes(resource.kind))
+          .map((resource) => resource.id),
+      );
+      const nextApplications = [
+        ...state.guardrailApplications.filter((item) => item.guardrailId !== guardrailId),
+        ...[...requiredResourceIds].map((resourceId) => ({
+          id: id(),
+          projectId: state.projectId,
+          guardrailId,
+          resourceId,
+          source: "REQUIREMENT" as const,
+          ...(requirementId ? { requirementId } : {}),
+          updatedAt,
+        })),
+        ...directResourceIds
+          .filter((resourceId) => !requiredResourceIds.has(resourceId))
+          .map((resourceId) => ({
+            id: id(),
+            projectId: state.projectId,
+            guardrailId,
+            resourceId,
+            source: "DIRECT" as const,
+            updatedAt,
+          })),
+      ];
+      state = {
+        ...state,
+        coverageRequirements: nextRequirements,
+        guardrailApplications: nextApplications,
+        auditEvents: [
+          audit(
+            "guardrail.coverage.updated",
+            `${guardrail.name} coverage updated for ${nextApplications.filter((item) => item.guardrailId === guardrailId).length} resources.`,
+            { guardrailId },
+          ),
+          ...state.auditEvents,
+        ],
+      };
+      emit();
     },
     analyzeIntent(purpose) {
       const normalized = required(purpose, "Business purpose");
@@ -461,6 +531,33 @@ export function createGuardGovernanceStore(
 
 export function readyGuardrails(state: GuardGovernanceState) {
   return state.guardrails.filter((item) => item.testedCurrent && item.activeVersion !== null && !item.systemManaged);
+}
+
+export function guardrailCoverageRows(
+  state: GuardGovernanceState,
+  guardrailId: string,
+): GuardrailCoverageRow[] {
+  const requirements = state.coverageRequirements.filter(
+    (item) => item.guardrailId === guardrailId && item.enabled,
+  );
+  const applications = state.guardrailApplications.filter(
+    (item) => item.guardrailId === guardrailId,
+  );
+  return state.resources.flatMap((resource) => {
+    const required = requirements.some((requirement) =>
+      requirement.resourceKinds.includes(resource.kind),
+    );
+    const application = applications.find(
+      (item) => item.resourceId === resource.id,
+    );
+    if (!required && !application) return [];
+    return [{
+      resource,
+      required,
+      applied: Boolean(application),
+      source: application?.source ?? "MISSING",
+    }];
+  });
 }
 
 export function effectiveEnforcements(state: GuardGovernanceState): EffectiveEnforcement[] {

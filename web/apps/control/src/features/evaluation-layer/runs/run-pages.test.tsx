@@ -51,7 +51,7 @@ describe('Evaluation run setup', () => {
 
     expect(screen.getByText('Test coverage')).not.toBeNull();
     expect(screen.getByRole('combobox', { name: 'Business Dataset' })).not.toBeNull();
-    const packs = screen.getByRole('group', { name: 'Guardrail Test Packs' });
+    const packs = screen.getByRole('group', { name: 'Safety checks' });
     const required = within(packs).getByRole('checkbox', { name: 'Select Universal Safety Baseline' }) as HTMLInputElement;
     const optional = within(packs).getByRole('checkbox', { name: 'Select Agent Prompt Injection' }) as HTMLInputElement;
     expect(required.checked).toBe(true);
@@ -65,6 +65,6 @@ describe('Evaluation run setup', () => {
     await userEvent.click(optional);
     expect(optional.checked).toBe(false);
     expect(within(packs).getByText(/1 selected · \d+ safety cases/)).not.toBeNull();
-    expect(within(packs).queryByText('Select at least one Guardrail test pack before running the evaluation.')).toBeNull();
+    expect(within(packs).queryByText('Choose at least one safety check before running the evaluation.')).toBeNull();
   });
 });

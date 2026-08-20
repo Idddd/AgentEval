@@ -22,6 +22,7 @@ export const evaluationLayerGuardrailTemplates: EvaluationLayerGuardrailTemplate
     version: "1.0.0",
     applicableTargetKinds: [...ALL_TARGET_KINDS],
     defaultFor: [...ALL_TARGET_KINDS],
+    required: true,
     cases: [
       {
         id: "guardrail-universal-sensitive-data",

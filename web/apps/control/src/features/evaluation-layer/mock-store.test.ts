@@ -90,6 +90,10 @@ describe("EvaluationLayerStore", () => {
       ...input,
       guardrailTemplateIds: ['guardrail-template-mcp-tool-authorization'],
     })).toMatchObject({ ok: false, code: 'CONFLICT' });
+    expect(store.createRun({
+      ...input,
+      guardrailTemplateIds: ['guardrail-template-agent-prompt-injection'],
+    })).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
   });
 
   it('merges business and selected Guardrail Test Pack cases into a Run', () => {

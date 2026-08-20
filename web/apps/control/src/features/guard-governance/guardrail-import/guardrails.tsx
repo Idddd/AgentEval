@@ -57,6 +57,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Textarea } from "./components/ui/textarea";
 import { queryKeys } from "./lib/query-keys";
+import { useGuardGovernanceState } from "../mock-provider";
+import {
+  coverageSummary,
+  GuardrailCoveragePanel,
+  GuardrailImpactSummary,
+  GuardrailScopeBadges,
+} from "./guardrail-coverage";
 import { useAuth } from "./lib/auth-compat";
 import { composeTemplates } from "./lib/template-composition";
 import type {
@@ -86,6 +93,7 @@ export function GuardrailsPage({ projectId }: { projectId: string }) {
   const api = useGuardrailApi();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const governanceState = useGuardGovernanceState();
   const guardrailsQuery = useQuery({
     queryKey: queryKeys.guardrails,
     queryFn: api.getGuardrails,
@@ -138,9 +146,18 @@ export function GuardrailsPage({ projectId }: { projectId: string }) {
       {guardrails.length ? (
         <section className="mt-5 overflow-hidden rounded-xl border bg-card shadow-xs">
           <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-5 py-3">
-            <p className="text-xs font-medium text-muted-foreground">
-              {t("guardrails.registry", { count: guardrails.length })}
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                {t("guardrails.registry", { count: guardrails.length })}
+              </p>
+              <Link
+                to="/$projectId/governance/guardrails/relay-preview"
+                params={{ projectId }}
+                className="text-[11px] text-muted-foreground/55 underline-offset-4 transition-colors hover:text-muted-foreground hover:underline"
+              >
+                Runtime reference
+              </Link>
+            </div>
             <p className="hidden text-xs text-muted-foreground sm:block">
               {t("guardrails.openGuardrailHint")}
             </p>
@@ -151,15 +168,10 @@ export function GuardrailsPage({ projectId }: { projectId: string }) {
                 <TableHead className="min-w-64 px-5">
                   {t("guardrails.guardrail")}
                 </TableHead>
-                <TableHead>{t("common.status")}</TableHead>
-                <TableHead className="hidden lg:table-cell">
-                  {t("guardrails.controls")}
-                </TableHead>
-                <TableHead>{t("guardrails.testEvidence")}</TableHead>
-                <TableHead className="hidden xl:table-cell">
-                  {t("guardrails.assignments")}
-                </TableHead>
-
+                <TableHead className="min-w-80">What it protects</TableHead>
+                <TableHead className="min-w-64">Policy scope</TableHead>
+                <TableHead className="min-w-56">Current impact</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="hidden xl:table-cell">
                   {t("guardrails.lastUpdated")}
                 </TableHead>
@@ -169,8 +181,9 @@ export function GuardrailsPage({ projectId }: { projectId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {guardrails.map((guardrail) => (
-                <TableRow key={guardrail.id} className="group">
+              {guardrails.map((guardrail) => {
+                const coverage = coverageSummary(governanceState, guardrail.id);
+                return <TableRow key={guardrail.id} className="group">
                   <TableCell className="px-5 py-4 whitespace-normal">
                     <Link
                       to="/$projectId/governance/guardrails/$guardrailId"
@@ -187,38 +200,19 @@ export function GuardrailsPage({ projectId }: { projectId: string }) {
                           </span>
                         ) : null}
                       </span>
-                      <span className="mt-1 block max-h-10 max-w-xl overflow-hidden text-xs leading-5 text-muted-foreground">
-                        {guardrailDisplayPurpose(guardrail, t)}
-                      </span>
                     </Link>
                   </TableCell>
+                  <TableCell className="whitespace-normal">
+                    <GuardrailPurposeSummary guardrail={guardrail} t={t} />
+                  </TableCell>
+                  <TableCell className="whitespace-normal">
+                    <GuardrailScopeBadges state={governanceState} guardrailId={guardrail.id} />
+                  </TableCell>
                   <TableCell>
-                    <StateBadge state={guardrail.status} />
-                  </TableCell>
-                  <TableCell className="hidden tabular-nums lg:table-cell">
-                    {guardrail.controls.length}
+                    <GuardrailImpactSummary state={governanceState} guardrailId={guardrail.id} />
                   </TableCell>
                   <TableCell>
-                    <p className="text-sm tabular-nums">
-                      {guardrail.system_managed
-                        ? t("guardrails.builtinVerified")
-                        : t("guardrails.testCount", {
-                            count: guardrail.test_case_count,
-                          })}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {guardrail.local_only
-                        ? t("guardrails.localOnly")
-                        : guardrail.latest_test_run
-                          ? t("guardrails.compliance", {
-                              rate: guardrail.latest_test_run.metrics
-                                .compliance_rate,
-                            })
-                          : t("guardrails.noEvidence")}
-                    </p>
-                  </TableCell>
-                  <TableCell className="hidden tabular-nums xl:table-cell">
-                    {guardrail.assignment_count}
+                    {guardrail.status === "needs_testing" ? <span className="text-sm font-medium text-amber-700">Needs testing</span> : coverage.gaps ? <span className="text-sm font-medium text-amber-700">{coverage.gaps} relationship{coverage.gaps === 1 ? "" : "s"} missing</span> : coverage.applied ? <span className="text-sm font-medium text-emerald-700">All protected</span> : <span className="text-sm text-muted-foreground">Not in use</span>}
                   </TableCell>
                   <TableCell className="hidden text-xs text-muted-foreground xl:table-cell">
                     {new Date(guardrail.updated_at).toLocaleDateString(
@@ -242,8 +236,8 @@ export function GuardrailsPage({ projectId }: { projectId: string }) {
                       </Link>
                     </Button>
                   </TableCell>
-                </TableRow>
-              ))}
+                </TableRow>;
+              })}
             </TableBody>
           </Table>
         </section>
@@ -310,6 +304,7 @@ function GuardrailDetail({
   const { t, i18n } = useTranslation();
   const api = useGuardrailApi();
   const queryClient = useQueryClient();
+  const governanceState = useGuardGovernanceState();
   const guardrailQuery = useQuery({
     queryKey: queryKeys.guardrail(guardrailId),
     queryFn: () => api.getGuardrail(guardrailId),
@@ -413,35 +408,7 @@ function GuardrailDetail({
                 : t("guardrails.customIntent")
           }
           title={guardrailDisplayName(guardrail, t)}
-          description={guardrailDisplayPurpose(guardrail, t)}
-          action={
-            guardrail.system_managed ? undefined : (
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  className="min-h-11"
-                  onClick={() => setEditOpen(true)}
-                >
-                  <Save />
-                  {t("guardrails.editIntent")}
-                </Button>
-                {!guardrail.tested_current ? (
-                  <Button
-                    className="min-h-11"
-                    disabled={test.isPending || !testCases.length}
-                    onClick={() => test.mutate()}
-                  >
-                    <FlaskConical />
-                    {t(
-                      test.isPending
-                        ? "guardrails.runningTests"
-                        : "guardrails.runReviewed",
-                      )}
-                  </Button>
-                ) : null}
-              </div>
-            )
-          }
+          description={guardrailPurposeHeadline(guardrail, t)}
         />
       </div>
 
@@ -464,50 +431,11 @@ function GuardrailDetail({
             })}
           </span>
         </div>
-        <WorkflowStatus guardrail={guardrail} testCaseCount={testCases.length} />
-
-        <div className="grid grid-cols-2 gap-3 border-b p-4 sm:grid-cols-3">
-          <Metric
-            label={t("guardrails.controls")}
-            value={guardrail.controls.length}
-            detail={t("guardrails.reviewedControls")}
-          />
-          <Metric
-            label={t("guardrails.testCases")}
-            value={
-              guardrail.system_managed
-                ? t("guardrails.builtin")
-                : testCases.length
-            }
-            detail={
-              guardrail.system_managed
-                ? t("guardrails.productManaged")
-                : t("guardrails.visibleEditable")
-            }
-          />
-          <Metric
-            label={t("guardrails.testStatus")}
-            value={t(
-              guardrail.system_managed
-                ? "guardrails.builtinVerified"
-                : guardrail.tested_current
-                  ? "guardrails.passed"
-                  : "guardrails.required",
-            )}
-            detail={
-              guardrail.local_only
-                ? t("guardrails.localOnly")
-                : guardrail.latest_test_run
-                  ? t("guardrails.compliance", {
-                      rate: guardrail.latest_test_run.metrics.compliance_rate,
-                    })
-                  : t("guardrails.noEvidence")
-            }
-          />
-        </div>
-
-        <Tabs defaultValue="intent" className="p-5 sm:p-6">
+        <Tabs defaultValue="coverage" className="p-5 sm:p-6">
           <TabsList className="h-auto min-h-10 w-full flex-wrap justify-start rounded-lg bg-muted p-1">
+            <TabsTrigger value="coverage" className="min-h-8 rounded-md px-3">
+              Coverage
+            </TabsTrigger>
             <TabsTrigger value="intent" className="min-h-8 rounded-md px-3">
               {t("guardrails.intent")}
             </TabsTrigger>
@@ -518,40 +446,41 @@ function GuardrailDetail({
               {t("guardrails.testCases")}
             </TabsTrigger>
             <TabsTrigger value="versions" className="min-h-8 rounded-md px-3">
-              {t("guardrails.versions")}
+              History
             </TabsTrigger>
           </TabsList>
 
+          <TabsContent value="coverage" className="mt-5">
+            <GuardrailCoveragePanel
+              guardrailId={guardrail.id}
+              systemManaged={guardrail.system_managed}
+            />
+          </TabsContent>
+
           <TabsContent
             value="intent"
-            className="mt-5 grid gap-5 xl:grid-cols-2"
+            className="mt-5 space-y-5"
           >
-            <TopicPanel
-              title={t("guardrails.allowedDomains")}
-              items={allowedTopics}
-              empty={t(
-                template
-                  ? "guardrails.templateDefined"
-                  : "guardrails.noAllowed",
-              )}
-            />
-            <TopicPanel
-              title={t("guardrails.restrictedDomains")}
-              items={restrictedTopics}
-              empty={t(
-                template
-                  ? "guardrails.templateDefined"
-                  : "guardrails.noRestricted",
-              )}
-              danger
-            />
-            <InfoNotice title={t("guardrails.runtimeBoundary")}>
-              {t(
-                guardrail.local_only
-                  ? "guardrails.defaultRuntimeBoundaryDescription"
-                  : "guardrails.runtimeBoundaryDescription",
-              )}
-            </InfoNotice>
+            {!guardrail.system_managed ? <div className="flex justify-end"><Button variant="outline" onClick={() => setEditOpen(true)}><Save />{t("guardrails.editIntent")}</Button></div> : null}
+            <section className="rounded-lg border bg-card p-4">
+              <h3 className="font-medium">Purpose</h3>
+              <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
+                {guardrailDisplayPurpose(guardrail, t)}
+              </p>
+            </section>
+            <div className="grid gap-5 xl:grid-cols-2">
+              <TopicPanel
+                title={t("guardrails.allowedDomains")}
+                items={allowedTopics}
+                empty={t(template ? "guardrails.templateDefined" : "guardrails.noAllowed")}
+              />
+              <TopicPanel
+                title={t("guardrails.restrictedDomains")}
+                items={restrictedTopics}
+                empty={t(template ? "guardrails.templateDefined" : "guardrails.noRestricted")}
+                danger
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="controls" className="mt-5 space-y-5">
@@ -766,65 +695,6 @@ function GuardrailVersions({
           </article>
         ))}
       </div>
-    </section>
-  );
-}
-
-function WorkflowStatus({
-  guardrail,
-  testCaseCount,
-}: {
-  guardrail: Guardrail;
-  testCaseCount: number;
-}) {
-  const { t } = useTranslation();
-  const steps = guardrail.system_managed
-    ? [
-        { label: t("guardrails.flowProductDefault"), complete: true },
-        { label: t("guardrails.flowLocalOnly"), complete: true },
-        { label: t("guardrails.flowBuiltinVerified"), complete: true },
-      ]
-    : [
-        {
-          label: t("guardrails.flowIntent"),
-          complete: Boolean(guardrail.purpose),
-        },
-        {
-          label: t("guardrails.flowControls"),
-          complete: guardrail.controls.length > 0,
-        },
-        {
-          label: t(
-            guardrail.tested_current
-              ? "guardrails.flowTestsPassed"
-              : "guardrails.flowTestsRun",
-            { count: testCaseCount },
-          ),
-          complete: guardrail.tested_current,
-        },
-      ];
-  return (
-    <section
-      aria-label={t("guardrails.workflowLabel")}
-      className="grid border-b bg-muted/20 sm:grid-cols-3"
-    >
-      {steps.map((step, index) => (
-        <div
-          key={step.label}
-          className="flex min-h-14 items-center gap-2 border-b px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"
-        >
-          <span
-            className={cn(
-              "grid size-6 shrink-0 place-items-center rounded-full border bg-card font-mono text-[10px] text-muted-foreground",
-              step.complete &&
-                "border-emerald-200 bg-emerald-50 text-emerald-700",
-            )}
-          >
-            {step.complete ? <Check className="size-3.5" /> : index + 1}
-          </span>
-          <span className="text-xs font-medium">{step.label}</span>
-        </div>
-      ))}
     </section>
   );
 }
@@ -2703,6 +2573,38 @@ function hasInvalidReasoningPolicy(risks: GuardrailControl[]) {
     policy.confidence_threshold > 1
   );
 }
+function GuardrailPurposeSummary({
+  guardrail,
+  t,
+}: {
+  guardrail: Guardrail;
+  t: TFunction;
+}) {
+  const risks = [...new Set(guardrail.controls.map((control) => control.risk))];
+  return (
+    <div className="max-w-md">
+      <div className="flex flex-wrap gap-1.5">
+        {risks.slice(0, 3).map((risk) => (
+          <span
+            key={risk}
+            className="rounded-md border bg-muted/35 px-2 py-1 text-[11px] font-medium"
+          >
+            {riskLabel(risk, t)}
+          </span>
+        ))}
+        {risks.length > 3 ? (
+          <span className="rounded-md border bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground">
+            +{risks.length - 3}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-2 max-h-10 overflow-hidden whitespace-normal text-xs leading-5 text-muted-foreground">
+        {guardrailDisplayPurpose(guardrail, t)}
+      </p>
+    </div>
+  );
+}
+
 function guardrailDisplayName(guardrail: Guardrail, t: TFunction) {
   return guardrail.is_default
     ? t("guardrails.defaultGuardrailName")
@@ -2712,6 +2614,14 @@ function guardrailDisplayPurpose(guardrail: Guardrail, t: TFunction) {
   return guardrail.is_default
     ? t("guardrails.defaultGuardrailPurpose")
     : guardrail.purpose;
+}
+function guardrailPurposeHeadline(guardrail: Guardrail, t: TFunction) {
+  const purpose = guardrailDisplayPurpose(guardrail, t).trim();
+  const firstSentenceEnd = purpose.search(/[.!?](?:\s|$)/);
+  const summary = firstSentenceEnd >= 0
+    ? purpose.slice(0, firstSentenceEnd + 1)
+    : purpose;
+  return summary.length > 220 ? `${summary.slice(0, 217).trimEnd()}...` : summary;
 }
 function deliveryLabel(value: string, t: TFunction) {
   return value === "interruptible"

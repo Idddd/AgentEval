@@ -103,6 +103,8 @@ export interface EvaluationLayerGuardrailTemplate {
   /** Historical snapshots remain resolvable by reports but are not selectable. */
   available?: boolean;
   required?: boolean;
+  /** Resource-type policy from Guardrails. Matching evaluations cannot remove it. */
+  requiredFor?: EvaluationLayerTargetKind[];
 }
 
 export interface EvaluationLayerRun {

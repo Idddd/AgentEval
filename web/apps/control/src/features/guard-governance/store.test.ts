@@ -4,9 +4,32 @@ import {
   createGuardGovernanceStore,
   effectiveEnforcements,
   filterEvidence,
+  guardrailCoverageRows,
 } from "./store";
 
 describe("Guard Governance store", () => {
+  it("shows coverage gaps and applies type requirements to current resources", () => {
+    const store = createGuardGovernanceStore(
+      cloneGuardGovernanceFixtures("individual"),
+      { id: (() => { let value = 0; return () => `coverage-${value++}`; })() },
+    );
+
+    expect(
+      guardrailCoverageRows(store.getState(), "guardrail-production")
+        .filter((row) => !row.applied)
+        .map((row) => row.resource.name),
+    ).toEqual(["Customer Service"]);
+
+    store.setGuardrailCoverage("guardrail-production", {
+      resourceKinds: ["agent", "mcp"],
+      directResourceIds: ["demo-policy-kb"],
+    });
+
+    const rows = guardrailCoverageRows(store.getState(), "guardrail-production");
+    expect(rows.filter((row) => !row.applied)).toEqual([]);
+    expect(rows.find((row) => row.resource.id === "demo-policy-kb")?.source).toBe("DIRECT");
+  });
+
   it("rejects an assignment until its Guardrail has an active tested version", () => {
     const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
 

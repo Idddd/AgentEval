@@ -563,7 +563,7 @@ function EvaluationPlanDetails({
               </div>
             </div>
             <div className='mt-3 border-t pt-3'>
-              <p className='text-xs text-muted-foreground'>Guardrail Test Packs</p>
+              <p className='text-xs text-muted-foreground'>Safety checks</p>
               {selectedGuardrailTemplates.length ? (
                 <div className='mt-2 grid gap-2 sm:grid-cols-2'>
                   {selectedGuardrailTemplates.map((template) => (
@@ -573,7 +573,7 @@ function EvaluationPlanDetails({
                     </div>
                   ))}
                 </div>
-              ) : <p className='mt-2 text-sm text-amber-700 dark:text-amber-300'>No Guardrail Test Packs selected.</p>}
+              ) : <p className='mt-2 text-sm text-amber-700 dark:text-amber-300'>No safety checks selected.</p>}
             </div>
           </section>
 
@@ -1235,8 +1235,8 @@ function WorkspaceDrawer({
     if (!selectedGuardrailTemplateIds.length && (!row.latestRun || row.stage === 'FAILED' || row.stage === 'NEEDS_RE_EVALUATION')) {
       return {
         tab: 'dataset',
-        label: 'Select Guardrail test packs',
-        description: 'At least one safety test pack is required for every evaluation.',
+        label: 'Review safety checks',
+        description: 'Required safety policies are selected automatically.',
       };
     }
     return nextStep;

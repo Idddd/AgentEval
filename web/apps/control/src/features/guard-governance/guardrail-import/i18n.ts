@@ -405,9 +405,9 @@ export const resources = {
         operationFailed: "The operation failed.",
       },
       guardrails: {
-        eyebrow: "Govern / model safety",
+        eyebrow: "Safety coverage",
         description:
-          "Turn enterprise safety intent into reviewed Controls, test evidence, and immutable Guardrail Versions.",
+          "See what is protected, fix coverage gaps, and manage safety rules.",
         create: "Create Guardrail",
         createShort: "Create Guardrail",
         createFirst: "Create first Guardrail",
@@ -1118,8 +1118,7 @@ export const resources = {
       },
       guardrails: {
         eyebrow: "治理 / 模型安全",
-        description:
-          "将企业安全意图转化为经过审查的 Control、测试证据和不可变 Guardrail Version。",
+        description: "查看保护范围、修复覆盖缺口并管理安全规则。",
         create: "创建 Guardrail",
         createShort: "创建 Guardrail",
         createFirst: "创建首个 Guardrail",

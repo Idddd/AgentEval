@@ -324,6 +324,45 @@ export type GuardrailAssignment = {
   updatedAt: string;
 };
 
+export type GovernedResourceKind = "agent" | "mcp" | "kb" | "skill";
+
+export type GovernedResource = {
+  id: string;
+  projectId: string;
+  kind: GovernedResourceKind;
+  name: string;
+  owner: string;
+  lifecycleStatus: "BUILDING" | "APPROVED" | "ACTIVE";
+};
+
+/** Business-level requirement. Runtime Traffic Assignments are compiled later. */
+export type GuardrailCoverageRequirement = {
+  id: string;
+  projectId: string;
+  guardrailId: string;
+  resourceKinds: GovernedResourceKind[];
+  enabled: boolean;
+  systemManaged: boolean;
+  updatedAt: string;
+};
+
+export type GuardrailApplication = {
+  id: string;
+  projectId: string;
+  guardrailId: string;
+  resourceId: string;
+  source: "REQUIREMENT" | "DIRECT";
+  requirementId?: string;
+  updatedAt: string;
+};
+
+export type GuardrailCoverageRow = {
+  resource: GovernedResource;
+  required: boolean;
+  applied: boolean;
+  source: GuardrailApplication["source"] | "MISSING";
+};
+
 export type GuardIntegration = {
   id: string;
   projectId: string;
@@ -392,6 +431,9 @@ export type GuardGovernanceState = {
   controlDefinitions: ControlDefinition[];
   trafficScopeFields: TrafficScopeFieldDefinition[];
   guardrails: Guardrail[];
+  resources: GovernedResource[];
+  coverageRequirements: GuardrailCoverageRequirement[];
+  guardrailApplications: GuardrailApplication[];
   versions: GuardrailVersion[];
   assignments: GuardrailAssignment[];
   integrations: GuardIntegration[];
@@ -434,6 +476,11 @@ export type CreateAssignmentInput = Pick<
   GuardrailAssignment,
   "name" | "guardrailId" | "priority" | "enabled" | "trafficScope"
 >;
+
+export type SetGuardrailCoverageInput = {
+  resourceKinds: GovernedResourceKind[];
+  directResourceIds: string[];
+};
 
 export type RegisterIntegrationInput = Pick<GuardIntegration, "name" | "protocol" | "environment"> & {
   description?: string;

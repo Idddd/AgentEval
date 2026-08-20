@@ -1198,6 +1198,23 @@ export function createEvaluationLayerStore(
           "CONFLICT",
         );
       }
+      const requiredGuardrailTemplateIds = state.guardrailTemplates
+        .filter(
+          (template) =>
+            template.available !== false &&
+            template.applicableTargetKinds.includes(targetRevision.kind) &&
+            (template.required || template.requiredFor?.includes(targetRevision.kind)),
+        )
+        .map((template) => template.id);
+      const missingRequiredGuardrail = requiredGuardrailTemplateIds.find(
+        (templateId) => !uniqueGuardrailTemplateIds.includes(templateId),
+      );
+      if (missingRequiredGuardrail) {
+        return fail(
+          "This evaluation is missing a required Guardrail.",
+          "INVALID_INPUT",
+        );
+      }
       const target = state.targets.find(
         (item) => item.id === targetRevision.targetId,
       );

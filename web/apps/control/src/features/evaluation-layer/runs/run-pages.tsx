@@ -44,10 +44,17 @@ function applicableGuardrailTemplates(
   );
 }
 
-function requiredGuardrailTemplateIds(templates: GuardrailTemplate[]) {
-  const universal = templates.find(
+function requiredGuardrailTemplateIds(
+  templates: GuardrailTemplate[],
+  targetKind: EvaluationLayerTargetKind,
+) {
+  const required = templates.filter(
     (template) =>
-      template.required || template.id === REQUIRED_GUARDRAIL_TEMPLATE_ID,
+      template.required || template.requiredFor?.includes(targetKind),
+  );
+  if (required.length) return required.map((template) => template.id);
+  const universal = templates.find(
+    (template) => template.id === REQUIRED_GUARDRAIL_TEMPLATE_ID,
   );
   return universal ? [universal.id] : templates.slice(0, 1).map((template) => template.id);
 }
@@ -58,7 +65,7 @@ export function guardrailTemplateIdsForTarget(
   previousIds?: readonly string[],
 ) {
   const applicable = applicableGuardrailTemplates(templates, targetKind);
-  const requiredIds = requiredGuardrailTemplateIds(applicable);
+  const requiredIds = requiredGuardrailTemplateIds(applicable, targetKind);
   if (previousIds) {
     const applicableIds = new Set(applicable.map((template) => template.id));
     return [...new Set([
@@ -88,7 +95,7 @@ export function GuardrailTemplatePicker({
   const state = useEvaluationLayerState();
   const projectId = useCurrentProjectId();
   const templates = applicableGuardrailTemplates(state.guardrailTemplates, targetKind);
-  const requiredIds = requiredGuardrailTemplateIds(templates);
+  const requiredIds = requiredGuardrailTemplateIds(templates, targetKind);
   const effectiveSelectedIds = [...new Set([...requiredIds, ...selectedIds])];
   const selected = templates.filter((template) => effectiveSelectedIds.includes(template.id));
   const caseCount = selected.reduce((sum, template) => sum + template.cases.length, 0);
@@ -100,16 +107,16 @@ export function GuardrailTemplatePicker({
   };
 
   return (
-    <fieldset aria-label='Guardrail Test Packs' className='space-y-3 rounded-lg border bg-card p-3 shadow-sm'>
-      <legend className='sr-only'>Guardrail Test Packs</legend>
+    <fieldset aria-label='Safety checks' className='space-y-3 rounded-lg border bg-card p-3 shadow-sm'>
+      <legend className='sr-only'>Safety checks</legend>
       <div className='flex flex-wrap items-start justify-between gap-2 border-b pb-3'>
         <div>
-          <p className='font-sans text-sm font-semibold'>Guardrail test packs</p>
-          <p className='mt-1 text-xs text-muted-foreground'>Synced from Guardrails. Select one or more packs to test this Agent.</p>
+          <p className='font-sans text-sm font-semibold'>Safety checks</p>
+          <p className='mt-1 text-xs text-muted-foreground'>Required checks come from your safety policies. Add optional checks if needed.</p>
         </div>
         <div className='flex items-center gap-2'>
           <Button asChild size='sm' variant='ghost'>
-            <a href={`/${projectId}/governance/guardrails`}>Manage Guardrails</a>
+            <a href={`/${projectId}/governance/guardrails`}>Review safety rules</a>
           </Button>
           <span className='rounded-full border bg-muted/35 px-2.5 py-1 text-xs font-medium text-muted-foreground'>
             {selected.length} selected · {caseCount} safety cases
@@ -142,7 +149,7 @@ export function GuardrailTemplatePicker({
                 <span className='min-w-0 flex-1'>
                   <span className='flex flex-wrap items-center gap-2 text-sm font-medium'>
                     {template.name}
-                    {required ? <span className='rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-700 dark:text-cyan-300'>Required</span> : <span className='rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground'>Optional</span>}
+                    {required ? <span className='rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-700 dark:text-cyan-300'>Required by policy</span> : <span className='rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground'>Optional</span>}
                     {!required && recommended ? <span className='rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300'>Recommended</span> : null}
                   </span>
                   <span className='mt-1 block text-xs text-muted-foreground'>{template.description}</span>
@@ -155,7 +162,7 @@ export function GuardrailTemplatePicker({
       ) : (
         <p className='rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm'>No tested Guardrail is available. Add test cases in Guardrails first.</p>
       )}
-      {!selected.length ? <p role='alert' className='text-xs font-medium text-amber-700 dark:text-amber-300'>Select at least one Guardrail test pack before running the evaluation.</p> : null}
+      {!selected.length ? <p role='alert' className='text-xs font-medium text-amber-700 dark:text-amber-300'>Choose at least one safety check before running the evaluation.</p> : null}
     </fieldset>
   );
 }

@@ -5,7 +5,10 @@ import { guardrailsToEvaluationTestPacks } from "./guardrail-test-pack-sync";
 describe("Guardrail Test Pack sync", () => {
   it("derives selectable evaluation packs from Guardrails and their test cases", () => {
     const governance = cloneGuardGovernanceFixtures("individual");
-    const packs = guardrailsToEvaluationTestPacks(governance.guardrails);
+    const packs = guardrailsToEvaluationTestPacks(
+      governance.guardrails,
+      governance.coverageRequirements,
+    );
 
     expect(packs.map((pack) => pack.id)).toEqual([
       "guardrail-default",
@@ -22,6 +25,9 @@ describe("Guardrail Test Pack sync", () => {
       }),
     );
     expect(packs[0]?.cases).toHaveLength(1);
+    expect(
+      packs.find((pack) => pack.id === "guardrail-production")?.requiredFor,
+    ).toEqual(["agent", "mcp"]);
     expect(packs[0]?.cases[0]).toEqual(
       expect.objectContaining({
         source: "guardrail:guardrail-default",

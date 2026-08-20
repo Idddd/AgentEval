@@ -4,6 +4,9 @@ import type {
   EvaluationCaseResult,
   GuardGovernanceState,
   GuardIntegration,
+  GovernedResource,
+  GuardrailApplication,
+  GuardrailCoverageRequirement,
   Guardrail,
   GuardrailAssignment,
   GuardrailTestCase,
@@ -754,6 +757,43 @@ function fixtureState(projectId: string): GuardGovernanceState {
     },
   ];
 
+  const resources: GovernedResource[] = [
+    { id: "demo-onboarding-assistant", projectId, kind: "agent", name: "Onboarding Assistant", owner: "People Operations", lifecycleStatus: "BUILDING" },
+    { id: "demo-deployment-monitor", projectId, kind: "agent", name: "Deployment Monitor", owner: "Platform Operations", lifecycleStatus: "ACTIVE" },
+    { id: "demo-permission-compliance", projectId, kind: "agent", name: "Office Assistant", owner: "Workplace Technology", lifecycleStatus: "APPROVED" },
+    { id: "demo-permission-compliance-baseline", projectId, kind: "agent", name: "Customer Service", owner: "Customer Operations", lifecycleStatus: "ACTIVE" },
+    { id: "demo-operations-mcp", projectId, kind: "mcp", name: "Operations MCP", owner: "Platform Operations", lifecycleStatus: "ACTIVE" },
+    { id: "demo-policy-kb", projectId, kind: "kb", name: "Permission Policy KB", owner: "ISS", lifecycleStatus: "ACTIVE" },
+    { id: "demo-document-summarization", projectId, kind: "skill", name: "Document Summarization", owner: "People Operations", lifecycleStatus: "APPROVED" },
+  ];
+
+  const coverageRequirements: GuardrailCoverageRequirement[] = [
+    { id: "coverage-default", projectId, guardrailId: "guardrail-default", resourceKinds: ["agent", "mcp", "kb", "skill"], enabled: true, systemManaged: true, updatedAt: EARLIER_TIME },
+    { id: "coverage-production", projectId, guardrailId: "guardrail-production", resourceKinds: ["agent", "mcp"], enabled: true, systemManaged: false, updatedAt: FIXTURE_TIME },
+  ];
+
+  const guardrailApplications: GuardrailApplication[] = [
+    ...resources.map((resource) => ({
+      id: `application-default-${resource.id}`,
+      projectId,
+      guardrailId: "guardrail-default",
+      resourceId: resource.id,
+      source: "REQUIREMENT" as const,
+      requirementId: "coverage-default",
+      updatedAt: EARLIER_TIME,
+    })),
+    ...["demo-onboarding-assistant", "demo-deployment-monitor", "demo-permission-compliance", "demo-operations-mcp"].map((resourceId) => ({
+      id: `application-production-${resourceId}`,
+      projectId,
+      guardrailId: "guardrail-production",
+      resourceId,
+      source: "REQUIREMENT" as const,
+      requirementId: "coverage-production",
+      updatedAt: FIXTURE_TIME,
+    })),
+    { id: "application-claims-customer-service", projectId, guardrailId: "guardrail-draft", resourceId: "demo-permission-compliance-baseline", source: "DIRECT", updatedAt: FIXTURE_TIME },
+  ];
+
   const assignments: GuardrailAssignment[] = [
     {
       id: "assignment-default",
@@ -1083,6 +1123,9 @@ function fixtureState(projectId: string): GuardGovernanceState {
     controlDefinitions: structuredClone(controlDefinitions),
     trafficScopeFields: structuredClone(trafficScopeFields),
     guardrails,
+    resources,
+    coverageRequirements,
+    guardrailApplications,
     versions,
     assignments,
     integrations,

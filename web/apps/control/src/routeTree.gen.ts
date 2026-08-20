@@ -63,6 +63,7 @@ import { Route as ProjectIdEvaluationsRunsRunIdRouteImport } from './routes/$pro
 import { Route as ProjectIdEvaluationsTargetsTargetIdRouteImport } from './routes/$projectId/evaluations/targets/$targetId'
 import { Route as ProjectIdGovernanceGuardrailsIndexRouteImport } from './routes/$projectId/governance/guardrails/index'
 import { Route as ProjectIdGovernanceGuardrailsGuardrailIdRouteImport } from './routes/$projectId/governance/guardrails/$guardrailId'
+import { Route as ProjectIdGovernanceGuardrailsRelayPreviewRouteImport } from './routes/$projectId/governance/guardrails/relay-preview'
 import { Route as ProjectIdSettingModelRoutingsRoutingIdRouteImport } from './routes/$projectId/setting/model-routings/$routingId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -368,6 +369,12 @@ const ProjectIdGovernanceGuardrailsGuardrailIdRoute =
     path: '/guardrails/$guardrailId',
     getParentRoute: () => ProjectIdGovernanceRoute,
   } as any)
+const ProjectIdGovernanceGuardrailsRelayPreviewRoute =
+  ProjectIdGovernanceGuardrailsRelayPreviewRouteImport.update({
+    id: '/guardrails/relay-preview',
+    path: '/guardrails/relay-preview',
+    getParentRoute: () => ProjectIdGovernanceRoute,
+  } as any)
 const ProjectIdSettingModelRoutingsRoutingIdRoute =
   ProjectIdSettingModelRoutingsRoutingIdRouteImport.update({
     id: '/$projectId/setting/model-routings/$routingId',
@@ -425,6 +432,7 @@ export interface FileRoutesByFullPath {
   '/$projectId/evaluations/runs/$runId': typeof ProjectIdEvaluationsRunsRunIdRoute
   '/$projectId/evaluations/targets/$targetId': typeof ProjectIdEvaluationsTargetsTargetIdRoute
   '/$projectId/governance/guardrails/$guardrailId': typeof ProjectIdGovernanceGuardrailsGuardrailIdRoute
+  '/$projectId/governance/guardrails/relay-preview': typeof ProjectIdGovernanceGuardrailsRelayPreviewRoute
   '/$projectId/setting/model-routings/$routingId': typeof ProjectIdSettingModelRoutingsRoutingIdRoute
   '/$projectId/evaluation/datasets/': typeof ProjectIdEvaluationDatasetsIndexRoute
   '/$projectId/evaluation/runs/': typeof ProjectIdEvaluationRunsIndexRoute
@@ -481,6 +489,7 @@ export interface FileRoutesByTo {
   '/$projectId/evaluations/runs/$runId': typeof ProjectIdEvaluationsRunsRunIdRoute
   '/$projectId/evaluations/targets/$targetId': typeof ProjectIdEvaluationsTargetsTargetIdRoute
   '/$projectId/governance/guardrails/$guardrailId': typeof ProjectIdGovernanceGuardrailsGuardrailIdRoute
+  '/$projectId/governance/guardrails/relay-preview': typeof ProjectIdGovernanceGuardrailsRelayPreviewRoute
   '/$projectId/setting/model-routings/$routingId': typeof ProjectIdSettingModelRoutingsRoutingIdRoute
   '/$projectId/evaluation/datasets': typeof ProjectIdEvaluationDatasetsIndexRoute
   '/$projectId/evaluation/runs': typeof ProjectIdEvaluationRunsIndexRoute
@@ -539,6 +548,7 @@ export interface FileRoutesById {
   '/$projectId/evaluations/runs/$runId': typeof ProjectIdEvaluationsRunsRunIdRoute
   '/$projectId/evaluations/targets/$targetId': typeof ProjectIdEvaluationsTargetsTargetIdRoute
   '/$projectId/governance/guardrails/$guardrailId': typeof ProjectIdGovernanceGuardrailsGuardrailIdRoute
+  '/$projectId/governance/guardrails/relay-preview': typeof ProjectIdGovernanceGuardrailsRelayPreviewRoute
   '/$projectId/setting/model-routings/$routingId': typeof ProjectIdSettingModelRoutingsRoutingIdRoute
   '/$projectId/evaluation/datasets/': typeof ProjectIdEvaluationDatasetsIndexRoute
   '/$projectId/evaluation/runs/': typeof ProjectIdEvaluationRunsIndexRoute
@@ -598,6 +608,7 @@ export interface FileRouteTypes {
     | '/$projectId/evaluations/runs/$runId'
     | '/$projectId/evaluations/targets/$targetId'
     | '/$projectId/governance/guardrails/$guardrailId'
+    | '/$projectId/governance/guardrails/relay-preview'
     | '/$projectId/setting/model-routings/$routingId'
     | '/$projectId/evaluation/datasets/'
     | '/$projectId/evaluation/runs/'
@@ -654,6 +665,7 @@ export interface FileRouteTypes {
     | '/$projectId/evaluations/runs/$runId'
     | '/$projectId/evaluations/targets/$targetId'
     | '/$projectId/governance/guardrails/$guardrailId'
+    | '/$projectId/governance/guardrails/relay-preview'
     | '/$projectId/setting/model-routings/$routingId'
     | '/$projectId/evaluation/datasets'
     | '/$projectId/evaluation/runs'
@@ -711,6 +723,7 @@ export interface FileRouteTypes {
     | '/$projectId/evaluations/runs/$runId'
     | '/$projectId/evaluations/targets/$targetId'
     | '/$projectId/governance/guardrails/$guardrailId'
+    | '/$projectId/governance/guardrails/relay-preview'
     | '/$projectId/setting/model-routings/$routingId'
     | '/$projectId/evaluation/datasets/'
     | '/$projectId/evaluation/runs/'
@@ -1135,6 +1148,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectIdGovernanceGuardrailsGuardrailIdRouteImport
       parentRoute: typeof ProjectIdGovernanceRoute
     }
+    '/$projectId/governance/guardrails/relay-preview': {
+      id: '/$projectId/governance/guardrails/relay-preview'
+      path: '/guardrails/relay-preview'
+      fullPath: '/$projectId/governance/guardrails/relay-preview'
+      preLoaderRoute: typeof ProjectIdGovernanceGuardrailsRelayPreviewRouteImport
+      parentRoute: typeof ProjectIdGovernanceRoute
+    }
     '/$projectId/setting/model-routings/$routingId': {
       id: '/$projectId/setting/model-routings/$routingId'
       path: '/$projectId/setting/model-routings/$routingId'
@@ -1195,6 +1215,7 @@ interface ProjectIdGovernanceRouteChildren {
   ProjectIdGovernanceEvidenceRoute: typeof ProjectIdGovernanceEvidenceRoute
   ProjectIdGovernanceIntegrationsRoute: typeof ProjectIdGovernanceIntegrationsRoute
   ProjectIdGovernanceGuardrailsGuardrailIdRoute: typeof ProjectIdGovernanceGuardrailsGuardrailIdRoute
+  ProjectIdGovernanceGuardrailsRelayPreviewRoute: typeof ProjectIdGovernanceGuardrailsRelayPreviewRoute
   ProjectIdGovernanceGuardrailsIndexRoute: typeof ProjectIdGovernanceGuardrailsIndexRoute
 }
 
@@ -1205,6 +1226,8 @@ const ProjectIdGovernanceRouteChildren: ProjectIdGovernanceRouteChildren = {
   ProjectIdGovernanceIntegrationsRoute: ProjectIdGovernanceIntegrationsRoute,
   ProjectIdGovernanceGuardrailsGuardrailIdRoute:
     ProjectIdGovernanceGuardrailsGuardrailIdRoute,
+  ProjectIdGovernanceGuardrailsRelayPreviewRoute:
+    ProjectIdGovernanceGuardrailsRelayPreviewRoute,
   ProjectIdGovernanceGuardrailsIndexRoute:
     ProjectIdGovernanceGuardrailsIndexRoute,
 }
