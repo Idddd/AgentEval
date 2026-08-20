@@ -1,18 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { EvaluationLayerPageFrame } from "@/features/evaluation-layer/shared/evaluation-page-frame";
-import { EvaluationOverviewPage } from "@/features/evaluation-layer/overview/overview-page";
+import { MonitorPage } from "@/features/demo-workflow/monitor/monitor-page";
 
-export const productionMonitoringDescription =
-  "Track live traffic telemetry to detect response quality and alert.";
+export const monitorDescription =
+  "Track adoption, business outcomes, approvals, and safety signals for this demo session.";
 
 export const Route = createFileRoute("/$projectId/evaluation/overview")({
   component: EvaluationOverview,
 });
 
 function EvaluationOverview() {
-  return (
-    <EvaluationLayerPageFrame title="Production Monitoring" description={productionMonitoringDescription}>
-      <EvaluationOverviewPage />
-    </EvaluationLayerPageFrame>
-  );
+  return <MonitorPage />;
 }

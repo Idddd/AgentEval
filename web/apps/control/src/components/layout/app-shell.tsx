@@ -2,7 +2,6 @@ import { Fragment, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
-  Activity,
   Boxes,
   Bot,
   ChartNoAxesCombined,
@@ -73,6 +72,9 @@ import { GuardGovernanceProvider } from "@/features/guard-governance/mock-provid
 type ProjectRoute =
   | "/$projectId/agent-garden"
   | "/$projectId/cost"
+  | "/$projectId/create"
+  | "/$projectId/builds"
+  | "/$projectId/technical-validation"
   | "/$projectId/traces"
   | "/$projectId/evaluations"
   | "/$projectId/evaluation/catalog"
@@ -119,7 +121,7 @@ export const projectNavGroups: Array<{
         icon: Bot,
         label: "Agent Garden",
         to: "/$projectId/agent-garden",
-        personas: ["admin", "agent-wizard", "end-user"],
+        personas: ["end-user"],
       },
       {
         icon: Boxes,
@@ -129,13 +131,25 @@ export const projectNavGroups: Array<{
       },
       {
         icon: Sparkles,
+        label: "Create",
+        to: "/$projectId/create",
+        personas: ["agent-wizard"],
+      },
+      {
+        icon: Bot,
         label: "My Builds",
-        to: "/$projectId/evaluation/catalog",
+        to: "/$projectId/builds",
         personas: ["agent-wizard"],
       },
       {
         icon: CheckCircle2,
-        label: "Reviews",
+        label: "Technical Validation",
+        to: "/$projectId/technical-validation",
+        personas: ["agent-wizard"],
+      },
+      {
+        icon: CheckCircle2,
+        label: "Eval",
         to: "/$projectId/evaluation/catalog",
         personas: ["admin"],
       },
@@ -146,14 +160,8 @@ export const projectNavGroups: Array<{
         personas: ["admin"],
       },
       {
-        icon: Activity,
-        label: "Behavior",
-        to: "/$projectId/evaluation/behavior",
-        personas: ["admin"],
-      },
-      {
         icon: ChartNoAxesCombined,
-        label: "Production Monitoring",
+        label: "Monitor",
         to: "/$projectId/evaluation/overview",
         personas: ["admin"],
       },
@@ -163,13 +171,11 @@ export const projectNavGroups: Array<{
 
 const PERSONA_NAV_ORDER: Record<DemoPersona, string[]> = {
   admin: [
-    "Reviews",
+    "Eval",
     "Guardrails",
-    "Behavior",
-    "Production Monitoring",
-    "Agent Garden",
+    "Monitor",
   ],
-  "agent-wizard": ["My Builds", "Agent Garden"],
+  "agent-wizard": ["Create", "My Builds", "Technical Validation"],
   "end-user": ["Agent Garden", "My Instances"],
 };
 
@@ -192,12 +198,7 @@ export function visibleProjectNavGroups(
 export function itemIsActive(item: NavItemDefinition, pathname: string, projectId: string) {
   const target = item.to.replace("$projectId", encodeURIComponent(projectId));
   if (item.to === "/$projectId/evaluation/catalog") {
-    const evaluationRoot = `/${encodeURIComponent(projectId)}/evaluation`;
-    return (
-      pathname.startsWith(evaluationRoot) &&
-      pathname !== `${evaluationRoot}/behavior` &&
-      pathname !== `${evaluationRoot}/overview`
-    );
+    return pathname === target;
   }
   if (
     item.to === "/$projectId/instances" ||
@@ -280,7 +281,7 @@ function ProjectSidebar({ logout, pathname, user }: {
       <Sidebar collapsible="icon">
         <SidebarHeader className="gap-1.5 border-b border-sidebar-border p-2">
           <Link
-            to={persona === "end-user" ? "/$projectId/agent-garden" : "/$projectId/evaluation/catalog"}
+            to={persona === "end-user" ? "/$projectId/agent-garden" : persona === "agent-wizard" ? "/$projectId/create" : "/$projectId/evaluation/catalog"}
             params={{ projectId }}
             onClick={() => setOpenMobile(false)}
             className="flex min-h-11 min-w-0 items-center gap-3 px-2 focus-visible:outline-2 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"

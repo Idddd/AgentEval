@@ -23,26 +23,28 @@ describe("role lifecycle navigation", () => {
   });
 
   it("gives Agent Wizard one build lifecycle plus the published garden", () => {
-    expect(labelsFor("agent-wizard")).toEqual(["My Builds", "Agent Garden"]);
+    expect(labelsFor("agent-wizard")).toEqual([
+      "Create",
+      "My Builds",
+      "Technical Validation",
+    ]);
   });
 
   it("gives Admin review, governance, monitoring, and published catalog surfaces", () => {
     expect(labelsFor("admin")).toEqual([
-      "Reviews",
+      "Eval",
       "Guardrails",
-      "Behavior",
-      "Production Monitoring",
-      "Agent Garden",
+      "Monitor",
     ]);
   });
 
   it("keeps the lifecycle navigation active throughout evaluation detail routes", () => {
-    expect(itemIsActive(navItem("Reviews"), "/individual/evaluation/catalog", "individual")).toBe(true);
-    expect(itemIsActive(navItem("Reviews"), "/individual/evaluation/targets/demo", "individual")).toBe(true);
-    expect(itemIsActive(navItem("Reviews"), "/individual/evaluation/behavior", "individual")).toBe(false);
-    expect(itemIsActive(navItem("Behavior"), "/individual/evaluation/behavior", "individual")).toBe(true);
-    expect(itemIsActive(navItem("Reviews"), "/individual/evaluation/overview", "individual")).toBe(false);
-    expect(itemIsActive(navItem("Production Monitoring"), "/individual/evaluation/overview", "individual")).toBe(true);
+    expect(itemIsActive(navItem("Eval"), "/individual/evaluation/catalog", "individual")).toBe(true);
+    expect(itemIsActive(navItem("Eval"), "/individual/evaluation/overview", "individual")).toBe(false);
+    expect(itemIsActive(navItem("Monitor"), "/individual/evaluation/overview", "individual")).toBe(true);
+    expect(itemIsActive(navItem("Create"), "/individual/create", "individual")).toBe(true);
+    expect(itemIsActive(navItem("My Builds"), "/individual/builds", "individual")).toBe(true);
+    expect(itemIsActive(navItem("Technical Validation"), "/individual/technical-validation", "individual")).toBe(true);
   });
 
   it("keeps Guardrails active on its detail pages", () => {

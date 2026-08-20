@@ -100,7 +100,7 @@ describe("getHeaderBreadcrumbItems", () => {
       { href: "/individual/evaluation", label: "Evaluation" },
       {
         href: "/individual/evaluation/overview",
-        label: "Production Monitoring",
+        label: "Monitor",
       },
     ]);
     expect(

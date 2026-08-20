@@ -69,7 +69,7 @@ export function getHeaderBreadcrumbItems(pathname: string): HeaderBreadcrumbItem
       targets: "Agent",
       datasets: "Test Case",
       runs: "Evaluation",
-      overview: "Production Monitoring",
+      overview: "Monitor",
       traces: "Trace",
       settings: "Settings",
     };
