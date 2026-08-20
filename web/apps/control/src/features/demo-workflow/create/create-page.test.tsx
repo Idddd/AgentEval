@@ -2,6 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
+import { EvaluationLayerProvider } from "@/features/evaluation-layer/mock-provider";
 import { DemoWorkflowProvider } from "../provider";
 import { createDemoWorkflowStore } from "../store";
 import type { DemoWorkflowDependencies } from "../model";
@@ -18,14 +19,37 @@ function dependencies(): DemoWorkflowDependencies {
   };
 }
 
+function renderCreatePage(store: ReturnType<typeof createDemoWorkflowStore>) {
+  return render(
+    <EvaluationLayerProvider projectId="individual">
+      <DemoWorkflowProvider projectId="individual" store={store}>
+        <CreatePage />
+      </DemoWorkflowProvider>
+    </EvaluationLayerProvider>,
+  );
+}
+
+it("shows the existing Evaluate Agents as default Build cases", () => {
+  const store = createDemoWorkflowStore("individual", dependencies());
+  renderCreatePage(store);
+
+  expect(screen.getByRole("heading", { name: "Default cases" })).not.toBeNull();
+  for (const name of [
+    "Office Assistant",
+    "Customer Service",
+    "Onboarding Assistant",
+    "Deployment Monitor",
+    "Sample Security Assistant",
+  ]) {
+    expect(screen.getByText(name)).not.toBeNull();
+  }
+  expect(screen.getByText("Session drafts")).not.toBeNull();
+});
+
 it("creates prefilled technical resources and an Agent draft in memory", async () => {
   const user = userEvent.setup();
   const store = createDemoWorkflowStore("individual", dependencies());
-  render(
-    <DemoWorkflowProvider projectId="individual" store={store}>
-      <CreatePage />
-    </DemoWorkflowProvider>,
-  );
+  renderCreatePage(store);
 
   await user.click(screen.getByRole("tab", { name: "MCP Server" }));
   await user.click(screen.getByRole("button", { name: "Create MCP Server" }));
@@ -69,11 +93,7 @@ it("shows duplicate-name validation without losing the prefilled form", async ()
     { name: "Case Resolution", description: "Existing skill" },
     "agent-wizard",
   );
-  render(
-    <DemoWorkflowProvider projectId="individual" store={store}>
-      <CreatePage />
-    </DemoWorkflowProvider>,
-  );
+  renderCreatePage(store);
 
   await user.click(screen.getByRole("tab", { name: "Skill" }));
   await user.click(screen.getByRole("button", { name: "Create Skill" }));
@@ -86,11 +106,7 @@ it("shows duplicate-name validation without losing the prefilled form", async ()
 it("combines Create and My Builds under one Build workspace", async () => {
   const user = userEvent.setup();
   const store = createDemoWorkflowStore("individual", dependencies());
-  render(
-    <DemoWorkflowProvider projectId="individual" store={store}>
-      <CreatePage />
-    </DemoWorkflowProvider>,
-  );
+  renderCreatePage(store);
 
   expect(screen.getByRole("heading", { name: "Build" })).not.toBeNull();
   expect(screen.getByRole("tab", { name: "Create" }).getAttribute("data-state")).toBe("active");

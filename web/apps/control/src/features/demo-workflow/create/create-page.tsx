@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useEvaluationLayerState } from "@/features/evaluation-layer/mock-provider";
 import { useDemoWorkflowState, useDemoWorkflowStore } from "../provider";
 import type { DemoKnowledgeBase, DemoMcpServer, DemoSkill } from "../model";
 import { AgentForm } from "./agent-form";
@@ -26,6 +27,7 @@ const tabs = [
 
 function CreateWorkspaceContent() {
   const state = useDemoWorkflowState();
+  const evaluationState = useEvaluationLayerState();
   const store = useDemoWorkflowStore();
   const [tab, setTab] = useState<(typeof tabs)[number]["value"]>("agent");
   const [resourceDialog, setResourceDialog] = useState<ResourceFormKind | null>(null);
@@ -41,6 +43,20 @@ function CreateWorkspaceContent() {
       "knowledge-base": state.knowledgeBases,
     }),
     [state.knowledgeBases, state.mcpServers, state.skills],
+  );
+  const defaultAgentCases = useMemo(
+    () => evaluationState.targets
+      .filter((target) => target.kind === "agent" && target.id.startsWith("demo-"))
+      .map((target) => {
+        const revision = evaluationState.targetRevisions.find(
+          (item) => item.id === target.currentRevisionId,
+        );
+        const latestRun = [...evaluationState.runs]
+          .filter((run) => run.targetRevisionId === target.currentRevisionId)
+          .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
+        return { target, revision, latestRun };
+      }),
+    [evaluationState.runs, evaluationState.targetRevisions, evaluationState.targets],
   );
 
   const saveResource = (kind: ResourceFormKind, value: ResourceFormValue) => {
@@ -94,12 +110,51 @@ function CreateWorkspaceContent() {
 
         <TabsContent value="agent" className="mt-5">
           <SectionHeader title="Agents" description="Assemble runtime configuration and attach the session resources this Agent needs." action={<Button onClick={() => setAgentOpen(true)}><Plus />Create Agent</Button>} />
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            {state.agents.filter((agent) => agent.source === "SESSION").map((agent) => {
-              const revision = state.agentRevisions.find((item) => item.id === agent.activeDraftRevisionId);
-              return <Card key={agent.id}><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-lg">{agent.name}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{agent.description}</p></div><Badge variant="outline" className="border-primary/30 text-primary">SESSION</Badge></div></CardHeader><CardContent className="grid gap-3 text-sm sm:grid-cols-2"><Detail label="Owner" value={agent.owner} /><Detail label="Revision" value={`R${revision?.revision ?? 1} · ${revision?.status ?? "DRAFT"}`} /><Detail label="Runtime" value={revision?.runtimeType ?? "—"} /><Detail label="Dependencies" value={`${revision?.mcpIds.length ?? 0} MCP · ${revision?.skillIds.length ?? 0} Skills · ${revision?.knowledgeBaseIds.length ?? 0} KB`} /></CardContent></Card>;
-            })}
-            {!state.agents.some((agent) => agent.source === "SESSION") ? <Empty title="No session Agent drafts" description="Create the supporting resources, then assemble your first Agent." /> : null}
+          <div className="mt-5 space-y-7">
+            <section className="space-y-4" aria-labelledby="default-agent-cases">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h3 id="default-agent-cases" className="text-lg font-semibold">Default cases</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">Existing Agent cases already available in Evaluate.</p>
+                </div>
+                <Badge variant="secondary">{defaultAgentCases.length} cases</Badge>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                {defaultAgentCases.map(({ target, revision, latestRun }) => (
+                  <Card key={target.id} className="bg-muted/15">
+                    <CardHeader>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <CardTitle className="text-lg">{target.name}</CardTitle>
+                          <p className="mt-1 text-sm text-muted-foreground">{target.description}</p>
+                        </div>
+                        <Badge variant="outline">DEFAULT</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+                      <Detail label="Revision" value={`R${revision?.revision ?? 1}`} />
+                      <Detail label="Evaluate status" value={formatEvaluationStatus(latestRun?.status)} />
+                      <Detail label="Runtime" value={revision?.adapter ?? revision?.model ?? "Demo runtime"} />
+                      <Detail label="Tools" value={`${revision?.tools.length ?? 0} configured`} />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+
+            <section className="space-y-4 border-t pt-6" aria-labelledby="session-agent-drafts">
+              <div>
+                <h3 id="session-agent-drafts" className="text-lg font-semibold">Session drafts</h3>
+                <p className="mt-1 text-sm text-muted-foreground">New Agents stay in Build until you mark a revision ready for Evaluate from My Builds.</p>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                {state.agents.filter((agent) => agent.source === "SESSION").map((agent) => {
+                  const revision = state.agentRevisions.find((item) => item.id === agent.activeDraftRevisionId);
+                  return <Card key={agent.id}><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-lg">{agent.name}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{agent.description}</p></div><Badge variant="outline" className="border-primary/30 text-primary">SESSION</Badge></div></CardHeader><CardContent className="grid gap-3 text-sm sm:grid-cols-2"><Detail label="Owner" value={agent.owner} /><Detail label="Revision" value={`R${revision?.revision ?? 1} · ${revision?.status ?? "DRAFT"}`} /><Detail label="Runtime" value={revision?.runtimeType ?? "—"} /><Detail label="Dependencies" value={`${revision?.mcpIds.length ?? 0} MCP · ${revision?.skillIds.length ?? 0} Skills · ${revision?.knowledgeBaseIds.length ?? 0} KB`} /></CardContent></Card>;
+                })}
+                {!state.agents.some((agent) => agent.source === "SESSION") ? <Empty title="No session Agent drafts" description="Create the supporting resources, then assemble your first Agent." /> : null}
+              </div>
+            </section>
           </div>
         </TabsContent>
 
@@ -150,5 +205,6 @@ export function CreatePage({
 function Metric({ label, value }: { label: string; value: number }) { return <Card><CardContent className="p-5"><span className="text-xs uppercase tracking-wider text-muted-foreground">{label}</span><strong className="mt-2 block text-3xl tabular-nums">{value}</strong></CardContent></Card>; }
 function SectionHeader({ title, description, action }: { title: string; description: string; action: React.ReactNode }) { return <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-xl font-semibold">{title}</h2><p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p></div>{action}</div>; }
 function Detail({ label, value }: { label: string; value: string }) { return <div><span className="text-xs text-muted-foreground">{label}</span><strong className="mt-1 block font-medium">{value}</strong></div>; }
+function formatEvaluationStatus(status?: string) { return status ? status.charAt(0) + status.slice(1).toLowerCase() : "Not evaluated"; }
 function Empty({ title, description }: { title: string; description: string }) { return <Card className="border-dashed lg:col-span-2"><CardContent className="grid min-h-40 place-items-center p-8 text-center"><div><strong>{title}</strong><p className="mt-1 text-sm text-muted-foreground">{description}</p></div></CardContent></Card>; }
 function ResourceCard({ resource, onEdit, onDelete }: { resource: Resource; onEdit(): void; onDelete(): void }) { const detail = "endpoint" in resource ? resource.endpoint : "sourceType" in resource ? resource.sourceType : resource.description; return <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-base">{resource.name}</CardTitle><p className="mt-1 break-all text-sm text-muted-foreground">{detail}</p></div><Badge variant="outline" className="border-primary/30 text-primary">SESSION</Badge></div></CardHeader><CardContent className="flex justify-end gap-2"><Button variant="outline" onClick={onEdit}>Edit</Button><Button variant="ghost" size="icon" aria-label={`Delete ${resource.name}`} onClick={onDelete}><Trash2 className="size-4" /></Button></CardContent></Card>; }

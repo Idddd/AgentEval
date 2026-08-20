@@ -78,6 +78,38 @@ function scheduler() {
 }
 
 describe("complete session demo workflow", () => {
+  it("keeps a newly added Agent in Build until it is ready for Evaluate", () => {
+    const { workflow, evaluation, bridge } = createBridgeStores();
+    const agent = workflow.createAgent(
+      {
+        name: "Returns Triage Assistant",
+        owner: "Customer Operations",
+        description: "Triages return requests against approved policy.",
+        businessOutcome: "Resolve valid returns faster",
+        targetUsers: "Customer support specialists",
+        typicalScenarios: ["Return eligibility"],
+        runtimeType: "Managed interactive",
+        model: "Demo reasoning model",
+        endpoint: "https://demo.invalid/returns",
+        mcpIds: [],
+        skillIds: [],
+        knowledgeBaseIds: [],
+      },
+      "agent-wizard",
+    );
+    const revision = workflow.getState().agentRevisions.find((item) => item.agentId === agent.id)!;
+
+    bridge.sync();
+
+    expect(bridge.evaluationTargetIdFor(revision.id)).toBeNull();
+    expect(evaluation.getState().targets.some((item) => item.name === agent.name)).toBe(false);
+
+    workflow.markReadyForTechnicalValidation(revision.id, "agent-wizard");
+    bridge.sync();
+
+    expect(bridge.evaluationTargetIdFor(revision.id)).not.toBeNull();
+  });
+
   it("maps a ready Build into Evaluate and submits the evaluated revision to Admin Eval", () => {
     const { workflow, evaluation, bridge } = createBridgeStores();
     const revision = createReadyBridgeAgent(workflow);
