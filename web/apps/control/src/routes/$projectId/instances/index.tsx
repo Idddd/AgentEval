@@ -28,6 +28,8 @@ import { cn } from "@/lib/utils";
 import { formatPlatformDate } from "@/lib/platform-preferences";
 import { useProjectQueryScope } from "@/hooks/use-project-query-scope";
 import { useCurrentProjectId } from "@/hooks/use-project";
+import { useDemoRole } from "@/hooks/use-demo-role";
+import { EndUserInstancesPage } from "@/features/demo-workflow/end-user/instances-page";
 
 export const Route = createFileRoute("/$projectId/instances/")({
   validateSearch: z.object({
@@ -36,8 +38,13 @@ export const Route = createFileRoute("/$projectId/instances/")({
     platform: z.enum(agentPlatformIds).optional(),
     specialization: z.string().trim().min(1).max(64).optional(),
   }),
-  component: Instances,
+  component: InstancesRoute,
 });
+
+function InstancesRoute() {
+  const { persona } = useDemoRole();
+  return persona === "end-user" ? <EndUserInstancesPage /> : <Instances />;
+}
 
 const statusFilters = ["ALL", "PROVISIONING", "READY", "FAILED", "DESTROYING"] as const satisfies readonly (AgentStatus | "ALL")[];
 

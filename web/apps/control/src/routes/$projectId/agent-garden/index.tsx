@@ -51,12 +51,17 @@ import { api } from "@/lib/api";
 import { useProjectQueryScope } from "@/hooks/use-project-query-scope";
 import { useCurrentProjectId } from "@/hooks/use-project";
 import { useDemoRole } from "@/hooks/use-demo-role";
-import { useSessionApprovedAgents } from "@/features/agent-garden/session-approved-agents";
+import { EndUserAgentGardenPage } from "@/features/demo-workflow/end-user/agent-garden-page";
 
 export const Route = createFileRoute("/$projectId/agent-garden/")({
   validateSearch: z.object({ coordinator: z.string().optional() }),
-  component: AgentGarden,
+  component: AgentGardenRoute,
 });
+
+function AgentGardenRoute() {
+  const { persona } = useDemoRole();
+  return persona === "end-user" ? <EndUserAgentGardenPage /> : <AgentGarden />;
+}
 
 type SortMode = "recommended" | "name" | "recent";
 
@@ -73,7 +78,6 @@ function AgentGarden() {
   const routeSearch = Route.useSearch();
   const projectId = useCurrentProjectId();
   const { persona } = useDemoRole();
-  const sessionApprovedAgents = useSessionApprovedAgents(projectId);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const scope = useProjectQueryScope();
@@ -97,14 +101,14 @@ function AgentGarden() {
   const [notice, setNotice] = useState("");
   const allAgents = useMemo(() => {
     const seen = new Set<string>();
-    return [...sessionApprovedAgents, ...(garden.data?.agents ?? [])].filter(
+    return [...(garden.data?.agents ?? [])].filter(
       (agent) => {
         if (seen.has(agent.id)) return false;
         seen.add(agent.id);
         return true;
       },
     );
-  }, [garden.data?.agents, sessionApprovedAgents]);
+  }, [garden.data?.agents]);
   const connections = garden.data?.connections ?? [];
   const selectedAgent = allAgents.find(
     (agent) => agent.id === detailId,

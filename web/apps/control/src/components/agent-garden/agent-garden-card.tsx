@@ -27,6 +27,7 @@ export function AgentGardenCard({
   onCreateInstance,
   onDetails,
   onTry,
+  primaryActionLabel = "Create Instance",
 }: {
   agent: AgentGardenEntry;
   canCreateInstance: boolean;
@@ -36,6 +37,7 @@ export function AgentGardenCard({
   onCreateInstance: () => void;
   onDetails: () => void;
   onTry: () => void;
+  primaryActionLabel?: string;
 }) {
   const ready = agent.status === "READY";
   const interactiveAction =
@@ -173,7 +175,7 @@ export function AgentGardenCard({
               className="h-11"
               onClick={onCreateInstance}
             >
-              Create Instance <ArrowRight />
+              {primaryActionLabel} <ArrowRight />
             </Button>
           ) : null}
           {connectAction ? (

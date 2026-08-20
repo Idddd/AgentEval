@@ -31,7 +31,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AgentGardenIcon } from '@/components/agent-garden/agent-garden-icon';
-import { publishSessionApprovedAgent } from '@/features/agent-garden/session-approved-agents';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -1080,7 +1079,6 @@ function WorkspaceDrawer({
       return;
     }
     if (status === 'APPROVED' && row.target.kind === 'agent' && row.currentRevision) {
-      publishSessionApprovedAgent(projectId, row.target, row.currentRevision);
       setWorkspaceNotice({
         message: `${row.target.name} is now available in Agent Garden for this demo session.`,
         section: 'result',
