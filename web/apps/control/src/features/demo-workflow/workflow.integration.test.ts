@@ -78,6 +78,43 @@ function scheduler() {
 }
 
 describe("complete session demo workflow", () => {
+  it("carries selected demo resources from Build into the Evaluate revision", () => {
+    const { workflow, evaluation, bridge } = createBridgeStores();
+    const agent = workflow.createAgent(
+      {
+        name: "Preset Resource Assistant",
+        owner: "Customer Operations",
+        description: "Uses the prebuilt demo resources.",
+        businessOutcome: "Demonstrate a connected Agent build",
+        targetUsers: "Demo reviewers",
+        typicalScenarios: ["Connected resource demo"],
+        runtimeType: "Managed interactive",
+        model: "Demo reasoning model",
+        endpoint: "https://demo.invalid/preset-resource-agent",
+        mcpIds: ["demo-operations-mcp"],
+        skillIds: ["demo-document-summarization"],
+        knowledgeBaseIds: ["demo-policy-kb"],
+      },
+      "agent-wizard",
+    );
+    const revision = workflow.getState().agentRevisions.find((item) => item.agentId === agent.id)!;
+    workflow.markReadyForTechnicalValidation(revision.id, "agent-wizard");
+
+    bridge.sync();
+
+    const targetRevisionId = bridge.evaluationTargetRevisionIdFor(revision.id);
+    const targetRevision = evaluation.getState().targetRevisions.find(
+      (item) => item.id === targetRevisionId,
+    );
+    expect(targetRevision?.tools.map((item) => item.name)).toEqual([
+      "Operations MCP",
+      "Document Summarization",
+    ]);
+    expect(targetRevision?.sources?.map((item) => item.name)).toEqual([
+      "Permission Policy KB",
+    ]);
+  });
+
   it("keeps a newly added Agent in Build until it is ready for Evaluate", () => {
     const { workflow, evaluation, bridge } = createBridgeStores();
     const agent = workflow.createAgent(

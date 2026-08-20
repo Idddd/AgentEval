@@ -58,12 +58,17 @@ export function AgentForm({
 
   useEffect(() => {
     if (!open) return;
+    const preferred = <T extends DemoMcpServer | DemoSkill | DemoKnowledgeBase>(items: T[]) =>
+      items.find((item) => item.source === "SESSION")?.id ?? items[0]?.id;
+    const preferredMcpId = preferred(mcpServers);
+    const preferredSkillId = preferred(skills);
+    const preferredKnowledgeBaseId = preferred(knowledgeBases);
     setValue({
       ...agentFormDefaults,
       typicalScenarios: [...agentFormDefaults.typicalScenarios],
-      mcpIds: mcpServers[0] ? [mcpServers[0].id] : [],
-      skillIds: skills[0] ? [skills[0].id] : [],
-      knowledgeBaseIds: knowledgeBases[0] ? [knowledgeBases[0].id] : [],
+      mcpIds: preferredMcpId ? [preferredMcpId] : [],
+      skillIds: preferredSkillId ? [preferredSkillId] : [],
+      knowledgeBaseIds: preferredKnowledgeBaseId ? [preferredKnowledgeBaseId] : [],
     });
     setError("");
   }, [knowledgeBases, mcpServers, open, skills]);

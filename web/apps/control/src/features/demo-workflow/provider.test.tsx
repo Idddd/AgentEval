@@ -22,7 +22,7 @@ function Probe() {
   return (
     <div>
       <span>Session {state.demoSessionId}</span>
-      <span>Skills {state.skills.length}</span>
+      <span>Skills {state.skills.filter((item) => item.source === "SESSION").length}</span>
       <button
         type="button"
         onClick={() =>

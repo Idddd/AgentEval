@@ -89,8 +89,8 @@ describe("DemoWorkflowStore", () => {
       "agent-wizard",
     );
 
-    expect(first.getState().skills).toHaveLength(1);
-    expect(second.getState().skills).toHaveLength(0);
+    expect(first.getState().skills.filter((item) => item.source === "SESSION")).toHaveLength(1);
+    expect(second.getState().skills.filter((item) => item.source === "SESSION")).toHaveLength(0);
     expect(first.getState().demoSessionId).not.toBe(
       second.getState().demoSessionId,
     );
@@ -108,7 +108,9 @@ describe("DemoWorkflowStore", () => {
       dependencies("session-refresh"),
     );
 
-    expect(refreshed.getState().skills).toEqual([]);
+    expect(refreshed.getState().skills.map((item) => item.name)).toEqual([
+      "Document Summarization",
+    ]);
     expect(refreshed.getState().agents.map((agent) => agent.name)).toContain(
       "Policy Guidance Assistant",
     );
@@ -316,7 +318,7 @@ describe("DemoWorkflowStore", () => {
       "agent-wizard",
     );
 
-    expect(store.getState().mcpServers[0]?.endpoint).toBe(
+    expect(store.getState().mcpServers.find((item) => item.id === mcp.id)?.endpoint).toBe(
       "https://demo.invalid/mcp/customer-records-v2",
     );
     expect(() => store.deleteMcpServer(mcp.id, "agent-wizard")).toThrow(
@@ -333,7 +335,10 @@ describe("DemoWorkflowStore", () => {
 
     store.deleteSkill(skill.id, "agent-wizard");
 
-    expect(store.getState().skills).toEqual([]);
+    expect(store.getState().skills.filter((item) => item.source === "SESSION")).toEqual([]);
+    expect(() =>
+      store.deleteSkill("demo-document-summarization", "agent-wizard"),
+    ).toThrow("Only session Skills");
     expect(() =>
       store.deleteAgentDraft("fixture-policy-guidance-r1", "agent-wizard"),
     ).toThrow("Session drafts");

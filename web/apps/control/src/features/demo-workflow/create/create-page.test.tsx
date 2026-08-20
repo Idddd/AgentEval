@@ -66,6 +66,18 @@ it("shows demo and session Agents together in one Build list", () => {
   expect(screen.getAllByText("DEMO")).toHaveLength(5);
 });
 
+it("offers the prebuilt MCP, Skill, and Knowledge Base in the Agent form", async () => {
+  const user = userEvent.setup();
+  const store = createDemoWorkflowStore("individual", dependencies());
+  renderCreatePage(store);
+
+  await user.click(screen.getByRole("button", { name: "Create Agent" }));
+
+  expect(screen.getByRole("button", { name: "Remove Operations MCP" })).not.toBeNull();
+  expect(screen.getByRole("button", { name: "Remove Document Summarization" })).not.toBeNull();
+  expect(screen.getByRole("button", { name: "Remove Permission Policy KB" })).not.toBeNull();
+});
+
 it("creates prefilled technical resources and an Agent draft in memory", async () => {
   const user = userEvent.setup();
   const store = createDemoWorkflowStore("individual", dependencies());
@@ -89,9 +101,9 @@ it("creates prefilled technical resources and an Agent draft in memory", async (
   expect(screen.getByDisplayValue("Customer Service Assistant")).not.toBeNull();
   await user.click(screen.getByRole("button", { name: "Create Agent draft" }));
 
-  expect(store.getState().mcpServers).toHaveLength(1);
-  expect(store.getState().skills).toHaveLength(1);
-  expect(store.getState().knowledgeBases).toHaveLength(1);
+  expect(store.getState().mcpServers.filter((item) => item.source === "SESSION")).toHaveLength(1);
+  expect(store.getState().skills.filter((item) => item.source === "SESSION")).toHaveLength(1);
+  expect(store.getState().knowledgeBases.filter((item) => item.source === "SESSION")).toHaveLength(1);
   expect(store.getState().agents.map((agent) => agent.name)).toContain(
     "Customer Service Assistant",
   );
