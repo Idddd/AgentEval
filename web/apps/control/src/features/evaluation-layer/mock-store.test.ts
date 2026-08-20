@@ -17,6 +17,7 @@ describe("EvaluationLayerStore", () => {
       {
         id: "guardrail-live",
         sourceGuardrailId: "guardrail-live",
+        sourceGuardrailRevisionId: "guardrail-live:R3",
         name: "Live Guardrail",
         description: "Maintained in Guardrails.",
         version: "3",

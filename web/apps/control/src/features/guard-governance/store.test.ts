@@ -8,6 +8,53 @@ import {
 } from "./store";
 
 describe("Guard Governance store", () => {
+  it("creates reviewed allow and block cases for a custom business Guardrail", () => {
+    const store = createGuardGovernanceStore(
+      cloneGuardGovernanceFixtures("individual"),
+      { id: () => "guardrail-session", now: () => "2026-08-20T08:00:00.000Z" },
+    );
+
+    const guardrail = store.createGuardrail({
+      name: "Customer data boundary",
+      purpose: "Keep customer support answers useful without exposing confidential records.",
+      safetyLevel: "strict",
+      outputDelivery: "window_buffered",
+      allowedTopics: ["Explain approved account support steps"],
+      restrictedTopics: ["Disclose confidential customer records"],
+      controls: [{ risk: "topic_control", action: "redirect", enabled: true }],
+    });
+
+    expect(guardrail.testCaseCount).toBe(2);
+    expect(guardrail.testCases.map((testCase) => testCase.expectedDecision)).toEqual([
+      "ALLOW",
+      "BLOCK",
+    ]);
+    expect(guardrail.testCases.map((testCase) => testCase.origin)).toEqual([
+      "custom",
+      "custom",
+    ]);
+  });
+
+  it("marks starter cases as generated when a local template is selected", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    const guardrail = store.createGuardrail({
+      name: "Template-backed boundary",
+      purpose: "Apply the approved privacy template to customer service conversations.",
+      safetyLevel: "balanced",
+      outputDelivery: "window_buffered",
+      allowedTopics: ["Approved service guidance"],
+      restrictedTopics: ["Personal data disclosure"],
+      controls: [{ risk: "pii", action: "redact", enabled: true }],
+      sourceTemplateIds: ["template-pii-baseline"],
+    });
+
+    expect(guardrail.testCases.map((testCase) => testCase.origin)).toEqual([
+      "generated",
+      "generated",
+    ]);
+  });
+
   it("shows coverage gaps and applies type requirements to current resources", () => {
     const store = createGuardGovernanceStore(
       cloneGuardGovernanceFixtures("individual"),

@@ -11,13 +11,14 @@ describe("Guardrail Test Pack sync", () => {
     );
 
     expect(packs.map((pack) => pack.id)).toEqual([
-      "guardrail-default",
-      "guardrail-production",
-      "guardrail-draft",
+      "guardrail-template:guardrail-default:R1",
+      "guardrail-template:guardrail-production:R2",
+      "guardrail-template:guardrail-draft:R2",
     ]);
     expect(packs[0]).toEqual(
       expect.objectContaining({
         sourceGuardrailId: "guardrail-default",
+        sourceGuardrailRevisionId: "guardrail-default:R1",
         name: "TaskLattice Default Protection",
         version: "1",
         available: true,
@@ -26,7 +27,7 @@ describe("Guardrail Test Pack sync", () => {
     );
     expect(packs[0]?.cases).toHaveLength(1);
     expect(
-      packs.find((pack) => pack.id === "guardrail-production")?.requiredFor,
+      packs.find((pack) => pack.id === "guardrail-template:guardrail-production:R2")?.requiredFor,
     ).toEqual(["agent", "mcp"]);
     expect(packs[0]?.cases[0]).toEqual(
       expect.objectContaining({

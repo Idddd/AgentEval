@@ -15,6 +15,14 @@ const ALL_TARGET_KINDS: EvaluationLayerTargetKind[] = [
   "guardrail",
 ];
 
+export function guardrailTemplateRevisionId(guardrail: Guardrail) {
+  return `${guardrail.id}:R${guardrail.draftVersion}`;
+}
+
+export function guardrailTemplateId(guardrail: Guardrail) {
+  return `guardrail-template:${guardrailTemplateRevisionId(guardrail)}`;
+}
+
 export function guardrailsToEvaluationTestPacks(
   guardrails: Guardrail[],
   requirements: GuardrailCoverageRequirement[] = [],
@@ -25,6 +33,8 @@ export function guardrailsToEvaluationTestPacks(
         guardrail.status !== "DISABLED" && guardrail.testCases.length > 0,
     )
     .map((guardrail) => {
+      const revisionId = guardrailTemplateRevisionId(guardrail);
+      const templateId = guardrailTemplateId(guardrail);
       const requiredFor: EvaluationLayerTargetKind[] = requirements
         .filter(
           (requirement) =>
@@ -32,11 +42,12 @@ export function guardrailsToEvaluationTestPacks(
         )
         .flatMap((requirement) => requirement.resourceKinds);
       return {
-        id: guardrail.id,
+        id: templateId,
         sourceGuardrailId: guardrail.id,
+        sourceGuardrailRevisionId: revisionId,
         name: guardrail.name,
         description: guardrail.purpose,
-        version: String(guardrail.activeVersion ?? guardrail.draftVersion),
+        version: String(guardrail.draftVersion),
         applicableTargetKinds: [...ALL_TARGET_KINDS],
         defaultFor:
           guardrail.isDefault || guardrail.status === "PROTECTED"
@@ -46,7 +57,7 @@ export function guardrailsToEvaluationTestPacks(
         requiredFor: [...new Set(requiredFor)],
         available: true,
         cases: guardrail.testCases.map((testCase) => ({
-          id: `${guardrail.id}:${testCase.id}`,
+          id: `${templateId}:${testCase.id}`,
           input: {
             prompt: testCase.content,
             phase: testCase.phase,
@@ -67,6 +78,7 @@ export function guardrailsToEvaluationTestPacks(
           source: `guardrail:${guardrail.id}`,
           metadata: {
             sourceGuardrailId: guardrail.id,
+            sourceGuardrailRevisionId: revisionId,
             sourceTestCaseId: testCase.id,
             actualDecision: testCase.actualDecision,
           },

@@ -56,6 +56,52 @@ function required(value: string, label: string) {
   return normalized;
 }
 
+function starterTestCases(
+  input: CreateGuardrailInput,
+  guardrailId: string,
+  updatedAt: string,
+): GuardrailTestCase[] {
+  const origin: GuardrailTestCase["origin"] = input.sourceTemplateId || input.sourceTemplateIds?.length
+    ? "generated"
+    : "custom";
+  const allowedBehavior = input.allowedTopics[0] ?? "Provide approved business assistance";
+  const restrictedBehavior =
+    input.restrictedTopics[0] ?? "Disclose restricted customer information";
+  const trustedInstruction = `Follow the approved business purpose: ${input.purpose}`;
+  const shared = {
+    guardrailId,
+    phase: "input" as const,
+    risk: input.controls.find((control) => control.enabled)?.risk ?? "topic_control",
+    origin,
+    updatedAt,
+    trustedInstruction,
+    targetSource: "user_input" as const,
+    groundingSources: [],
+    expectedReasoningResult: null,
+  };
+
+  return [
+    {
+      ...shared,
+      id: `${guardrailId}-allow`,
+      name: "Approved business behavior",
+      content: allowedBehavior,
+      query: allowedBehavior,
+      expectedDecision: "ALLOW",
+      actualDecision: "ALLOW",
+    },
+    {
+      ...shared,
+      id: `${guardrailId}-block`,
+      name: "Restricted business behavior",
+      content: restrictedBehavior,
+      query: restrictedBehavior,
+      expectedDecision: "BLOCK",
+      actualDecision: "BLOCK",
+    },
+  ];
+}
+
 function credentialPrefix(value: string) {
   const namespace = value.includes("_") ? `${value.split("_")[0]}_` : "";
   return `${namespace}…${value.slice(-4)}`;
@@ -255,8 +301,10 @@ export function createGuardGovernanceStore(
     },
     createGuardrail(input) {
       const createdAt = now();
+      const guardrailId = id();
+      const testCases = starterTestCases(input, guardrailId, createdAt);
       const created: Guardrail = {
-        id: id(),
+        id: guardrailId,
         projectId: state.projectId,
         name: required(input.name, "Name"),
         purpose: required(input.purpose, "Purpose"),
@@ -266,7 +314,7 @@ export function createGuardGovernanceStore(
         allowedTopics: structuredClone(input.allowedTopics),
         restrictedTopics: structuredClone(input.restrictedTopics),
         controls: structuredClone(input.controls),
-        testCases: [],
+        testCases,
         sourceTemplateId:
           input.sourceTemplateIds?.[0] ?? input.sourceTemplateId ?? null,
         sourceTemplateIds: structuredClone(
@@ -283,7 +331,7 @@ export function createGuardGovernanceStore(
         draftVersion: 1,
         activeVersion: null,
         assignmentCount: 0,
-        testCaseCount: 0,
+        testCaseCount: testCases.length,
         testedCurrent: false,
         isDefault: false,
         systemManaged: false,

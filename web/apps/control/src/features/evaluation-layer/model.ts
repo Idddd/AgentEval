@@ -100,6 +100,8 @@ export interface EvaluationLayerGuardrailTemplate {
   defaultFor: EvaluationLayerTargetKind[];
   /** The owning Guardrail. New packs are created and edited in Guardrails. */
   sourceGuardrailId?: string;
+  /** Immutable Guardrail revision captured by this test-pack snapshot. */
+  sourceGuardrailRevisionId?: string;
   /** Historical snapshots remain resolvable by reports but are not selectable. */
   available?: boolean;
   required?: boolean;

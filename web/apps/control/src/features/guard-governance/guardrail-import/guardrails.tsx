@@ -730,6 +730,8 @@ function CreateGuardrailSheet({
   const [allowed, setAllowed] = useState("");
   const [restricted, setRestricted] = useState("");
   const [risks, setRisks] = useState<GuardrailControl[]>(defaultControls);
+  const [businessRisk, setBusinessRisk] = useState<"medium" | "high" | "critical">("high");
+  const [responseAction, setResponseAction] = useState<"redirect" | "reject">("redirect");
   const [parameters, setParameters] = useState<Record<string, Record<string, string>>>({});
   const [composedSelectionKey, setComposedSelectionKey] = useState("");
   const [analysis, setAnalysis] = useState<IntentAnalysis | null>(null);
@@ -815,6 +817,8 @@ function CreateGuardrailSheet({
       setAllowed("");
       setRestricted("");
       setRisks(defaultControls);
+      setBusinessRisk("high");
+      setResponseAction("redirect");
       setParameters({});
       setComposedSelectionKey("");
       setAnalysis(null);
@@ -845,8 +849,12 @@ function CreateGuardrailSheet({
             purpose,
             allowed_topics: lines(allowed),
             restricted_topics: lines(restricted),
-            controls: risks,
-            safety_level: "balanced",
+            controls: risks.map((control) =>
+              control.risk === "topic_control"
+                ? { ...control, action: responseAction }
+                : control,
+            ),
+            safety_level: businessRisk === "medium" ? "balanced" : "strict",
             output_delivery: risks.some(
               (item) => item.risk === "automated_reasoning",
             )
@@ -948,6 +956,8 @@ function CreateGuardrailSheet({
                   setAllowed("");
                   setRestricted("");
                   setRisks(defaultControls);
+                  setBusinessRisk("high");
+                  setResponseAction("redirect");
                 }}
               />
             </div>
@@ -1207,6 +1217,76 @@ function CreateGuardrailSheet({
                     />
                   </Field>
                 </div>
+                <section
+                  aria-label={t("guardrails.businessScenarios")}
+                  className="rounded-xl border bg-muted/20 p-4"
+                >
+                  <div>
+                    <h3 className="text-sm font-semibold">
+                      {t("guardrails.businessScenarios")}
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {t("guardrails.businessScenariosHint")}
+                    </p>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <Fact
+                      label={t("guardrails.approvedScenario")}
+                      value={lines(allowed)[0] ?? t("guardrails.scenarioPending")}
+                    />
+                    <Fact
+                      label={t("guardrails.restrictedScenario")}
+                      value={lines(restricted)[0] ?? t("guardrails.scenarioPending")}
+                    />
+                  </div>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <Field
+                      label={t("guardrails.businessRiskLevel")}
+                      hint={t("guardrails.businessRiskHint")}
+                    >
+                      <Select
+                        value={businessRisk}
+                        onValueChange={(value) =>
+                          setBusinessRisk(value as "medium" | "high" | "critical")
+                        }
+                      >
+                        <SelectTrigger
+                          aria-label={t("guardrails.businessRiskLevel")}
+                          className="min-h-11 rounded-lg bg-card"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="medium">{t("guardrails.riskMedium")}</SelectItem>
+                          <SelectItem value="high">{t("guardrails.riskHigh")}</SelectItem>
+                          <SelectItem value="critical">{t("guardrails.riskCritical")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field
+                      label={t("guardrails.responseAction")}
+                      hint={t("guardrails.responseActionHint")}
+                    >
+                      <Select
+                        value={responseAction}
+                        onValueChange={(value) =>
+                          setResponseAction(value as "redirect" | "reject")
+                        }
+                      >
+                        <SelectTrigger
+                          aria-label={t("guardrails.responseAction")}
+                          className="min-h-11 rounded-lg bg-card"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="redirect">{t("guardrails.responseRedirect")}</SelectItem>
+                          <SelectItem value="reject">{t("guardrails.responseBlock")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
+                </section>
               </>
             )}
           </div>

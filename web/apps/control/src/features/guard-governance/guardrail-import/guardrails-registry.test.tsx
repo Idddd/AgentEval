@@ -93,8 +93,8 @@ it("combines multiple selected templates into one editable safety intent", async
   await user.click(screen.getByRole("button", { name: "Continue" }));
 
   expect(screen.queryByLabelText("Business purpose")).toBeNull();
-  expect(screen.queryByLabelText("Allowed business domains")).toBeNull();
-  expect(screen.queryByLabelText("Restricted domains")).toBeNull();
+  expect(screen.queryByLabelText("Allowed behavior")).toBeNull();
+  expect(screen.queryByLabelText("Restricted behavior")).toBeNull();
   expect(screen.getByText("Advanced PII Protection (Australia)")).not.toBeNull();
   expect(screen.getByText("Prompt Injection Protection")).not.toBeNull();
 });
@@ -126,12 +126,15 @@ it("describes custom intent creation without upload and mock-analyzes its purpos
   );
   expect(
     (await screen.findByLabelText(
-      "Allowed business domains",
+      "Allowed behavior",
     ) as HTMLTextAreaElement).value,
   ).not.toBe("");
   expect(
-    (screen.getByLabelText("Restricted domains") as HTMLTextAreaElement).value,
+    (screen.getByLabelText("Restricted behavior") as HTMLTextAreaElement).value,
   ).not.toBe("");
+  expect(screen.getByRole("region", { name: "Business scenarios" })).not.toBeNull();
+  expect(screen.getByRole("combobox", { name: "Risk level" })).not.toBeNull();
+  expect(screen.getByRole("combobox", { name: "Response action" })).not.toBeNull();
 });
 
 it("renders all parameter controls for an imported Guard template", async () => {

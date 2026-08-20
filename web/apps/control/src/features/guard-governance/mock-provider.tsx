@@ -17,14 +17,16 @@ const GuardGovernanceStoreContext =
 export function GuardGovernanceProvider({
   children,
   projectId,
+  store: providedStore,
 }: {
   children: ReactNode;
   projectId: string;
+  store?: GuardGovernanceStore;
 }) {
   const store = useMemo(
     () =>
-      createGuardGovernanceStore(cloneGuardGovernanceFixtures(projectId)),
-    [projectId],
+      providedStore ?? createGuardGovernanceStore(cloneGuardGovernanceFixtures(projectId)),
+    [projectId, providedStore],
   );
   return (
     <GuardGovernanceStoreContext.Provider value={store}>
