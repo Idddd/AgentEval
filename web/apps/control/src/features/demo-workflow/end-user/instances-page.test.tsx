@@ -34,15 +34,23 @@ it("stops a ready Instance and keeps the page business focused", async () => {
     "end-user",
   );
   store.markInstanceReady(instance.id);
+  const openInstance = vi.fn();
   render(
     <DemoWorkflowProvider projectId="individual" store={store}>
-      <EndUserInstancesPage />
+      <EndUserInstancesPage onOpenInstance={openInstance} />
     </DemoWorkflowProvider>,
   );
 
   expect(screen.getByText("Policy Guidance Pilot")).not.toBeNull();
   expect(screen.getByText(/Stable version 1/)).not.toBeNull();
   expect(screen.queryByText("Endpoint")).toBeNull();
+  const instanceRows = document.querySelectorAll("article");
+  expect(document.querySelectorAll('[data-slot="instance-actions"]')).toHaveLength(
+    instanceRows.length,
+  );
+  expect(instanceRows[0]?.className).toContain("_17rem");
+  fireEvent.click(screen.getByRole("button", { name: "Policy Guidance Pilot" }));
+  expect(openInstance).toHaveBeenCalledWith(instance.id);
   fireEvent.click(screen.getByRole("button", { name: "Stop Instance" }));
   expect(screen.getAllByText("Stopping").length).toBeGreaterThan(0);
 

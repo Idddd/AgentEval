@@ -23,16 +23,20 @@ function dependencies(): DemoWorkflowDependencies {
 it("applies an approved Agent as a session-only Instance", async () => {
   vi.useFakeTimers();
   const store = createDemoWorkflowStore("individual", dependencies());
+  const openInstance = vi.fn();
   render(
     <DemoWorkflowProvider projectId="individual" store={store}>
-      <EndUserAgentGardenPage />
+      <EndUserAgentGardenPage onInstanceProvisioned={openInstance} />
     </DemoWorkflowProvider>,
   );
 
   expect(screen.getByText("Policy Guidance Assistant")).not.toBeNull();
-  expect(screen.getByText(/94% scenario success/)).not.toBeNull();
+  const policyCard = screen.getByText("Policy Guidance Assistant").closest("article")!;
+  const openClawCard = screen.getByText("OpenClaw Generalist").closest("article")!;
+  expect(openClawCard.querySelector('img[src="/assets/brands/openclaw-lobehub.webp"]')).not.toBeNull();
+  expect(within(policyCard).getByText(/94% scenario success/)).not.toBeNull();
   expect(screen.queryByText("Demo reasoning model")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Apply Instance" }));
+  fireEvent.click(within(policyCard).getByRole("button", { name: "Apply Instance" }));
 
   const dialog = screen.getByRole("dialog", { name: "Apply Policy Guidance Assistant" });
   expect((within(dialog).getByLabelText("Instance name") as HTMLInputElement).value).toBe(
@@ -45,8 +49,25 @@ it("applies an approved Agent as a session-only Instance", async () => {
 
   expect(screen.getByText("Instance request submitted")).not.toBeNull();
   expect(store.getState().instances[0]?.status).toBe("PROVISIONING");
+  expect(openInstance).toHaveBeenCalledWith(store.getState().instances[0]?.id);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(700);
   });
   expect(store.getState().instances[0]?.status).toBe("READY");
+});
+
+it("starts with the Agent name supplied by an approval link", () => {
+  const store = createDemoWorkflowStore("individual", dependencies());
+  render(
+    <DemoWorkflowProvider projectId="individual" store={store}>
+      <EndUserAgentGardenPage initialQuery="Policy Guidance Assistant" />
+    </DemoWorkflowProvider>,
+  );
+
+  expect(
+    (screen.getByRole("textbox", { name: "Search approved Agents" }) as HTMLInputElement)
+      .value,
+  ).toBe("Policy Guidance Assistant");
+  expect(screen.getByText("Policy Guidance Assistant")).not.toBeNull();
+  expect(screen.queryByText("Service Recovery Copilot")).toBeNull();
 });

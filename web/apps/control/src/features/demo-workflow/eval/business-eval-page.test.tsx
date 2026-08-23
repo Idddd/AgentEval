@@ -71,12 +71,10 @@ it("runs a business-only Eval and publishes the approved revision", async () => 
   );
 
   expect(screen.getByRole("heading", { name: "Business Eval" })).not.toBeNull();
-  expect((screen.getByLabelText("Business purpose") as HTMLTextAreaElement).value).toBe(
-    "Resolve customer cases consistently while protecting restricted information.",
-  );
-  expect((screen.getByLabelText("Target users") as HTMLInputElement).value).toBe(
-    "Customer service representatives",
-  );
+  fireEvent.click(screen.getByRole("button", { name: /Policy Guidance Assistant · R2Pending Eval/ }));
+  expect(screen.queryByLabelText("Business purpose")).toBeNull();
+  expect(screen.queryByLabelText("Target users")).toBeNull();
+  expect(screen.getByText("Evaluation coverage")).not.toBeNull();
   expect(screen.getByText("Customer Data Protection · R1")).not.toBeNull();
   expect(screen.queryByText("Endpoint")).toBeNull();
   expect(screen.queryByText("Model")).toBeNull();
@@ -87,16 +85,28 @@ it("runs a business-only Eval and publishes the approved revision", async () => 
     await vi.advanceTimersByTimeAsync(800);
   });
 
-  expect(screen.getByText("92%")).not.toBeNull();
-  expect(screen.getByText("8 scenarios")).not.toBeNull();
-  expect(screen.getByText("Low residual risk")).not.toBeNull();
-  expect(screen.getByText("$0.04 estimated cost")).not.toBeNull();
+  expect(screen.getByText("92% pass rate · 8 evaluated")).not.toBeNull();
+  expect(screen.getByText("Low")).not.toBeNull();
+  expect(screen.getByText("$0.04")).not.toBeNull();
+  expect(screen.getAllByText("Customer Data Protection · R1").length).toBeGreaterThan(0);
+  expect(
+    store.getState().agentRevisions.find((item) => item.id === revision.id)?.businessEvaluation?.caseResults,
+  ).toHaveLength(8);
+  expect(
+    store.getState().agentRevisions.find((item) => item.id === revision.id)?.businessEvaluation?.targetUsers,
+  ).toBe("Service representatives");
 
-  fireEvent.change(screen.getByRole("textbox", { name: "Decision reason" }), {
-    target: { value: "Approved for the service pilot." },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Approve & Publish" }));
+  const approveButton = screen.getByRole("button", { name: "Approve & Publish" }) as HTMLButtonElement;
+  expect(approveButton.disabled).toBe(false);
+  fireEvent.click(approveButton);
   expect(screen.getAllByText("Published to Agent Garden").length).toBeGreaterThan(0);
+  expect(screen.getByText("Approved by")).not.toBeNull();
+  expect(screen.getByText("Local Administrator")).not.toBeNull();
+  expect(screen.getByText("Approved at")).not.toBeNull();
+  expect(screen.getByText("Published revision").parentElement?.textContent).toContain("R2");
+  expect(
+    screen.getByRole("link", { name: "View in Agent Garden" }).getAttribute("href"),
+  ).toBe("/individual/agent-garden?query=Policy%20Guidance%20Assistant");
   expect(
     store.getState().agentRevisions.find((item) => item.id === revision.id)?.status,
   ).toBe("PUBLISHED");
@@ -118,6 +128,17 @@ it("shows pending and rejected cases with a recorded rejection reason", async ()
   expect(screen.getAllByText("Rejected")[0]?.parentElement?.textContent).toContain("1");
   expect(screen.getAllByText(/Service Recovery Copilot/).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/Claims Review Assistant/).length).toBeGreaterThan(0);
+  const releaseCandidates = screen.getByRole("heading", { name: "Release Candidates" }).closest("aside")!;
+  expect(releaseCandidates.querySelector("button")?.textContent).toContain("Pending approval");
+  expect(screen.queryByText("Business outcome")).toBeNull();
+  expect(screen.queryByText("Audience")).toBeNull();
+  expect(screen.queryByText("Safety coverage")).toBeNull();
+  const decisionCard = screen.getByText("Admin decision").closest("[data-slot=card]")!;
+  const reportCard = screen.getByText("Evaluation report").closest("[data-slot=card]")!;
+  expect(decisionCard).toBe(reportCard);
+  expect(screen.getByRole("link", { name: "View full report" }).getAttribute("href")).toBe(
+    "/individual/evaluation/reports/fixture-z-claims-review-r1",
+  );
   expect(screen.queryByRole("button", { name: "Run Business Eval" })).toBeNull();
 
   await userEvent.click(screen.getByRole("button", { name: /Fraud Triage Assistant/ }));
@@ -140,12 +161,12 @@ it("lets an Admin record a reason and reject a passed Eval", async () => {
   );
 
   await userEvent.click(screen.getByRole("button", { name: /Service Recovery Copilot/ }));
-  expect(screen.getByText("Business Eval passed")).not.toBeNull();
+  expect(screen.getByText("Evaluation report")).not.toBeNull();
   await userEvent.type(
-    screen.getByRole("textbox", { name: "Decision reason" }),
+    screen.getByRole("textbox", { name: "Return note" }),
     "Business owner declined this rollout window.",
   );
-  await userEvent.click(screen.getByRole("button", { name: "Reject" }));
+  await userEvent.click(screen.getByRole("button", { name: "Return for changes" }));
 
   expect(screen.getByText("Rejected after business review")).not.toBeNull();
   expect(screen.getByText("Business owner declined this rollout window.")).not.toBeNull();

@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
-import { ArrowUpRight, Bot, Database, Network, Plus, Puzzle, ShieldCheck, Trash2 } from "lucide-react";
+import { ArrowRight, Bot, Database, GitBranch, Network, Pencil, Plus, Puzzle, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEvaluationLayerState } from "@/features/evaluation-layer/mock-provider";
-import { useDemoWorkflowState, useDemoWorkflowStore } from "../provider";
-import type { DemoKnowledgeBase, DemoMcpServer, DemoSkill } from "../model";
-import { AgentForm } from "./agent-form";
+import { useDemoWorkflowProjectId, useDemoWorkflowState, useDemoWorkflowStore } from "../provider";
+import type { DemoAgentInput, DemoKnowledgeBase, DemoMcpServer, DemoSkill } from "../model";
+import { AgentForm, agentFormDefaults } from "./agent-form";
 import {
   AgentBuildDetailSheet,
   type AgentBuildSelection,
@@ -18,8 +18,9 @@ import {
   type ResourceFormKind,
   type ResourceFormValue,
 } from "./resource-form-dialog";
+import { ResourceDetailSheet, type BuildResource } from "./resource-detail-sheet";
 
-type Resource = DemoMcpServer | DemoSkill | DemoKnowledgeBase;
+type Resource = BuildResource;
 
 const tabs = [
   { value: "agent", label: "Agent", icon: Bot },
@@ -29,13 +30,16 @@ const tabs = [
 ] as const;
 
 function CreateWorkspaceContent() {
+  const projectId = useDemoWorkflowProjectId();
   const state = useDemoWorkflowState();
   const evaluationState = useEvaluationLayerState();
   const store = useDemoWorkflowStore();
   const [tab, setTab] = useState<(typeof tabs)[number]["value"]>("agent");
   const [resourceDialog, setResourceDialog] = useState<ResourceFormKind | null>(null);
+  const [resourceDetail, setResourceDetail] = useState<{ kind: ResourceFormKind; id: string } | null>(null);
   const [editing, setEditing] = useState<Resource | null>(null);
   const [agentOpen, setAgentOpen] = useState(false);
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [buildSelection, setBuildSelection] = useState<AgentBuildSelection | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -59,9 +63,39 @@ function CreateWorkspaceContent() {
           .filter((run) => run.targetRevisionId === target.currentRevisionId)
           .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
         return { target, revision, latestRun };
+      })
+      .sort((left, right) => {
+        if (left.target.id === "demo-onboarding-assistant") return -1;
+        if (right.target.id === "demo-onboarding-assistant") return 1;
+        return 0;
       }),
     [evaluationState.runs, evaluationState.targetRevisions, evaluationState.targets],
   );
+  const editingAgent = editingAgentId
+    ? state.agents.find((agent) => agent.id === editingAgentId)
+    : undefined;
+  const editingAgentRevision = editingAgent?.activeDraftRevisionId
+    ? state.agentRevisions.find((revision) => revision.id === editingAgent.activeDraftRevisionId)
+    : undefined;
+  const editingAgentValue: DemoAgentInput | undefined = editingAgent && editingAgentRevision
+    ? {
+        name: editingAgent.name,
+        owner: editingAgent.owner === "Unassigned" ? "" : editingAgent.owner,
+        description: editingAgent.description,
+        businessOutcome: editingAgent.businessOutcome,
+        targetUsers: editingAgent.targetUsers,
+        typicalScenarios: [...editingAgent.typicalScenarios],
+        runtimeType: editingAgentRevision.runtimeType,
+        model: editingAgentRevision.model,
+        endpoint: editingAgentRevision.endpoint,
+        mcpIds: [...editingAgentRevision.mcpIds],
+        skillIds: [...editingAgentRevision.skillIds],
+        knowledgeBaseIds: [...editingAgentRevision.knowledgeBaseIds],
+      }
+    : undefined;
+  const selectedResource = resourceDetail
+    ? resources[resourceDetail.kind].find((resource) => resource.id === resourceDetail.id) ?? null
+    : null;
 
   const saveResource = (kind: ResourceFormKind, value: ResourceFormValue) => {
     setError("");
@@ -96,14 +130,71 @@ function CreateWorkspaceContent() {
     }
   };
 
+  const duplicateResource = (kind: ResourceFormKind, resource: Resource) => {
+    try {
+      setError("");
+      const name = nextCopyName(resource.name, resources[kind].map((item) => item.name));
+      let created: Resource | undefined;
+      if (kind === "mcp" && "endpoint" in resource) {
+        created = store.createMcpServer({ name, endpoint: resource.endpoint, authType: resource.authType }, "agent-wizard");
+      } else if (kind === "skill" && "description" in resource && !("sourceType" in resource)) {
+        created = store.createSkill({ name, description: resource.description }, "agent-wizard");
+      } else if (kind === "knowledge-base" && "sourceType" in resource) {
+        created = store.createKnowledgeBase({ name, sourceType: resource.sourceType, description: resource.description }, "agent-wizard");
+      }
+      setNotice(`${name} copied to this session and is ready to edit.`);
+      return created;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to clone resource");
+      return undefined;
+    }
+  };
+
+  const duplicateDemoAgent = (targetId: string) => {
+    const target = evaluationState.targets.find((item) => item.id === targetId);
+    const revision = evaluationState.targetRevisions.find((item) => item.id === target?.currentRevisionId);
+    if (!target) return;
+    try {
+      const created = store.createAgent({
+        ...agentFormDefaults,
+        name: nextCopyName(target.name, state.agents.map((item) => item.name)),
+        owner: "",
+        description: target.description,
+        runtimeType: "Managed cloud",
+        model: "GPT-5",
+        endpoint: revision?.endpoint ?? `https://demo.invalid/agents/${target.id}`,
+        mcpIds: [],
+        skillIds: [],
+        knowledgeBaseIds: [],
+      }, "agent-wizard");
+      setNotice(`${created.name} created as an editable draft.`);
+      return created;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to clone Agent");
+      return undefined;
+    }
+  };
+
+  const editDemoAgent = (targetId: string) => {
+    const created = duplicateDemoAgent(targetId);
+    if (!created) return;
+    setBuildSelection(null);
+    setEditingAgentId(created.id);
+    setAgentOpen(true);
+  };
+
+  const createNewVersion = (agentId: string) => {
+    try {
+      const revision = store.createAgentRevision(agentId, "agent-wizard");
+      setBuildSelection({ kind: "workflow", agentId });
+      setNotice(`R${revision.revision} created and ready to edit.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create a new version");
+    }
+  };
+
   return (
     <div className="space-y-7">
-      <div className="grid gap-4 md:grid-cols-3">
-        <Metric label="Session resources" value={state.mcpServers.filter((item) => item.source === "SESSION").length + state.skills.filter((item) => item.source === "SESSION").length + state.knowledgeBases.filter((item) => item.source === "SESSION").length} />
-        <Metric label="Agent drafts" value={state.agentRevisions.filter((item) => item.source === "SESSION" && item.status === "DRAFT").length} />
-        <Card className="border-primary/20 bg-primary/5"><CardContent className="flex min-h-24 items-center gap-3 p-5"><ShieldCheck className="size-8 text-primary" /><div><strong className="block text-sm">No backend writes</strong><span className="text-xs text-muted-foreground">Refresh clears this workspace.</span></div></CardContent></Card>
-      </div>
-
       {notice ? <p role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</p> : null}
       {error ? <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
 
@@ -113,52 +204,55 @@ function CreateWorkspaceContent() {
         </TabsList>
 
         <TabsContent value="agent" className="mt-5">
-          <SectionHeader title="Agents" description="Start from an existing demo Agent or create a new session draft to evaluate later." action={<Button onClick={() => setAgentOpen(true)}><Plus />Create Agent</Button>} />
+          <SectionHeader
+            title="Agents"
+            description="Build an Agent here, then continue to Evaluate when it is ready."
+            action={(
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => { setEditingAgentId(null); setAgentOpen(true); }}>
+                  <Plus />Create Agent
+                </Button>
+                <Button asChild>
+                  <a href={`/${projectId}/evaluation/catalog`}>
+                    Continue to Evaluate <ArrowRight />
+                  </a>
+                </Button>
+              </div>
+            )}
+          />
           <div role="list" aria-label="Agents" className="mt-5 grid gap-4 lg:grid-cols-2">
             {demoAgentCases.map(({ target, revision, latestRun }) => (
-              <div role="listitem" key={target.id}>
-                <button
-                  type="button"
-                  aria-label={`View ${target.name} build details`}
-                  className="block h-full w-full rounded-lg text-left outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring/40"
-                  onClick={() => setBuildSelection({ kind: "evaluation", targetId: target.id })}
-                >
-                  <Card className="h-full bg-muted/15 transition-colors hover:border-primary/35 hover:bg-primary/[0.03]">
+              <div role="listitem" key={target.id} className="h-full">
+                  <Card className="h-full overflow-hidden bg-white transition-colors hover:border-primary/35 dark:bg-card">
+                    <button type="button" aria-label={`View ${target.name} build details`} className="block w-full text-left outline-none hover:bg-primary/[0.03] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40" onClick={() => setBuildSelection({ kind: "evaluation", targetId: target.id })}>
                     <CardHeader>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <CardTitle className="text-lg">{target.name}</CardTitle>
                           <p className="mt-1 text-sm text-muted-foreground">{target.description}</p>
                         </div>
-                        <Badge variant="outline">DEMO</Badge>
+                        <BuildStateBadge status={latestRun?.status ?? "NOT_EVALUATED"} />
                       </div>
                     </CardHeader>
                     <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
                       <Detail label="Revision" value={`R${revision?.revision ?? 1}`} />
-                      <Detail label="Evaluate status" value={formatEvaluationStatus(latestRun?.status)} />
                       <Detail label="Runtime" value={revision?.adapter ?? revision?.model ?? "Demo runtime"} />
                       <Detail label="Tools" value={`${revision?.tools.length ?? 0} configured`} />
-                      <span className="flex items-center gap-1 text-xs font-medium text-primary sm:col-span-2">View build details <ArrowUpRight className="size-3.5" /></span>
                     </CardContent>
+                    </button>
                   </Card>
-                </button>
               </div>
             ))}
             {state.agents.filter((agent) => agent.source === "SESSION").map((agent) => {
               const revision = state.agentRevisions.find((item) => item.id === agent.activeDraftRevisionId) ?? state.agentRevisions.find((item) => item.id === agent.currentApprovedRevisionId);
               return (
-                <div role="listitem" key={agent.id}>
-                  <button
-                    type="button"
-                    aria-label={`View ${agent.name} build details`}
-                    className="block h-full w-full rounded-lg text-left outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring/40"
-                    onClick={() => setBuildSelection({ kind: "workflow", agentId: agent.id })}
-                  >
-                    <Card className="h-full transition-colors hover:border-primary/35 hover:bg-primary/[0.03]">
+                <div role="listitem" key={agent.id} className="h-full">
+                    <Card className="h-full overflow-hidden bg-white transition-colors hover:border-primary/35 dark:bg-card">
+                      <button type="button" aria-label={`View ${agent.name} build details`} className="block w-full text-left outline-none hover:bg-primary/[0.03] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40" onClick={() => setBuildSelection({ kind: "workflow", agentId: agent.id })}>
                       <CardHeader>
                         <div className="flex items-start justify-between gap-3">
                           <div><CardTitle className="text-lg">{agent.name}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{agent.description}</p></div>
-                          <Badge variant="outline" className="border-primary/30 text-primary">SESSION</Badge>
+                          <BuildStateBadge status={revision?.status ?? "DRAFT"} />
                         </div>
                       </CardHeader>
                       <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
@@ -166,10 +260,14 @@ function CreateWorkspaceContent() {
                         <Detail label="Revision" value={`R${revision?.revision ?? 1} · ${revision?.status ?? "DRAFT"}`} />
                         <Detail label="Runtime" value={revision?.runtimeType ?? "—"} />
                         <Detail label="Dependencies" value={`${revision?.mcpIds.length ?? 0} MCP · ${revision?.skillIds.length ?? 0} Skills · ${revision?.knowledgeBaseIds.length ?? 0} KB`} />
-                        <span className="flex items-center gap-1 text-xs font-medium text-primary sm:col-span-2">View build details <ArrowUpRight className="size-3.5" /></span>
+                      </CardContent>
+                      </button>
+                      <CardContent className="flex flex-wrap justify-end gap-2 border-t px-4 py-3">
+                        {agent.activeDraftRevisionId && revision && !["PUBLISHED", "APPROVED", "REJECTED"].includes(revision.status) ? <Button size="sm" variant="outline" aria-label={`Edit ${agent.name} draft`} onClick={() => { setEditingAgentId(agent.id); setAgentOpen(true); }}><Pencil />Edit draft</Button> : null}
+                        {!agent.activeDraftRevisionId && agent.currentApprovedRevisionId ? <Button size="sm" variant="outline" aria-label={`Create new ${agent.name} version`} onClick={() => createNewVersion(agent.id)}><GitBranch />New version</Button> : null}
+                        {revision?.status === "DRAFT" ? <Button size="icon-sm" variant="ghost" aria-label={`Delete ${agent.name} draft`} onClick={() => store.deleteAgentDraft(revision.id, "agent-wizard")}><Trash2 /></Button> : null}
                       </CardContent>
                     </Card>
-                  </button>
                 </div>
               );
             })}
@@ -179,13 +277,14 @@ function CreateWorkspaceContent() {
 
         {(["mcp", "skill", "knowledge-base"] as const).map((kind) => {
           const item = tabs.find((candidate) => candidate.value === kind)!;
-          return <TabsContent key={kind} value={kind} className="mt-5"><SectionHeader title={`${item.label}s`} description={kind === "mcp" ? "Describe tool connections and authentication shapes without contacting them." : kind === "skill" ? "Define reusable Agent capabilities." : "Register approved knowledge sources for build-time selection."} action={<Button onClick={() => { setEditing(null); setResourceDialog(kind); }}><Plus />Create {item.label}</Button>} /><div className="mt-4 grid gap-4 lg:grid-cols-2">{resources[kind].map((resource) => <ResourceCard key={resource.id} resource={resource} onEdit={() => { setEditing(resource); setResourceDialog(kind); }} onDelete={() => remove(kind, resource.id)} />)}{!resources[kind].length ? <Empty title={`No session ${item.label}s`} description={`Create a prefilled ${item.label} to use in an Agent build.`} /> : null}</div></TabsContent>;
+          return <TabsContent key={kind} value={kind} className="mt-5"><SectionHeader title={`${item.label}s`} description={kind === "mcp" ? "Describe tool connections and authentication shapes without contacting them." : kind === "skill" ? "Define reusable Agent capabilities." : "Register approved knowledge sources for build-time selection."} action={<Button onClick={() => { setEditing(null); setResourceDialog(kind); }}><Plus />Create {item.label}</Button>} /><div className="mt-4 grid gap-4 lg:grid-cols-2">{resources[kind].map((resource) => <ResourceCard key={resource.id} resource={resource} onOpen={() => setResourceDetail({ kind, id: resource.id })} />)}{!resources[kind].length ? <Empty title={`No session ${item.label}s`} description={`Create a prefilled ${item.label} to use in an Agent build.`} /> : null}</div></TabsContent>;
         })}
       </Tabs>
 
       {resourceDialog ? <ResourceFormDialog kind={resourceDialog} open {...(editing ? { initialValue: editing } : {})} onOpenChange={(open) => { if (!open) { setResourceDialog(null); setEditing(null); } }} onSubmit={(value) => saveResource(resourceDialog, value)} /> : null}
-      <AgentForm open={agentOpen} onOpenChange={setAgentOpen} mcpServers={state.mcpServers} skills={state.skills} knowledgeBases={state.knowledgeBases} onSubmit={(input) => { const created = store.createAgent(input, "agent-wizard"); setNotice(`${created.name} R1 draft created.`); }} />
-      <AgentBuildDetailSheet selection={buildSelection} onOpenChange={(open) => { if (!open) setBuildSelection(null); }} />
+      <ResourceDetailSheet kind={resourceDetail?.kind ?? null} resource={selectedResource} onOpenChange={(open) => { if (!open) setResourceDetail(null); }} onEdit={() => { if (!resourceDetail || !selectedResource) return; const editable = selectedResource.source === "SESSION" ? selectedResource : duplicateResource(resourceDetail.kind, selectedResource); if (!editable) return; setResourceDetail(null); setEditing(editable); setResourceDialog(resourceDetail.kind); }} onDelete={() => { if (!resourceDetail || !selectedResource) return; remove(resourceDetail.kind, selectedResource.id); setResourceDetail(null); }} onDuplicate={() => { if (!resourceDetail || !selectedResource) return; duplicateResource(resourceDetail.kind, selectedResource); }} />
+      <AgentForm open={agentOpen} {...(editingAgentValue ? { initialValue: editingAgentValue, title: `Edit ${editingAgent?.name ?? "Agent"}`, submitLabel: "Save Agent draft" } : {})} onOpenChange={(open) => { setAgentOpen(open); if (!open) setEditingAgentId(null); }} mcpServers={state.mcpServers} skills={state.skills} knowledgeBases={state.knowledgeBases} onSubmit={(input) => { if (editingAgentId) { const updated = store.updateAgentDraftDetails(editingAgentId, input, "agent-wizard"); setNotice(`${updated.name} draft updated.`); setEditingAgentId(null); } else { const created = store.createAgent(input, "agent-wizard"); setNotice(`${created.name} R1 draft created.`); } }} />
+      <AgentBuildDetailSheet selection={buildSelection} onDuplicateDemoAgent={duplicateDemoAgent} onEditDemoAgent={editDemoAgent} onOpenChange={(open) => { if (!open) setBuildSelection(null); }} />
     </div>
   );
 }
@@ -202,9 +301,10 @@ export function CreatePage() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) { return <Card><CardContent className="p-5"><span className="text-xs uppercase tracking-wider text-muted-foreground">{label}</span><strong className="mt-2 block text-3xl tabular-nums">{value}</strong></CardContent></Card>; }
 function SectionHeader({ title, description, action }: { title: string; description: string; action: React.ReactNode }) { return <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-xl font-semibold">{title}</h2><p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p></div>{action}</div>; }
 function Detail({ label, value }: { label: string; value: string }) { return <div><span className="text-xs text-muted-foreground">{label}</span><strong className="mt-1 block font-medium">{value}</strong></div>; }
-function formatEvaluationStatus(status?: string) { return status ? status.charAt(0) + status.slice(1).toLowerCase() : "Not evaluated"; }
+function formatEvaluationStatus(status?: string) { return status ? status.charAt(0) + status.slice(1).toLowerCase().replaceAll("_", " ") : "Not evaluated"; }
+function BuildStateBadge({ status }: { status: string }) { const attention = ["FAILED", "PARTIAL", "VALIDATION_FAILED", "REJECTED"].includes(status); const active = ["RUNNING", "QUEUED", "VALIDATING", "BUSINESS_EVALUATING"].includes(status); const complete = ["COMPLETED", "VALIDATED", "APPROVED", "PUBLISHED"].includes(status); return <Badge variant="outline" className={attention ? "border-destructive/30 bg-destructive/5 text-destructive" : active ? "border-primary/30 bg-primary/5 text-primary" : complete ? "border-emerald-200 bg-emerald-50 text-emerald-700" : undefined}>{formatEvaluationStatus(status)}</Badge>; }
 function Empty({ title, description }: { title: string; description: string }) { return <Card className="border-dashed lg:col-span-2"><CardContent className="grid min-h-40 place-items-center p-8 text-center"><div><strong>{title}</strong><p className="mt-1 text-sm text-muted-foreground">{description}</p></div></CardContent></Card>; }
-function ResourceCard({ resource, onEdit, onDelete }: { resource: Resource; onEdit(): void; onDelete(): void }) { const detail = "endpoint" in resource ? resource.endpoint : "sourceType" in resource ? resource.sourceType : resource.description; const isSession = resource.source === "SESSION"; return <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-base">{resource.name}</CardTitle><p className="mt-1 break-all text-sm text-muted-foreground">{detail}</p></div><Badge variant="outline" className={isSession ? "border-primary/30 text-primary" : undefined}>{isSession ? "SESSION" : "DEMO"}</Badge></div></CardHeader><CardContent className={isSession ? "flex justify-end gap-2" : "text-xs text-muted-foreground"}>{isSession ? <><Button variant="outline" onClick={onEdit}>Edit</Button><Button variant="ghost" size="icon" aria-label={`Delete ${resource.name}`} onClick={onDelete}><Trash2 className="size-4" /></Button></> : "Ready to attach to Agent builds."}</CardContent></Card>; }
+function ResourceCard({ resource, onOpen }: { resource: Resource; onOpen(): void }) { const detail = "endpoint" in resource ? resource.endpoint : "sourceType" in resource ? resource.sourceType : resource.description; const isSession = resource.source === "SESSION"; return <Card className="overflow-hidden bg-white transition-colors hover:border-primary/35 dark:bg-card"><button type="button" aria-label={`View ${resource.name} details`} className="block w-full text-left outline-none hover:bg-primary/[0.03] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40" onClick={onOpen}><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-base">{resource.name}</CardTitle><p className="mt-1 break-all text-sm text-muted-foreground">{detail}</p></div><Badge variant="outline" className={isSession ? "border-primary/30 bg-primary/5 text-primary" : "border-emerald-200 bg-emerald-50 text-emerald-700"}>{isSession ? "Editable" : "Ready"}</Badge></div></CardHeader><CardContent><span className="text-xs text-muted-foreground">{isSession ? "Editable session resource" : "Read-only starter resource"}</span></CardContent></button></Card>; }
+function nextCopyName(name: string, existingNames: string[]): string { const names = new Set(existingNames.map((item) => item.toLowerCase())); let candidate = `${name} Copy`; let suffix = 2; while (names.has(candidate.toLowerCase())) candidate = `${name} Copy ${suffix++}`; return candidate; }

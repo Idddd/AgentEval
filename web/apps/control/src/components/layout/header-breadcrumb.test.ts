@@ -72,6 +72,24 @@ describe("getHeaderBreadcrumbItems", () => {
     ]);
   });
 
+  it("links the Relay preview back through the Guardrails breadcrumb", () => {
+    expect(
+      getHeaderBreadcrumbItems(
+        "/individual/governance/guardrails/relay-preview",
+      ),
+    ).toEqual([
+      { href: "/individual/governance", label: "Governance" },
+      {
+        href: "/individual/governance/guardrails",
+        label: "Guardrails",
+      },
+      {
+        href: "/individual/governance/guardrails/relay-preview",
+        label: "Relay reference",
+      },
+    ]);
+  });
+
   it("labels Evaluation deep links", () => {
     expect(
       getHeaderBreadcrumbItems(

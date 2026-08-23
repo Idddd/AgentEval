@@ -16,6 +16,8 @@ import { ApiError, api } from "@/lib/api";
 import { getAgentPlatformPresentation } from "@/lib/agent-platforms";
 import { useProjectQueryScope } from "@/hooks/use-project-query-scope";
 import { useEffect, useRef, useState } from "react";
+import { useDemoRole } from "@/hooks/use-demo-role";
+import { EndUserInstanceDetailPage } from "@/features/demo-workflow/end-user/instance-detail-page";
 
 const tabSearch = z.preprocess(
   (value) => typeof value === "string" && instanceDetailTabSearchValues.includes(value as (typeof instanceDetailTabSearchValues)[number]) ? value : undefined,
@@ -24,8 +26,16 @@ const tabSearch = z.preprocess(
 
 export const Route = createFileRoute("/$projectId/instances/$instanceId")({
   validateSearch: z.object({ creating: z.boolean().optional(), tab: tabSearch }),
-  component: AgentDetail,
+  component: InstanceDetailRoute,
 });
+
+function InstanceDetailRoute() {
+  const { persona } = useDemoRole();
+  const { instanceId, projectId } = Route.useParams();
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+  return persona === "end-user" ? <EndUserInstanceDetailPage activeTab={normalizeInstanceDetailTab(search.tab)} instanceId={instanceId} onBack={() => void navigate({ to: "/$projectId/instances", params: { projectId } })} /> : <AgentDetail />;
+}
 
 function AgentDetail() {
   const { instanceId: agentId, projectId } = Route.useParams();

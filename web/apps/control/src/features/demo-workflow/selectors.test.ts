@@ -12,8 +12,13 @@ describe("demo workflow persona selectors", () => {
   it("shows technical configuration only to Agent Wizard", () => {
     const state = cloneDemoWorkflowFixtures("individual", "selector-session");
 
-    const build = selectAgentWizardBuilds(state)[0]!;
-    const gardenCard = selectEndUserGarden(state)[0]!;
+    const build = selectAgentWizardBuilds(state).find(
+      (item) => item.name === "Policy Guidance Assistant",
+    )!;
+    const garden = selectEndUserGarden(state);
+    const gardenCard = garden.find(
+      (item) => item.name === "Policy Guidance Assistant",
+    )!;
 
     expect(build).toMatchObject({
       name: "Policy Guidance Assistant",
@@ -30,6 +35,9 @@ describe("demo workflow persona selectors", () => {
     expect(gardenCard).not.toHaveProperty("model");
     expect(gardenCard).not.toHaveProperty("mcpIds");
     expect(gardenCard).not.toHaveProperty("revisionId");
+    expect(garden).toHaveLength(7);
+    expect(garden[0]?.name).toBe("Onboarding Assistant");
+    expect(garden.find((item) => item.name === "OpenClaw Generalist")?.runtimeType).toBe("openclaw");
   });
 
   it("projects Release Candidates as business evidence without technical fields", () => {
@@ -39,7 +47,8 @@ describe("demo workflow persona selectors", () => {
       status: "PENDING_APPROVAL",
     };
 
-    const candidate = selectAdminReleaseCandidates(state)[0]!;
+    const candidates = selectAdminReleaseCandidates(state);
+    const candidate = candidates.find((item) => item.name === "Policy Guidance Assistant")!;
 
     expect(candidate).toMatchObject({
       name: "Policy Guidance Assistant",
@@ -51,6 +60,7 @@ describe("demo workflow persona selectors", () => {
     expect(candidate).not.toHaveProperty("endpoint");
     expect(candidate).not.toHaveProperty("model");
     expect(candidate).not.toHaveProperty("mcpIds");
+    expect(candidates[0]?.status).toBe("PENDING_APPROVAL");
   });
 
   it("summarizes only the current session for Monitor and Instances", () => {
@@ -81,7 +91,7 @@ describe("demo workflow persona selectors", () => {
       }),
     ]);
     expect(selectAdminMonitor(state)).toMatchObject({
-      publishedAgents: 1,
+      publishedAgents: 7,
       activeInstances: 0,
       stoppedInstances: 1,
       taskSuccess: 92,

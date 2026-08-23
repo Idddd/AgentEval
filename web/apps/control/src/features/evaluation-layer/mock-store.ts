@@ -104,6 +104,7 @@ export interface EvaluationLayerStore {
   publishDatasetRevision(datasetId: string, options?: PublishDatasetRevisionOptions): CommandResult<{ revisionId: string }>;
   createRun(input: CreateRunInput): CommandResult<{ runId: string }>;
   advanceRun(runId: string): CommandResult<{ complete: boolean }>;
+  submitReportForAdmin(reportId: string, justification: string): CommandResult;
   decideRevision(
     reportId: string,
     status: "APPROVED" | "REJECTED",
@@ -1388,6 +1389,31 @@ export function createEvaluationLayerStore(
       }));
       return { ok: true, value: { complete } };
     },
+    submitReportForAdmin(reportId, justification) {
+      const report = state.reports.find((item) => item.id === reportId);
+      if (!report) return fail("Evaluation report not found.", "NOT_FOUND");
+      const run = state.runs.find((item) => item.id === report.runId);
+      if (!run) return fail("Evaluation run not found.", "NOT_FOUND");
+      const requiresJustification = run.status === "FAILED" || run.results.some(
+        (result) => result.status === "FAIL" || result.status === "ERROR",
+      );
+      const normalizedJustification = justification.trim();
+      if (requiresJustification && !normalizedJustification) {
+        return fail("Justification is required before sending to Admin.", "INVALID_INPUT");
+      }
+      replaceState((snapshot) => ({
+        ...snapshot,
+        reports: snapshot.reports.map((item) => item.id === reportId
+          ? {
+              ...item,
+              ...(normalizedJustification
+                ? { submissionJustification: normalizedJustification }
+                : {}),
+            }
+          : item),
+      }));
+      return { ok: true, value: undefined };
+    },
     decideRevision(reportId, status, actor) {
       if (actor.role !== "admin") {
         return fail("Only an Admin can decide an evaluation.", "UNAVAILABLE");
@@ -1648,22 +1674,44 @@ export function createEvaluationLayerStore(
       return { ok: true, value: undefined };
     },
     tickSimulation() {
-      const online = state.targets.filter(
-        (target) => target.liveStatus !== "OFFLINE",
+      const eligible = state.targets.filter(
+        (target) =>
+          target.liveStatus !== "OFFLINE" &&
+          state.runs.some(
+            (run) => run.targetId === target.id,
+          ),
       );
-      if (!online.length) {
+      if (!eligible.length) {
         return fail("No online Agent available for simulation.", "UNAVAILABLE");
       }
+      // Onboarding is intentionally busier in the demo, but it is never
+      // pinned in the Trace list and other eligible Agents still emit data.
+      const onboarding = eligible.find(
+        (item) => item.id === "demo-onboarding-assistant",
+      );
+      const weightedTargets = onboarding
+        ? [
+            onboarding,
+            onboarding,
+            onboarding,
+            ...eligible.filter((item) => item.id !== onboarding.id),
+          ]
+        : eligible;
       const target =
-        online[Math.floor(dependencies.random() * online.length)]!;
-      // Reuse the latest real run's context (dataset revision) as the template,
-      // but attach simulated traces to a dedicated live run per target so
-      // completed runs and their Reports stay static.
+        weightedTargets[
+          Math.floor(dependencies.random() * weightedTargets.length)
+        ]!;
+      // Reuse the latest available run context (dataset revision) as the
+      // template, preferring a completed Evaluation when one exists. Traces
+      // still attach to a dedicated live run so Reports stay static.
       const template = state.runs
-        .filter(
-          (run) => run.targetId === target.id && !isLiveMonitoringRun(run.id),
-        )
-        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+        .filter((run) => run.targetId === target.id)
+        .sort(
+          (a, b) =>
+            Number(isLiveMonitoringRun(a.id)) -
+              Number(isLiveMonitoringRun(b.id)) ||
+            b.startedAt.localeCompare(a.startedAt),
+        )[0];
       if (!template) {
         return fail("Agent has no Evaluation history to simulate from.", "UNAVAILABLE");
       }

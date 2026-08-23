@@ -47,6 +47,9 @@ export function createDemoWorkflowActions(
       store.stopInstance(instanceId, "end-user");
       later(500, () => store.markInstanceStopped(instanceId));
     },
+    deleteInstance(instanceId: string) {
+      store.deleteInstance(instanceId, "end-user");
+    },
     dispose() {
       for (const handle of pending) scheduler.clear(handle);
       pending.clear();

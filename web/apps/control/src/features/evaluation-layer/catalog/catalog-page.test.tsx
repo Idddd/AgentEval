@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 describe('Catalog discovery', () => {
-  it('uses the configured Onboarding Assistant icon in every catalog view and drawer', async () => {
+  it('uses the configured Onboarding Assistant icon in the lifecycle and drawer', async () => {
     render(
       <EvaluationLayerProvider projectId='individual'>
         <EvaluationCatalogPage />
@@ -54,13 +54,6 @@ describe('Catalog discovery', () => {
     });
     expectUserPlusIcon(lifecycle);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Cards' }));
-    expectUserPlusIcon(screen.getByText('Onboarding Assistant').closest('[role="button"]'));
-
-    await userEvent.click(screen.getByRole('button', { name: 'List' }));
-    expectUserPlusIcon(screen.getByText('Onboarding Assistant').closest('tr'));
-
-    await userEvent.click(screen.getByRole('button', { name: 'Lifecycle' }));
     await userEvent.click(screen.getByRole('button', {
       name: 'Onboarding Assistant demo-onboarding-assistant',
     }));
@@ -91,7 +84,7 @@ describe('Catalog discovery', () => {
     expect(screen.queryByRole('heading', { name: 'My Builds' })).toBeNull();
   });
 
-  it('places Sort beside the view controls instead of a target count', () => {
+  it('keeps Sort without view controls or a target count', () => {
     render(
       <EvaluationLayerProvider projectId='individual'>
         <EvaluationCatalogPage />
@@ -99,29 +92,47 @@ describe('Catalog discovery', () => {
     );
 
     const sort = screen.getByRole('combobox', { name: 'Sort' });
-    const viewControls = screen.getByRole('button', { name: 'Cards' }).parentElement;
 
-    expect(sort.closest('label')?.parentElement).toBe(viewControls?.parentElement);
+    expect(sort).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Lifecycle' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Cards' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'List' })).toBeNull();
     expect(screen.queryByText(/evaluation targets$/i)).toBeNull();
   });
 
-  it('uses Lifecycle as the first and default catalog view', () => {
+  it('uses Lifecycle as the only catalog view', () => {
     render(
       <EvaluationLayerProvider projectId='individual'>
         <EvaluationCatalogPage />
       </EvaluationLayerProvider>,
     );
 
-    const lifecycle = screen.getByRole('button', { name: 'Lifecycle' });
-    const controls = lifecycle.parentElement;
-
-    expect(lifecycle.getAttribute('aria-pressed')).toBe('true');
-    expect(Array.from(controls?.querySelectorAll('button') ?? []).map((button) => button.textContent)).toEqual([
-      'Lifecycle',
-      'Cards',
-      'List',
-    ]);
     expect(screen.getByRole('list', { name: 'Evaluation lifecycles' })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Lifecycle' })).toBeNull();
+  });
+
+  it('filters the lifecycle list from the compact summary controls', async () => {
+    roleState.value = 'member';
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationCatalogPage />
+      </EvaluationLayerProvider>,
+    );
+
+    const inProgress = screen.getByRole('button', { name: /In progress/ });
+    expect(inProgress.getAttribute('aria-pressed')).toBe('false');
+
+    await userEvent.click(inProgress);
+
+    expect(inProgress.getAttribute('aria-pressed')).toBe('true');
+    const filteredLifecycle = screen.getByRole('list', { name: 'Evaluation lifecycles' });
+    expect(within(filteredLifecycle).getAllByRole('button')).toHaveLength(1);
+    expect(within(filteredLifecycle).getByRole('button', { name: /Deployment Monitor/ })).not.toBeNull();
+
+    await userEvent.click(inProgress);
+
+    expect(inProgress.getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: /Onboarding Assistant/ })).not.toBeNull();
   });
 
   it('keeps the starter workflow with its default Dataset first for every lifecycle sort', async () => {
@@ -326,7 +337,13 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(packs.getByText(/1 selected · \d+ safety cases/)).not.toBeNull();
 
     await userEvent.click(coverage.getByRole('button', { name: 'New Dataset' }));
-    expect(screen.getByRole('dialog', { name: 'Create dataset' })).not.toBeNull();
+    const createDialog = within(screen.getByRole('dialog', { name: 'Create dataset' }));
+    expect((createDialog.getByRole('textbox', { name: 'Name *' }) as HTMLInputElement).value)
+      .toBe('Onboarding Assistant Dataset');
+    expect((createDialog.getByRole('textbox', { name: 'Description' }) as HTMLTextAreaElement).value)
+      .toBe('Evaluation cases for Onboarding Assistant.');
+    await userEvent.click(createDialog.getByRole('button', { name: 'Create dataset' }));
+    expect(screen.queryByRole('dialog', { name: 'Create dataset' })).toBeNull();
   });
 
   it('opens the selected Dataset detail from the card action', async () => {
@@ -343,6 +360,7 @@ describe('Catalog drawer progressive disclosure', () => {
 
     await userEvent.click(coverage.getByRole('button', { name: 'New Dataset' }));
     const createDialog = within(screen.getByRole('dialog', { name: 'Create dataset' }));
+    await userEvent.clear(createDialog.getByRole('textbox', { name: 'Name *' }));
     await userEvent.type(createDialog.getByRole('textbox', { name: 'Name *' }), 'Alternate Dataset');
     await userEvent.click(createDialog.getByRole('button', { name: 'Create dataset' }));
     expect(
@@ -377,6 +395,7 @@ describe('Catalog drawer progressive disclosure', () => {
 
     await userEvent.click(coverage.getByRole('button', { name: 'New Dataset' }));
     const createDialog = within(screen.getByRole('dialog', { name: 'Create dataset' }));
+    await userEvent.clear(createDialog.getByRole('textbox', { name: 'Name *' }));
     await userEvent.type(createDialog.getByRole('textbox', { name: 'Name *' }), 'Persistent Dataset');
     await userEvent.click(createDialog.getByRole('button', { name: 'Create dataset' }));
 
@@ -455,6 +474,7 @@ describe('Catalog drawer progressive disclosure', () => {
 
     await userEvent.click(coverage.getByRole('button', { name: 'New Dataset' }));
     const createDialog = within(screen.getByRole('dialog', { name: 'Create dataset' }));
+    await userEvent.clear(createDialog.getByRole('textbox', { name: 'Name *' }));
     await userEvent.type(createDialog.getByRole('textbox', { name: 'Name *' }), 'One-stop Eval Dataset');
     await userEvent.click(createDialog.getByRole('button', { name: 'Create dataset' }));
 
@@ -571,6 +591,7 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(coverage.queryByRole('button', { name: 'Generate Dataset' })).toBeNull();
     await userEvent.click(coverage.getByRole('button', { name: 'New Dataset' }));
     const createDialog = within(screen.getByRole('dialog', { name: 'Create dataset' }));
+    await userEvent.clear(createDialog.getByRole('textbox', { name: 'Name *' }));
     await userEvent.type(createDialog.getByRole('textbox', { name: 'Name *' }), 'Onboarding Assistant Dataset');
     await userEvent.click(createDialog.getByRole('button', { name: 'Create dataset' }));
 
@@ -700,7 +721,8 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(result.getByRole('status', { name: 'Evaluation outcome: FAIL' })).not.toBeNull();
     expect(result.getByText('The assistant exposed restricted employee data after access had been denied.')).not.toBeNull();
     expect(result.queryByText('Reason')).toBeNull();
-    expect(result.getAllByText('Pending rejection').length).toBeGreaterThan(0);
+    expect(result.getAllByText('Pending approval').length).toBeGreaterThan(0);
+    expect(result.queryByText('Pending rejection')).toBeNull();
     expect(drawer.queryByRole('button', { name: 'Approve' })).toBeNull();
     await userEvent.click(drawer.getByRole('button', { name: 'Reject' }));
 
@@ -749,18 +771,46 @@ describe('Catalog drawer progressive disclosure', () => {
     expect(drawer.getByText('Send report to Admin')).not.toBeNull();
     expect(drawer.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(drawer.queryByRole('button', { name: 'Reject' })).toBeNull();
-    await userEvent.click(drawer.getByRole('button', { name: 'Send to Admin' }));
+    const sendButton = drawer.getByRole('button', { name: 'Send to Admin' }) as HTMLButtonElement;
+    expect(sendButton.disabled).toBe(false);
+    expect(drawer.queryByRole('textbox', { name: 'Justification for Admin' })).toBeNull();
+    await userEvent.click(sendButton);
     expect(drawer.getByText('Awaiting Admin decision')).not.toBeNull();
     expect(drawer.getByRole('button', { name: 'View results' })).not.toBeNull();
     await userEvent.click(drawer.getByRole('button', { name: 'View results' }));
     expect(drawer.getByRole('region', { name: 'Report details' })).not.toBeNull();
+    expect(drawer.queryByText('Submission justification')).toBeNull();
+  });
+
+  it('requires justification only when a failed evaluation is sent to Admin', async () => {
+    roleState.value = 'member';
+    render(
+      <EvaluationLayerProvider projectId='individual'>
+        <EvaluationCatalogPage />
+      </EvaluationLayerProvider>,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /Office Assistant demo-permission-compliance/ }),
+    );
+    const drawer = within(screen.getByRole('dialog', { name: 'Office Assistant' }));
+    const sendButton = drawer.getByRole('button', { name: 'Send to Admin' }) as HTMLButtonElement;
+
+    expect(sendButton.disabled).toBe(true);
+    await userEvent.type(
+      drawer.getByRole('textbox', { name: 'Justification for Admin' }),
+      'The access-policy finding needs an independent risk decision.',
+    );
+    expect(sendButton.disabled).toBe(false);
+    await userEvent.click(sendButton);
+    await userEvent.click(drawer.getByRole('button', { name: 'View results' }));
+    expect(drawer.getByText('The access-policy finding needs an independent risk decision.')).not.toBeNull();
   });
 
   it('hands a completed Agent Wizard evaluation to the connected Admin Eval workflow', async () => {
     roleState.value = 'member';
     const onSubmitToAdminEval = vi.fn();
     const ConnectedCatalog = EvaluationCatalogPage as ComponentType<{
-      onSubmitToAdminEval(targetRevisionId: string): void;
+      onSubmitToAdminEval(targetRevisionId: string, justification: string): void;
     }>;
     render(
       <EvaluationLayerProvider projectId='individual'>
@@ -772,9 +822,10 @@ describe('Catalog drawer progressive disclosure', () => {
     );
     const drawer = within(screen.getByRole('dialog', { name: 'Document Summarization' }));
 
+    expect(drawer.queryByRole('textbox', { name: 'Justification for Admin' })).toBeNull();
     await userEvent.click(drawer.getByRole('button', { name: 'Submit to Admin Eval' }));
 
-    expect(onSubmitToAdminEval).toHaveBeenCalledWith('demo-document-summarization-r1');
+    expect(onSubmitToAdminEval).toHaveBeenCalledWith('demo-document-summarization-r1', '');
     expect(drawer.getByText('Awaiting Admin decision')).not.toBeNull();
   });
 
@@ -782,7 +833,7 @@ describe('Catalog drawer progressive disclosure', () => {
     roleState.value = 'member';
     const onSubmitToAdminEval = vi.fn();
     const ConnectedCatalog = EvaluationCatalogPage as ComponentType<{
-      onSubmitToAdminEval(targetRevisionId: string): void;
+      onSubmitToAdminEval(targetRevisionId: string, justification: string): void;
       isAdminEvalEligible(targetRevisionId: string): boolean;
     }>;
     render(
@@ -799,6 +850,7 @@ describe('Catalog drawer progressive disclosure', () => {
     const drawer = within(screen.getByRole('dialog', { name: 'Document Summarization' }));
 
     expect(drawer.getByText('Send report to Admin')).not.toBeNull();
+    expect(drawer.queryByRole('textbox', { name: 'Justification for Admin' })).toBeNull();
     await userEvent.click(drawer.getByRole('button', { name: 'Send to Admin' }));
 
     expect(onSubmitToAdminEval).not.toHaveBeenCalled();

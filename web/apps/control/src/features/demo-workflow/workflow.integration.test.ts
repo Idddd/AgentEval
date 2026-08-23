@@ -26,7 +26,7 @@ function createBridgeStores() {
       sync(): void;
       evaluationTargetIdFor(revisionId: string): string | null;
       evaluationTargetRevisionIdFor(revisionId: string): string | null;
-      submitToAdminEval(targetRevisionId: string): void;
+      submitToAdminEval(targetRevisionId: string, justification: string): void;
     };
   }).createDemoEvaluationBridge;
   return { workflow, evaluation, bridge: factory(workflow, evaluation) };
@@ -203,7 +203,7 @@ describe("complete session demo workflow", () => {
       technicalResult: { outcome: "PASSED" },
     });
 
-    bridge.submitToAdminEval(targetRevisionId!);
+    bridge.submitToAdminEval(targetRevisionId!, "Ready for Admin review.");
     expect(workflow.getState().agentRevisions.find((item) => item.id === revision.id)?.status).toBe("PENDING_EVAL");
 
     workflow.startBusinessEvaluation(
@@ -344,7 +344,7 @@ describe("complete session demo workflow", () => {
       expect.objectContaining({ id: instance.id, status: "STOPPED" }),
     );
     expect(selectAdminMonitor(store.getState())).toMatchObject({
-      publishedAgents: 2,
+      publishedAgents: 8,
       activeInstances: 0,
       stoppedInstances: 1,
       taskSuccess: 92,

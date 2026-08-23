@@ -19,8 +19,8 @@ vi.mock("@tanstack/react-router", () => ({
 
 afterEach(cleanup);
 
-function renderOverview() {
-  const store = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
+function renderOverview(fixtures = cloneEvaluationLayerFixtures()) {
+  const store = createEvaluationLayerStore(fixtures);
   render(
     <EvaluationLayerProvider projectId="individual" store={store}>
       <EvaluationOverviewPage />
@@ -30,15 +30,24 @@ function renderOverview() {
 }
 
 describe("EvaluationOverviewPage", () => {
-  it("shows Onboarding Assistant as the first trace example", () => {
-    renderOverview();
+  it("orders traces by recency instead of pinning Onboarding Assistant", () => {
+    const fixtures = cloneEvaluationLayerFixtures();
+    const newest = fixtures.traces.find(
+      (trace) => trace.targetId !== "demo-onboarding-assistant",
+    )!;
+    newest.startedAt = "2099-01-01T00:00:00.000Z";
+    const expectedTarget = fixtures.targets.find(
+      (target) => target.id === newest.targetId,
+    )!.name;
+    renderOverview(fixtures);
 
     const traceTables = screen.getAllByRole("table");
     const firstTraceRow = within(traceTables.at(-1)!).getAllByRole("row")[1]!;
-    expect(firstTraceRow.textContent).toContain("Onboarding Assistant");
+    expect(firstTraceRow.textContent).toContain(expectedTarget);
+    expect(firstTraceRow.textContent).not.toContain("Onboarding Assistant");
   });
 
-  it("puts row-scoped evaluator policy and compact Sampling inside one section", () => {
+  it("shows evaluator rules and Sampling together as the trace policy", () => {
     renderOverview();
 
     const evaluators = within(
@@ -50,11 +59,10 @@ describe("EvaluationOverviewPage", () => {
       evaluators.getByRole("slider", { name: "Sampling rate" }),
     ).toBeTruthy();
     const sampling = evaluators.getByRole("slider", { name: "Sampling rate" });
-    const evaluatorTable = evaluators.getByRole("table");
-    expect(
-      sampling.compareDocumentPosition(evaluatorTable) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).not.toBe(0);
+    expect(sampling).toBeTruthy();
+    expect(evaluators.getByText("Evaluator policy")).toBeTruthy();
+    expect(evaluators.getByText("2 active")).toBeTruthy();
+    expect(evaluators.queryByRole("table")).toBeNull();
     expect(
       evaluators.getAllByRole("heading", { name: "Sampling" }),
     ).toHaveLength(1);
@@ -73,6 +81,40 @@ describe("EvaluationOverviewPage", () => {
     expect(evaluators.queryByText("Estimated saving")).toBeNull();
     expect(evaluators.queryByText("Dropped failures")).toBeNull();
     expect(evaluators.queryByTestId("sampling-progress")).toBeNull();
+  });
+
+  it("keeps ten Evaluators compact while preserving access to every rule and result", async () => {
+    const user = userEvent.setup();
+    const fixtures = cloneEvaluationLayerFixtures();
+    fixtures.evaluators.push(
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: `scale-evaluator-${index + 3}`,
+        name: `Scale Evaluator ${index + 3}`,
+        provider: "BUILT_IN" as const,
+        version: "demo-v1",
+        enabled: true,
+        minimumScore: 80,
+        sendAlert: false,
+      })),
+    );
+    renderOverview(fixtures);
+
+    const evaluators = screen.getByRole("region", { name: "Evaluators" });
+    expect(within(evaluators).getAllByRole("article")).toHaveLength(4);
+    expect(within(evaluators).getByText("Showing 4 of 10 Evaluators")).toBeTruthy();
+    expect(
+      screen.getByRole("note", { name: "Checks applied to every case" }).textContent,
+    ).toContain("+7 more active");
+
+    const traceTable = screen.getAllByRole("table").at(-1)!;
+    const firstTraceRow = within(traceTable).getAllByRole("row")[1]!;
+    expect(within(firstTraceRow).getByText("Show remaining 7 evaluator results")).toBeTruthy();
+
+    await user.click(
+      within(evaluators).getByRole("button", { name: "Show all 10 Evaluators" }),
+    );
+    expect(within(evaluators).getAllByRole("article")).toHaveLength(10);
+    expect(within(evaluators).getByText("Showing 10 of 10 Evaluators")).toBeTruthy();
   });
 
   it("updates only the selected evaluator's threshold and mock alert", async () => {
@@ -100,26 +142,24 @@ describe("EvaluationOverviewPage", () => {
     });
   });
 
-  it("shows Score before Status with evaluator pass totals", async () => {
-    const user = userEvent.setup();
+  it("shows each evaluator result before the derived Trace status", () => {
     renderOverview();
 
     const headers = screen
       .getAllByRole("columnheader")
       .map((item) => item.textContent);
-    expect(headers.indexOf("Score")).toBeLessThan(headers.indexOf("Status"));
+    expect(headers.indexOf("Evaluator results")).toBeLessThan(
+      headers.indexOf("Status"),
+    );
 
     const failedRow = screen.getByText("Prompt injection data leak").closest("tr")!;
-    const score = within(failedRow).getByRole("button", {
-      name: /evaluator score: \d+ of 2 passed/i,
-    });
-    expect(score.className).toContain("text-red");
-    expect(within(failedRow).getByText("FAIL")).toBeTruthy();
-
-    await user.click(score);
-    expect(screen.getAllByText("Data leak detection").length).toBeGreaterThan(1);
-    expect(screen.getAllByText("Token efficiency").length).toBeGreaterThan(1);
-    expect(screen.getAllByText(/%/).length).toBeGreaterThan(0);
+    const score = within(failedRow).getByLabelText(
+      /evaluator score: \d+ of 2 passed/i,
+    );
+    expect(score.textContent).toContain("Data leak detection");
+    expect(score.textContent).toContain("Token efficiency");
+    expect(score.textContent).toContain("FAIL");
+    expect(within(failedRow).getAllByText("FAIL").length).toBeGreaterThan(0);
   });
 
   it("binds alert and failure filtering to the derived evaluator status", async () => {
@@ -164,7 +204,7 @@ describe("EvaluationOverviewPage", () => {
       "Grounded policy response",
       "Ungrounded response prevented",
       "Instruction-following summary",
-      "Risk-aware summarization",
+      "Security incident summary includes risks and next steps",
     ];
 
     for (const label of expectedLabels) {
@@ -174,11 +214,28 @@ describe("EvaluationOverviewPage", () => {
     expect(store.getState().traces.some((trace) => trace.caseId === "weather-guest-allow")).toBe(true);
   });
 
+  it("lists the checks applied to every case once above the trace table", () => {
+    renderOverview();
+
+    const checks = screen.getByRole("note", {
+      name: "Checks applied to every case",
+    });
+    expect(within(checks).getByText("Data leak detection")).toBeTruthy();
+    expect(within(checks).getByText("Token efficiency")).toBeTruthy();
+    expect(within(checks).getByText("Incoming Trace")).toBeTruthy();
+    expect(within(checks).getByText("Final Trace status")).toBeTruthy();
+    expect(within(checks).getByText(/Any evaluator below threshold/)).toBeTruthy();
+    expect(screen.queryByText("Test: Budget review memo")).toBeNull();
+  });
+
   it("identifies the token evaluator as a Langsmith source", () => {
     renderOverview();
 
-    const evaluatorRow = screen.getByText("Token efficiency").closest("tr")!;
-    expect(within(evaluatorRow).getByText("Langsmith")).toBeTruthy();
-    expect(within(evaluatorRow).queryByText("Langfuse")).toBeNull();
+    const evaluatorSection = screen.getByRole("region", { name: "Evaluators" });
+    const evaluatorCard = within(evaluatorSection)
+      .getByText("Token efficiency")
+      .closest("article")!;
+    expect(within(evaluatorCard).getByText(/Langsmith/)).toBeTruthy();
+    expect(within(evaluatorCard).queryByText(/Langfuse/)).toBeNull();
   });
 });

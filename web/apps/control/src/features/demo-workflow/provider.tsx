@@ -21,6 +21,7 @@ import type {
 import type { DemoEvaluationBridge } from "./evaluate/build-evaluation-controller";
 
 interface DemoWorkflowContextValue {
+  projectId: string;
   store: DemoWorkflowStore;
   actions: DemoWorkflowActions;
 }
@@ -43,7 +44,10 @@ export function DemoWorkflowProvider({
     [projectId, providedStore],
   );
   const actions = useMemo(() => createDemoWorkflowActions(store), [store]);
-  const context = useMemo(() => ({ store, actions }), [actions, store]);
+  const context = useMemo(
+    () => ({ projectId, store, actions }),
+    [actions, projectId, store],
+  );
 
   useEffect(() => () => actions.dispose(), [actions]);
 
@@ -66,6 +70,10 @@ function useDemoWorkflowContext(): DemoWorkflowContextValue {
 
 export function useDemoWorkflowStore(): DemoWorkflowStore {
   return useDemoWorkflowContext().store;
+}
+
+export function useDemoWorkflowProjectId(): string {
+  return useDemoWorkflowContext().projectId;
 }
 
 export function useDemoWorkflowActions(): DemoWorkflowActions {

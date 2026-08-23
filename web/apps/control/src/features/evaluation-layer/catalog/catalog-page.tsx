@@ -18,14 +18,11 @@ import {
   Database,
   FileText,
   FlaskConical,
-  LayoutGrid,
-  List,
   Play,
   Plus,
   Search,
   ShieldAlert,
   ShieldCheck,
-  Workflow,
   Wrench,
   XCircle,
   type LucideIcon,
@@ -44,6 +41,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Sheet,
   SheetContent,
@@ -90,10 +88,18 @@ import {
 } from './workspace-view-model';
 import { DatasetCardSelector } from './dataset-card-selector';
 
-type CatalogView = 'cards' | 'list' | 'lifecycle';
 type CatalogSort = 'updated' | 'name' | 'stage';
 type KindFilter = 'all' | EvaluationLayerTargetKind;
 type StageFilter = 'ALL' | WorkspaceStage;
+type SummaryFilter = 'action-required' | 'needs-review' | 'running' | 'pending' | 'rejected' | 'approved';
+
+function matchesSummaryFilter(row: WorkspaceRow, filter: SummaryFilter) {
+  if (filter === 'action-required') return row.stage === 'FAILED' || row.decisionStatus === 'REJECTED' || row.stage === 'NOT_EVALUATED';
+  if (filter === 'needs-review' || filter === 'pending') return row.decisionStatus === 'PENDING';
+  if (filter === 'running') return row.stage === 'RUNNING';
+  if (filter === 'rejected') return row.decisionStatus === 'REJECTED';
+  return row.decisionStatus === 'APPROVED';
+}
 
 const FIRST_WORKFLOW_TARGET_ID = 'demo-onboarding-assistant';
 
@@ -196,9 +202,7 @@ function resultActionLabel(row: WorkspaceRow) {
   if (row.decisionStatus === 'APPROVED') return 'Approved by Admin';
   if (row.decisionStatus === 'REJECTED') return 'Rejected · Developer changes required';
   if (row.decisionStatus === 'PENDING') {
-    return row.decisionRecommendation === 'APPROVED'
-      ? 'Awaiting Admin approval'
-      : 'Awaiting Admin rejection';
+    return 'Awaiting Admin approval';
   }
   if (row.stage === 'FAILED') return 'Retry required';
   if (row.risk.kind === 'FINDINGS') return 'Review required';
@@ -209,7 +213,7 @@ function decisionStatusLabel(row: WorkspaceRow) {
   if (row.decisionStatus === 'APPROVED') return 'Approved';
   if (row.decisionStatus === 'REJECTED') return 'Rejected';
   if (row.decisionStatus === 'PENDING') {
-    return row.decisionRecommendation === 'APPROVED' ? 'Pending approval' : 'Pending rejection';
+    return 'Pending approval';
   }
   return undefined;
 }
@@ -875,7 +879,7 @@ function WorkspaceDrawer({
   open: boolean;
   onOpenChange(open: boolean): void;
   onCreateDataset(): void;
-  onSubmitToAdminEval?(targetRevisionId: string): void;
+  onSubmitToAdminEval?(targetRevisionId: string, justification: string): void;
   isAdminEvalEligible?(targetRevisionId: string): boolean;
 }) {
   const state = useEvaluationLayerState();
@@ -885,6 +889,7 @@ function WorkspaceDrawer({
     && row?.currentRevision
     && (isAdminEvalEligible?.(row.currentRevision.id) ?? true),
   );
+  const requiresSubmissionJustification = row?.decisionRecommendation === 'REJECTED';
   const projectId = useCurrentProjectId();
   const role = useEffectiveProjectRole();
   const [workspaceNotice, setWorkspaceNotice] = useState<{
@@ -897,6 +902,7 @@ function WorkspaceDrawer({
   const [selectedGuardrailTemplateIds, setSelectedGuardrailTemplateIds] = useState<string[]>([]);
   const [datasetSelectionPending, setDatasetSelectionPending] = useState(false);
   const [submittedReportId, setSubmittedReportId] = useState('');
+  const [submissionJustification, setSubmissionJustification] = useState('');
   const knownTargetDatasetIdsRef = useRef<Set<string>>(new Set());
   const agentSectionRef = useRef<HTMLElement>(null);
   const datasetSectionRef = useRef<HTMLElement>(null);
@@ -941,6 +947,7 @@ function WorkspaceDrawer({
       setActiveReportId(undefined);
       setExpandedDetailSections([]);
       setSubmittedReportId('');
+      setSubmissionJustification('');
       setDatasetSelectionPending(row?.target.id === FIRST_WORKFLOW_TARGET_ID);
       previousWorkspaceRef.current = {
         stage: row?.stage,
@@ -1102,6 +1109,33 @@ function WorkspaceDrawer({
     setExpandedDetailSections([]);
     focusSection('agent');
   };
+  const submitForAdminReview = () => {
+    if (!row.latestReport || !row.currentRevision) return;
+    const justification = submissionJustification.trim();
+    const submission = store.submitReportForAdmin(row.latestReport.id, justification);
+    if (!submission.ok) {
+      setWorkspaceNotice({ message: submission.error, section: 'result' });
+      focusSection('result');
+      return;
+    }
+    try {
+      if (submitsToAdminEval && onSubmitToAdminEval) {
+        onSubmitToAdminEval(row.currentRevision.id, justification);
+      }
+      setSubmittedReportId(row.latestReport.id);
+      setWorkspaceNotice({
+        message: submitsToAdminEval
+          ? 'Build revision submitted to Admin Business Eval.'
+          : 'Evaluation report sent to Admin for review.',
+        section: 'result',
+      });
+    } catch (caught) {
+      setWorkspaceNotice({
+        message: caught instanceof Error ? caught.message : 'Unable to send the report to Admin.',
+        section: 'result',
+      });
+    }
+  };
 
   const continueWithSelectedDataset = () => {
     if (!row.selectedDataset) return;
@@ -1163,7 +1197,7 @@ function WorkspaceDrawer({
     ? 'active'
     : row.stage === 'NEEDS_RE_EVALUATION'
       ? 'stale'
-    : row.decisionStatus === 'REJECTED' || row.decisionRecommendation === 'REJECTED'
+    : row.decisionStatus === 'REJECTED'
       ? 'failed'
       : row.decisionStatus === 'APPROVED' || row.latestReport
         ? 'ready'
@@ -1293,18 +1327,7 @@ function WorkspaceDrawer({
         : undefined;
   } else if (row.decisionStatus === 'PENDING') {
     footerAction = role === 'member' && submittedReportId !== row.latestReport?.id
-      ? <Button onClick={() => {
-          if (submitsToAdminEval && onSubmitToAdminEval && row.currentRevision) {
-            onSubmitToAdminEval(row.currentRevision.id);
-          }
-          setSubmittedReportId(row.latestReport?.id ?? 'submitted');
-          setWorkspaceNotice({
-            message: submitsToAdminEval
-              ? 'Build revision submitted to Admin Business Eval.'
-              : 'Evaluation report sent to Admin for review.',
-            section: 'result',
-          });
-        }}><ArrowRight />{submitsToAdminEval ? 'Submit to Admin Eval' : 'Send to Admin'}</Button>
+      ? <Button disabled={requiresSubmissionJustification && !submissionJustification.trim()} onClick={submitForAdminReview}><ArrowRight />{submitsToAdminEval ? 'Submit to Admin Eval' : 'Send to Admin'}</Button>
       : <Button onClick={openLatestReport}>View results<ArrowRight /></Button>;
   } else if (guardrailEvaluationRestricted && row.latestReport) {
     footerAction = <Button onClick={openLatestReport}>View results<ArrowRight /></Button>;
@@ -1546,12 +1569,12 @@ function WorkspaceDrawer({
                   'rounded-lg border',
                   detailsOpen ? 'p-3' : 'p-4',
                   row.decisionStatus === 'APPROVED' && 'border-emerald-500/35 bg-emerald-500/10',
-                  (row.decisionStatus === 'REJECTED' || row.decisionRecommendation === 'REJECTED') && 'border-destructive/35 bg-destructive/5',
-                  row.decisionStatus === 'PENDING' && row.decisionRecommendation === 'APPROVED' && 'border-amber-500/35 bg-amber-500/10',
+                  row.decisionStatus === 'REJECTED' && 'border-destructive/35 bg-destructive/5',
+                  row.decisionStatus === 'PENDING' && 'border-amber-500/35 bg-amber-500/10',
                 )}
               >
                 <div className='flex items-center gap-2 font-semibold'>
-                  {row.decisionStatus === 'APPROVED' ? <ShieldCheck className='size-4 text-emerald-600' /> : row.decisionStatus === 'REJECTED' || row.decisionRecommendation === 'REJECTED' ? <XCircle className='size-4 text-destructive' /> : <Circle className='size-4 text-amber-600' />}
+                  {row.decisionStatus === 'APPROVED' ? <ShieldCheck className='size-4 text-emerald-600' /> : row.decisionStatus === 'REJECTED' ? <XCircle className='size-4 text-destructive' /> : <Circle className='size-4 text-amber-600' />}
                   {decisionStatusLabel(row)}
                 </div>
                 <p className='mt-0.5 text-sm text-muted-foreground'>
@@ -1561,9 +1584,21 @@ function WorkspaceDrawer({
                       ? 'Developer changes required. Update the Target revision, then run the evaluation again.'
                       : row.decisionRecommendation === 'APPROVED'
                         ? 'All Test Cases passed. An Admin must approve this evaluated revision.'
-                        : 'The evaluation failed or contains findings. An Admin must reject it before a Developer updates the Target.'}
+                        : 'The evaluation contains findings. An Admin will review the evidence and decide whether changes are required.'}
                 </p>
               </div>
+            ) : null}
+            {row.decisionStatus === 'PENDING' && role === 'member' && requiresSubmissionJustification && submittedReportId !== row.latestReport?.id ? (
+              <label className='grid gap-2 text-sm font-medium'>
+                Justification for Admin
+                <Textarea
+                  aria-label='Justification for Admin'
+                  rows={3}
+                  value={submissionJustification}
+                  placeholder='Explain why this evaluated revision is ready for Admin review.'
+                  onChange={(event) => setSubmissionJustification(event.target.value)}
+                />
+              </label>
             ) : null}
             {row.latestReport && detailsOpen ? (
               <ReportPreviewList
@@ -1722,7 +1757,7 @@ export function EvaluationCatalogPage({
   onSubmitToAdminEval,
   isAdminEvalEligible,
 }: {
-  onSubmitToAdminEval?(targetRevisionId: string): void;
+  onSubmitToAdminEval?(targetRevisionId: string, justification: string): void;
   isAdminEvalEligible?(targetRevisionId: string): boolean;
 } = {}) {
   const state = useEvaluationLayerState();
@@ -1731,10 +1766,10 @@ export function EvaluationCatalogPage({
   const role = useEffectiveProjectRole();
   const isAdmin = role === 'admin';
   const rows = useMemo(() => workspaceRows(state), [state]);
-  const [view, setView] = useState<CatalogView>('lifecycle');
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<KindFilter>('all');
   const [stage, setStage] = useState<StageFilter>('ALL');
+  const [summaryFilter, setSummaryFilter] = useState<SummaryFilter | null>(null);
   const [sort, setSort] = useState<CatalogSort>('updated');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
@@ -1757,37 +1792,37 @@ export function EvaluationCatalogPage({
     const count = (predicate: (row: WorkspaceRow) => boolean) => baseRows.filter(predicate).length;
     return isAdmin
       ? [
-          { label: 'Needs review', value: count((row) => row.decisionStatus === 'PENDING'), tone: 'text-amber-700' },
-          { label: 'Verification running', value: count((row) => row.stage === 'RUNNING'), tone: 'text-primary' },
-          { label: 'Changes requested', value: count((row) => row.decisionStatus === 'REJECTED'), tone: 'text-destructive' },
-          { label: 'Approved', value: count((row) => row.decisionStatus === 'APPROVED'), tone: 'text-emerald-700' },
+          { filter: 'needs-review' as const, label: 'Needs review', value: count((row) => row.decisionStatus === 'PENDING'), tone: 'text-amber-700' },
+          { filter: 'running' as const, label: 'Verification running', value: count((row) => row.stage === 'RUNNING'), tone: 'text-primary' },
+          { filter: 'rejected' as const, label: 'Changes requested', value: count((row) => row.decisionStatus === 'REJECTED'), tone: 'text-destructive' },
+          { filter: 'approved' as const, label: 'Approved', value: count((row) => row.decisionStatus === 'APPROVED'), tone: 'text-emerald-700' },
         ]
       : [
-          { label: 'Action required', value: count((row) => row.stage === 'FAILED' || row.decisionStatus === 'REJECTED' || row.stage === 'NOT_EVALUATED'), tone: 'text-destructive' },
-          { label: 'In progress', value: count((row) => row.stage === 'RUNNING'), tone: 'text-primary' },
-          { label: 'Waiting for Admin', value: count((row) => row.decisionStatus === 'PENDING'), tone: 'text-amber-700' },
-          { label: 'Approved', value: count((row) => row.decisionStatus === 'APPROVED'), tone: 'text-emerald-700' },
+          { filter: 'action-required' as const, label: 'Action required', value: count((row) => row.stage === 'FAILED' || row.decisionStatus === 'REJECTED' || row.stage === 'NOT_EVALUATED'), tone: 'text-destructive' },
+          { filter: 'running' as const, label: 'In progress', value: count((row) => row.stage === 'RUNNING'), tone: 'text-primary' },
+          { filter: 'pending' as const, label: 'Waiting for Admin', value: count((row) => row.decisionStatus === 'PENDING'), tone: 'text-amber-700' },
+          { filter: 'approved' as const, label: 'Approved', value: count((row) => row.decisionStatus === 'APPROVED'), tone: 'text-emerald-700' },
         ];
   }, [baseRows, isAdmin]);
   const stageCounts = useMemo(() => Object.fromEntries(STAGE_ORDER.map((value) => [value, value === 'ALL' ? baseRows.length : baseRows.filter((row) => row.stage === value).length])) as Record<StageFilter, number>, [baseRows]);
   const filteredRows = useMemo(() => {
-    const next = stage === 'ALL' ? [...baseRows] : baseRows.filter((row) => row.stage === stage);
+    const next = summaryFilter
+      ? baseRows.filter((row) => matchesSummaryFilter(row, summaryFilter))
+      : stage === 'ALL' ? [...baseRows] : baseRows.filter((row) => row.stage === stage);
     return next.sort((left, right) => {
-      if (view === 'lifecycle') {
-        if (left.target.id === FIRST_WORKFLOW_TARGET_ID) return -1;
-        if (right.target.id === FIRST_WORKFLOW_TARGET_ID) return 1;
-      }
+      if (left.target.id === FIRST_WORKFLOW_TARGET_ID) return -1;
+      if (right.target.id === FIRST_WORKFLOW_TARGET_ID) return 1;
       if (sort === 'name') return left.target.name.localeCompare(right.target.name);
       if (sort === 'stage') return STAGE_ORDER.indexOf(left.stage) - STAGE_ORDER.indexOf(right.stage) || left.target.name.localeCompare(right.target.name);
       return right.updatedAt.localeCompare(left.updatedAt) || left.target.name.localeCompare(right.target.name);
     });
-  }, [baseRows, sort, stage, view]);
+  }, [baseRows, sort, stage, summaryFilter]);
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const visibleRows = filteredRows.slice((page - 1) * pageSize, page * pageSize);
   const selected = rows.find((row) => row.target.id === selectedTargetId);
   const drawerRow = rows.find((row) => row.target.id === drawerTargetId);
 
-  useEffect(() => setPage(1), [kind, pageSize, query, stage]);
+  useEffect(() => setPage(1), [kind, pageSize, query, stage, summaryFilter]);
   useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
 
   const activate = (row: WorkspaceRow) => {
@@ -1833,38 +1868,41 @@ export function EvaluationCatalogPage({
 
       <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
         {lifecycleSummary.map((item) => (
-          <Card key={item.label}>
-            <CardContent className='py-4'>
-              <p className='text-xs font-medium text-muted-foreground'>{item.label}</p>
-              <p className={cn('mt-2 text-2xl font-semibold tabular-nums', item.tone)}>{item.value}</p>
-            </CardContent>
-          </Card>
+          <button
+            key={item.label}
+            type='button'
+            aria-pressed={summaryFilter === item.filter}
+            onClick={() => {
+              setSummaryFilter((current) => current === item.filter ? null : item.filter);
+              setStage('ALL');
+            }}
+            className={cn(
+              'flex min-h-12 items-center justify-between gap-3 rounded-lg border bg-card px-4 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              summaryFilter === item.filter && 'border-primary bg-primary/5 ring-1 ring-primary/20',
+            )}
+          >
+            <span className='text-xs font-medium text-muted-foreground'>{item.label}</span>
+            <span className={cn('text-lg font-semibold tabular-nums', item.tone)}>{item.value}</span>
+          </button>
         ))}
       </div>
 
       <Card>
         <CardContent className='space-y-4'>
-          <div className='flex flex-col gap-3 lg:flex-row lg:items-center'>
-            <label className='relative flex-1'>
-              <Search className='pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground' />
-              <Input className='pl-9' value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search capabilities, status, or results' />
-            </label>
-          </div>
-          <div className='flex gap-1 overflow-x-auto border-y py-2'>
-            {STAGE_ORDER.map((value) => <Button key={value} size='sm' variant={stage === value ? 'secondary' : 'ghost'} onClick={() => setStage(value)} className='shrink-0'>{value === 'ALL' ? 'All' : STAGE_META[value].label}<Badge variant='outline' className='ml-1'>{stageCounts[value]}</Badge></Button>)}
-          </div>
-          <div className='flex flex-wrap items-end justify-between gap-3'>
-            <label className='grid gap-1 text-xs text-muted-foreground'>Sort<select className='h-9 min-w-44 rounded-md border bg-background px-3 text-sm text-foreground' value={sort} onChange={(event) => setSort(event.target.value as CatalogSort)}><option value='updated'>Recently updated</option><option value='name'>Name</option><option value='stage'>Lifecycle stage</option></select></label>
-            <div className='flex rounded-md border p-1'>
-              <Button aria-pressed={view === 'lifecycle'} size='sm' variant={view === 'lifecycle' ? 'secondary' : 'ghost'} onClick={() => setView('lifecycle')}><Workflow />Lifecycle</Button>
-              <Button aria-pressed={view === 'cards'} size='sm' variant={view === 'cards' ? 'secondary' : 'ghost'} onClick={() => setView('cards')}><LayoutGrid />Cards</Button>
-              <Button aria-pressed={view === 'list'} size='sm' variant={view === 'list' ? 'secondary' : 'ghost'} onClick={() => setView('list')}><List />List</Button>
+          <div className='flex flex-col gap-2 border-y py-2 lg:flex-row lg:items-center lg:justify-between'>
+            <div className='flex gap-1 overflow-x-auto'>
+              {STAGE_ORDER.map((value) => <Button key={value} size='sm' variant={stage === value && !summaryFilter ? 'secondary' : 'ghost'} onClick={() => { setStage(value); setSummaryFilter(null); }} className='shrink-0'>{value === 'ALL' ? 'All' : STAGE_META[value].label}<Badge variant='outline' className='ml-1'>{stageCounts[value]}</Badge></Button>)}
             </div>
+            <label className='flex shrink-0 items-center gap-2 text-xs text-muted-foreground'>Sort<select className='h-9 min-w-44 rounded-md border bg-background px-3 text-sm text-foreground' value={sort} onChange={(event) => setSort(event.target.value as CatalogSort)}><option value='updated'>Recently updated</option><option value='name'>Name</option><option value='stage'>Lifecycle stage</option></select></label>
           </div>
+          <label className='relative block'>
+            <Search className='pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground' />
+            <Input className='pl-9' value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search capabilities, status, or results' />
+          </label>
         </CardContent>
       </Card>
 
-      {!visibleRows.length ? <EmptyCatalog filtered={Boolean(query || kind !== 'all' || stage !== 'ALL')} /> : view === 'cards' ? <div className='grid gap-4 md:grid-cols-2 2xl:grid-cols-3'>{visibleRows.map((row) => <CatalogCard key={row.target.id} row={row} onOpen={openDrawer} />)}</div> : view === 'list' ? <CatalogList rows={visibleRows} kind={kind} onKindChange={setKind} onOpen={openDrawer} /> : <LifecycleList rows={visibleRows} onOpen={openDrawer} />}
+      {!visibleRows.length ? <EmptyCatalog filtered={Boolean(query || kind !== 'all' || stage !== 'ALL' || summaryFilter)} /> : <LifecycleList rows={visibleRows} onOpen={openDrawer} />}
 
       {filteredRows.length > pageSize ? <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3 text-sm'><span className='text-muted-foreground'>Page {page} of {pageCount}</span><div className='flex items-center gap-2'><label className='text-xs text-muted-foreground'>Rows <select className='ml-1 h-9 rounded-md border bg-background px-2 text-foreground' value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}><option value={6}>6</option><option value={12}>12</option><option value={24}>24</option></select></label><Button size='sm' variant='outline' disabled={page === 1} onClick={() => setPage((value) => value - 1)}>Previous</Button><Button size='sm' variant='outline' disabled={page === pageCount} onClick={() => setPage((value) => value + 1)}>Next</Button></div></div> : null}
 

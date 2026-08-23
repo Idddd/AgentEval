@@ -850,6 +850,36 @@ describe("EvaluationLayerStore", () => {
     expect(validateEvaluationLayerState(state)).toEqual([]);
   });
 
+  it('makes Onboarding more frequent without preventing other Agents from appearing', () => {
+    const makeFixtures = () => {
+      const fixtures = cloneEvaluationLayerFixtures();
+      fixtures.targets.forEach((target) => {
+        target.liveStatus = [
+          'demo-onboarding-assistant',
+          'demo-permission-compliance',
+        ].includes(target.id)
+          ? 'ONLINE'
+          : 'OFFLINE';
+      });
+      return fixtures;
+    };
+    const onboardingStore = createEvaluationLayerStore(makeFixtures(), {
+      random: () => 0.6,
+    });
+    const otherStore = createEvaluationLayerStore(makeFixtures(), {
+      random: () => 0.99,
+    });
+
+    expect(onboardingStore.tickSimulation().ok).toBe(true);
+    expect(onboardingStore.getState().traces[0]!.targetId).toBe(
+      'demo-onboarding-assistant',
+    );
+    expect(otherStore.tickSimulation().ok).toBe(true);
+    expect(otherStore.getState().traces[0]!.targetId).toBe(
+      'demo-permission-compliance',
+    );
+  });
+
   it('makes new live traces pass when every evaluator is disabled', () => {
     let sequence = 0;
     const fixtures = cloneEvaluationLayerFixtures();

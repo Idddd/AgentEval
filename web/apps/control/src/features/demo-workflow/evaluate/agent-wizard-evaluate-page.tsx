@@ -7,7 +7,7 @@ export function AgentWizardEvaluatePage() {
   return (
     <EvaluationCatalogPage
       isAdminEvalEligible={(targetRevisionId) => bridge.isAdminEvalEligible(targetRevisionId)}
-      onSubmitToAdminEval={(targetRevisionId) => bridge.submitToAdminEval(targetRevisionId)}
+      onSubmitToAdminEval={(targetRevisionId, justification) => bridge.submitToAdminEval(targetRevisionId, justification)}
     />
   );
 }

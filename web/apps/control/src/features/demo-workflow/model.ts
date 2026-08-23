@@ -117,6 +117,16 @@ export interface DemoBusinessEvaluationInput {
   approvalReason: string;
 }
 
+export interface DemoBusinessEvaluationCaseResult {
+  id: string;
+  name: string;
+  category: "Business scenario" | "Safety check";
+  input: string;
+  expected: string;
+  actual: string;
+  status: "PASS" | "FAIL";
+}
+
 export interface DemoBusinessEvaluation
   extends DemoBusinessEvaluationInput {
   outcome: "RUNNING" | "PASSED" | "FAILED";
@@ -125,6 +135,7 @@ export interface DemoBusinessEvaluation
   residualRisk: "Low" | "Medium" | "High" | null;
   estimatedCost: number;
   completedAt: string | null;
+  caseResults?: DemoBusinessEvaluationCaseResult[];
 }
 
 export interface DemoAgentRevision extends DemoEntityBase {
@@ -141,6 +152,7 @@ export interface DemoAgentRevision extends DemoEntityBase {
   technicalResult: DemoTechnicalResult | null;
   businessEvaluation: DemoBusinessEvaluation | null;
   decisionReason: string | null;
+  submissionJustification?: string | null;
 }
 
 export interface DemoDataset extends DemoEntityBase {
@@ -222,6 +234,7 @@ export interface DemoWorkflowActions {
   ): void;
   provisionInstance(input: DemoInstanceInput): DemoInstance;
   stopInstance(instanceId: string): void;
+  deleteInstance(instanceId: string): void;
   dispose(): void;
 }
 
@@ -254,6 +267,11 @@ export interface DemoWorkflowStore {
   deleteKnowledgeBase(id: string, persona: "agent-wizard"): void;
   deleteAgentDraft(revisionId: string, persona: "agent-wizard"): void;
   createAgent(input: DemoAgentInput, persona: "agent-wizard"): DemoAgent;
+  updateAgentDraftDetails(
+    agentId: string,
+    input: DemoAgentInput,
+    persona: "agent-wizard",
+  ): DemoAgent;
   createAgentRevision(
     agentId: string,
     persona: "agent-wizard",
@@ -278,6 +296,7 @@ export interface DemoWorkflowStore {
   submitReleaseCandidate(
     revisionId: string,
     persona: "agent-wizard",
+    justification?: string,
   ): void;
   startBusinessEvaluation(
     revisionId: string,
@@ -299,4 +318,5 @@ export interface DemoWorkflowStore {
   markInstanceReady(instanceId: string): void;
   stopInstance(instanceId: string, persona: "end-user"): void;
   markInstanceStopped(instanceId: string): void;
+  deleteInstance(instanceId: string, persona: "end-user"): void;
 }

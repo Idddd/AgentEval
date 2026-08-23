@@ -14,7 +14,7 @@ export interface DemoEvaluationBridge {
   evaluationTargetIdFor(demoRevisionId: string): string | null;
   evaluationTargetRevisionIdFor(demoRevisionId: string): string | null;
   isAdminEvalEligible(evaluationTargetRevisionId: string): boolean;
-  submitToAdminEval(evaluationTargetRevisionId: string): void;
+  submitToAdminEval(evaluationTargetRevisionId: string, justification: string): void;
 }
 
 const MIRRORED_STATUSES = new Set<DemoAgentRevision["status"]>([
@@ -263,10 +263,10 @@ export function createDemoEvaluationBridge(
     isAdminEvalEligible(evaluationTargetRevisionId) {
       return demoRevisionIdByTargetRevisionId.has(evaluationTargetRevisionId);
     },
-    submitToAdminEval(evaluationTargetRevisionId) {
+    submitToAdminEval(evaluationTargetRevisionId, justification) {
       const demoRevisionId = demoRevisionIdByTargetRevisionId.get(evaluationTargetRevisionId);
       if (!demoRevisionId) throw new Error("This evaluation is not linked to a Build revision");
-      workflowStore.submitReleaseCandidate(demoRevisionId, "agent-wizard");
+      workflowStore.submitReleaseCandidate(demoRevisionId, "agent-wizard", justification);
     },
   };
 }

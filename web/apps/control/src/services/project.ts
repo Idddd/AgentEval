@@ -29,7 +29,12 @@ async function projectRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function getProjects(): Promise<Project[]> {
-  return projectRequest<Project[]>("/api/v1/projects");
+  const projects = await projectRequest<Project[]>("/api/v1/projects");
+  return projects.map((project) =>
+    project.id === "individual" && project.name.toLowerCase() === "admin"
+      ? { ...project, name: "Demo Project" }
+      : project,
+  );
 }
 
 export async function getProjectMembers(projectId: string): Promise<HumanProjectMember[]> {

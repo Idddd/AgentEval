@@ -20,6 +20,7 @@ import type {
   DemoWorkflowState,
   DemoWorkflowStore,
 } from "./model";
+import { buildBusinessEvalCaseResults } from "./eval/business-eval-case-results";
 
 export { createDemoEvaluationBridge } from "./evaluate/build-evaluation-controller";
 
@@ -329,7 +330,7 @@ export function createDemoWorkflowStore(
       const agent: DemoAgent = {
         ...agentBase,
         name: uniqueName(state.agents, input.name),
-        owner: required(input.owner, "Owner"),
+        owner: input.owner.trim() || "Unassigned",
         description: required(input.description, "Description"),
         businessOutcome: required(input.businessOutcome, "Business outcome"),
         targetUsers: required(input.targetUsers, "Target users"),
@@ -344,6 +345,49 @@ export function createDemoWorkflowStore(
       });
       addEvent(persona, { entityType: "agent", entityId: agent.id, action: "built", outcome: "DRAFT", audience: "TECHNICAL", label: `${agent.name} R1 draft created`, metadata: { revision: 1 } });
       return agent;
+    },
+    updateAgentDraftDetails(agentId, input, persona) {
+      assertPersona(persona, "agent-wizard", "Edit Agent draft");
+      const agent = findAgent(agentId);
+      const revisionId = agent.activeDraftRevisionId;
+      if (!revisionId) throw new Error("This Agent does not have an editable draft");
+      const revision = findRevision(revisionId);
+      if (["PUBLISHED", "APPROVED", "REJECTED"].includes(revision.status)) {
+        throw new Error("Approved or rejected revisions cannot be edited");
+      }
+      const updatedAt = dependencies.now();
+      const nextStatus: DemoRevisionStatus = revision.status === "DRAFT" ? "DRAFT" : "READY_FOR_VALIDATION";
+      const updatedAgent: DemoAgent = {
+        ...agent,
+        name: updatedUniqueName(state.agents, agentId, input.name),
+        owner: input.owner.trim() || "Unassigned",
+        description: required(input.description, "Description"),
+        businessOutcome: required(input.businessOutcome, "Business outcome"),
+        targetUsers: required(input.targetUsers, "Target users"),
+        typicalScenarios: input.typicalScenarios.map((item) => item.trim()).filter(Boolean),
+        updatedAt,
+      };
+      const updatedRevision: DemoAgentRevision = {
+        ...revision,
+        runtimeType: required(input.runtimeType, "Runtime type"),
+        model: required(input.model, "Model"),
+        endpoint: required(input.endpoint, "Endpoint"),
+        mcpIds: [...input.mcpIds],
+        skillIds: [...input.skillIds],
+        knowledgeBaseIds: [...input.knowledgeBaseIds],
+        status: nextStatus,
+        technicalResult: null,
+        businessEvaluation: null,
+        decisionReason: null,
+        updatedAt,
+      };
+      replace({
+        ...state,
+        agents: state.agents.map((item) => item.id === agentId ? updatedAgent : item),
+        agentRevisions: state.agentRevisions.map((item) => item.id === revisionId ? updatedRevision : item),
+      });
+      addEvent(persona, { entityType: "revision", entityId: revisionId, action: "updated", outcome: nextStatus, audience: "TECHNICAL", label: `${updatedAgent.name} R${revision.revision} draft updated`, metadata: { revision: revision.revision } });
+      return updatedAgent;
     },
     createAgentRevision(agentId, persona) {
       assertPersona(persona, "agent-wizard", "Create Agent revision");
@@ -435,11 +479,16 @@ export function createDemoWorkflowStore(
       }));
       addEvent("agent-wizard", { entityType: "revision", entityId: revisionId, action: "technical-validation-completed", outcome, audience: "TECHNICAL", label: `R${current.revision} Technical Validation ${outcome.toLowerCase()}`, metadata: { revision: current.revision } });
     },
-    submitReleaseCandidate(revisionId, persona) {
+    submitReleaseCandidate(revisionId, persona, justification) {
       assertPersona(persona, "agent-wizard", "Submit Release Candidate");
       const current = findRevision(revisionId);
       if (current.status !== "VALIDATED") throw new Error("Technical Validation must pass before submission");
-      updateRevision(revisionId, (revision) => ({ ...revision, status: "PENDING_EVAL", updatedAt: dependencies.now() }));
+      updateRevision(revisionId, (revision) => ({
+        ...revision,
+        status: "PENDING_EVAL",
+        submissionJustification: justification?.trim() || null,
+        updatedAt: dependencies.now(),
+      }));
       addEvent(persona, { entityType: "revision", entityId: revisionId, action: "release-candidate-submitted", outcome: "PENDING_EVAL", audience: "BOTH", label: `R${current.revision} submitted for Business Eval`, metadata: { revision: current.revision } });
     },
     startBusinessEvaluation(revisionId, input, persona) {
@@ -459,6 +508,7 @@ export function createDemoWorkflowStore(
           residualRisk: null,
           estimatedCost: 0.04,
           completedAt: null,
+          caseResults: [],
         },
         updatedAt: dependencies.now(),
       }));
@@ -478,6 +528,7 @@ export function createDemoWorkflowStore(
           scenariosCovered: 8,
           residualRisk: outcome === "PASSED" ? "Low" : "High",
           completedAt,
+          caseResults: buildBusinessEvalCaseResults(outcome),
         },
         updatedAt: completedAt,
       }));
@@ -493,7 +544,7 @@ export function createDemoWorkflowStore(
       assertPersona(persona, "admin", "Approval");
       const current = findRevision(revisionId);
       if (current.status !== "PENDING_APPROVAL") throw new Error("Business Eval must be ready for approval");
-      const decisionReason = required(reason, "Decision reason");
+      const decisionReason = reason.trim() || null;
       const updatedAt = dependencies.now();
       const finalStatus = decision === "APPROVED" ? "PUBLISHED" : "REJECTED";
       updateRevision(revisionId, (revision) => ({ ...revision, status: finalStatus, decisionReason, updatedAt }));
@@ -549,6 +600,13 @@ export function createDemoWorkflowStore(
       const stoppedAt = dependencies.now();
       replace({ ...state, instances: state.instances.map((item) => item.id === instanceId ? { ...item, status: "STOPPED", stoppedAt, updatedAt: stoppedAt } : item) });
       addEvent("end-user", { entityType: "instance", entityId: instanceId, action: "stopped", outcome: "STOPPED", audience: "BUSINESS", label: `${current.name} stopped`, metadata: {} });
+    },
+    deleteInstance(instanceId, persona) {
+      assertPersona(persona, "end-user", "Delete Instance");
+      const current = state.instances.find((item) => item.id === instanceId);
+      if (!current) throw new Error("Instance not found");
+      replace({ ...state, instances: state.instances.filter((item) => item.id !== instanceId) });
+      addEvent(persona, { entityType: "instance", entityId: instanceId, action: "deleted", outcome: "DELETED", audience: "BUSINESS", label: `${current.name} deleted`, metadata: {} });
     },
   };
   return store;

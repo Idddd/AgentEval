@@ -75,7 +75,7 @@ function publishFirstRevision() {
     "admin",
   );
   store.completeBusinessEvaluation(revision.id, "PASSED");
-  store.decideRevision(revision.id, "APPROVED", "Approved for pilot", "admin");
+  store.decideRevision(revision.id, "APPROVED", "", "admin");
   return { store, agent, revision };
 }
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, CheckCircle2, Search, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { AgentGardenIcon } from "@/components/agent-garden/agent-garden-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,11 +11,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useDemoWorkflowActions, useDemoWorkflowState } from "../provider";
 import { selectEndUserGarden, type EndUserAgentCardView } from "../selectors";
 
-export function EndUserAgentGardenPage() {
+export function EndUserAgentGardenPage({ initialQuery = "", onInstanceProvisioned }: { initialQuery?: string; onInstanceProvisioned?: (instanceId: string) => void }) {
   const state = useDemoWorkflowState();
   const actions = useDemoWorkflowActions();
   const agents = useMemo(() => selectEndUserGarden(state), [state]);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [selected, setSelected] = useState<EndUserAgentCardView>();
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -36,7 +37,7 @@ export function EndUserAgentGardenPage() {
     const agent = state.agents.find((item) => item.id === selected.agentId);
     if (!agent?.currentApprovedRevisionId) return;
     try {
-      actions.provisionInstance({
+      const instance = actions.provisionInstance({
         agentId: agent.id,
         revisionId: agent.currentApprovedRevisionId,
         name: form.name,
@@ -46,6 +47,7 @@ export function EndUserAgentGardenPage() {
       setSelected(undefined);
       setNotice("Instance request submitted");
       setError("");
+      onInstanceProvisioned?.(instance.id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to apply Instance");
     }
@@ -70,7 +72,11 @@ export function EndUserAgentGardenPage() {
           {visibleAgents.map((agent) => (
             <article key={agent.agentId} className="flex min-h-[340px] flex-col rounded-xl border bg-card p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
               <div className="flex items-start justify-between gap-3">
-                <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary"><Sparkles className="size-5" /></span>
+                {agent.runtimeType === "openclaw" ? (
+                  <AgentGardenIcon type="openclaw" className="rounded-xl" />
+                ) : (
+                  <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary"><Sparkles className="size-5" /></span>
+                )}
                 <div className="flex gap-2"><Badge variant="outline">Stable R{agent.revisionNumber}</Badge><Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">{agent.availability}</Badge></div>
               </div>
               <h2 className="mt-5 text-lg font-semibold">{agent.name}</h2>

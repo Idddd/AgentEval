@@ -28,13 +28,16 @@ export const agentFormDefaults: Omit<
   businessOutcome: "Faster, consistent customer case resolution",
   targetUsers: "Customer service representatives",
   typicalScenarios: ["Case triage", "Policy guidance", "Escalation recommendation"],
-  runtimeType: "Managed interactive",
-  model: "Demo reasoning model",
+  runtimeType: "Managed cloud",
+  model: "GPT-5",
   endpoint: "https://demo.invalid/agents/customer-service",
 };
 
 export function AgentForm({
   open,
+  initialValue,
+  title = "Create Agent draft",
+  submitLabel = "Create Agent draft",
   mcpServers,
   skills,
   knowledgeBases,
@@ -42,6 +45,9 @@ export function AgentForm({
   onSubmit,
 }: {
   open: boolean;
+  initialValue?: DemoAgentInput | undefined;
+  title?: string;
+  submitLabel?: string;
   mcpServers: DemoMcpServer[];
   skills: DemoSkill[];
   knowledgeBases: DemoKnowledgeBase[];
@@ -63,7 +69,13 @@ export function AgentForm({
     const preferredMcpId = preferred(mcpServers);
     const preferredSkillId = preferred(skills);
     const preferredKnowledgeBaseId = preferred(knowledgeBases);
-    setValue({
+    setValue(initialValue ? {
+      ...initialValue,
+      typicalScenarios: [...initialValue.typicalScenarios],
+      mcpIds: [...initialValue.mcpIds],
+      skillIds: [...initialValue.skillIds],
+      knowledgeBaseIds: [...initialValue.knowledgeBaseIds],
+    } : {
       ...agentFormDefaults,
       typicalScenarios: [...agentFormDefaults.typicalScenarios],
       mcpIds: preferredMcpId ? [preferredMcpId] : [],
@@ -71,7 +83,7 @@ export function AgentForm({
       knowledgeBaseIds: preferredKnowledgeBaseId ? [preferredKnowledgeBaseId] : [],
     });
     setError("");
-  }, [knowledgeBases, mcpServers, open, skills]);
+  }, [initialValue, knowledgeBases, mcpServers, open, skills]);
 
   const submit = () => {
     try {
@@ -86,7 +98,7 @@ export function AgentForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Create Agent draft</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             Assemble the technical build. Business approval happens later in Eval.
           </DialogDescription>
@@ -94,14 +106,26 @@ export function AgentForm({
         <div className="grid gap-5 px-6 py-5 md:grid-cols-2">
           {error ? <p role="alert" className="md:col-span-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p> : null}
           <Field label="Name"><Input value={value.name} onChange={(event) => setValue({ ...value, name: event.target.value })} /></Field>
-          <Field label="Owner"><Input value={value.owner} onChange={(event) => setValue({ ...value, owner: event.target.value })} /></Field>
-          <Field label="Runtime type"><Input value={value.runtimeType} onChange={(event) => setValue({ ...value, runtimeType: event.target.value })} /></Field>
+          <Field label="Owner (optional)">
+            <select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={value.owner} onChange={(event) => setValue({ ...value, owner: event.target.value })}>
+              <option value="">Unassigned</option>
+              <option value="Customer Operations">Customer Operations</option>
+              <option value="IT Operations">IT Operations</option>
+              <option value="Risk & Compliance">Risk & Compliance</option>
+              <option value="Human Resources">Human Resources</option>
+              <option value="Product">Product</option>
+            </select>
+          </Field>
+          <Field label="Runtime type">
+            <select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={value.runtimeType} onChange={(event) => setValue({ ...value, runtimeType: event.target.value })}>
+              <option value="Managed cloud">Managed cloud</option>
+              <option value="Serverless">Serverless</option>
+              <option value="Self-hosted">Self-hosted</option>
+            </select>
+          </Field>
           <Field label="Model"><Input value={value.model} onChange={(event) => setValue({ ...value, model: event.target.value })} /></Field>
           <Field label="Endpoint" className="md:col-span-2"><Input value={value.endpoint} onChange={(event) => setValue({ ...value, endpoint: event.target.value })} /></Field>
           <Field label="Description" className="md:col-span-2"><Textarea value={value.description} onChange={(event) => setValue({ ...value, description: event.target.value })} /></Field>
-          <Field label="Business outcome" className="md:col-span-2"><Input value={value.businessOutcome} onChange={(event) => setValue({ ...value, businessOutcome: event.target.value })} /></Field>
-          <Field label="Target users"><Input value={value.targetUsers} onChange={(event) => setValue({ ...value, targetUsers: event.target.value })} /></Field>
-          <Field label="Typical scenarios"><Input value={value.typicalScenarios.join(", ")} onChange={(event) => setValue({ ...value, typicalScenarios: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} /></Field>
 
           <Field label="MCP Servers">
             <MultiSelectCombobox ariaLabel="MCP Servers" value={value.mcpIds} onValueChange={(mcpIds) => setValue({ ...value, mcpIds })} options={mcpServers.map((item) => ({ value: item.id, label: item.name, description: item.endpoint }))} noOptionsMessage="Create an MCP Server first." />
@@ -115,7 +139,7 @@ export function AgentForm({
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="button" onClick={submit}>Create Agent draft</Button>
+          <Button type="button" onClick={submit}>{submitLabel}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

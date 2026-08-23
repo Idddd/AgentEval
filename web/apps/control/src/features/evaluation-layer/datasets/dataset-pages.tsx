@@ -118,10 +118,20 @@ function generatedCasesForSchema(schema: EvaluationLayerDatasetColumn[]): Staged
 export function DatasetEditor({ open, onOpenChange }: { open: boolean; onOpenChange(open: boolean): void }) {
   const state = useEvaluationLayerState();
   const store = useEvaluationLayerStore();
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const activeTarget = state.targets.find((target) => target.id === state.settings.activeTargetId);
+  const defaultName = `${activeTarget?.name ?? 'Evaluation'} Dataset`;
+  const defaultDescription = `Evaluation cases for ${activeTarget?.name ?? 'this target'}.`;
+  const [name, setName] = useState(defaultName);
+  const [description, setDescription] = useState(defaultDescription);
   const [columns, setColumns] = useState<EvaluationLayerDatasetColumn[]>(DEFAULT_DATASET_COLUMNS);
   const [error, setError] = useState('');
+  useEffect(() => {
+    if (!open) return;
+    setName(defaultName);
+    setDescription(defaultDescription);
+    setColumns(DEFAULT_DATASET_COLUMNS.map((column) => ({ ...column })));
+    setError('');
+  }, [defaultDescription, defaultName, open]);
   const addColumn = () => setColumns((current) => [...current, { name: '', kind: 'input', dataType: 'string', required: true, description: '' }]);
   const updateColumn = (index: number, patch: Partial<EvaluationLayerDatasetColumn>) => setColumns((current) => current.map((item, position) => position === index ? { ...item, ...patch } : item));
   const submit = (event: FormEvent) => {

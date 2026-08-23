@@ -15,6 +15,8 @@ const routeLabels: Record<string, string> = {
   datasets: "Datasets",
   evaluations: "Evaluations",
   evaluation: "Evaluation",
+  governance: "Governance",
+  guardrails: "Guardrails",
   instances: "Instances",
   instace: "Instances",
   knowledge: "Knowledge Base",
@@ -26,6 +28,7 @@ const routeLabels: Record<string, string> = {
   "model-routings": "Routing",
   requests: "Requests",
   reports: "Reports",
+  "relay-preview": "Relay reference",
   runs: "Evaluation",
   security: "Security",
   runtime: "Runtime",
@@ -148,6 +151,7 @@ export function HeaderBreadcrumb({ pathname }: { pathname: string }) {
       </span>
       {items.map((item, index) => {
         const current = index === lastIndex;
+        const parent = index === lastIndex - 1;
         return (
           <Fragment key={item.href}>
             <span
@@ -159,18 +163,27 @@ export function HeaderBreadcrumb({ pathname }: { pathname: string }) {
             >
               /
             </span>
-            <span
-              aria-current={current ? "page" : undefined}
-              className={cn(
-                "shrink-0",
-                current
-                  ? "min-w-0 truncate font-medium text-foreground"
-                  : "hidden md:inline",
-              )}
-              title={item.label}
-            >
-              {item.label}
-            </span>
+            {current ? (
+              <span
+                aria-current="page"
+                className="min-w-0 shrink-0 truncate font-medium text-foreground"
+                title={item.label}
+              >
+                {item.label}
+              </span>
+            ) : parent ? (
+              <a
+                href={item.href}
+                className="hidden shrink-0 rounded-sm underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 md:inline"
+                title={item.label}
+              >
+                {item.label}
+              </a>
+            ) : (
+              <span className="hidden shrink-0 md:inline" title={item.label}>
+                {item.label}
+              </span>
+            )}
           </Fragment>
         );
       })}

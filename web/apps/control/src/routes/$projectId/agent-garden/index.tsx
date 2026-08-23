@@ -54,16 +54,34 @@ import { useDemoRole } from "@/hooks/use-demo-role";
 import { EndUserAgentGardenPage } from "@/features/demo-workflow/end-user/agent-garden-page";
 
 export const Route = createFileRoute("/$projectId/agent-garden/")({
-  validateSearch: z.object({ coordinator: z.string().optional() }),
+  validateSearch: z.object({
+    coordinator: z.string().optional(),
+    query: z.string().optional(),
+  }),
   component: AgentGardenRoute,
 });
 
 function AgentGardenRoute() {
   const { persona } = useDemoRole();
-  return persona === "end-user" ? <EndUserAgentGardenPage /> : <AgentGarden />;
+  const routeSearch = Route.useSearch();
+  const navigate = useNavigate();
+  const projectId = useCurrentProjectId();
+  // A filtered link from Business Eval opens the same approved catalog the
+  // end user will see, even while the Admin is reviewing the release.
+  return persona === "end-user" || Boolean(routeSearch.query) ? (
+    <EndUserAgentGardenPage initialQuery={routeSearch.query ?? ""} onInstanceProvisioned={(instanceId) => void navigate({ to: "/$projectId/instances/$instanceId", params: { projectId, instanceId } })} />
+  ) : (
+    <AgentGarden />
+  );
 }
 
 type SortMode = "recommended" | "name" | "recent";
+
+function onboardingFirst(leftName: string, rightName: string): number {
+  if (leftName === "Onboarding Assistant") return -1;
+  if (rightName === "Onboarding Assistant") return 1;
+  return 0;
+}
 
 function toggleCapability(
   capabilities: string[],
@@ -89,7 +107,7 @@ function AgentGarden() {
     queryKey: scope.key("agents"),
     queryFn: api.listAgents,
   });
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(routeSearch.query ?? "");
   const [sort, setSort] = useState<SortMode>("recommended");
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [mobileCapabilitiesOpen, setMobileCapabilitiesOpen] =
@@ -165,15 +183,16 @@ function AgentGarden() {
     });
     if (sort === "name") {
       return [...filtered].sort((left, right) =>
-        left.name.localeCompare(right.name),
+        onboardingFirst(left.name, right.name) || left.name.localeCompare(right.name),
       );
     }
     if (sort === "recent") {
       return [...filtered].sort((left, right) =>
+        onboardingFirst(left.name, right.name) ||
         (right.updatedAt ?? "").localeCompare(left.updatedAt ?? ""),
       );
     }
-    return filtered;
+    return [...filtered].sort((left, right) => onboardingFirst(left.name, right.name));
   }, [allAgents, capabilities, search, sort]);
 
   const refresh = useMutation({

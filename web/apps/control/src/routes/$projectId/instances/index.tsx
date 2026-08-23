@@ -43,7 +43,9 @@ export const Route = createFileRoute("/$projectId/instances/")({
 
 function InstancesRoute() {
   const { persona } = useDemoRole();
-  return persona === "end-user" ? <EndUserInstancesPage /> : <Instances />;
+  const navigate = useNavigate();
+  const projectId = useCurrentProjectId();
+  return persona === "end-user" ? <EndUserInstancesPage onOpenInstance={(instanceId) => void navigate({ to: "/$projectId/instances/$instanceId", params: { projectId, instanceId } })} /> : <Instances />;
 }
 
 const statusFilters = ["ALL", "PROVISIONING", "READY", "FAILED", "DESTROYING"] as const satisfies readonly (AgentStatus | "ALL")[];

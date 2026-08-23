@@ -60,6 +60,7 @@ export interface EndUserAgentCardView {
   availability: "Available";
   revisionNumber: number;
   businessEvalSummary: string;
+  runtimeType: string;
 }
 
 export interface EndUserInstanceView {
@@ -74,6 +75,7 @@ export interface EndUserInstanceView {
   updatedAt: string;
   canStop: boolean;
   canWork: boolean;
+  runtimeType: string;
 }
 
 export interface AdminMonitorView {
@@ -152,6 +154,15 @@ const adminStatuses: DemoRevisionStatus[] = [
   "PUBLISHED",
 ];
 
+const adminStatusPriority: Partial<Record<DemoRevisionStatus, number>> = {
+  PENDING_APPROVAL: 0,
+  PENDING_EVAL: 1,
+  BUSINESS_EVALUATING: 2,
+  BUSINESS_EVAL_FAILED: 3,
+  REJECTED: 4,
+  PUBLISHED: 5,
+};
+
 export function selectAdminReleaseCandidates(
   state: DemoWorkflowState,
 ): AdminReleaseCandidateView[] {
@@ -181,7 +192,11 @@ export function selectAdminReleaseCandidates(
           : "Guardrail coverage pending",
       };
     })
-    .sort((left, right) => right.revision - left.revision);
+    .sort((left, right) => {
+      const statusOrder = (adminStatusPriority[left.status] ?? 99) - (adminStatusPriority[right.status] ?? 99);
+      if (statusOrder) return statusOrder;
+      return right.revision - left.revision || left.name.localeCompare(right.name);
+    });
 }
 
 export function selectEndUserGarden(
@@ -208,8 +223,13 @@ export function selectEndUserGarden(
         businessEvalSummary: revision.businessEvaluation?.scenarioSuccess
           ? `${revision.businessEvaluation.scenarioSuccess}% scenario success · Low residual risk`
           : "Approved for business use",
+        runtimeType: revision.runtimeType,
       },
     ];
+  }).sort((left, right) => {
+    if (left.name === "Onboarding Assistant") return -1;
+    if (right.name === "Onboarding Assistant") return 1;
+    return 0;
   });
 }
 
@@ -235,6 +255,7 @@ export function selectEndUserInstances(
         updatedAt: instance.updatedAt,
         canStop: instance.status === "READY",
         canWork: instance.status === "READY",
+        runtimeType: revision?.runtimeType ?? "managed",
       };
     });
 }

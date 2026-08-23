@@ -137,6 +137,7 @@ export interface EvaluationLayerReport {
   runId: string;
   status: "READY" | "FAILED";
   summary: string;
+  submissionJustification?: string;
   createdAt: string;
 }
 

@@ -1,11 +1,83 @@
+import { buildBusinessEvalCaseResults } from "./eval/business-eval-case-results";
 import type { DemoWorkflowState } from "./model";
+
+const approvedAgentCatalog = [
+  {
+    id: "onboarding-assistant",
+    name: "Onboarding Assistant",
+    owner: "People Operations",
+    description: "Guides new employees through approved onboarding steps and access requests.",
+    businessOutcome: "Help new employees become productive with consistent guidance",
+    targetUsers: "New employees and people managers",
+    typicalScenarios: ["First-day checklist", "Access request guidance"],
+    businessPurpose: "Provide safe, consistent onboarding guidance without exposing restricted employee data.",
+    scenarioSuccess: 96,
+  },
+  {
+    id: "openclaw-generalist",
+    name: "OpenClaw Generalist",
+    owner: "TaskLattice",
+    description: "A general-purpose assistant for browser tasks, research, and multi-step business work.",
+    businessOutcome: "Complete multi-step work through one approved assistant",
+    targetUsers: "Business teams",
+    typicalScenarios: ["Browser tasks", "Research and automation"],
+    businessPurpose: "Support general business work through an approved OpenClaw runtime with clear operating boundaries.",
+    scenarioSuccess: 94,
+    runtimeType: "openclaw",
+    endpoint: "https://openclaw.demo.tasklattice.example",
+  },
+  {
+    id: "customer-service",
+    name: "Customer Service",
+    owner: "Customer Operations",
+    description: "Resolves common customer questions using approved service policies.",
+    businessOutcome: "Resolve customer requests consistently and escalate exceptions",
+    targetUsers: "Customer service representatives",
+    typicalScenarios: ["Order support", "Escalation routing"],
+    businessPurpose: "Support customer requests within approved service and escalation policies.",
+    scenarioSuccess: 93,
+  },
+  {
+    id: "office-assistant",
+    name: "Office Assistant",
+    owner: "Workplace Technology",
+    description: "Helps employees complete everyday workplace requests with permission checks.",
+    businessOutcome: "Complete routine workplace tasks safely and quickly",
+    targetUsers: "Employees and office managers",
+    typicalScenarios: ["Company directory", "Workplace requests"],
+    businessPurpose: "Assist with routine workplace tasks while respecting access boundaries.",
+    scenarioSuccess: 95,
+  },
+  {
+    id: "document-summarization",
+    name: "Document Summarization",
+    owner: "Knowledge Operations",
+    description: "Summarizes approved internal documents and highlights decisions and risks.",
+    businessOutcome: "Turn long documents into clear, reviewable summaries",
+    targetUsers: "Business and operations teams",
+    typicalScenarios: ["Policy summary", "Risk extraction"],
+    businessPurpose: "Summarize approved documents without inventing or exposing restricted information.",
+    scenarioSuccess: 92,
+  },
+  {
+    id: "deployment-monitor",
+    name: "Deployment Monitor",
+    owner: "Platform Operations",
+    description: "Summarizes service health and routes operational issues to the right team.",
+    businessOutcome: "Identify service issues earlier and coordinate a clear response",
+    targetUsers: "Operations leads",
+    typicalScenarios: ["Service health review", "Incident escalation"],
+    businessPurpose: "Monitor service health and escalate material operational issues for human action.",
+    scenarioSuccess: 90,
+  },
+] as const;
 
 export function cloneDemoWorkflowFixtures(
   projectId: string,
   demoSessionId: string,
 ): DemoWorkflowState {
   const createdAt = "2026-08-01T09:00:00.000Z";
-  return structuredClone({
+  const state: DemoWorkflowState = {
     demoSessionId,
     projectId,
     agents: [
@@ -124,6 +196,7 @@ export function cloneDemoWorkflowFixtures(
           residualRisk: "Low",
           estimatedCost: 0.04,
           completedAt: createdAt,
+          caseResults: buildBusinessEvalCaseResults("PASSED"),
         },
         decisionReason: "Approved fixture for demonstration.",
       },
@@ -180,6 +253,7 @@ export function cloneDemoWorkflowFixtures(
           residualRisk: "Low",
           estimatedCost: 0.04,
           completedAt: createdAt,
+          caseResults: buildBusinessEvalCaseResults("PASSED"),
         },
         decisionReason: null,
       },
@@ -236,6 +310,7 @@ export function cloneDemoWorkflowFixtures(
           residualRisk: "High",
           estimatedCost: 0.04,
           completedAt: createdAt,
+          caseResults: buildBusinessEvalCaseResults("FAILED"),
         },
         decisionReason: null,
       },
@@ -292,6 +367,7 @@ export function cloneDemoWorkflowFixtures(
           residualRisk: "Low",
           estimatedCost: 0.04,
           completedAt: createdAt,
+          caseResults: buildBusinessEvalCaseResults("PASSED"),
         },
         decisionReason: "The pilot owner requires stronger escalation controls before release.",
       },
@@ -353,5 +429,43 @@ export function cloneDemoWorkflowFixtures(
     ],
     instances: [],
     events: [],
-  } satisfies DemoWorkflowState);
+  };
+
+  const catalogSourceAgent = state.agents.find(
+    (item) => item.id === "fixture-policy-guidance",
+  )!;
+  const catalogSourceRevision = state.agentRevisions.find(
+    (item) => item.id === "fixture-policy-guidance-r1",
+  )!;
+  for (const item of approvedAgentCatalog) {
+    const agentId = `fixture-catalog-${item.id}`;
+    const revisionId = `${agentId}-r1`;
+    state.agents.push({
+      ...catalogSourceAgent,
+      id: agentId,
+      name: item.name,
+      owner: item.owner,
+      description: item.description,
+      businessOutcome: item.businessOutcome,
+      targetUsers: item.targetUsers,
+      typicalScenarios: [...item.typicalScenarios],
+      currentApprovedRevisionId: revisionId,
+    });
+    state.agentRevisions.push({
+      ...catalogSourceRevision,
+      id: revisionId,
+      agentId,
+      runtimeType: "runtimeType" in item ? item.runtimeType : catalogSourceRevision.runtimeType,
+      model: "GPT-5",
+      endpoint: "endpoint" in item ? item.endpoint : `https://demo.invalid/agents/${item.id}`,
+      businessEvaluation: {
+        ...catalogSourceRevision.businessEvaluation!,
+        businessPurpose: item.businessPurpose,
+        targetUsers: item.targetUsers,
+        scenarioSuccess: item.scenarioSuccess,
+      },
+    });
+  }
+
+  return structuredClone(state);
 }

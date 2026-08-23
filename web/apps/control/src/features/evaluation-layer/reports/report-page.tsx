@@ -543,6 +543,12 @@ export function EvaluationReportDetail({
           <EvaluationMetric compact={embedded} label="Total cost" value={formatCost(totalCost)} />
         </div>
         <p className={cn("text-sm text-muted-foreground", embedded ? "mt-2" : "mt-4")}>{report.summary}</p>
+        {report.submissionJustification ? (
+          <div className={cn("rounded-md border border-primary/20 bg-primary/5", embedded ? "mt-2 p-2" : "mt-4 p-3")}>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Submission justification</p>
+            <p className="mt-1 text-sm text-foreground">{report.submissionJustification}</p>
+          </div>
+        ) : null}
       </EvaluationSection>
       {failures.length || reflectionContent ? (
         <div className={cn(

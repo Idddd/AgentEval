@@ -766,7 +766,6 @@ function fixtureState(projectId: string): GuardGovernanceState {
     { id: "demo-policy-kb", projectId, kind: "kb", name: "Permission Policy KB", owner: "ISS", lifecycleStatus: "ACTIVE" },
     { id: "demo-document-summarization", projectId, kind: "skill", name: "Document Summarization", owner: "People Operations", lifecycleStatus: "APPROVED" },
   ];
-
   const coverageRequirements: GuardrailCoverageRequirement[] = [
     { id: "coverage-default", projectId, guardrailId: "guardrail-default", resourceKinds: ["agent", "mcp", "kb", "skill"], enabled: true, systemManaged: true, updatedAt: EARLIER_TIME },
     { id: "coverage-production", projectId, guardrailId: "guardrail-production", resourceKinds: ["agent", "mcp"], enabled: true, systemManaged: false, updatedAt: FIXTURE_TIME },
@@ -941,7 +940,6 @@ function fixtureState(projectId: string): GuardGovernanceState {
       credentialHint: "…ac42",
     },
   ];
-
   const auditEvents: AuditEvent[] = [
     {
       id: "audit-1",
