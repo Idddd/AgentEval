@@ -62,6 +62,24 @@ def test_published_image_override_renders_one_combined_image() -> None:
     )
 
 
+def test_runtime_shell_scripts_are_checked_out_with_lf() -> None:
+    """Catch Windows checkout rules that make Linux entrypoints unexecutable."""
+    result = run(
+        "git",
+        "check-attr",
+        "eol",
+        "--",
+        "deploy/runtime/entrypoint.sh",
+        "deploy/runtime/healthcheck.sh",
+    )
+    assert result.returncode == 0, result.stderr
+
+    assert result.stdout.splitlines() == [
+        "deploy/runtime/entrypoint.sh: eol: lf",
+        "deploy/runtime/healthcheck.sh: eol: lf",
+    ]
+
+
 def test_chart_renders_one_recreate_deployment() -> None:
     """Catch a Chart that splits the Demo across Pods or scales its database."""
     result = run(
