@@ -1,0 +1,5 @@
+import type { ProviderConnectionDraft } from "@tasklattice/contracts";
+import { ProviderFormSection, ProviderTextField } from "./fields";
+import type { ProviderConfiguratorProps } from "./types";
+type Draft = Extract<ProviderConnectionDraft, { provider: "moonshot" }>;
+export function MoonshotProvider({ disabled, errors, onChange, value }: ProviderConfiguratorProps<Draft>) { return <ProviderFormSection title="Moonshot credentials" description={`Endpoint region: ${value.config.region === "cn" ? "Mainland China" : "Global"}. TaskLattice selected this endpoint from the compliance boundary.`}><ProviderTextField id="moonshot-endpoint" label="API endpoint" type="url" required value={value.config.endpoint} disabled={disabled} onChange={(endpoint) => onChange({ ...value, config: { ...value.config, endpoint } })} /><ProviderTextField id="moonshot-key" label="API key" type="password" required value={value.credentials.apiKey} disabled={disabled} error={errors.apiKey} onChange={(apiKey) => onChange({ ...value, credentials: { apiKey } })} /></ProviderFormSection>; }

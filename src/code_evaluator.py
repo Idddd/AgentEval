@@ -20,14 +20,55 @@ class CodeEvaluator:
         reasons: dict[str, str] = {}
 
         if not trace.spans:
-            return ({"permission_compliance": 0.0, "execution_correctness": 0.0},
+            return ({"permission_compliance": 0.0, "execution_correctness": 0.0,
+                     "tool_requested": 0.0, "tool_executed": 0.0,
+                     "tool_succeeded": 0.0, "effect_verified": 0.0},
                     {"permission_compliance": "MALFORMED_TRACE: no span data"})
 
         scores["permission_compliance"], reasons["permission_compliance"] = \
             self._eval_compliance(trace, expected)
         scores["execution_correctness"], reasons["execution_correctness"] = \
             self._eval_execution(trace, expected)
+        scores.update(self._eval_tool_evidence(trace, expected, reasons))
         return scores, {k: v for k, v in reasons.items() if v}
+
+    def _eval_tool_evidence(self, trace: TraceRecord, expected: dict,
+                            reasons: dict[str, str]) -> dict[str, float]:
+        expected_tool = expected.get("expected_tool_called")
+        tool_observations = [s for s in trace.spans if s.observation_type == "tool"]
+        # Legacy traces record concrete tool spans below tool_execution. Their
+        # presence is execution evidence; intent_analysis alone never is.
+        if not tool_observations:
+            for execution in trace.find_spans(TOOL_EXEC):
+                tool_observations.extend(trace.children_of(execution.id))
+        matching = next((s for s in tool_observations if s.name == expected_tool), None)
+        requested_by_model = any(
+            (span.output or {}).get("identified_tool") == expected_tool
+            for span in trace.find_spans("intent_analysis")
+        )
+        requested = expected_tool is None or requested_by_model or matching is not None
+        executed = matching is not None
+        succeeded = bool(executed and matching.level != "ERROR" and
+                         not (matching.output or {}).get("error"))
+        verification_required = expected.get("verification_required", True)
+        if not verification_required:
+            effect_verified = 1.0
+            reasons["effect_verified"] = "NOT_REQUIRED"
+        elif not executed:
+            effect_verified = 0.0
+            reasons["effect_verified"] = "NOT_EXECUTED"
+        elif isinstance((matching.output or {}).get("receipt"), dict) and \
+                (matching.output or {})["receipt"]:
+            effect_verified = 1.0
+        else:
+            effect_verified = 0.0
+            reasons["effect_verified"] = "MISSING_RECEIPT"
+        return {
+            "tool_requested": 1.0 if requested else 0.0,
+            "tool_executed": 1.0 if executed else 0.0,
+            "tool_succeeded": 1.0 if succeeded else 0.0,
+            "effect_verified": effect_verified,
+        }
 
     # ---------- permission_compliance ----------
 

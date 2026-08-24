@@ -1,4 +1,5 @@
 .git
+.worktrees
 .venv
 .pytest_cache
 .pytest_tmp*
@@ -8,3 +9,9 @@ __pycache__
 data
 reports
 streamlit.*.log
+web/node_modules
+web/apps/*/node_modules
+web/apps/*/dist
+web/apps/*/.output
+web/apps/*/.tanstack
+web/.env

@@ -1,0 +1,310 @@
+name: Release images and Helm chart
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must look like v1.2.3 or v1.2.3-rc.1" >&2
+            exit 2
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.18.4
+      - run: npm run helm:dependencies
+      - run: helm lint charts/tasklattice
+      - run: npm run helm:validate:resources
+      - run: npm run helm:validate:openshift
+      - run: npm run helm:validate:airgap
+      - run: helm template tasklattice charts/tasklattice --namespace tasklattice-sandboxes --kube-version 1.29.0 > /dev/null
+      - name: Render embedded Keycloak test mode
+        run: >-
+          helm template tasklattice charts/tasklattice
+          --namespace tasklattice-sandboxes
+          --kube-version 1.29.0
+          --set control.publicUrl=http://192.0.2.10
+          --set keycloak.enabled=true
+          --set keycloak.publicUrl=http://192.0.2.11:8080
+          > /dev/null
+
+  publish-core-platforms:
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: tasklattice-control
+            dockerfile: infra/docker/Dockerfile
+            target: control
+            architecture: amd64
+            runner: ubuntu-24.04
+          - image: tasklattice-control
+            dockerfile: infra/docker/Dockerfile
+            target: control
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+          - image: tasklattice-openshell-runner
+            dockerfile: infra/docker/Dockerfile
+            target: runner
+            architecture: amd64
+            runner: ubuntu-24.04
+          - image: tasklattice-openshell-runner
+            dockerfile: infra/docker/Dockerfile
+            target: runner
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+          - image: tasklattice-litellm
+            dockerfile: infra/docker/Dockerfile.litellm
+            target: ""
+            architecture: amd64
+            runner: ubuntu-24.04
+          - image: tasklattice-litellm
+            dockerfile: infra/docker/Dockerfile.litellm
+            target: ""
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+          - image: tasklattice-example-mcp
+            dockerfile: infra/docker/Dockerfile
+            target: example-mcp
+            architecture: amd64
+            runner: ubuntu-24.04
+          - image: tasklattice-example-mcp
+            dockerfile: infra/docker/Dockerfile
+            target: example-mcp
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: azure/setup-helm@v4
+        if: matrix.image == 'tasklattice-control'
+        with:
+          version: v3.18.4
+      - name: Package Helm chart for Control Plane image
+        if: matrix.image == 'tasklattice-control'
+        shell: bash
+        run: |
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          TASKLATTICE_IMAGE_REGISTRY="${registry}" \
+            bash scripts/package-control-plane-chart.sh "${GITHUB_REF_NAME#v}"
+      - id: image
+        name: Resolve image tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          image="${registry}/${{ matrix.image }}"
+          short_sha="${GITHUB_SHA::12}"
+          {
+            echo "name=${image}"
+            echo "version=${version}"
+            echo "tags<<EOF"
+            echo "${image}:${version}-${{ matrix.architecture }}"
+            echo "${image}:sha-${short_sha}-${{ matrix.architecture }}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: linux/${{ matrix.architecture }}
+          push: true
+          tags: ${{ steps.image.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.architecture }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.architecture }}
+          provenance: mode=max
+          sbom: true
+
+  publish-core-manifests:
+    needs: publish-core-platforms
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image:
+          - tasklattice-control
+          - tasklattice-openshell-runner
+          - tasklattice-litellm
+          - tasklattice-example-mcp
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish multi-architecture manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          short_sha="${GITHUB_SHA::12}"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}"
+          sources=("${image}:${version}-amd64" "${image}:${version}-arm64")
+          docker buildx imagetools create --tag "${image}:${version}" "${sources[@]}"
+          docker buildx imagetools create --tag "${image}:sha-${short_sha}" "${sources[@]}"
+          if [[ "${version}" != *-* ]]; then
+            docker buildx imagetools create --tag "${image}:latest" "${sources[@]}"
+          fi
+
+  publish-sandbox-platforms:
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - agent: openclaw
+            architecture: amd64
+            runner: ubuntu-24.04
+          - agent: openclaw
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+          - agent: hermes
+            architecture: amd64
+            runner: ubuntu-24.04
+          - agent: hermes
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push architecture image
+        shell: bash
+        env:
+          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.architecture }}
+          NEMOCLAW_AGENT_PLATFORM: ${{ matrix.agent }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          if [[ "${NEMOCLAW_AGENT_PLATFORM}" == "openclaw" ]]; then
+            image="${registry}/tasklattice-nemoclaw-sandbox"
+            export NEMOCLAW_IMAGE="${image}:${version}-${{ matrix.architecture }}"
+          else
+            image="${registry}/tasklattice-nemoclaw-hermes-sandbox"
+            export NEMOCLAW_HERMES_IMAGE="${image}:${version}-${{ matrix.architecture }}"
+          fi
+          bash scripts/build-nemoclaw-sandbox.sh
+          docker push "${image}:${version}-${{ matrix.architecture }}"
+
+  publish-sandbox-manifests:
+    needs: publish-sandbox-platforms
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image:
+          - tasklattice-nemoclaw-sandbox
+          - tasklattice-nemoclaw-hermes-sandbox
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish multi-architecture manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          short_sha="${GITHUB_SHA::12}"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}"
+          sources=("${image}:${version}-amd64" "${image}:${version}-arm64")
+          docker buildx imagetools create --tag "${image}:${version}" "${sources[@]}"
+          docker buildx imagetools create --tag "${image}:sha-${short_sha}" "${sources[@]}"
+          if [[ "${version}" != *-* ]]; then
+            docker buildx imagetools create --tag "${image}:latest" "${sources[@]}"
+          fi
+
+  release:
+    needs: [publish-core-manifests, publish-sandbox-manifests]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.18.4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package and publish Helm chart
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          mkdir -p dist
+          TASKLATTICE_IMAGE_REGISTRY="${registry}" \
+            bash scripts/package-control-plane-chart.sh "${version}"
+          cp dist/control-plane-chart/tasklattice.tgz "dist/tasklattice-${version}.tgz"
+          helm push "dist/tasklattice-${version}.tgz" "oci://${registry}/charts"
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          asset="dist/tasklattice-${version}.tgz"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "${asset}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${asset}" \
+              --verify-tag \
+              --generate-notes \
+              --title "TaskLattice ${version}"
+          fi

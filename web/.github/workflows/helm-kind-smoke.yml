@@ -1,0 +1,134 @@
+name: Helm chart Kind smoke test
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/helm-kind-smoke.yml"
+      - "charts/tasklattice/**"
+      - "infra/docker/**"
+      - "apps/**"
+      - "packages/**"
+      - "scripts/helm-kind-smoke.sh"
+      - "scripts/package-control-plane-chart.sh"
+      - "scripts/prepare-helm-dependencies.sh"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.base.json"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/helm-kind-smoke.yml"
+      - "charts/tasklattice/**"
+      - "infra/docker/**"
+      - "apps/**"
+      - "packages/**"
+      - "scripts/helm-kind-smoke.sh"
+      - "scripts/package-control-plane-chart.sh"
+      - "scripts/prepare-helm-dependencies.sh"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.base.json"
+  workflow_dispatch:
+
+concurrency:
+  group: helm-kind-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  KIND_CLUSTER_NAME: tasklattice-ci
+  HELM_RELEASE_NAME: tasklattice
+  HELM_NAMESPACE: tasklattice-smoke
+  IMAGE_REGISTRY: ghcr.io/sn0rt
+  IMAGE_TAG: dev
+  BUILD_IMAGES: "0"
+  HELM_TIMEOUT: 15m
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.18.4
+
+      - name: Package Helm chart for Control Plane image
+        run: npm run helm:package:control
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build control image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: control
+          load: true
+          tags: ghcr.io/sn0rt/tasklattice-control:dev
+          cache-from: type=gha,scope=helm-smoke-control
+          cache-to: type=gha,mode=max,scope=helm-smoke-control,ignore-error=true
+
+      - name: Build runner image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: runner
+          load: true
+          tags: ghcr.io/sn0rt/tasklattice-openshell-runner:dev
+          cache-from: type=gha,scope=helm-smoke-runner
+          cache-to: type=gha,mode=max,scope=helm-smoke-runner,ignore-error=true
+
+      - name: Build LiteLLM image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile.litellm
+          load: true
+          tags: ghcr.io/sn0rt/tasklattice-litellm:dev
+          cache-from: type=gha,scope=helm-smoke-litellm
+          cache-to: type=gha,mode=max,scope=helm-smoke-litellm,ignore-error=true
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1.14.0
+        with:
+          version: v0.31.0
+          kubectl_version: v1.32.0
+          cluster_name: tasklattice-ci
+          node_image: kindest/node:v1.32.0@sha256:c48c62eac5da28cdadcf560d1d8616cfa6783b58f0d94cf63ad1bf49600cb027
+          wait: 120s
+
+      - name: Install chart and wait for healthy Pods
+        run: bash scripts/helm-kind-smoke.sh
+
+      - name: Collect failure diagnostics
+        if: failure()
+        run: |
+          kubectl get pods,services,pvc --all-namespaces -o wide || true
+          kubectl get events --all-namespaces --sort-by=.metadata.creationTimestamp || true
+          helm --namespace "${HELM_NAMESPACE}" status "${HELM_RELEASE_NAME}" || true
+          kubectl --namespace "${HELM_NAMESPACE}" describe pods || true
+          kubectl --namespace "${HELM_NAMESPACE}" logs \
+            --selector "app.kubernetes.io/instance=${HELM_RELEASE_NAME}" \
+            --all-containers \
+            --prefix \
+            --tail 200 || true
+          kubectl --namespace agent-sandbox-system describe pods || true
+          kubectl --namespace agent-sandbox-system logs \
+            deployment/agent-sandbox-controller \
+            --all-containers \
+            --prefix \
+            --tail 200 || true

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Incident Triage"
+  short_description: "Create evidence-backed incident briefings safely"
+  default_prompt: "Use $incident-triage to triage this alert and prepare a responder briefing."

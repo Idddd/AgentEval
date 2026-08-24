@@ -1,0 +1,45 @@
+# Example disconnected-registry overrides. Replace registry.airgap.example.com
+# and the Secret name with values from the target environment. Use this file
+# together with values-openshift.yaml for OpenShift.
+global:
+  imageRegistry: registry.airgap.example.com/tasklattice
+  imagePullSecrets:
+    - name: airgap-registry
+
+# Images implemented by TaskLattice inherit global.imageRegistry. External
+# runtime images use full repository paths so they can be mirrored separately.
+images:
+  postgres:
+    repository: registry.airgap.example.com/third-party/postgres
+    tag: 17-alpine
+    useGlobalRegistry: false
+  keycloak:
+    repository: registry.airgap.example.com/third-party/keycloak
+    tag: 26.7.0
+    useGlobalRegistry: false
+
+agentSandbox:
+  # Pre-create this namespace and its pull Secret before installation.
+  namespace:
+    create: false
+    name: agent-sandbox-system
+  image:
+    repository: registry.airgap.example.com/third-party/agent-sandbox-controller
+    tag: v0.5.1
+  imagePullSecrets:
+    - name: airgap-registry
+
+openshell:
+  image:
+    repository: registry.airgap.example.com/third-party/openshell-gateway
+    tag: 0.0.82
+  imagePullSecrets:
+    - name: airgap-registry
+  supervisor:
+    image:
+      repository: registry.airgap.example.com/third-party/openshell-supervisor
+      tag: 0.0.82
+  server:
+    sandboxImage: registry.airgap.example.com/third-party/openshell-sandbox:0.0.82
+    sandboxImagePullSecrets:
+      - name: airgap-registry

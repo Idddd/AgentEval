@@ -1,0 +1,493 @@
+import { Fragment, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import {
+  Boxes,
+  Bot,
+  ChartNoAxesCombined,
+  CheckCircle2,
+  CircleHelp,
+  LibraryBig,
+  Search,
+  ShieldAlert,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
+import type { AuthUser } from "@/components/auth/auth-provider";
+import { useAuth } from "@/components/auth/auth-provider";
+import { AccountMenu } from "@/components/account/account-menu";
+import { BrandLogo } from "@/components/brand/brand-logo";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
+import { useProject } from "@/hooks/use-project";
+import {
+  useEffectiveProjectRole,
+  useProjectPermissions,
+} from "@/hooks/use-project-permissions";
+import {
+  DemoRoleProvider,
+  useDemoRole,
+  type DemoPersona,
+} from "@/hooks/use-demo-role";
+import type { ProjectRole } from "@/types/project";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { applyPlatformPreferences } from "@/lib/platform-preferences";
+import {
+  getPersonalProfile,
+  personalProfileQueryKey,
+} from "@/services/personal-profile";
+import { HeaderBreadcrumb } from "@/components/layout/header-breadcrumb";
+import { CreateProjectSheet } from "@/components/project/create-project-sheet";
+import { ProjectSwitcher } from "@/components/project/project-switcher";
+import {
+  Toast,
+  ToastClose,
+  ToastDescription,
+  ToastProvider,
+  ToastTitle,
+  ToastViewport,
+} from "@/components/ui/toast";
+import { EvaluationMockProvider } from "@/features/evaluations/mock-provider";
+import {
+  BuildEvaluationBridgeProvider,
+  DemoWorkflowProvider,
+} from "@/features/demo-workflow/provider";
+import { GuardrailTestPackBridge } from "@/features/evaluation-layer/guardrail-test-pack-bridge";
+import { EvaluationLayerProvider } from "@/features/evaluation-layer/mock-provider";
+import { GuardGovernanceProvider } from "@/features/guard-governance/mock-provider";
+
+type ProjectRoute =
+  | "/$projectId/agent-garden"
+  | "/$projectId/cost"
+  | "/$projectId/create"
+  | "/$projectId/builds"
+  | "/$projectId/technical-validation"
+  | "/$projectId/traces"
+  | "/$projectId/evaluations"
+  | "/$projectId/evaluation/catalog"
+  | "/$projectId/evaluation/behavior"
+  | "/$projectId/evaluation/id-management"
+  | "/$projectId/evaluation/targets"
+  | "/$projectId/evaluation/datasets"
+  | "/$projectId/evaluation/runs"
+  | "/$projectId/evaluation/overview"
+  | "/$projectId/evaluation/traces"
+  | "/$projectId/evaluation/settings"
+  | "/$projectId/instances"
+  | "/$projectId/requests/new"
+  | "/$projectId/guardrails"
+  | "/$projectId/governance/guardrails"
+  | "/$projectId/governance/policy-library"
+  | "/$projectId/governance/assignments"
+  | "/$projectId/governance/enforcements"
+  | "/$projectId/governance/integrations"
+  | "/$projectId/governance/evidence"
+  | "/$projectId/access-policies"
+  | "/$projectId/audit-logs"
+  | "/$projectId/runtime-policies"
+  | "/$projectId/knowledge-base"
+  | "/$projectId/memory"
+  | "/$projectId/mcp-servers"
+  | "/$projectId/skills"
+  | "/$projectId/requests";
+
+type NavItemDefinition = {
+  icon: LucideIcon;
+  label: string;
+  to: ProjectRoute;
+  personas?: DemoPersona[];
+};
+
+export const projectNavGroups: Array<{
+  items: NavItemDefinition[];
+  label: string;
+}> = [
+  {
+    label: "Workspace",
+    items: [
+      {
+        icon: Bot,
+        label: "Agent Garden",
+        to: "/$projectId/agent-garden",
+        personas: ["end-user", "agent-wizard"],
+      },
+      {
+        icon: Boxes,
+        label: "My Instances",
+        to: "/$projectId/instances",
+        personas: ["end-user"],
+      },
+      {
+        icon: Sparkles,
+        label: "Build",
+        to: "/$projectId/create",
+        personas: ["agent-wizard"],
+      },
+      {
+        icon: CheckCircle2,
+        label: "Evaluate",
+        to: "/$projectId/evaluation/catalog",
+        personas: ["agent-wizard"],
+      },
+      {
+        icon: CheckCircle2,
+        label: "Eval",
+        to: "/$projectId/evaluation/catalog",
+        personas: ["admin"],
+      },
+      {
+        icon: ShieldAlert,
+        label: "Guardrails",
+        to: "/$projectId/governance/guardrails",
+        personas: ["admin"],
+      },
+      {
+        icon: LibraryBig,
+        label: "Policy Library",
+        to: "/$projectId/governance/policy-library",
+        personas: ["admin"],
+      },
+      {
+        icon: ChartNoAxesCombined,
+        label: "Monitor",
+        to: "/$projectId/evaluation/overview",
+        personas: ["admin"],
+      },
+    ],
+  },
+];
+
+const PERSONA_NAV_ORDER: Record<DemoPersona, string[]> = {
+  admin: [
+    "Eval",
+    "Guardrails",
+    "Policy Library",
+    "Monitor",
+  ],
+  "agent-wizard": ["Build", "Evaluate", "Agent Garden"],
+  "end-user": ["Agent Garden", "My Instances"],
+};
+
+export function visibleProjectNavGroups(
+  _role: ProjectRole,
+  persona: DemoPersona,
+  _canViewAuditLogs: boolean,
+) {
+  const order = PERSONA_NAV_ORDER[persona];
+  return projectNavGroups
+    .map((group) => ({
+      ...group,
+      items: group.items
+        .filter((item) => !item.personas || item.personas.includes(persona))
+        .sort((left, right) => order.indexOf(left.label) - order.indexOf(right.label)),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
+export function itemIsActive(item: NavItemDefinition, pathname: string, projectId: string) {
+  const target = item.to.replace("$projectId", encodeURIComponent(projectId));
+  if (item.label === "Build") {
+    return pathname === target || pathname === `/${encodeURIComponent(projectId)}/builds`;
+  }
+  if (item.label === "Evaluate") {
+    return pathname === target || pathname === `/${encodeURIComponent(projectId)}/technical-validation`;
+  }
+  if (item.to === "/$projectId/evaluation/catalog") {
+    return pathname === target;
+  }
+  if (
+    item.to === "/$projectId/instances" ||
+    item.to === "/$projectId/access-policies" ||
+    item.to === "/$projectId/evaluations" ||
+    item.to === "/$projectId/governance/guardrails" ||
+    item.to === "/$projectId/governance/policy-library" ||
+    item.to === "/$projectId/evaluation/behavior" ||
+    item.to === "/$projectId/evaluation/overview"
+  )
+    return pathname === target || pathname.startsWith(`${target}/`);
+  return pathname === target;
+}
+
+function NavigationItem({ item, pathname, projectId }: {
+  item: NavItemDefinition;
+  pathname: string;
+  projectId: string;
+}) {
+  const { setOpenMobile } = useSidebar();
+  const active = itemIsActive(item, pathname, projectId);
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
+        <Link
+          to={item.to}
+          params={{ projectId }}
+          onClick={() => setOpenMobile(false)}
+          aria-current={active ? "page" : undefined}
+          aria-label={item.label}
+        >
+          <item.icon className={cn(active && "text-primary")} />
+          <span>{item.label}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+function DisabledNav({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        aria-label={label}
+        disabled
+        tooltip={`${label} — not part of the current Agent operating path.`}
+      >
+        <Icon />
+        <span>{label}</span>
+        <span className="ml-auto bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide group-data-[collapsible=icon]:hidden">Later</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+function ProjectSidebar({ logout, pathname, user }: {
+  logout: () => void | Promise<void>;
+  pathname: string;
+  user: AuthUser | null;
+}) {
+  const { isMobile, setOpenMobile, state } = useSidebar();
+  const {
+    currentProject,
+    refreshProjects,
+    selectProject,
+  } = useProject();
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [toastProject, setToastProject] = useState("");
+  const projectId = currentProject?.id ?? "individual";
+  const role = useEffectiveProjectRole(currentProject?.role);
+  const permissions = useProjectPermissions(currentProject?.role);
+  const { persona } = useDemoRole();
+  const visibleGroups = visibleProjectNavGroups(
+    role,
+    persona,
+    permissions.canViewAuditLogs,
+  );
+  return (
+    <ToastProvider duration={3_000} swipeDirection="right">
+      <Sidebar collapsible="icon">
+        <SidebarHeader className="gap-1.5 border-b border-sidebar-border p-2">
+          <Link
+            to={persona === "end-user" ? "/$projectId/agent-garden" : persona === "agent-wizard" ? "/$projectId/create" : "/$projectId/evaluation/catalog"}
+            params={{ projectId }}
+            onClick={() => setOpenMobile(false)}
+            className="flex min-h-11 min-w-0 items-center gap-3 px-2 focus-visible:outline-2 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+            aria-label="TaskLattice home"
+          >
+            <BrandLogo compact={!isMobile && state === "collapsed"} />
+          </Link>
+          <ProjectSwitcher
+            collapsed={!isMobile && state === "collapsed"}
+            onCreateProject={() => {
+              setOpenMobile(false);
+              setCreateProjectOpen(true);
+            }}
+            onProjectSwitchSuccess={(projectName) => {
+              setOpenMobile(false);
+              setToastProject(projectName);
+            }}
+          />
+        </SidebarHeader>
+        <SidebarContent>
+          <nav aria-label="Project navigation" className="flex flex-col py-1">
+            {visibleGroups.map((group) => (
+              <SidebarGroup key={group.label}>
+                <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {group.items.map((item) => (
+                      <Fragment key={`${item.label}:${item.to}`}>
+                        <NavigationItem item={item} pathname={pathname} projectId={projectId} />
+                      </Fragment>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            ))}
+          </nav>
+        </SidebarContent>
+        <SidebarFooter className="border-t border-sidebar-border p-2">
+          <SidebarMenu>
+            <DisabledNav icon={CircleHelp} label="Help & documentation" />
+          </SidebarMenu>
+          <div className="mt-1 border-t border-sidebar-border pt-2">
+            <AccountMenu
+              collapsed={!isMobile && state === "collapsed"}
+              onLogout={logout}
+              projectId={projectId}
+              user={user}
+            />
+          </div>
+        </SidebarFooter>
+        <SidebarRail />
+      </Sidebar>
+
+      <CreateProjectSheet
+        open={createProjectOpen}
+        onOpenChange={setCreateProjectOpen}
+        user={user}
+        onCreated={async (createdProjectId, projectName) => {
+          await refreshProjects();
+          await selectProject(createdProjectId);
+          setToastProject(projectName);
+        }}
+      />
+
+      <Toast
+        open={Boolean(toastProject)}
+        onOpenChange={(next) => {
+          if (!next) setToastProject("");
+        }}
+        className="border-emerald-500/30 border-l-2"
+      >
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-700">
+            <CheckCircle2 className="size-4" />
+          </span>
+          <span>
+            <ToastTitle>Project switched</ToastTitle>
+            <ToastDescription>
+              <strong className="block font-medium text-foreground">
+                {toastProject}
+              </strong>
+              Resources updated
+            </ToastDescription>
+          </span>
+        </div>
+        <ToastClose />
+      </Toast>
+      <ToastViewport />
+    </ToastProvider>
+  );
+}
+
+export function AppShell() {
+  const { logout, user } = useAuth();
+  const account = useQuery({
+    queryKey: personalProfileQueryKey,
+    queryFn: getPersonalProfile,
+    staleTime: 5 * 60_000,
+  });
+  const {
+    currentProject,
+    error: projectError,
+    loading: projectLoading,
+    refreshProjects,
+  } = useProject();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    if (account.data) {
+      applyPlatformPreferences(account.data);
+    }
+  }, [account.data]);
+
+  useEffect(() => {
+    setSidebarOpen(window.localStorage.getItem("tasklattice.sidebar.collapsed") !== "true");
+  }, []);
+
+  const handleSidebarOpenChange = (open: boolean) => {
+    setSidebarOpen(open);
+    window.localStorage.setItem("tasklattice.sidebar.collapsed", String(!open));
+  };
+
+  return (
+    <DemoRoleProvider>
+      <TooltipProvider delayDuration={250}>
+        <SidebarProvider open={sidebarOpen} onOpenChange={handleSidebarOpenChange}>
+        <ProjectSidebar
+          logout={logout}
+          pathname={pathname}
+          user={user}
+        />
+        <SidebarInset>
+          <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/94 px-4 backdrop-blur-md sm:px-6 lg:px-8">
+            <SidebarTrigger />
+            <HeaderBreadcrumb pathname={pathname} />
+            <button disabled className="ml-auto hidden h-9 w-64 cursor-not-allowed items-center gap-2 rounded-md border border-border/70 bg-muted/30 px-3 text-sm text-muted-foreground/45 md:flex"><Search className="size-3.5" />Search project<span className="ml-auto text-[10px] uppercase">Later</span></button>
+          </header>
+          <main
+            id="main-content"
+            className={cn(
+              "mx-auto w-full p-5 sm:p-6 lg:py-6",
+              sidebarOpen ? "max-w-[1600px]" : "max-w-none",
+            )}
+          >
+            {projectError ? (
+              <div role="status" className="mb-5 border-l-2 border-amber-500 bg-amber-500/5 px-4 py-3 text-sm text-amber-900">
+                {projectError}
+              </div>
+            ) : null}
+            {projectLoading ? (
+              <div className="space-y-6" aria-label="Loading project data">
+                <div className="h-20 animate-pulse rounded-md bg-muted/70" />
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="h-28 animate-pulse rounded-md bg-muted/60" />
+                  <div className="h-28 animate-pulse rounded-md bg-muted/60" />
+                  <div className="h-28 animate-pulse rounded-md bg-muted/60" />
+                </div>
+                <div className="h-64 animate-pulse rounded-md bg-muted/50" />
+              </div>
+            ) : !currentProject ? (
+              <section className="mx-auto max-w-md py-20 text-center" aria-labelledby="no-project-title">
+                <h1 id="no-project-title" className="text-lg font-semibold">
+                  No project available
+                </h1>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Create a Project before resources can be loaded.
+                </p>
+                <Button className="mt-5" onClick={() => void refreshProjects()}>
+                  Reload projects
+                </Button>
+              </section>
+            ) : (
+              <GuardGovernanceProvider
+                key={currentProject.id}
+                projectId={currentProject.id}
+              >
+                <EvaluationLayerProvider projectId={currentProject.id}>
+                  <GuardrailTestPackBridge />
+                  <DemoWorkflowProvider projectId={currentProject.id}>
+                    <BuildEvaluationBridgeProvider>
+                      <EvaluationMockProvider projectId={currentProject.id}>
+                        <Outlet />
+                      </EvaluationMockProvider>
+                    </BuildEvaluationBridgeProvider>
+                  </DemoWorkflowProvider>
+                </EvaluationLayerProvider>
+              </GuardGovernanceProvider>
+            )}
+          </main>
+        </SidebarInset>
+        </SidebarProvider>
+      </TooltipProvider>
+    </DemoRoleProvider>
+  );
+}

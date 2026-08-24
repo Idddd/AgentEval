@@ -1,0 +1,12 @@
+diff --git a/helm-chart/templates/certgen.yaml b/helm-chart/templates/certgen.yaml
+--- a/helm-chart/templates/certgen.yaml
++++ b/helm-chart/templates/certgen.yaml
+@@ -70,6 +70,8 @@ spec:
+         - name: certgen
+           image: {{ include "openshell.image" . | quote }}
+           imagePullPolicy: {{ .Values.image.pullPolicy }}
++          resources:
++            {{- toYaml .Values.resources | nindent 12 }}
+           securityContext:
+             allowPrivilegeEscalation: false
+             capabilities:

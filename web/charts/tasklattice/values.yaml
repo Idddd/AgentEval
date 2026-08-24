@@ -1,0 +1,363 @@
+# Released TaskLattice images. Override this for a fork or private mirror.
+global:
+  imageRegistry: ghcr.io/sn0rt
+  imagePullSecrets: []
+  # Set by local deployment tooling to restart first-party workloads after a
+  # mutable :dev image is rebuilt. Released charts leave this empty because
+  # their image tag is the immutable Chart appVersion.
+  rolloutRevision: ""
+
+# OpenShift-specific resources and security behavior are opt-in so regular
+# Kubernetes installations retain their existing UID/GID settings.
+openshift:
+  enabled: false
+  anyuidScc:
+    # Static TaskLattice and OpenShell gateway pods use their image-defined
+    # non-root IDs. Enable this binding only when the cluster permits anyuid.
+    createRoleBinding: false
+  sandboxScc:
+    # This grants the OpenShell sandbox ServiceAccount access to OpenShift's
+    # privileged SCC. Enable only on a dedicated, trusted OpenShift project.
+    createRoleBinding: false
+  routes:
+    control:
+      enabled: false
+      host: ""
+      annotations: {}
+      tls:
+        enabled: true
+        termination: edge
+        insecureEdgeTerminationPolicy: Redirect
+    keycloak:
+      enabled: false
+      host: ""
+      annotations: {}
+      tls:
+        enabled: true
+        termination: edge
+        insecureEdgeTerminationPolicy: Redirect
+
+images:
+  control:
+    repository: tasklattice-control
+    tag: ""
+    pullPolicy: IfNotPresent
+  runner:
+    repository: tasklattice-openshell-runner
+    tag: ""
+    pullPolicy: IfNotPresent
+  litellm:
+    repository: tasklattice-litellm
+    tag: ""
+    pullPolicy: IfNotPresent
+  exampleMcp:
+    repository: tasklattice-example-mcp
+    tag: ""
+    pullPolicy: IfNotPresent
+  openclawSandbox:
+    repository: tasklattice-nemoclaw-sandbox
+    tag: ""
+  hermesSandbox:
+    repository: tasklattice-nemoclaw-hermes-sandbox
+    tag: ""
+  postgres:
+    repository: postgres
+    tag: 17-alpine
+    pullPolicy: IfNotPresent
+    useGlobalRegistry: false
+  keycloak:
+    repository: quay.io/keycloak/keycloak
+    tag: 26.7.0
+    pullPolicy: IfNotPresent
+    useGlobalRegistry: false
+
+control:
+  replicaCount: 1
+  # Canonical browser URL used for OIDC callbacks. Local authentication and
+  # Service exposure do not require it. Set it when auth.oidc or Keycloak is enabled.
+  publicUrl: ""
+  smtp:
+    # Enables email delivery for invitations to users who do not already have
+    # a TaskLattice account. Requires control.publicUrl.
+    enabled: false
+    host: ""
+    port: 587
+    # Use true for implicit TLS (normally port 465). Keep false for STARTTLS
+    # on port 587.
+    secure: false
+    username: ""
+    fromAddress: ""
+    fromName: TaskLattice
+    replyTo: ""
+  hostAliases: []
+  service:
+    type: LoadBalancer
+    port: 80
+    annotations: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  initResources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  extraEnv: []
+
+runner:
+  replicaCount: 1
+  gatewayEndpoint: ""
+  serviceBaseUrl: http://openshell.localhost:8080
+  kubernetesServiceCidrs: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+  sandbox:
+    cpu: "1"
+    memory: 2Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 500m
+      memory: 384Mi
+  extraEnv: []
+
+litellm:
+  replicaCount: 1
+  workers: 2
+  service:
+    type: ClusterIP
+    port: 4000
+    annotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 4Gi
+  extraEnv: []
+
+# Test-only Streamable HTTP MCP Server. It exposes deterministic, side-effect
+# free tools and is reachable only through its in-cluster Service.
+exampleMcp:
+  enabled: false
+  replicaCount: 1
+  auth:
+    username: Username
+    password: Password
+  service:
+    port: 3000
+  resources:
+    requests:
+      cpu: 10m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+postgresql:
+  persistence:
+    size: 2Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Development-friendly defaults make the chart installable as-is. Override all
+# values below (or set existingSecret) before exposing a shared deployment.
+secrets:
+  existingSecret: ""
+  runnerToken: local-dev-token
+  litellmMasterKey: sk-tasklattice-local
+  postgresPassword: tasklattice-local
+  databaseUrl: ""
+  jwtSecret: tasklattice-local-development-secret
+  initialSuperAdminPasswordHash: '$2b$12$Zx2mCLJZ0n/iY4Tq.Z3eXu0O.z5SHM.pKJyNNurKX/Z7CD5HHOg.e'
+  keycloakAdminPassword: admin
+  keycloakClientSecret: tasklattice-keycloak-test-client-secret
+  keycloakTestUserPassword: password
+  litellmUiUsername: admin
+  litellmUiPassword: tasklattice-local-admin
+  litellmSaltKey: tasklattice-local-litellm-salt-v1
+  smtpPassword: ""
+
+auth:
+  local:
+    enabled: true
+    username: admin
+  oidc:
+    enabled: false
+    issuer: ""
+    clientId: ""
+    clientSecret: ""
+    displayName: Keycloak SSO
+
+# Test-only identity provider. Enable with:
+#   --set keycloak.enabled=true \
+#   --set keycloak.publicUrl=http://<reachable-keycloak-host>:8080
+# The embedded provider overrides auth.oidc while enabled. It uses ephemeral
+# storage and must not be used as a production identity provider.
+keycloak:
+  enabled: false
+  publicUrl: ""
+  adminUsername: admin
+  service:
+    type: LoadBalancer
+    port: 8080
+    loadBalancerIP: ""
+    annotations: {}
+  testUsers:
+    # Stable IDs keep OIDC subject mappings valid when the ephemeral test
+    # Keycloak Pod is recreated and imports the realm again.
+    - id: 247cf669-9e00-4948-bc83-39d4fd3626fc
+      username: alice
+      email: alice@tasklattice.test
+      firstName: Alice
+      lastName: Operator
+    - id: 3ff7cb62-d951-4ea0-b5ca-cb465594f5e9
+      username: bob
+      email: bob@tasklattice.test
+      firstName: Bob
+      lastName: Auditor
+    - id: b7ebdb4c-caa3-4177-9196-71652156da38
+      username: sso-1
+      email: sso-1@tasklattice.test
+      firstName: SSO
+      lastName: "1"
+    - id: 7cffa5b7-e1e5-4f78-bddb-85a2cd610f5b
+      username: sso-2
+      email: sso-2@tasklattice.test
+      firstName: SSO
+      lastName: "2"
+    - id: fa8f658d-c7ce-4f5c-8bd3-ff0c08e18c7c
+      username: sso-3
+      email: sso-3@tasklattice.test
+      firstName: SSO
+      lastName: "3"
+    - id: b3f4b61d-06f9-467e-8f77-dc6c2ef87b5f
+      username: sso-4
+      email: sso-4@tasklattice.test
+      firstName: SSO
+      lastName: "4"
+    - id: 2681c7d0-e0f3-46e3-817d-566ddc9f42b8
+      username: sso-5
+      email: sso-5@tasklattice.test
+      firstName: SSO
+      lastName: "5"
+    - id: 9702bd2a-f9e4-40f2-aa52-3d0f0bd69cdb
+      username: sso-6
+      email: sso-6@tasklattice.test
+      firstName: SSO
+      lastName: "6"
+    - id: dba7ab69-0b5d-4338-b303-c48c4fbeb333
+      username: sso-7
+      email: sso-7@tasklattice.test
+      firstName: SSO
+      lastName: "7"
+    - id: 3ce07a30-6124-4dbd-8277-d737b6221110
+      username: sso-8
+      email: sso-8@tasklattice.test
+      firstName: SSO
+      lastName: "8"
+    - id: a43c0d28-e4f3-4e59-ad88-d9e9edc80e1e
+      username: sso-9
+      email: sso-9@tasklattice.test
+      firstName: SSO
+      lastName: "9"
+    - id: 1d020297-1cf1-403e-99a1-a902bb1e54ea
+      username: sso-10
+      email: sso-10@tasklattice.test
+      firstName: SSO
+      lastName: "10"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  runtime:
+    create: true
+    name: ""
+    annotations: {}
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Default CPU and memory values for containers created by runtime dependencies
+# that do not expose per-container resource settings (for example, OpenShell's
+# dynamically injected sandbox init containers). Disable this only when the
+# target namespace already has an equivalent platform-managed LimitRange.
+resourceDefaults:
+  enabled: true
+  defaultRequest:
+    cpu: 10m
+    memory: 32Mi
+  default:
+    cpu: 500m
+    memory: 512Mi
+
+# Pinned kubernetes-sigs/agent-sandbox v0.5.1 dependency. Its upstream Chart is
+# fetched and packaged by scripts/prepare-helm-dependencies.sh; upstream source
+# is not copied into this repository.
+agentSandbox:
+  enabled: true
+  imagePullSecrets: []
+  namespace:
+    create: true
+    name: agent-sandbox-system
+  image:
+    repository: registry.k8s.io/agent-sandbox/agent-sandbox-controller
+    tag: v0.5.1
+    pullPolicy: IfNotPresent
+  controller:
+    leaderElect: true
+    extensions: false
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# Pinned upstream OpenShell OCI chart. Plaintext/unauthenticated mode matches
+# TaskLattice's current trusted-cluster integration. Put the services behind an
+# authenticated ingress or configure OpenShell TLS/OIDC for shared clusters.
+openshell:
+  enabled: true
+  image:
+    tag: 0.0.82
+  supervisor:
+    image:
+      tag: 0.0.82
+    sideloadMethod: init-container
+  service:
+    type: LoadBalancer
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  server:
+    disableTls: true
+    auth:
+      allowUnauthenticatedUsers: true
+    workspaceDefaultStorageSize: 1Gi

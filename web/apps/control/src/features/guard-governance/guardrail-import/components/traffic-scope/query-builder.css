@@ -1,0 +1,1110 @@
+.guardrail-import {
+  --rqb-spacing: 0.5rem;
+  --rqb-border-width: 1px;
+  --rqb-branch-indent: var(--rqb-spacing);
+  --rqb-branch-width: var(--rqb-border-width);
+  --rqb-base-color: #004bb8;
+  --rqb-background-color: color-mix(in srgb, transparent, #004bb8 20%);
+  --rqb-border-color: #8081a2;
+  --rqb-border-style: solid;
+  --rqb-border-radius: 0.25rem;
+  --rqb-dnd-drop-indicator-color: rebeccapurple;
+  --rqb-dnd-drop-indicator-style: dashed;
+  --rqb-dnd-drop-indicator-width: 2px;
+  --rqb-dnd-drop-indicator-copy-color: #693;
+  --rqb-dnd-drop-indicator-copy-style: dashed;
+  --rqb-dnd-drop-indicator-copy-width: 2px;
+  --rqb-dnd-drop-indicator-group-color: #369;
+  --rqb-dnd-drop-indicator-group-style: dashed;
+  --rqb-dnd-drop-indicator-group-width: 2px;
+  --rqb-dnd-drop-not-allowed-cursor: not-allowed;
+  --rqb-branch-color: var(--rqb-border-color);
+  --rqb-branch-radius: var(--rqb-border-radius);
+  --rqb-branch-style: var(--rqb-border-style);
+}
+.guardrail-import .ruleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rqb-spacing);
+  padding: var(--rqb-spacing);
+  border-width: var(--rqb-border-width);
+}
+.guardrail-import .ruleGroup .ruleGroup-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rqb-spacing);
+}
+.guardrail-import .ruleGroup .ruleGroup-body:empty {
+  display: none;
+}
+.guardrail-import .ruleGroup .ruleGroup-header,
+.guardrail-import .ruleGroup .rule,
+.guardrail-import .ruleGroup .undoRedoActions {
+  display: flex;
+  gap: var(--rqb-spacing);
+  align-items: center;
+}
+.guardrail-import .ruleGroup .rule .rule-value:has(.rule-value-list-item) {
+  display: flex;
+  gap: var(--rqb-spacing);
+  align-items: baseline;
+}
+.guardrail-import .ruleGroup .rule.rule-hasSubQuery {
+  flex-wrap: wrap;
+  padding: var(--rqb-spacing);
+  border-width: var(--rqb-border-width);
+}
+.guardrail-import .ruleGroup .rule.rule-hasSubQuery .ruleGroup-body {
+  flex-basis: 100%;
+}
+.guardrail-import .ruleGroup .betweenRules {
+  display: flex;
+}
+.guardrail-import .ruleGroup .shiftActions {
+  display: flex;
+  flex-direction: column;
+}
+.guardrail-import .ruleGroup .shiftActions > * {
+  padding: 0;
+}
+.guardrail-import .dndOver.rule,
+.guardrail-import .dndOver.ruleGroup-header {
+  padding-bottom: var(--rqb-spacing);
+}
+.guardrail-import .dndOver.betweenRules {
+  padding-top: var(--rqb-spacing);
+}
+.guardrail-import .dndGroup.rule.dndOver,
+.guardrail-import .dndGroup.ruleGroup:has(.ruleGroup-header.dndOver) {
+  padding: var(--rqb-spacing);
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .ruleGroup-body {
+  margin-left: calc(2 * var(--rqb-branch-indent));
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule,
+.guardrail-import .queryBuilder-branches:dir(ltr) .ruleGroup .ruleGroup {
+  position: relative;
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule::before,
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule::after,
+.guardrail-import .queryBuilder-branches:dir(ltr) .ruleGroup .ruleGroup::before,
+.guardrail-import .queryBuilder-branches:dir(ltr) .ruleGroup .ruleGroup::after {
+  content: "";
+  width: var(--rqb-branch-indent);
+  left: calc(-1 * (var(--rqb-branch-indent) + var(--rqb-branch-width)));
+  border-radius: 0;
+  position: absolute;
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule::before,
+.guardrail-import
+  .queryBuilder-branches:dir(ltr)
+  .ruleGroup
+  .ruleGroup::before {
+  top: calc(-1 * var(--rqb-spacing));
+  height: calc(50% + var(--rqb-spacing));
+  border-width: 0 0 var(--rqb-branch-width) var(--rqb-branch-width);
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule::after,
+.guardrail-import .queryBuilder-branches:dir(ltr) .ruleGroup .ruleGroup::after {
+  top: 50%;
+  height: 50%;
+  border-width: 0 0 0 var(--rqb-branch-width);
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule:last-child::after,
+.guardrail-import
+  .queryBuilder-branches:dir(ltr)
+  .ruleGroup
+  .ruleGroup:last-child::after {
+  display: none;
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule-hasSubQuery::before,
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule-hasSubQuery::after,
+.guardrail-import .queryBuilder-branches:dir(ltr) .ruleGroup .ruleGroup::before,
+.guardrail-import .queryBuilder-branches:dir(ltr) .ruleGroup .ruleGroup::after {
+  left: calc(
+    -1 *
+      (
+        var(--rqb-branch-indent) + var(--rqb-branch-width) +
+          var(--rqb-border-width)
+      )
+  );
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule-hasSubQuery::before,
+.guardrail-import
+  .queryBuilder-branches:dir(ltr)
+  .ruleGroup
+  .ruleGroup::before {
+  top: calc(-1 * (var(--rqb-spacing) + var(--rqb-border-width)));
+  height: calc(50% + var(--rqb-spacing) + var(--rqb-border-width));
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule-hasSubQuery::after,
+.guardrail-import .queryBuilder-branches:dir(ltr) .ruleGroup .ruleGroup::after {
+  height: calc(50% + var(--rqb-border-width));
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .betweenRules {
+  position: relative;
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .betweenRules::before {
+  content: "";
+  width: var(--rqb-branch-indent);
+  left: calc(-1 * (var(--rqb-branch-indent) + var(--rqb-branch-width)));
+  border-radius: 0;
+  position: absolute;
+  top: calc(-1 * var(--rqb-spacing));
+  height: calc(100% + var(--rqb-spacing));
+  border-width: 0 0 0 var(--rqb-branch-width);
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .ruleGroup-body {
+  margin-right: calc(2 * var(--rqb-branch-indent));
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule,
+.guardrail-import .queryBuilder-branches:dir(rtl) .ruleGroup .ruleGroup {
+  position: relative;
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule::before,
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule::after,
+.guardrail-import .queryBuilder-branches:dir(rtl) .ruleGroup .ruleGroup::before,
+.guardrail-import .queryBuilder-branches:dir(rtl) .ruleGroup .ruleGroup::after {
+  content: "";
+  width: var(--rqb-branch-indent);
+  right: calc(-1 * (var(--rqb-branch-indent) + var(--rqb-branch-width)));
+  border-radius: 0;
+  position: absolute;
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule::after,
+.guardrail-import .queryBuilder-branches:dir(rtl) .ruleGroup .ruleGroup::after {
+  top: calc(-1 * var(--rqb-spacing));
+  height: calc(50% + var(--rqb-spacing));
+  border-width: 0 var(--rqb-branch-width) var(--rqb-branch-width) 0;
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule::before,
+.guardrail-import
+  .queryBuilder-branches:dir(rtl)
+  .ruleGroup
+  .ruleGroup::before {
+  top: 50%;
+  height: 50%;
+  border-width: 0 var(--rqb-branch-width) 0 0;
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule:last-child::before,
+.guardrail-import
+  .queryBuilder-branches:dir(rtl)
+  .ruleGroup
+  .ruleGroup:last-child::before {
+  display: none;
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule-hasSubQuery::before,
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule-hasSubQuery::after,
+.guardrail-import .queryBuilder-branches:dir(rtl) .ruleGroup .ruleGroup::before,
+.guardrail-import .queryBuilder-branches:dir(rtl) .ruleGroup .ruleGroup::after {
+  right: calc(
+    -1 *
+      (
+        var(--rqb-branch-indent) + var(--rqb-branch-width) +
+          var(--rqb-border-width)
+      )
+  );
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule-hasSubQuery::after,
+.guardrail-import .queryBuilder-branches:dir(rtl) .ruleGroup .ruleGroup::after {
+  top: calc(-1 * (var(--rqb-spacing) + var(--rqb-border-width)));
+  height: calc(50% + var(--rqb-spacing) + var(--rqb-border-width));
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule-hasSubQuery::before,
+.guardrail-import
+  .queryBuilder-branches:dir(rtl)
+  .ruleGroup
+  .ruleGroup::before {
+  height: calc(50% + var(--rqb-border-width));
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .betweenRules {
+  position: relative;
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .betweenRules::after {
+  content: "";
+  width: var(--rqb-branch-indent);
+  right: calc(-1 * (var(--rqb-branch-indent) + var(--rqb-branch-width)));
+  border-radius: 0;
+  position: absolute;
+  top: calc(-1 * var(--rqb-spacing));
+  height: calc(100% + var(--rqb-spacing));
+  border-width: 0 var(--rqb-branch-width) 0 0;
+}
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-combinators
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-combinators
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-combinators
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-combinators
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-combinators
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-combinators
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-combinators
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-combinators
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-combinators
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .shiftActions
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .shiftActions
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .shiftActions
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .shiftActions
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .shiftActions
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .shiftActions
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .shiftActions
+  + .rule-cloneRule,
+.guardrail-import .queryBuilder-justified:dir(ltr) .shiftActions + .rule-lock,
+.guardrail-import .queryBuilder-justified:dir(ltr) .shiftActions + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .queryBuilder-dragHandle
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .queryBuilder-dragHandle
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .queryBuilder-dragHandle
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .queryBuilder-dragHandle
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .queryBuilder-dragHandle
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .queryBuilder-dragHandle
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .queryBuilder-dragHandle
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .queryBuilder-dragHandle
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .queryBuilder-dragHandle
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-notToggle
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-header
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-header
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-header
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-header
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-header
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-header
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-header
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-header
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-header
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-operators
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-operators
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-operators
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-operators
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-operators
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-operators
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-operators
+  + .rule-cloneRule,
+.guardrail-import .queryBuilder-justified:dir(ltr) .rule-operators + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-operators
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-value
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-value
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-value
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-value
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-value
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-value
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .rule-value
+  + .rule-cloneRule,
+.guardrail-import .queryBuilder-justified:dir(ltr) .rule-value + .rule-lock,
+.guardrail-import .queryBuilder-justified:dir(ltr) .rule-value + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .control
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .control
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .control
+  + .ruleGroup-cloneGroup,
+.guardrail-import .queryBuilder-justified:dir(ltr) .control + .ruleGroup-lock,
+.guardrail-import .queryBuilder-justified:dir(ltr) .control + .ruleGroup-remove,
+.guardrail-import .queryBuilder-justified:dir(ltr) .control + .undoRedoActions,
+.guardrail-import .queryBuilder-justified:dir(ltr) .control + .rule-cloneRule,
+.guardrail-import .queryBuilder-justified:dir(ltr) .control + .rule-lock,
+.guardrail-import .queryBuilder-justified:dir(ltr) .control + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .chakra-select__wrapper
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .chakra-select__wrapper
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .chakra-select__wrapper
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .chakra-select__wrapper
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .chakra-select__wrapper
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .chakra-select__wrapper
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .chakra-select__wrapper
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .chakra-select__wrapper
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .chakra-select__wrapper
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  input[type="hidden"]
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  input[type="hidden"]
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  input[type="hidden"]
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  input[type="hidden"]
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  input[type="hidden"]
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  input[type="hidden"]
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  input[type="hidden"]
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  input[type="hidden"]
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  input[type="hidden"]
+  + .rule-remove {
+  margin-left: auto !important;
+}
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-addRule:first-child,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .ruleGroup-addGroup:first-child,
+.guardrail-import
+  .queryBuilder-justified:dir(ltr)
+  .undoRedoActions:first-child {
+  margin-left: auto !important;
+}
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-combinators
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-combinators
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-combinators
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-combinators
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-combinators
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-combinators
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-combinators
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-combinators
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-combinators
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .shiftActions
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .shiftActions
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .shiftActions
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .shiftActions
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .shiftActions
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .shiftActions
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .shiftActions
+  + .rule-cloneRule,
+.guardrail-import .queryBuilder-justified:dir(rtl) .shiftActions + .rule-lock,
+.guardrail-import .queryBuilder-justified:dir(rtl) .shiftActions + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .queryBuilder-dragHandle
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .queryBuilder-dragHandle
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .queryBuilder-dragHandle
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .queryBuilder-dragHandle
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .queryBuilder-dragHandle
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .queryBuilder-dragHandle
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .queryBuilder-dragHandle
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .queryBuilder-dragHandle
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .queryBuilder-dragHandle
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-notToggle
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-header
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-header
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-header
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-header
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-header
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-header
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-header
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-header
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-header
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-operators
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-operators
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-operators
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-operators
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-operators
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-operators
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-operators
+  + .rule-cloneRule,
+.guardrail-import .queryBuilder-justified:dir(rtl) .rule-operators + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-operators
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-value
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-value
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-value
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-value
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-value
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-value
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .rule-value
+  + .rule-cloneRule,
+.guardrail-import .queryBuilder-justified:dir(rtl) .rule-value + .rule-lock,
+.guardrail-import .queryBuilder-justified:dir(rtl) .rule-value + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .control
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .control
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .control
+  + .ruleGroup-cloneGroup,
+.guardrail-import .queryBuilder-justified:dir(rtl) .control + .ruleGroup-lock,
+.guardrail-import .queryBuilder-justified:dir(rtl) .control + .ruleGroup-remove,
+.guardrail-import .queryBuilder-justified:dir(rtl) .control + .undoRedoActions,
+.guardrail-import .queryBuilder-justified:dir(rtl) .control + .rule-cloneRule,
+.guardrail-import .queryBuilder-justified:dir(rtl) .control + .rule-lock,
+.guardrail-import .queryBuilder-justified:dir(rtl) .control + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .chakra-select__wrapper
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .chakra-select__wrapper
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .chakra-select__wrapper
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .chakra-select__wrapper
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .chakra-select__wrapper
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .chakra-select__wrapper
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .chakra-select__wrapper
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .chakra-select__wrapper
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .chakra-select__wrapper
+  + .rule-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  input[type="hidden"]
+  + .ruleGroup-addRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  input[type="hidden"]
+  + .ruleGroup-addGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  input[type="hidden"]
+  + .ruleGroup-cloneGroup,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  input[type="hidden"]
+  + .ruleGroup-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  input[type="hidden"]
+  + .ruleGroup-remove,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  input[type="hidden"]
+  + .undoRedoActions,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  input[type="hidden"]
+  + .rule-cloneRule,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  input[type="hidden"]
+  + .rule-lock,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  input[type="hidden"]
+  + .rule-remove {
+  margin-right: auto !important;
+}
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-addRule:first-child,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .ruleGroup-addGroup:first-child,
+.guardrail-import
+  .queryBuilder-justified:dir(rtl)
+  .undoRedoActions:first-child {
+  margin-right: auto !important;
+}
+.guardrail-import .queryBuilder-responsive .rule,
+.guardrail-import .queryBuilder-responsive .ruleGroup-header {
+  flex-wrap: wrap;
+}
+.guardrail-import .queryBuilder-responsive .rule:not(.rule-hasSubQuery),
+.guardrail-import .queryBuilder-responsive .ruleGroup-header {
+  padding-inline-start: var(--rqb-spacing);
+}
+.guardrail-import
+  .queryBuilder-responsive
+  .rule:not(.rule-hasSubQuery)
+  > :first-child,
+.guardrail-import .queryBuilder-responsive .ruleGroup-header > :first-child {
+  margin-inline-start: calc(-1 * var(--rqb-spacing));
+}
+.guardrail-import .ruleGroup,
+.guardrail-import .rule-hasSubQuery {
+  border-color: var(--rqb-border-color);
+  border-style: var(--rqb-border-style);
+  border-radius: var(--rqb-border-radius);
+  background: var(--rqb-background-color);
+}
+.guardrail-import .ruleGroup .shiftActions > *,
+.guardrail-import .rule-hasSubQuery .shiftActions > * {
+  background-color: rgba(0, 0, 0, 0);
+  border: none;
+  cursor: pointer;
+}
+.guardrail-import .dndOver.rule,
+.guardrail-import .dndOver.ruleGroup-header:not(.dndGroup .ruleGroup-header) {
+  border-bottom-width: var(--rqb-dnd-drop-indicator-width);
+  border-bottom-style: var(--rqb-dnd-drop-indicator-style);
+  border-bottom-color: var(--rqb-dnd-drop-indicator-color);
+}
+.guardrail-import .dndOver.rule.dndCopy,
+.guardrail-import
+  .dndOver.ruleGroup-header:not(.dndGroup .ruleGroup-header).dndCopy {
+  border-bottom-width: var(--rqb-dnd-drop-indicator-copy-width);
+  border-bottom-style: var(--rqb-dnd-drop-indicator-copy-style);
+  border-bottom-color: var(--rqb-dnd-drop-indicator-copy-color);
+}
+.guardrail-import .dndOver.betweenRules {
+  border-top-width: var(--rqb-dnd-drop-indicator-width);
+  border-top-style: var(--rqb-dnd-drop-indicator-style);
+  border-top-color: var(--rqb-dnd-drop-indicator-color);
+}
+.guardrail-import .dndOver.betweenRules.dndCopy {
+  border-top-width: var(--rqb-dnd-drop-indicator-copy-width);
+  border-top-style: var(--rqb-dnd-drop-indicator-copy-style);
+  border-top-color: var(--rqb-dnd-drop-indicator-copy-color);
+}
+.guardrail-import .dndDropNotAllowed {
+  cursor: var(--rqb-dnd-drop-not-allowed-cursor);
+}
+.guardrail-import .dndGroup.rule.dndOver,
+.guardrail-import .dndGroup.ruleGroup:has(> .ruleGroup-header.dndOver) {
+  border-width: var(--rqb-dnd-drop-indicator-group-width);
+  border-style: var(--rqb-dnd-drop-indicator-group-style);
+  border-color: var(--rqb-dnd-drop-indicator-group-color);
+  border-radius: var(--rqb-border-radius);
+}
+.guardrail-import .dndGroup.rule.dndOver.dndCopy,
+.guardrail-import .dndGroup.ruleGroup:has(> .ruleGroup-header.dndOver).dndCopy {
+  border-color: var(--rqb-dnd-drop-indicator-copy-color);
+  border-width: var(--rqb-dnd-drop-indicator-copy-width);
+  border-style: var(--rqb-dnd-drop-indicator-copy-style);
+}
+.guardrail-import .ruleGroup.dndDragging,
+.guardrail-import .rule.dndDragging {
+  opacity: 0.5;
+}
+.guardrail-import .ruleGroup.dndHidden,
+.guardrail-import .rule.dndHidden {
+  display: none;
+}
+.guardrail-import .ruleGroup .queryBuilder-dragHandle,
+.guardrail-import .rule .queryBuilder-dragHandle {
+  cursor: move;
+}
+.guardrail-import .ruleGroup.queryBuilder-disabled .queryBuilder-dragHandle,
+.guardrail-import .rule.queryBuilder-disabled .queryBuilder-dragHandle {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule::before,
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule::after,
+.guardrail-import .queryBuilder-branches:dir(ltr) .ruleGroup .ruleGroup::before,
+.guardrail-import .queryBuilder-branches:dir(ltr) .ruleGroup .ruleGroup::after {
+  border-color: var(--rqb-branch-color);
+  border-style: var(--rqb-branch-style);
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .rule:last-child::before,
+.guardrail-import
+  .queryBuilder-branches:dir(ltr)
+  .ruleGroup
+  .ruleGroup:last-child::before {
+  border-bottom-left-radius: var(--rqb-branch-radius);
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .betweenRules {
+  position: relative;
+}
+.guardrail-import .queryBuilder-branches:dir(ltr) .betweenRules::before {
+  border-color: var(--rqb-branch-color);
+  border-style: var(--rqb-branch-style);
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule::before,
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule::after,
+.guardrail-import .queryBuilder-branches:dir(rtl) .ruleGroup .ruleGroup::before,
+.guardrail-import .queryBuilder-branches:dir(rtl) .ruleGroup .ruleGroup::after {
+  border-color: var(--rqb-branch-color);
+  border-style: var(--rqb-branch-style);
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .rule:last-child::after,
+.guardrail-import
+  .queryBuilder-branches:dir(rtl)
+  .ruleGroup
+  .ruleGroup:last-child::after {
+  border-bottom-right-radius: var(--rqb-branch-radius);
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .betweenRules {
+  position: relative;
+}
+.guardrail-import .queryBuilder-branches:dir(rtl) .betweenRules::after {
+  border-color: var(--rqb-branch-color);
+  border-style: var(--rqb-branch-style);
+}

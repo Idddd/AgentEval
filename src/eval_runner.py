@@ -5,22 +5,132 @@ from __future__ import annotations
 from typing import Callable
 
 from .agent import TargetAgent
+from .agent_adapter import AgentAdapter
 from .backends.base import TraceBackend, TraceStore
 from .code_evaluator import CodeEvaluator
 from .config_loader import ToolsConfig
 from .intent import IntentAnalyzer
+from .llm_judge import JudgeIncompleteError
+from .workbench_models import CaseResult, EvalRun, RunStatus, TestCase
+from .workbench_repository import WorkbenchRepository
 
 
 class EvalRunner:
-    def __init__(self, dataset_name: str, experiment_name: str,
-                 backend: TraceBackend, store: TraceStore,
-                 config: ToolsConfig, analyzer: IntentAnalyzer):
-        self.dataset_name = dataset_name
-        self.experiment_name = experiment_name
-        self.backend = backend
-        self.store = store
-        self.agent = TargetAgent(config, backend.tracer, analyzer)
-        self.evaluator = CodeEvaluator()
+    def __init__(self, *args):
+        if len(args) == 4 and hasattr(args[0], "create_run"):
+            repository, adapter, evaluator, judge = args
+            self.repository: WorkbenchRepository = repository
+            self.agent_adapter: AgentAdapter = adapter
+            self.evaluator = evaluator
+            self.judge = judge
+            self._legacy = False
+            return
+        if len(args) == 6:
+            dataset_name, experiment_name, backend, store, config, analyzer = args
+            self.dataset_name: str = dataset_name
+            self.experiment_name: str = experiment_name
+            self.backend: TraceBackend = backend
+            self.store: TraceStore = store
+            self.agent = TargetAgent(config, backend.tracer, analyzer)
+            self.evaluator = CodeEvaluator()
+            self._legacy = True
+            return
+        raise TypeError(
+            "EvalRunner expects (repository, agent_adapter, evaluator, judge) "
+            "or the deprecated six-argument CLI constructor"
+        )
+
+    @staticmethod
+    def _required_deterministic_failure(case: TestCase,
+                                        scores: dict[str, float]) -> bool:
+        required = {"permission_compliance", "execution_correctness"}
+        required.update(case.expected_output.get("required_deterministic_scores", ()))
+        return any(name not in scores or scores[name] < 1.0 for name in required)
+
+    async def run_revision(
+        self,
+        agent_revision_id: str,
+        dataset_revision_id: str,
+        progress: Callable[[int, int, str], None] | None = None,
+    ) -> EvalRun:
+        if self._legacy:
+            raise RuntimeError("run_revision is unavailable on the deprecated CLI runner")
+        self.repository.get_agent_revision(agent_revision_id)
+        dataset_revision = self.repository.get_dataset_revision(dataset_revision_id)
+        run = self.repository.create_run(agent_revision_id, dataset_revision_id)
+        results: list[CaseResult] = []
+        usable_results = 0
+        total = len(dataset_revision.cases)
+
+        for index, case in enumerate(dataset_revision.cases):
+            if progress:
+                progress(index, total, f"[{index + 1}/{total}] {case.case_id}")
+            response = ""
+            trace_id = ""
+            evidence = ()
+            usage_costs = ()
+            scores: dict[str, float] = {}
+            reasons: dict[str, str] = {}
+            judge_result = None
+            status = "INCOMPLETE"
+            try:
+                adapter_result = await self.agent_adapter.run(case, run.run_id)
+                response = adapter_result.response
+                trace_id = adapter_result.trace_id
+                evidence = adapter_result.tool_evidence
+                usage_costs = adapter_result.usage_costs
+                scores, reasons = self.evaluator.evaluate(
+                    adapter_result.trace, case.expected_output,
+                )
+                usable_results += 1
+                deterministic_failed = self._required_deterministic_failure(case, scores)
+                try:
+                    judge_result = self.judge.evaluate(case, response, evidence, scores)
+                except JudgeIncompleteError as error:
+                    reasons = {**reasons, "judge": f"JUDGE_INCOMPLETE: {error}"}
+                except Exception as error:
+                    reasons = {
+                        **reasons,
+                        "judge": f"JUDGE_ERROR: {type(error).__name__}: {error}",
+                    }
+
+                if deterministic_failed:
+                    status = "FAIL"
+                elif judge_result is not None and not judge_result.passed:
+                    status = "FAIL"
+                else:
+                    status = "PASS"
+                if judge_result is not None and judge_result.usage_cost is not None:
+                    usage_costs = (*usage_costs, judge_result.usage_cost)
+            except Exception as error:
+                reasons = {
+                    **reasons,
+                    "runner": f"CASE_INCOMPLETE: {type(error).__name__}: {error}",
+                }
+
+            case_result = CaseResult(
+                case_id=case.case_id,
+                trace_id=trace_id,
+                response=response,
+                deterministic_scores=scores,
+                deterministic_reasons=reasons,
+                tool_evidence=tuple(evidence),
+                judge=judge_result,
+                usage_costs=tuple(usage_costs),
+                status=status,
+            )
+            self.repository.save_case_result(run.run_id, case_result)
+            results.append(case_result)
+            if progress:
+                progress(index + 1, total, f"{case.case_id}: {status}")
+
+        if usable_results == 0:
+            final_status = RunStatus.FAILED
+        elif any(result.status == "INCOMPLETE" for result in results):
+            final_status = RunStatus.PARTIAL
+        else:
+            final_status = RunStatus.COMPLETED
+        return self.repository.finish_run(run.run_id, final_status)
 
     async def run(self, progress: Callable[[int, int, str], None] | None = None
                   ) -> list[dict]:

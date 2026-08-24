@@ -1,12 +1,49 @@
 services:
-  agent-eval:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: tasklattice
+      POSTGRES_PASSWORD: development
+      POSTGRES_DB: tasklattice
+    volumes:
+      - tasklattice-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tasklattice -d tasklattice"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
     build: .
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
+    environment:
+      WORKBENCH_WEB_DB: /app/data/web-workbench.db
     volumes:
       - agent-eval-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.control
+    ports:
+      - "127.0.0.1:18082:8080"
+    environment:
+      TASKLATTICE_CONFIG: /app/control.compose.toml
+      EVAL_API_URL: http://api:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
 
 volumes:
   agent-eval-data:
+  tasklattice-postgres-data:

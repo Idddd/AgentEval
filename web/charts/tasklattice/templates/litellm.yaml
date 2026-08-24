@@ -1,0 +1,149 @@
+{{- $component := "litellm" -}}
+{{- $name := include "tasklattice.componentName" (dict "root" . "component" $component) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "tasklattice.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  replicas: {{ .Values.litellm.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "tasklattice.selectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tasklattice.selectorLabels" (dict "root" . "component" $component) | nindent 8 }}
+      annotations:
+        checksum/litellm-secret: {{ include "tasklattice.litellmSecretChecksum" . }}
+        {{- with .Values.global.rolloutRevision }}
+        tasklattice.ai/rollout-revision: {{ . | quote }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "tasklattice.runtimeServiceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-postgresql
+          image: {{ include "tasklattice.image" (dict "root" . "image" .Values.images.postgres) }}
+          imagePullPolicy: {{ .Values.images.postgres.pullPolicy }}
+          command: ["sh", "-ec"]
+          args:
+            - >-
+              until pg_isready
+              --host {{ include "tasklattice.componentName" (dict "root" . "component" "postgresql") }}
+              --port 5432
+              --username litellm
+              --dbname litellm;
+              do sleep 2; done
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: litellm
+          image: {{ include "tasklattice.image" (dict "root" . "image" .Values.images.litellm) }}
+          imagePullPolicy: {{ .Values.images.litellm.pullPolicy }}
+          args: ["--port", "4000", "--num_workers", {{ .Values.litellm.workers | quote }}, "--use_v2_migration_resolver"]
+          ports:
+            - name: http
+              containerPort: 4000
+          env:
+            - name: LITELLM_MIGRATION_DIR
+              value: /tmp/litellm-migrations
+            - name: STORE_MODEL_IN_DB
+              value: "True"
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tasklattice.secretName" . }}
+                  key: litellm-master-key
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tasklattice.secretName" . }}
+                  key: database-url
+            - name: UI_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tasklattice.secretName" . }}
+                  key: litellm-ui-username
+            - name: UI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tasklattice.secretName" . }}
+                  key: litellm-ui-password
+            - name: LITELLM_SALT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tasklattice.secretName" . }}
+                  key: litellm-salt-key
+            - name: DOCS_URL
+              value: /docs
+            - name: ROOT_REDIRECT_URL
+              value: /ui
+            {{- with .Values.litellm.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /health/liveliness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.litellm.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "tasklattice.labels" . | nindent 4 }}
+  {{- with .Values.litellm.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.litellm.service.type }}
+  selector:
+    {{- include "tasklattice.selectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.litellm.service.port }}
+      targetPort: http

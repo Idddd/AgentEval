@@ -1,0 +1,1064 @@
+"""SQLite-backed durable storage for the versioned evaluation workbench."""
+from __future__ import annotations
+
+import json
+import re
+import sqlite3
+import uuid
+from collections.abc import Mapping
+from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
+
+from .workbench_models import (
+    AgentProfile,
+    AgentRevision,
+    CaseResult,
+    DatasetColumn,
+    DatasetProfile,
+    DatasetRevision,
+    DatasetSchema,
+    DEFAULT_DATASET_SCHEMA,
+    EvalRun,
+    JudgeResult,
+    ReportSnapshot,
+    RunStatus,
+    TestCase,
+    ToolBinding,
+    ToolEvidence,
+    TraceDetail,
+    TraceSummary,
+    UsageCost,
+)
+
+
+SCHEMA_V3 = """
+CREATE TABLE IF NOT EXISTS agents (
+  agent_id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
+  current_revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS agent_revisions (
+  revision_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+  revision INTEGER NOT NULL, config_json TEXT NOT NULL, created_at TEXT NOT NULL,
+  UNIQUE(agent_id, revision)
+);
+CREATE TABLE IF NOT EXISTS agent_revision_tools (
+  revision_id TEXT NOT NULL REFERENCES agent_revisions(revision_id),
+  tool_id TEXT NOT NULL, tool_json TEXT NOT NULL,
+  PRIMARY KEY(revision_id, tool_id)
+);
+CREATE TABLE IF NOT EXISTS datasets (
+  dataset_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+  name TEXT NOT NULL, current_revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  schema_json TEXT,
+  updated_at TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS dataset_draft_cases (
+  dataset_id TEXT NOT NULL REFERENCES datasets(dataset_id), case_id TEXT NOT NULL,
+  position INTEGER NOT NULL, case_json TEXT NOT NULL,
+  PRIMARY KEY(dataset_id, case_id)
+);
+CREATE TABLE IF NOT EXISTS dataset_draft_usage_costs (
+  dataset_id TEXT NOT NULL REFERENCES datasets(dataset_id), event_id TEXT NOT NULL,
+  usage_json TEXT NOT NULL, PRIMARY KEY(dataset_id, event_id)
+);
+CREATE TABLE IF NOT EXISTS dataset_revisions (
+  revision_id TEXT PRIMARY KEY, dataset_id TEXT NOT NULL REFERENCES datasets(dataset_id),
+  agent_id TEXT NOT NULL REFERENCES agents(agent_id), revision INTEGER NOT NULL,
+  generation_costs_json TEXT NOT NULL, created_at TEXT NOT NULL,
+  UNIQUE(dataset_id, revision)
+);
+CREATE TABLE IF NOT EXISTS dataset_revision_cases (
+  revision_id TEXT NOT NULL REFERENCES dataset_revisions(revision_id),
+  case_id TEXT NOT NULL, position INTEGER NOT NULL, case_json TEXT NOT NULL,
+  PRIMARY KEY(revision_id, case_id)
+);
+CREATE TABLE IF NOT EXISTS eval_runs (
+  run_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+  agent_revision_id TEXT NOT NULL REFERENCES agent_revisions(revision_id),
+  dataset_revision_id TEXT NOT NULL REFERENCES dataset_revisions(revision_id),
+  status TEXT NOT NULL, started_at TEXT NOT NULL, completed_at TEXT,
+  evaluator_version TEXT NOT NULL, created_at TEXT, stage TEXT
+);
+CREATE TABLE IF NOT EXISTS case_results (
+  run_id TEXT NOT NULL REFERENCES eval_runs(run_id), case_id TEXT NOT NULL,
+  result_json TEXT NOT NULL, PRIMARY KEY(run_id, case_id)
+);
+CREATE TABLE IF NOT EXISTS tool_evidence (
+  run_id TEXT NOT NULL, case_id TEXT NOT NULL, call_id TEXT NOT NULL,
+  evidence_json TEXT NOT NULL, PRIMARY KEY(run_id, case_id, call_id)
+);
+CREATE TABLE IF NOT EXISTS judge_scores (
+  run_id TEXT NOT NULL, case_id TEXT NOT NULL, dimension TEXT NOT NULL,
+  score INTEGER NOT NULL, reason TEXT NOT NULL,
+  PRIMARY KEY(run_id, case_id, dimension)
+);
+CREATE TABLE IF NOT EXISTS usage_costs (
+  run_id TEXT NOT NULL, case_id TEXT NOT NULL, category TEXT NOT NULL,
+  model TEXT NOT NULL, usage_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reports (
+  report_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES eval_runs(run_id),
+  artifact_version INTEGER NOT NULL, status TEXT NOT NULL,
+  summary_json TEXT NOT NULL, markdown_path TEXT NOT NULL, created_at TEXT NOT NULL,
+  UNIQUE(run_id, artifact_version)
+);
+"""
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _now_or(value: str | None) -> str:
+    return value if value is not None else _now()
+
+
+def _new_id() -> str:
+    return uuid.uuid4().hex
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value, default=_json_default, separators=(",", ":"), sort_keys=True)
+
+
+def _json_default(value: Any) -> dict[str, Any]:
+    if isinstance(value, frozenset):
+        return {"__workbench_internal_collection_v1__": "frozenset", "items": sorted(value, key=repr)}
+    if isinstance(value, set):
+        return {"__workbench_internal_collection_v1__": "set", "items": sorted(value, key=repr)}
+    raise TypeError(f"{type(value).__name__} is not JSON serializable")
+
+
+def _json_object(value: dict[str, Any]) -> Any:
+    if set(value) == {"__workbench_internal_collection_v1__", "items"}:
+        if value["__workbench_internal_collection_v1__"] == "set":
+            return set(value["items"])
+        if value["__workbench_internal_collection_v1__"] == "frozenset":
+            return frozenset(value["items"])
+    return value
+
+
+def _decode_json(value: str) -> Any:
+    return json.loads(value, object_hook=_json_object)
+
+
+def _serialize_schema(schema: DatasetSchema) -> str:
+    return _json({"columns": [asdict(column) for column in schema.columns]})
+
+
+def _deserialize_schema(raw: str) -> DatasetSchema:
+    payload = _decode_json(raw)
+    return DatasetSchema(columns=tuple(DatasetColumn(**column) for column in payload["columns"]))
+
+
+_ENVIRONMENT_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_CREDENTIAL_KEYS = frozenset(
+    {
+        "api_key", "secret", "password", "access_token", "client_secret", "authorization", "auth",
+        "token", "private_key", "credential",
+    }
+)
+_REFERENCE_KEYS = frozenset({"env", "environment", "secret_ref", "secret_reference"})
+_TERMINAL_RUN_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.PARTIAL, RunStatus.FAILED})
+
+
+def _is_secret_reference(value: Any) -> bool:
+    if isinstance(value, str):
+        name = value.removeprefix("env:")
+        if value.startswith("${") and value.endswith("}"):
+            name = value[2:-1]
+        return bool(_ENVIRONMENT_NAME.fullmatch(name) or value.startswith("secret://"))
+    return (
+        isinstance(value, Mapping)
+        and len(value) == 1
+        and next(iter(value)) in _REFERENCE_KEYS
+        and isinstance(next(iter(value.values())), str)
+        and _ENVIRONMENT_NAME.fullmatch(next(iter(value.values()))) is not None
+    )
+
+
+def _validate_secret_free(value: Any, sensitive: bool = False) -> None:
+    if sensitive and _is_secret_reference(value):
+        return
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            _validate_secret_free(item, sensitive or str(key).lower() in _CREDENTIAL_KEYS)
+        return
+    if isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            _validate_secret_free(item, sensitive)
+        return
+    if sensitive and value is not None:
+        raise ValueError("secret values must use environment-variable or secret references")
+
+
+def _validate_connection_urls(value: Any) -> None:
+    if isinstance(value, Mapping):
+        for item in value.values():
+            _validate_connection_urls(item)
+        return
+    if isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            _validate_connection_urls(item)
+        return
+    if isinstance(value, str):
+        parsed = urlsplit(value)
+        if parsed.scheme and (parsed.username is not None or parsed.password is not None):
+            raise ValueError("connection URLs must not contain inline credentials")
+
+
+def _model_json(model: Any) -> str:
+    return _json(asdict(model))
+
+
+def _usage_cost(payload: dict[str, Any]) -> UsageCost:
+    return UsageCost(**payload)
+
+
+def _tool_evidence(payload: dict[str, Any]) -> ToolEvidence:
+    return ToolEvidence(**payload)
+
+
+def _case_result(payload: dict[str, Any]) -> CaseResult:
+    judge_data = payload["judge"]
+    judge = None
+    if judge_data is not None:
+        usage_data = judge_data.get("usage_cost")
+        judge = JudgeResult(
+            scores=judge_data["scores"],
+            reasons=judge_data["reasons"],
+            summary=judge_data["summary"],
+            model=judge_data["model"],
+            prompt_version=judge_data["prompt_version"],
+            trace_id=judge_data["trace_id"],
+            observation_id=judge_data["observation_id"],
+            usage_cost=_usage_cost(usage_data) if usage_data is not None else None,
+        )
+    return CaseResult(
+        case_id=payload["case_id"],
+        trace_id=payload["trace_id"],
+        response=payload["response"],
+        deterministic_scores=payload["deterministic_scores"],
+        deterministic_reasons=payload["deterministic_reasons"],
+        tool_evidence=tuple(_tool_evidence(item) for item in payload["tool_evidence"]),
+        judge=judge,
+        usage_costs=tuple(_usage_cost(item) for item in payload["usage_costs"]),
+        status=payload["status"],
+    )
+
+
+class SQLiteWorkbenchRepository:
+    """Persist immutable workbench snapshots and evaluation artifacts in SQLite."""
+
+    def __init__(self, db_path: Path):
+        self._db_path = Path(db_path)
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as connection:
+            connection.executescript(SCHEMA_V3)
+            self._migrate(connection)
+
+    def _migrate(self, connection: sqlite3.Connection) -> None:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if version >= 3:
+            return
+        if version == 2:
+            connection.executescript(
+                """
+                ALTER TABLE agents ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+                ALTER TABLE datasets ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+                ALTER TABLE eval_runs ADD COLUMN created_at TEXT;
+                ALTER TABLE eval_runs ADD COLUMN stage TEXT;
+                """
+            )
+            connection.execute(
+                "UPDATE agents SET updated_at = created_at WHERE updated_at = ''"
+            )
+            connection.execute(
+                "UPDATE datasets SET updated_at = created_at WHERE updated_at = ''"
+            )
+            connection.execute("PRAGMA user_version = 3")
+            return
+        if version < 1:
+            # Fresh database — SCHEMA_V3 already created the new-shape tables.
+            connection.execute("PRAGMA user_version = 3")
+            return
+        # Legacy V1 database: datasets table lacks description/schema_json columns.
+        connection.executescript(
+            """
+            ALTER TABLE datasets ADD COLUMN description TEXT NOT NULL DEFAULT '';
+            ALTER TABLE datasets ADD COLUMN schema_json TEXT;
+            """
+        )
+        connection.execute(
+            "UPDATE datasets SET schema_json = ?",
+            (_serialize_schema(DEFAULT_DATASET_SCHEMA),),
+        )
+        connection.executescript(
+            """
+            ALTER TABLE agents ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+            ALTER TABLE datasets ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+            """
+        )
+        connection.execute(
+            "UPDATE agents SET updated_at = created_at WHERE updated_at = ''"
+        )
+        connection.execute(
+            "UPDATE datasets SET updated_at = created_at WHERE updated_at = ''"
+        )
+        connection.execute("PRAGMA user_version = 3")
+
+    @property
+    def db_path(self) -> Path:
+        return self._db_path
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.db_path)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+    @staticmethod
+    def _require(row: sqlite3.Row | None, identifier: str) -> sqlite3.Row:
+        if row is None:
+            raise KeyError(identifier)
+        return row
+
+    def _require_mutable_run(self, connection: sqlite3.Connection, run_id: str) -> sqlite3.Row:
+        run = self._require(
+            connection.execute("SELECT * FROM eval_runs WHERE run_id = ?", (run_id,)).fetchone(), run_id
+        )
+        if RunStatus(run["status"]) in _TERMINAL_RUN_STATUSES:
+            raise ValueError("terminal runs are immutable")
+        return run
+
+    @staticmethod
+    def _agent(row: sqlite3.Row) -> AgentProfile:
+        return AgentProfile(**dict(row))
+
+    @staticmethod
+    def _dataset(row: sqlite3.Row) -> DatasetProfile:
+        return DatasetProfile(**dict(row))
+
+    def create_agent(
+        self,
+        name: str,
+        description: str,
+        *,
+        agent_id: str | None = None,
+        created_at: str | None = None,
+        updated_at: str | None = None,
+    ) -> AgentProfile:
+        created = _now_or(created_at)
+        agent = AgentProfile(
+            agent_id or _new_id(), name, description, 0, created, _now_or(updated_at) or created
+        )
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO agents VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    agent.agent_id,
+                    agent.name,
+                    agent.description,
+                    agent.current_revision,
+                    agent.created_at,
+                    agent.updated_at,
+                ),
+            )
+        return agent
+
+    def create_agent_with_revision(
+        self,
+        name: str,
+        description: str,
+        config_snapshot: dict,
+        tools: tuple[ToolBinding, ...],
+        *,
+        agent_id: str | None = None,
+        revision_id: str | None = None,
+        created_at: str | None = None,
+        updated_at: str | None = None,
+    ) -> tuple[AgentProfile, AgentRevision]:
+        """Create a Target profile and Revision 1 in one SQLite transaction."""
+        _validate_secret_free(config_snapshot)
+        _validate_connection_urls(config_snapshot)
+        for tool in tools:
+            _validate_secret_free(tool.adapter_config)
+            _validate_connection_urls(tool.adapter_config)
+        if len({tool.tool_id for tool in tools}) != len(tools):
+            raise ValueError("tool IDs must be unique within an agent revision")
+
+        created = _now_or(created_at)
+        agent = AgentProfile(
+            agent_id or _new_id(), name, description, 1, created, _now_or(updated_at) or created
+        )
+        revision = AgentRevision(
+            revision_id or _new_id(), agent.agent_id, 1, config_snapshot, tools, created
+        )
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "INSERT INTO agents VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    agent.agent_id,
+                    agent.name,
+                    agent.description,
+                    agent.current_revision,
+                    agent.created_at,
+                    agent.updated_at,
+                ),
+            )
+            connection.execute(
+                "INSERT INTO agent_revisions VALUES (?, ?, ?, ?, ?)",
+                (
+                    revision.revision_id,
+                    agent.agent_id,
+                    revision.revision,
+                    _json(revision.config_snapshot),
+                    revision.created_at,
+                ),
+            )
+            connection.executemany(
+                "INSERT INTO agent_revision_tools VALUES (?, ?, ?)",
+                [
+                    (revision.revision_id, tool.tool_id, _model_json(tool))
+                    for tool in revision.tools
+                ],
+            )
+        return agent, revision
+
+    def list_agents(self) -> list[AgentProfile]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM agents ORDER BY created_at, agent_id").fetchall()
+        return [self._agent(row) for row in rows]
+
+    def get_agent(self, agent_id: str) -> AgentProfile:
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute("SELECT * FROM agents WHERE agent_id = ?", (agent_id,)).fetchone(),
+                agent_id,
+            )
+        return self._agent(row)
+
+    def create_agent_revision(
+        self,
+        agent_id: str,
+        config_snapshot: dict,
+        tools: tuple[ToolBinding, ...],
+        *,
+        revision_id: str | None = None,
+        created_at: str | None = None,
+    ) -> AgentRevision:
+        revision_id = revision_id or _new_id()
+        created_at = _now_or(created_at)
+        _validate_secret_free(config_snapshot)
+        _validate_connection_urls(config_snapshot)
+        for tool in tools:
+            _validate_secret_free(tool.adapter_config)
+            _validate_connection_urls(tool.adapter_config)
+        snapshot = AgentRevision(revision_id, agent_id, 0, config_snapshot, tools, created_at)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            agent = self._require(
+                connection.execute("SELECT current_revision FROM agents WHERE agent_id = ?", (agent_id,)).fetchone(),
+                agent_id,
+            )
+            revision_number = agent["current_revision"] + 1
+            snapshot = AgentRevision(revision_id, agent_id, revision_number, config_snapshot, tools, created_at)
+            connection.execute(
+                "INSERT INTO agent_revisions VALUES (?, ?, ?, ?, ?)",
+                (revision_id, agent_id, revision_number, _json(snapshot.config_snapshot), created_at),
+            )
+            connection.executemany(
+                "INSERT INTO agent_revision_tools VALUES (?, ?, ?)",
+                [(revision_id, tool.tool_id, _model_json(tool)) for tool in snapshot.tools],
+            )
+            connection.execute(
+                "UPDATE agents SET current_revision = ? WHERE agent_id = ?",
+                (revision_number, agent_id),
+            )
+            if created_at is None:
+                connection.execute(
+                    "UPDATE agents SET updated_at = ? WHERE agent_id = ?",
+                    (_now(), agent_id),
+                )
+        return snapshot
+
+    def list_agent_revisions(self, agent_id: str) -> list[AgentRevision]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT revision_id FROM agent_revisions WHERE agent_id = ? ORDER BY created_at, revision_id",
+                (agent_id,),
+            ).fetchall()
+        return [self.get_agent_revision(row["revision_id"]) for row in rows]
+
+    def get_agent_revision(self, revision_id: str) -> AgentRevision:
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute(
+                    "SELECT * FROM agent_revisions WHERE revision_id = ?", (revision_id,)
+                ).fetchone(),
+                revision_id,
+            )
+            tool_rows = connection.execute(
+                "SELECT tool_json FROM agent_revision_tools WHERE revision_id = ? ORDER BY rowid",
+                (revision_id,),
+            ).fetchall()
+        return AgentRevision(
+            revision_id=row["revision_id"],
+            agent_id=row["agent_id"],
+            revision=row["revision"],
+            config_snapshot=_decode_json(row["config_json"]),
+            tools=tuple(ToolBinding(**_decode_json(tool_row["tool_json"])) for tool_row in tool_rows),
+            created_at=row["created_at"],
+        )
+
+    def get_current_agent_revision(self, agent_id: str) -> AgentRevision | None:
+        agent = self.get_agent(agent_id)
+        if agent.current_revision == 0:
+            return None
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute(
+                    "SELECT revision_id FROM agent_revisions WHERE agent_id = ? AND revision = ?",
+                    (agent_id, agent.current_revision),
+                ).fetchone(),
+                agent_id,
+            )
+        return self.get_agent_revision(row["revision_id"])
+
+    def create_dataset(
+        self,
+        agent_id: str,
+        name: str,
+        *,
+        description: str = "",
+        schema: DatasetSchema | None = None,
+        dataset_id: str | None = None,
+        created_at: str | None = None,
+        updated_at: str | None = None,
+    ) -> str:
+        dataset_id = dataset_id or _new_id()
+        effective_schema = schema if schema is not None else DEFAULT_DATASET_SCHEMA
+        created = _now_or(created_at)
+        updated = _now_or(updated_at) or created
+        with self._connect() as connection:
+            self._require(
+                connection.execute("SELECT agent_id FROM agents WHERE agent_id = ?", (agent_id,)).fetchone(),
+                agent_id,
+            )
+            connection.execute(
+                "INSERT INTO datasets "
+                "(dataset_id, agent_id, name, current_revision, created_at, description, schema_json, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    dataset_id,
+                    agent_id,
+                    name,
+                    0,
+                    created,
+                    description,
+                    _serialize_schema(effective_schema),
+                    updated,
+                ),
+            )
+        return dataset_id
+
+    def get_dataset(self, dataset_id: str) -> DatasetProfile:
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute("SELECT * FROM datasets WHERE dataset_id = ?", (dataset_id,)).fetchone(),
+                dataset_id,
+            )
+        return self._dataset(row)
+
+    def list_datasets(self, agent_id: str) -> list[DatasetProfile]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM datasets WHERE agent_id = ? ORDER BY created_at, dataset_id", (agent_id,)
+            ).fetchall()
+        return [self._dataset(row) for row in rows]
+
+    def list_dataset_revisions(self, dataset_id: str) -> list[DatasetRevision]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT revision_id FROM dataset_revisions WHERE dataset_id = ? ORDER BY created_at, revision_id",
+                (dataset_id,),
+            ).fetchall()
+        return [self.get_dataset_revision(row["revision_id"]) for row in rows]
+
+    def get_current_dataset_revision(self, dataset_id: str) -> DatasetRevision | None:
+        dataset = self.get_dataset(dataset_id)
+        if dataset.current_revision == 0:
+            return None
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT revision_id FROM dataset_revisions WHERE dataset_id = ? AND revision = ?",
+                (dataset_id, dataset.current_revision),
+            ).fetchone()
+        return self.get_dataset_revision(row["revision_id"]) if row else None
+
+    def get_dataset_schema(self, dataset_id: str) -> DatasetSchema:
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute(
+                    "SELECT schema_json FROM datasets WHERE dataset_id = ?", (dataset_id,)
+                ).fetchone(),
+                dataset_id,
+            )
+        return _deserialize_schema(row["schema_json"])
+
+    def get_dataset_description(self, dataset_id: str) -> str:
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute(
+                    "SELECT description FROM datasets WHERE dataset_id = ?", (dataset_id,)
+                ).fetchone(),
+                dataset_id,
+            )
+        return row["description"]
+
+    def update_dataset_metadata(
+        self,
+        dataset_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> DatasetProfile:
+        with self._connect() as connection:
+            self._require(
+                connection.execute(
+                    "SELECT dataset_id FROM datasets WHERE dataset_id = ?", (dataset_id,)
+                ).fetchone(),
+                dataset_id,
+            )
+            updates = []
+            values = []
+            if name is not None:
+                updates.append("name = ?")
+                values.append(name)
+            if description is not None:
+                updates.append("description = ?")
+                values.append(description)
+            if updates:
+                updates.append("updated_at = ?")
+                values.append(_now())
+                values.append(dataset_id)
+                connection.execute(
+                    f"UPDATE datasets SET {', '.join(updates)} WHERE dataset_id = ?",
+                    values,
+                )
+        return self.get_dataset(dataset_id)
+
+    def replace_draft_cases(
+        self,
+        dataset_id: str,
+        cases: list[TestCase],
+        *,
+        touch_updated_at: bool = True,
+    ) -> None:
+        with self._connect() as connection:
+            self._require(
+                connection.execute("SELECT dataset_id FROM datasets WHERE dataset_id = ?", (dataset_id,)).fetchone(),
+                dataset_id,
+            )
+            connection.execute("DELETE FROM dataset_draft_cases WHERE dataset_id = ?", (dataset_id,))
+            connection.executemany(
+                "INSERT INTO dataset_draft_cases VALUES (?, ?, ?, ?)",
+                [(dataset_id, case.case_id, position, _model_json(case)) for position, case in enumerate(cases)],
+            )
+            if touch_updated_at:
+                connection.execute(
+                    "UPDATE datasets SET updated_at = ? WHERE dataset_id = ?",
+                    (_now(), dataset_id),
+                )
+
+    def list_draft_cases(self, dataset_id: str) -> list[TestCase]:
+        with self._connect() as connection:
+            self._require(
+                connection.execute("SELECT dataset_id FROM datasets WHERE dataset_id = ?", (dataset_id,)).fetchone(),
+                dataset_id,
+            )
+            rows = connection.execute(
+                "SELECT case_json FROM dataset_draft_cases WHERE dataset_id = ? ORDER BY position",
+                (dataset_id,),
+            ).fetchall()
+        return [TestCase(**_decode_json(row["case_json"])) for row in rows]
+
+    def add_dataset_generation_cost(self, dataset_id: str, cost: UsageCost) -> None:
+        with self._connect() as connection:
+            self._require(
+                connection.execute("SELECT dataset_id FROM datasets WHERE dataset_id = ?", (dataset_id,)).fetchone(),
+                dataset_id,
+            )
+            connection.execute(
+                "INSERT INTO dataset_draft_usage_costs VALUES (?, ?, ?)",
+                (dataset_id, _new_id(), _model_json(cost)),
+            )
+
+    def publish_dataset(
+        self,
+        dataset_id: str,
+        *,
+        revision_id: str | None = None,
+        created_at: str | None = None,
+    ) -> DatasetRevision:
+        revision_id = revision_id or _new_id()
+        created_at = _now_or(created_at)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            dataset = self._require(
+                connection.execute("SELECT * FROM datasets WHERE dataset_id = ?", (dataset_id,)).fetchone(),
+                dataset_id,
+            )
+            revision_number = dataset["current_revision"] + 1
+            case_rows = connection.execute(
+                "SELECT case_id, position, case_json FROM dataset_draft_cases WHERE dataset_id = ? ORDER BY position",
+                (dataset_id,),
+            ).fetchall()
+            cost_rows = connection.execute(
+                "SELECT usage_json FROM dataset_draft_usage_costs WHERE dataset_id = ? ORDER BY rowid",
+                (dataset_id,),
+            ).fetchall()
+            costs = tuple(_usage_cost(_decode_json(cost_row["usage_json"])) for cost_row in cost_rows)
+            connection.execute(
+                "INSERT INTO dataset_revisions VALUES (?, ?, ?, ?, ?, ?)",
+                (revision_id, dataset_id, dataset["agent_id"], revision_number, _json([asdict(cost) for cost in costs]), created_at),
+            )
+            connection.executemany(
+                "INSERT INTO dataset_revision_cases VALUES (?, ?, ?, ?)",
+                [
+                    (revision_id, case_row["case_id"], case_row["position"], case_row["case_json"])
+                    for case_row in case_rows
+                ],
+            )
+            connection.execute(
+                "UPDATE datasets SET current_revision = ? WHERE dataset_id = ?",
+                (revision_number, dataset_id),
+            )
+            if created_at is None:
+                connection.execute(
+                    "UPDATE datasets SET updated_at = ? WHERE dataset_id = ?",
+                    (_now(), dataset_id),
+                )
+        return DatasetRevision(
+            revision_id,
+            dataset_id,
+            dataset["agent_id"],
+            dataset["name"],
+            revision_number,
+            tuple(TestCase(**_decode_json(case_row["case_json"])) for case_row in case_rows),
+            created_at,
+            costs,
+            _deserialize_schema(dataset["schema_json"]) if dataset["schema_json"] else None,
+        )
+
+    def get_dataset_revision(self, revision_id: str) -> DatasetRevision:
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute(
+                    """
+                    SELECT dataset_revisions.*, datasets.name
+                    FROM dataset_revisions JOIN datasets USING (dataset_id)
+                    WHERE revision_id = ?
+                    """,
+                    (revision_id,),
+                ).fetchone(),
+                revision_id,
+            )
+            case_rows = connection.execute(
+                "SELECT case_json FROM dataset_revision_cases WHERE revision_id = ? ORDER BY position",
+                (revision_id,),
+            ).fetchall()
+            schema_raw = connection.execute(
+                "SELECT schema_json FROM datasets WHERE dataset_id = ?", (row["dataset_id"],)
+            ).fetchone()["schema_json"]
+        return DatasetRevision(
+            revision_id=row["revision_id"],
+            dataset_id=row["dataset_id"],
+            agent_id=row["agent_id"],
+            name=row["name"],
+            revision=row["revision"],
+            cases=tuple(TestCase(**_decode_json(case_row["case_json"])) for case_row in case_rows),
+            created_at=row["created_at"],
+            generation_costs=tuple(_usage_cost(cost) for cost in _decode_json(row["generation_costs_json"])),
+            schema=_deserialize_schema(schema_raw) if schema_raw else None,
+        )
+
+    def create_run(
+        self,
+        agent_revision_id: str,
+        dataset_revision_id: str,
+        *,
+        run_id: str | None = None,
+        created_at: str | None = None,
+        started_at: str | None = None,
+        stage: str | None = None,
+    ) -> EvalRun:
+        with self._connect() as connection:
+            agent_revision = self._require(
+                connection.execute(
+                    "SELECT agent_id FROM agent_revisions WHERE revision_id = ?", (agent_revision_id,)
+                ).fetchone(),
+                agent_revision_id,
+            )
+            dataset_revision = self._require(
+                connection.execute(
+                    "SELECT agent_id FROM dataset_revisions WHERE revision_id = ?", (dataset_revision_id,)
+                ).fetchone(),
+                dataset_revision_id,
+            )
+            if agent_revision["agent_id"] != dataset_revision["agent_id"]:
+                raise ValueError("agent revision and dataset revision belong to different agents")
+            started = _now_or(started_at)
+            run = EvalRun(
+                run_id=run_id or _new_id(),
+                agent_id=agent_revision["agent_id"],
+                agent_revision_id=agent_revision_id,
+                dataset_revision_id=dataset_revision_id,
+                status=RunStatus.QUEUED,
+                started_at=started,
+                completed_at=None,
+                evaluator_version="v1",
+                created_at=created_at or started,
+                stage=stage or "evaluate",
+            )
+            connection.execute(
+                "INSERT INTO eval_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run.run_id,
+                    run.agent_id,
+                    run.agent_revision_id,
+                    run.dataset_revision_id,
+                    run.status.value,
+                    run.started_at,
+                    run.completed_at,
+                    run.evaluator_version,
+                    run.created_at,
+                    run.stage,
+                ),
+            )
+        return run
+
+    def save_case_result(self, run_id: str, result: CaseResult) -> None:
+        with self._connect() as connection:
+            self._require_mutable_run(connection, run_id)
+            connection.execute(
+                "INSERT OR REPLACE INTO case_results VALUES (?, ?, ?)",
+                (run_id, result.case_id, _model_json(result)),
+            )
+            connection.execute(
+                "DELETE FROM tool_evidence WHERE run_id = ? AND case_id = ?", (run_id, result.case_id)
+            )
+            connection.execute(
+                "DELETE FROM judge_scores WHERE run_id = ? AND case_id = ?", (run_id, result.case_id)
+            )
+            connection.execute(
+                "DELETE FROM usage_costs WHERE run_id = ? AND case_id = ?", (run_id, result.case_id)
+            )
+            connection.executemany(
+                "INSERT INTO tool_evidence VALUES (?, ?, ?, ?)",
+                [
+                    (run_id, result.case_id, evidence.call_id, _model_json(evidence))
+                    for evidence in result.tool_evidence
+                ],
+            )
+            if result.judge is not None:
+                connection.executemany(
+                    "INSERT INTO judge_scores VALUES (?, ?, ?, ?, ?)",
+                    [
+                        (
+                            run_id,
+                            result.case_id,
+                            dimension,
+                            score,
+                            result.judge.reasons.get(dimension, ""),
+                        )
+                        for dimension, score in result.judge.scores.items()
+                    ],
+                )
+            connection.executemany(
+                "INSERT INTO usage_costs VALUES (?, ?, ?, ?, ?)",
+                [
+                    (run_id, result.case_id, cost.category, cost.model, _model_json(cost))
+                    for cost in result.usage_costs
+                ],
+            )
+
+    def finish_run(
+        self,
+        run_id: str,
+        status: RunStatus,
+        *,
+        completed_at: str | None = None,
+    ) -> EvalRun:
+        with self._connect() as connection:
+            self._require_mutable_run(connection, run_id)
+            connection.execute(
+                "UPDATE eval_runs SET status = ?, completed_at = ? WHERE run_id = ?",
+                (status.value, _now_or(completed_at), run_id),
+            )
+        return self.get_run(run_id)
+
+    def get_run(self, run_id: str) -> EvalRun:
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute("SELECT * FROM eval_runs WHERE run_id = ?", (run_id,)).fetchone(), run_id
+            )
+            result_rows = connection.execute(
+                "SELECT result_json FROM case_results WHERE run_id = ? ORDER BY case_id", (run_id,)
+            ).fetchall()
+        return EvalRun(
+            run_id=row["run_id"],
+            agent_id=row["agent_id"],
+            agent_revision_id=row["agent_revision_id"],
+            dataset_revision_id=row["dataset_revision_id"],
+            status=RunStatus(row["status"]),
+            started_at=row["started_at"],
+            completed_at=row["completed_at"],
+            evaluator_version=row["evaluator_version"],
+            created_at=row["created_at"],
+            stage=row["stage"],
+            case_results=tuple(_case_result(_decode_json(result_row["result_json"])) for result_row in result_rows),
+        )
+
+    def list_runs(self, agent_id: str) -> list[EvalRun]:
+        with self._connect() as connection:
+            run_ids = connection.execute(
+                "SELECT run_id FROM eval_runs WHERE agent_id = ? ORDER BY started_at DESC, run_id DESC", (agent_id,)
+            ).fetchall()
+        return [self.get_run(row["run_id"]) for row in run_ids]
+
+    @staticmethod
+    def _trace_summary(row: sqlite3.Row, result: CaseResult) -> TraceSummary:
+        latencies = [
+            item.latency_ms
+            for item in result.tool_evidence
+            if item.latency_ms is not None
+        ]
+        return TraceSummary(
+            trace_id=result.trace_id,
+            run_id=row["run_id"],
+            case_id=result.case_id,
+            agent_id=row["agent_id"],
+            status=result.status,
+            started_at=row["started_at"],
+            latency_ms=sum(latencies) if latencies else None,
+            observation_count=len(result.tool_evidence) + (1 if result.judge else 0),
+            cost_usd=sum(item.cost_usd for item in result.usage_costs),
+        )
+
+    def list_traces(self, agent_id: str) -> list[TraceSummary]:
+        """List durable case traces for one Target, newest run first."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT r.run_id, r.agent_id, r.started_at, c.result_json
+                   FROM case_results c JOIN eval_runs r ON r.run_id = c.run_id
+                   WHERE r.agent_id = ?
+                   ORDER BY r.started_at DESC, r.run_id DESC, c.case_id""",
+                (agent_id,),
+            ).fetchall()
+        summaries: list[TraceSummary] = []
+        for row in rows:
+            result = _case_result(_decode_json(row["result_json"]))
+            if result.trace_id:
+                summaries.append(self._trace_summary(row, result))
+        return summaries
+
+    def get_trace(self, trace_id: str) -> TraceDetail:
+        """Load one persisted trace and its case-level observations."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT r.run_id, r.agent_id, r.started_at, c.result_json
+                   FROM case_results c JOIN eval_runs r ON r.run_id = c.run_id
+                   WHERE json_extract(c.result_json, '$.trace_id') = ?
+                   ORDER BY r.started_at DESC LIMIT 1""",
+                (trace_id,),
+            ).fetchone()
+        row = self._require(row, trace_id)
+        result = _case_result(_decode_json(row["result_json"]))
+        return TraceDetail(self._trace_summary(row, result), result)
+
+    def save_report(
+        self,
+        run_id: str,
+        status: str,
+        summary: dict,
+        markdown_path: Path,
+        *,
+        report_id: str | None = None,
+        created_at: str | None = None,
+    ) -> ReportSnapshot:
+        report = ReportSnapshot(
+            report_id or _new_id(), run_id, 0, status, summary, str(markdown_path), _now_or(created_at)
+        )
+        with self._connect() as connection:
+            self._require(
+                connection.execute("SELECT run_id FROM eval_runs WHERE run_id = ?", (run_id,)).fetchone(), run_id
+            )
+            connection.execute("BEGIN IMMEDIATE")
+            artifact_version = connection.execute(
+                "SELECT COALESCE(MAX(artifact_version), 0) + 1 FROM reports WHERE run_id = ?", (run_id,)
+            ).fetchone()[0]
+            report = ReportSnapshot(
+                report.report_id,
+                report.run_id,
+                artifact_version,
+                report.status,
+                report.summary,
+                report.markdown_path,
+                report.created_at,
+            )
+            connection.execute(
+                "INSERT INTO reports VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    report.report_id,
+                    report.run_id,
+                    report.artifact_version,
+                    report.status,
+                    _json(report.summary),
+                    report.markdown_path,
+                    report.created_at,
+                ),
+            )
+            current_stage = connection.execute(
+                "SELECT stage FROM eval_runs WHERE run_id = ?", (run_id,)
+            ).fetchone()["stage"]
+            if current_stage in (None, "evaluate"):
+                connection.execute(
+                    "UPDATE eval_runs SET stage = ? WHERE run_id = ?",
+                    ("report", run_id),
+                )
+        return report
+
+    def get_report(self, report_id: str) -> ReportSnapshot:
+        with self._connect() as connection:
+            row = self._require(
+                connection.execute("SELECT * FROM reports WHERE report_id = ?", (report_id,)).fetchone(), report_id
+            )
+        return ReportSnapshot(
+            report_id=row["report_id"],
+            run_id=row["run_id"],
+            artifact_version=row["artifact_version"],
+            status=row["status"],
+            summary=_decode_json(row["summary_json"]),
+            markdown_path=row["markdown_path"],
+            created_at=row["created_at"],
+        )
+
+    def list_reports(self, agent_id: str) -> list[ReportSnapshot]:
+        with self._connect() as connection:
+            report_ids = connection.execute(
+                """
+                SELECT reports.report_id FROM reports
+                JOIN eval_runs ON eval_runs.run_id = reports.run_id
+                WHERE eval_runs.agent_id = ?
+                ORDER BY reports.created_at DESC, reports.report_id DESC
+                """,
+                (agent_id,),
+            ).fetchall()
+        return [self.get_report(row["report_id"]) for row in report_ids]

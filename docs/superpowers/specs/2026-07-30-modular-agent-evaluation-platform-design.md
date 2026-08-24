@@ -308,6 +308,22 @@ misrepresented as quality changes. Full-run totals remain visible with a
 
 ## UI Information Architecture
 
+### Visual reference
+
+The functional information architecture below remains authoritative. Its visual
+shell and interaction language follow the Eval Studio reference at
+`http://172.16.18.154:3000/dashboard`: dark-green fixed sidebar, translucent
+white workspace header, pale neutral canvas, restrained mint/cream ambient
+accents, bordered white cards, compact status pills, and a single dominant
+green primary action per view.
+
+Default tokens are canvas `#F4F6F4`, sidebar `#102E28`, primary `#176B55`,
+text `#17201E`, border `#DCE3DF`, 10–15px radii, Arial/Helvetica sans-serif,
+34px/700 page titles, and 20px card padding. The reference does not authorize
+mock login, identity/organization switching, teams, or fixed Project/Experiment
+entities. All copy remains English and all status remains textual as well as
+visual.
+
 The global English navigation contains only:
 
 - **Agents**

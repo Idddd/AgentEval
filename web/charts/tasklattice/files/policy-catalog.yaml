@@ -1,0 +1,90 @@
+defaultPolicyId: unrestricted
+basePolicy:
+  version: 1
+  filesystem_policy:
+    include_workdir: true
+    read_only:
+      - /usr
+      - /opt
+      - /lib
+      - /proc
+      - /dev/urandom
+      - /etc
+      - /var/log
+    read_write:
+      - /sandbox
+      - /tmp
+      - /dev/null
+  landlock:
+    compatibility: best_effort
+  process:
+    run_as_user: sandbox
+    run_as_group: sandbox
+policies:
+  - id: unrestricted
+    name: Unrestricted
+    description: Allows arbitrary shell, file creation, modification, and execution inside sandbox-owned writable paths.
+    networkAccess: Managed inference · operator-approved outbound destinations
+    policy:
+      network_policies: {}
+  - id: restricted
+    name: Restricted
+    description: Uses the writable runtime baseline while denying additional outbound destinations by default.
+    networkAccess: Managed inference only
+    policy:
+      network_policies: {}
+  - id: github-readonly
+    name: GitHub Read-only
+    description: Allows gh and curl to read the GitHub API while write methods remain denied.
+    networkAccess: api.github.com · GET, HEAD, OPTIONS
+    policy:
+      network_policies:
+        github_api:
+          name: github-api
+          endpoints:
+            - host: api.github.com
+              port: 443
+              protocol: rest
+              enforcement: enforce
+              access: read-only
+          binaries:
+            - path: /usr/bin/gh
+            - path: /usr/bin/curl
+  - id: github-full-access
+    name: GitHub Full Access
+    description: Allows every HTTP method and path on the declared GitHub API endpoint.
+    networkAccess: api.github.com · all methods and paths
+    policy:
+      network_policies:
+        github_api_full_access:
+          name: github-api-full-access
+          endpoints:
+            - host: api.github.com
+              port: 443
+              protocol: rest
+              enforcement: enforce
+              access: full
+          binaries:
+            - path: /usr/bin/gh
+            - path: /usr/bin/curl
+  - id: package-install
+    name: Package Install
+    description: Allows package managers to reach the npm and Python package registries.
+    networkAccess: npmjs.org · pypi.org · pythonhosted.org
+    policy:
+      network_policies:
+        package_registries:
+          name: package-registries
+          endpoints:
+            - host: registry.npmjs.org
+              port: 443
+            - host: pypi.org
+              port: 443
+            - host: files.pythonhosted.org
+              port: 443
+          binaries:
+            - path: /usr/bin/npm
+            - path: /usr/bin/pip
+            - path: /usr/local/bin/pip
+            - path: /usr/local/bin/uv
+

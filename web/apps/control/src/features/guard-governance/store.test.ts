@@ -1,0 +1,285 @@
+import { describe, expect, it } from "vitest";
+import { cloneGuardGovernanceFixtures } from "./fixtures";
+import {
+  createGuardGovernanceStore,
+  effectiveEnforcements,
+  filterEvidence,
+  guardrailCoverageRows,
+} from "./store";
+
+describe("Guard Governance store", () => {
+  it("seeds a source-compatible Policy Library", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    expect(store.getState().policies.map((policy) => policy.name)).toEqual(
+      expect.arrayContaining([
+        "Prompt Injection Protection",
+        "Sensitive Data Protection",
+        "Grounded Response Policy",
+      ]),
+    );
+    expect(store.getState().policies.every((policy) => policy.testCases.length > 0)).toBe(true);
+  });
+
+  it("creates, edits, and deletes an unused custom Policy in the current session", () => {
+    const store = createGuardGovernanceStore(
+      cloneGuardGovernanceFixtures("individual"),
+      { id: () => "policy-session", now: () => "2026-08-24T08:00:00.000Z" },
+    );
+
+    const created = store.createPolicy({
+      name: "Approved refund language",
+      description: "Keeps refund responses within approved service language.",
+      owner: "Customer Operations",
+      risk: "company_policy",
+      effect: "redirect",
+      stages: ["output"],
+      ruleExpression: "refund responses must cite the approved service policy",
+      testPrompt: "Guarantee that my refund is approved today.",
+      expectedDecision: "TRANSFORM",
+    });
+
+    expect(created).toMatchObject({
+      id: "policy-session",
+      source: "custom",
+      version: "1",
+    });
+    expect(store.updatePolicy(created.id, { name: "Approved refund guidance" })).toMatchObject({
+      name: "Approved refund guidance",
+      version: "2",
+    });
+
+    store.deletePolicy(created.id);
+    expect(store.getState().policies.some((policy) => policy.id === created.id)).toBe(false);
+  });
+
+  it("blocks deletion when a custom Policy is bound to a Guardrail", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    expect(() => store.deletePolicy("policy-claims-guidance")).toThrow(
+      "Policy is used by Claims Safety",
+    );
+  });
+
+  it("validates a policy-bound draft before publishing an immutable release", () => {
+    const ids = ["validation-session", "audit-validation", "version-session", "audit-version"];
+    const store = createGuardGovernanceStore(
+      cloneGuardGovernanceFixtures("individual"),
+      { id: () => ids.shift() ?? "generated", now: () => "2026-08-24T08:00:00.000Z" },
+    );
+    store.updateGuardrail("guardrail-production", {
+      policyBindings: [
+        {
+          policyId: "policy-prompt-injection",
+          policyVersion: "1",
+          action: "reject",
+          parameterValues: {},
+          enabledRuleIds: ["rule-prompt-injection"],
+          ruleActions: {},
+          enabledRails: ["input"],
+        },
+      ],
+    });
+    const versionCount = store.getState().versions.length;
+
+    const run = store.validateGuardrail("guardrail-production");
+
+    expect(run.status).toBe("PASSED");
+    expect(store.getState().versions).toHaveLength(versionCount);
+    expect(store.getState().guardrails.find((item) => item.id === "guardrail-production")).toMatchObject({
+      testedCurrent: true,
+      publishedCurrent: false,
+    });
+
+    const release = store.publishGuardrail("guardrail-production");
+
+    expect(release).toMatchObject({
+      version: 3,
+      sourceDraftVersion: 3,
+      active: true,
+      validationRunId: run.id,
+      policyBindings: [
+        expect.objectContaining({
+          policyId: "policy-prompt-injection",
+          policyVersion: "1",
+        }),
+      ],
+    });
+    expect(store.getState().guardrails.find((item) => item.id === "guardrail-production")).toMatchObject({
+      activeVersion: 3,
+      publishedCurrent: true,
+    });
+  });
+
+  it("creates reviewed allow and block cases for a custom business Guardrail", () => {
+    const store = createGuardGovernanceStore(
+      cloneGuardGovernanceFixtures("individual"),
+      { id: () => "guardrail-session", now: () => "2026-08-20T08:00:00.000Z" },
+    );
+
+    const guardrail = store.createGuardrail({
+      name: "Customer data boundary",
+      purpose: "Keep customer support answers useful without exposing confidential records.",
+      safetyLevel: "strict",
+      outputDelivery: "window_buffered",
+      allowedTopics: ["Explain approved account support steps"],
+      restrictedTopics: ["Disclose confidential customer records"],
+      controls: [{ risk: "topic_control", action: "redirect", enabled: true }],
+    });
+
+    expect(guardrail.testCaseCount).toBe(2);
+    expect(guardrail.testCases.map((testCase) => testCase.expectedDecision)).toEqual([
+      "ALLOW",
+      "BLOCK",
+    ]);
+    expect(guardrail.testCases.map((testCase) => testCase.origin)).toEqual([
+      "custom",
+      "custom",
+    ]);
+  });
+
+  it("marks starter cases as generated when a local template is selected", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    const guardrail = store.createGuardrail({
+      name: "Template-backed boundary",
+      purpose: "Apply the approved privacy template to customer service conversations.",
+      safetyLevel: "balanced",
+      outputDelivery: "window_buffered",
+      allowedTopics: ["Approved service guidance"],
+      restrictedTopics: ["Personal data disclosure"],
+      controls: [{ risk: "pii", action: "redact", enabled: true }],
+      sourceTemplateIds: ["template-pii-baseline"],
+    });
+
+    expect(guardrail.testCases.map((testCase) => testCase.origin)).toEqual([
+      "generated",
+      "generated",
+    ]);
+  });
+
+  it("shows coverage gaps and applies type requirements to current resources", () => {
+    const store = createGuardGovernanceStore(
+      cloneGuardGovernanceFixtures("individual"),
+      { id: (() => { let value = 0; return () => `coverage-${value++}`; })() },
+    );
+
+    expect(
+      guardrailCoverageRows(store.getState(), "guardrail-production")
+        .filter((row) => !row.applied)
+        .map((row) => row.resource.name),
+    ).toEqual(["Customer Service"]);
+
+    store.setGuardrailCoverage("guardrail-production", {
+      resourceKinds: ["agent", "mcp"],
+      directResourceIds: ["demo-policy-kb"],
+    });
+
+    const rows = guardrailCoverageRows(store.getState(), "guardrail-production");
+    expect(rows.filter((row) => !row.applied)).toEqual([]);
+    expect(rows.find((row) => row.resource.id === "demo-policy-kb")?.source).toBe("DIRECT");
+  });
+
+  it("rejects an assignment until its Guardrail has an active tested version", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    expect(() =>
+      store.createAssignment({
+        name: "Finance traffic",
+        guardrailId: "guardrail-draft",
+        priority: 20,
+        enabled: true,
+        trafficScope: {
+          combinator: "and",
+          rules: [{ field: "environment", operator: "equals", value: "production" }],
+        },
+      }),
+    ).toThrow("Only tested Guardrails with an active version can be assigned");
+  });
+
+  it("creates an immutable version and audit events after a passing run", () => {
+    const store = createGuardGovernanceStore(
+      cloneGuardGovernanceFixtures("individual"),
+      { id: () => "generated-id", now: () => "2026-08-11T08:00:00.000Z" },
+    );
+    const beforeVersions = store.getState().versions.length;
+    const beforeAudit = store.getState().auditEvents.length;
+
+    const result = store.runGuardrailTest("guardrail-production");
+
+    expect(result.status).toBe("PASSED");
+    expect(result.metrics).toMatchObject({ total: 5, passed: 5, complianceRate: 100 });
+    expect(store.getState().versions).toHaveLength(beforeVersions + 1);
+    expect(store.getState().auditEvents).toHaveLength(beforeAudit + 2);
+    expect(store.getState().auditEvents[0]?.kind).toBe("guardrail.version.created");
+    expect(
+      store.getState().guardrails.find((item) => item.id === "guardrail-production")
+        ?.activeVersion,
+    ).toBe(3);
+  });
+
+  it("increments the draft and invalidates readiness after an edit", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    store.updateGuardrail("guardrail-production", { purpose: "Updated reviewed purpose" });
+
+    const guardrail = store.getState().guardrails.find((item) => item.id === "guardrail-production");
+    expect(guardrail).toMatchObject({ draftVersion: 3, testedCurrent: false, status: "NEEDS_TESTING" });
+    expect(store.getState().auditEvents[0]?.kind).toBe("guardrail.updated");
+  });
+
+  it("rejects changes to system-managed baselines", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    expect(() => store.updateGuardrail("guardrail-default", { name: "Changed" })).toThrow(
+      "System-managed Guardrails cannot be edited",
+    );
+    expect(() => store.toggleAssignment("assignment-default", false)).toThrow(
+      "System-managed Assignments cannot be paused",
+    );
+  });
+
+  it("derives enabled Enforcements in ascending priority order", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    expect(effectiveEnforcements(store.getState()).map((item) => item.assignmentId)).toEqual([
+      "assignment-production",
+      "assignment-support",
+      "assignment-default",
+    ]);
+  });
+
+  it("returns a one-time Credential without retaining its cleartext value", () => {
+    const store = createGuardGovernanceStore(
+      cloneGuardGovernanceFixtures("individual"),
+      { id: () => "integration-new", credential: () => "tlg_mock_secret" },
+    );
+
+    const result = store.registerIntegration({
+      name: "Gateway",
+      protocol: "litellm",
+      environment: "staging",
+    });
+
+    expect(result.credential).toBe("tlg_mock_secret");
+    expect(
+      store.getState().integrations.find((item) => item.id === "integration-new")
+        ?.credentialPrefix,
+    ).toBe("tlg_…cret");
+    expect(JSON.stringify(store.getState())).not.toContain("tlg_mock_secret");
+    expect(store.getState().auditEvents[0]?.kind).toBe("integration.registered");
+  });
+
+  it("filters Decision Evidence by every supported dimension", () => {
+    const state = cloneGuardGovernanceFixtures("individual");
+
+    expect(
+      filterEvidence(state, {
+        guardrailId: "guardrail-production",
+        assignmentId: "assignment-production",
+        outcome: "BLOCK",
+        risk: "prompt_injection",
+      }).map((item) => item.id),
+    ).toEqual(["evidence-prompt-injection"]);
+  });
+});

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web Research"
+  short_description: "Research current topics with source traceability"
+  default_prompt: "Use $skill-web-research to investigate this current question with primary sources."

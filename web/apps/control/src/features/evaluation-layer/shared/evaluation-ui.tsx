@@ -1,0 +1,162 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+export function EvaluationMetric({
+  compact = false,
+  label,
+  value,
+  detail,
+  className,
+}: {
+  compact?: boolean;
+  label: string;
+  value: ReactNode;
+  detail?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card size="sm" className={cn(compact && "[--card-spacing:--spacing(2)]", className)}>
+      <CardHeader>
+        <CardDescription>{label}</CardDescription>
+        <CardTitle className={compact ? "text-lg" : "text-2xl"}>{value}</CardTitle>
+      </CardHeader>
+      {detail ? <CardContent className="text-xs text-muted-foreground">{detail}</CardContent> : null}
+    </Card>
+  );
+}
+
+export function EvaluationSection({
+  title,
+  description,
+  action,
+  children,
+  className,
+}: {
+  title: string;
+  description?: ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card className={className}>
+      <CardHeader className="border-b">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>{title}</CardTitle>
+            {description ? <CardDescription className="mt-1">{description}</CardDescription> : null}
+          </div>
+          {action}
+        </div>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
+export function EvaluationTable({
+  children,
+  density = "default",
+}: {
+  children: ReactNode;
+  density?: "default" | "compact";
+}) {
+  const compact = density === "compact";
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border/65 bg-card">
+      <table
+        data-density={density}
+        className={cn(
+          "w-full border-collapse [&_td]:border-t [&_td]:border-border/60 [&_th]:bg-muted/35 [&_th]:text-left [&_th]:font-medium [&_th]:text-muted-foreground",
+          compact
+            ? "min-w-[680px] text-xs [&_td]:px-2 [&_td]:py-0.5 [&_td]:leading-4 [&_th]:px-2 [&_th]:py-1 [&_th]:text-[11px]"
+            : "min-w-[760px] text-sm [&_td]:px-4 [&_td]:py-3 [&_th]:px-4 [&_th]:py-3 [&_th]:text-xs",
+        )}
+      >
+        {children}
+      </table>
+    </div>
+  );
+}
+
+export function KeyValueGrid({
+  items,
+  className,
+}: {
+  items: Array<[string, ReactNode]>;
+  className?: string;
+}) {
+  return (
+    <dl className={cn("grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2 lg:grid-cols-3", className)}>
+      {items.map(([label, value]) => (
+        <div key={label} className="bg-card p-4">
+          <dt className="text-xs text-muted-foreground">{label}</dt>
+          <dd className="mt-1 break-words font-medium">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+export function JsonPreview({ value }: { value: unknown }) {
+  return (
+    <pre className="max-h-72 overflow-auto rounded-md border bg-muted/35 p-3 font-mono text-xs leading-5">
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  );
+}
+
+export function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+export function formatCost(value: number) {
+  return `$${value.toFixed(4)}`;
+}
+
+export function formatRelativeTime(iso: string) {
+  const seconds = Math.max(
+    0,
+    Math.round((Date.now() - new Date(iso).getTime()) / 1000),
+  );
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+/**
+ * Tracks [id, signature] pairs across renders and returns the ids whose
+ * signature just changed, for a short window — used to flash live rows.
+ */
+export function useFlashingKeys(
+  entries: Array<readonly [string, string]>,
+): ReadonlySet<string> {
+  const previousRef = useRef<Map<string, string> | null>(null);
+  const [flashing, setFlashing] = useState<ReadonlySet<string>>(new Set());
+  const signature = entries.map(([id, sig]) => `${id}\\u0000${sig}`).join("\\u0000");
+  useEffect(() => {
+    const previous = previousRef.current;
+    previousRef.current = new Map(entries);
+    if (previous === null) return;
+    const changed = entries
+      .filter(([id, sig]) => previous.get(id) !== sig)
+      .map(([id]) => id);
+    if (!changed.length) return;
+    setFlashing((current) => new Set([...current, ...changed]));
+    const timer = setTimeout(() => {
+      setFlashing((current) => {
+        const next = new Set(current);
+        for (const id of changed) next.delete(id);
+        return next;
+      });
+    }, 2000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
+  return flashing;
+}

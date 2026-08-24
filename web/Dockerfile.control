@@ -1,0 +1,59 @@
+FROM node:22-bookworm-slim AS dependencies
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+COPY apps/control/package.json apps/control/package.json
+COPY apps/example-mcp-server/package.json apps/example-mcp-server/package.json
+COPY apps/runner/package.json apps/runner/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
+RUN npm ci --include=optional
+
+FROM dependencies AS build
+
+COPY tsconfig.base.json ./
+COPY apps ./apps
+COPY packages ./packages
+COPY skills ./skills
+RUN npm run build:control
+
+FROM dependencies AS production-dependencies
+RUN npm prune --omit=dev
+
+FROM node:22-bookworm-slim AS runtime
+
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=8080 \
+    TASKLATTICE_CONFIG=/app/control.compose.toml
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=production-dependencies /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
+COPY apps/control/package.json apps/control/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
+COPY --from=build /app/packages/contracts/dist ./packages/contracts/dist
+COPY --from=build /app/apps/control/.output ./apps/control/.output
+COPY --from=build /app/apps/control/prisma ./apps/control/prisma
+COPY --from=build /app/apps/control/prisma.config.ts ./apps/control/prisma.config.ts
+COPY --from=build /app/apps/control/server/config ./apps/control/server/config
+COPY --from=build /app/apps/control/server/generated ./apps/control/server/generated
+COPY --from=build /app/skills/vendor/dist ./skills/vendor/dist
+COPY control.compose.toml ./control.compose.toml
+
+USER node
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=3s --retries=10 \
+    CMD ["node", "-e", "fetch('http://127.0.0.1:8080/api/health').then((response) => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"]
+
+CMD ["sh", "-c", "npm run db:migrate:control && exec node apps/control/.output/server/index.mjs"]

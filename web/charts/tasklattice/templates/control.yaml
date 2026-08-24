@@ -1,0 +1,166 @@
+{{- $root := . -}}
+{{- $component := "control" -}}
+{{- $name := include "tasklattice.componentName" (dict "root" . "component" $component) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "tasklattice.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  replicas: {{ .Values.control.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "tasklattice.selectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tasklattice.selectorLabels" (dict "root" . "component" $component) | nindent 8 }}
+      annotations:
+        checksum/control-config: {{ include "tasklattice.controlConfigChecksum" . }}
+        {{- with .Values.global.rolloutRevision }}
+        tasklattice.ai/rollout-revision: {{ . | quote }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "tasklattice.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      {{- with .Values.control.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migrate-control-database
+          image: {{ include "tasklattice.image" (dict "root" . "image" .Values.images.control) }}
+          imagePullPolicy: {{ .Values.images.control.pullPolicy }}
+          command:
+            - npm
+            - run
+            - db:migrate
+            - --workspace
+            - "@tasklattice/control"
+          env:
+            - name: TASKLATTICE_CONFIG
+              value: /etc/tasklattice/control.toml
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.control.initResources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: control-config
+              mountPath: /etc/tasklattice
+              readOnly: true
+        - name: seed-built-in-skills
+          image: {{ include "tasklattice.image" (dict "root" . "image" .Values.images.control) }}
+          imagePullPolicy: {{ .Values.images.control.pullPolicy }}
+          command:
+            - npm
+            - run
+            - db:seed-skills
+            - --workspace
+            - "@tasklattice/control"
+          env:
+            - name: TASKLATTICE_CONFIG
+              value: /etc/tasklattice/control.toml
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.control.initResources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: control-config
+              mountPath: /etc/tasklattice
+              readOnly: true
+      containers:
+        - name: control
+          image: {{ include "tasklattice.image" (dict "root" . "image" .Values.images.control) }}
+          imagePullPolicy: {{ .Values.images.control.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: TASKLATTICE_CONFIG
+              value: /etc/tasklattice/control.toml
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_EXTRA_CA_CERTS
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            {{- with .Values.control.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.control.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: control-config
+              mountPath: /etc/tasklattice
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+        - name: control-config
+          secret:
+            secretName: {{ include "tasklattice.secretName" . }}
+            items:
+              - key: control.toml
+                path: control.toml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "tasklattice.labels" . | nindent 4 }}
+  {{- with .Values.control.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.control.service.type }}
+  selector:
+    {{- include "tasklattice.selectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.control.service.port }}
+      targetPort: http

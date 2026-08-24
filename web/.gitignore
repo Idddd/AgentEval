@@ -1,0 +1,17 @@
+node_modules/
+dist/
+!skills/vendor/dist/
+!skills/vendor/dist/**
+.vite/
+.output/
+.tanstack/
+.DS_Store
+coverage/
+apps/control/server/generated/
+/charts/tasklattice/charts/*.tgz
+/.helm-dependencies/
+/.worktrees/
+*.log
+.env
+control.toml
+apps/control/server/generated/

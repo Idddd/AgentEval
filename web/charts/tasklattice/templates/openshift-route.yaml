@@ -1,0 +1,59 @@
+{{- if and .Values.openshift.enabled .Values.openshift.routes.control.enabled }}
+{{- $route := .Values.openshift.routes.control }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "tasklattice.componentName" (dict "root" . "component" "control") }}
+  labels:
+    {{- include "tasklattice.componentLabels" (dict "root" . "component" "control") | nindent 4 }}
+  {{- with $route.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $route.host }}
+  host: {{ . | quote }}
+  {{- end }}
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: {{ include "tasklattice.componentName" (dict "root" . "component" "control") }}
+    weight: 100
+  {{- if $route.tls.enabled }}
+  tls:
+    termination: {{ $route.tls.termination }}
+    insecureEdgeTerminationPolicy: {{ $route.tls.insecureEdgeTerminationPolicy }}
+  {{- end }}
+  wildcardPolicy: None
+{{- end }}
+{{- if and .Values.openshift.enabled .Values.keycloak.enabled .Values.openshift.routes.keycloak.enabled }}
+{{- $route := .Values.openshift.routes.keycloak }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "tasklattice.componentName" (dict "root" . "component" "keycloak") }}
+  labels:
+    {{- include "tasklattice.componentLabels" (dict "root" . "component" "keycloak") | nindent 4 }}
+  {{- with $route.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $route.host }}
+  host: {{ . | quote }}
+  {{- end }}
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: {{ include "tasklattice.componentName" (dict "root" . "component" "keycloak") }}
+    weight: 100
+  {{- if $route.tls.enabled }}
+  tls:
+    termination: {{ $route.tls.termination }}
+    insecureEdgeTerminationPolicy: {{ $route.tls.insecureEdgeTerminationPolicy }}
+  {{- end }}
+  wildcardPolicy: None
+{{- end }}

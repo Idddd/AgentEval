@@ -1,0 +1,34 @@
+ARG BASE_IMAGE=tasklattice-nemoclaw-hermes-upstream:local
+FROM ${BASE_IMAGE}
+
+COPY --chmod=0555 scripts/bootstrap-hermes-config.py /usr/local/lib/tasklattice/bootstrap-hermes-config.py
+
+# OpenShell's Kubernetes driver executes the named sandbox identity as the
+# provider-wide workload UID/GID. The upstream Hermes base inherits the Node
+# image's 1000:1000 account and therefore allocates a different system ID to
+# `sandbox`; align the image account database with the OpenShell contract so
+# Hermes' own owner/group/mode validator sees the same identity as the kernel.
+ARG OPENSHELL_SANDBOX_UID=1000
+ARG OPENSHELL_SANDBOX_GID=1000
+USER root
+RUN set -eux; \
+    uid_owner="$(getent passwd "${OPENSHELL_SANDBOX_UID}" | cut -d: -f1 || true)"; \
+    gid_owner="$(getent group "${OPENSHELL_SANDBOX_GID}" | cut -d: -f1 || true)"; \
+    if [ -n "$uid_owner" ] && [ "$uid_owner" != "node" ]; then \
+      echo "UID ${OPENSHELL_SANDBOX_UID} is unexpectedly owned by ${uid_owner}" >&2; \
+      exit 1; \
+    fi; \
+    if [ -n "$gid_owner" ] && [ "$gid_owner" != "node" ]; then \
+      echo "GID ${OPENSHELL_SANDBOX_GID} is unexpectedly owned by ${gid_owner}" >&2; \
+      exit 1; \
+    fi; \
+    if getent passwd node >/dev/null; then userdel --remove node; fi; \
+    if getent group node >/dev/null; then groupdel node; fi; \
+    groupmod --gid "${OPENSHELL_SANDBOX_GID}" sandbox; \
+    usermod --uid "${OPENSHELL_SANDBOX_UID}" --gid "${OPENSHELL_SANDBOX_GID}" sandbox; \
+    chown -R sandbox:sandbox /sandbox; \
+    rm -rf /root/.cache/node-gyp; \
+    test "$(id -u sandbox)" = "${OPENSHELL_SANDBOX_UID}"; \
+    test "$(id -g sandbox)" = "${OPENSHELL_SANDBOX_GID}"; \
+    test "$(stat -c '%u:%g' /sandbox)" = "${OPENSHELL_SANDBOX_UID}:${OPENSHELL_SANDBOX_GID}"; \
+    /usr/local/lib/tasklattice/bootstrap-hermes-config.py --help >/dev/null

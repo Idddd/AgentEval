@@ -16,6 +16,12 @@ class SpanRecord:
     input: dict | None = None
     output: dict | None = None
     metadata: dict = field(default_factory=dict)
+    observation_type: str = "span"
+    level: str = "DEFAULT"
+    status_message: str | None = None
+    model: str | None = None
+    usage_details: dict[str, int] = field(default_factory=dict)
+    cost_details: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass

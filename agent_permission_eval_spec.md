@@ -1,5 +1,9 @@
 # Agent Permission Compliance Eval Demo — Implementation Spec
 
+> **Historical specification.** The legacy dashboard described below has been
+> retired. The supported Web frontend is now the TALI console under `web/`,
+> backed by `src/api/`; use the root `README.md` for current startup commands.
+
 > Goal: build a full loop on top of Langfuse — "tool definitions → auto-generated Dataset → Agent execution → Code Eval → Markdown Report".
 > Stack: Python + Langfuse SDK v3 (OTel style, `langfuse>=3.0,<4.0`) + OpenAI API + Streamlit UI
 > Graceful degradation: without Langfuse credentials, traces/datasets/scores fall back to local JSON (`data/`, same shape as Langfuse traces); without OPENAI_API_KEY, intent analysis falls back to rule matching. All 4 credential combinations run the full loop.

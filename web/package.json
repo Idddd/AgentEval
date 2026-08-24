@@ -1,0 +1,61 @@
+{
+  "name": "tasklattice",
+  "version": "0.1.3",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @tasklattice/contracts && npm run build --workspace @tasklattice/control && npm run build --workspace @tasklattice/runner && npm run build --workspace @tasklattice/example-mcp-server",
+    "build:control": "npm run build --workspace @tasklattice/contracts && npm run build --workspace @tasklattice/control",
+    "db:generate:control": "npm run db:generate --workspace @tasklattice/control",
+    "db:migrate:control": "npm run db:migrate --workspace @tasklattice/control",
+    "skills:package": "python3 scripts/package-vendor-skills.py",
+    "dev": "npm run dev --workspace @tasklattice/control",
+    "dev:control": "npm run dev --workspace @tasklattice/control",
+    "dev:runner": "npm run dev --workspace @tasklattice/runner",
+    "start:control": "node apps/control/.output/server/index.mjs",
+    "pretest": "npm run build --workspace @tasklattice/contracts",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "images:build": "npm run images:build:control && npm run images:build:runner && npm run images:build:litellm && npm run images:build:example-mcp && npm run images:build:sandbox:openclaw && npm run images:build:sandbox:hermes",
+    "images:build:control": "npm run helm:package:control && docker build -f infra/docker/Dockerfile --target control -t ghcr.io/sn0rt/tasklattice-control:dev .",
+    "images:build:runner": "docker build -f infra/docker/Dockerfile --target runner -t ghcr.io/sn0rt/tasklattice-openshell-runner:dev .",
+    "images:build:litellm": "docker build -f infra/docker/Dockerfile.litellm -t ghcr.io/sn0rt/tasklattice-litellm:dev .",
+    "images:build:example-mcp": "docker build -f infra/docker/Dockerfile --target example-mcp -t ghcr.io/sn0rt/tasklattice-example-mcp:dev .",
+    "images:build:sandbox": "npm run images:build:sandbox:openclaw",
+    "images:build:sandbox:openclaw": "NEMOCLAW_AGENT_PLATFORM=openclaw bash scripts/build-nemoclaw-sandbox.sh",
+    "images:build:sandbox:hermes": "NEMOCLAW_AGENT_PLATFORM=hermes bash scripts/build-nemoclaw-sandbox.sh",
+    "helm:deploy:dev": "bash scripts/deploy-local.sh deploy",
+    "helm:deploy:dev:keycloak": "bash scripts/deploy-local.sh deploy --keycloak",
+    "helm:deploy:dev:example-mcp": "bash scripts/deploy-local.sh deploy --example-mcp",
+    "helm:deploy:dev:keycloak:example-mcp": "bash scripts/deploy-local.sh deploy --keycloak --example-mcp",
+    "helm:delete:dev": "bash scripts/deploy-local.sh delete",
+    "helm:dependencies": "bash scripts/prepare-helm-dependencies.sh",
+    "helm:package:control": "bash scripts/package-control-plane-chart.sh",
+    "helm:validate:resources": "node scripts/validate-helm-resources.mjs",
+    "helm:validate:openshift": "node scripts/validate-helm-openshift.mjs",
+    "helm:validate:airgap": "node scripts/validate-helm-airgap.mjs",
+    "k8s:deploy": "npm run helm:deploy:dev",
+    "k8s:deploy:openshell": "npm run helm:deploy:dev",
+    "k8s:delete": "npm run helm:delete:dev",
+    "k8s:delete:openshell": "npm run helm:delete:dev",
+    "validate:core": "node --env-file-if-exists=.env scripts/validate-core-flow.mjs"
+  },
+  "devDependencies": {
+    "yaml": "^2.8.1"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.12",
+    "brace-expansion": "5.0.8",
+    "fast-uri": "3.1.4",
+    "find-my-way": "9.7.0",
+    "valibot": "1.4.2"
+  }
+}

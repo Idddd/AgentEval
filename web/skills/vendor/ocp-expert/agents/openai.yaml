@@ -1,0 +1,4 @@
+interface:
+  display_name: "OCP Expert"
+  short_description: "Operate OpenShift with platform-specific safeguards"
+  default_prompt: "Use $ocp-expert to diagnose this OpenShift issue without unsafe cluster changes."

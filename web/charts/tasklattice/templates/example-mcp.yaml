@@ -1,0 +1,113 @@
+{{- if .Values.exampleMcp.enabled }}
+{{- $component := "example-mcp" -}}
+{{- $name := include "tasklattice.componentName" (dict "root" . "component" $component) -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}-auth
+  labels:
+    {{- include "tasklattice.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+type: Opaque
+stringData:
+  username: {{ required "exampleMcp.auth.username is required" .Values.exampleMcp.auth.username | quote }}
+  password: {{ required "exampleMcp.auth.password is required" .Values.exampleMcp.auth.password | quote }}
+  auth-value: {{ printf "%s:%s" .Values.exampleMcp.auth.username .Values.exampleMcp.auth.password | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "tasklattice.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  replicas: {{ .Values.exampleMcp.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "tasklattice.selectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tasklattice.selectorLabels" (dict "root" . "component" $component) | nindent 8 }}
+      annotations:
+        checksum/auth-secret: {{ printf "%s:%s" .Values.exampleMcp.auth.username .Values.exampleMcp.auth.password | sha256sum }}
+        {{- with .Values.global.rolloutRevision }}
+        tasklattice.ai/rollout-revision: {{ . | quote }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "tasklattice.runtimeServiceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: example-mcp
+          image: {{ include "tasklattice.image" (dict "root" . "image" .Values.images.exampleMcp) }}
+          imagePullPolicy: {{ .Values.images.exampleMcp.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: ALLOWED_HOSTS
+              value: >-
+                {{ $name }},
+                {{ $name }}.{{ .Release.Namespace }}.svc,
+                {{ $name }}.{{ .Release.Namespace }}.svc.cluster.local,
+                localhost,
+                127.0.0.1
+            - name: BASIC_AUTH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-auth
+                  key: username
+            - name: BASIC_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-auth
+                  key: password
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ $name }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ $name }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.exampleMcp.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "tasklattice.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "tasklattice.selectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.exampleMcp.service.port }}
+      targetPort: http
+{{- end }}

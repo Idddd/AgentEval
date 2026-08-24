@@ -1,0 +1,41 @@
+schema_version = 1
+
+[server]
+public_url = "http://127.0.0.1:18082"
+
+[database]
+url = "postgresql://tasklattice:development@postgres:5432/tasklattice"
+
+[auth]
+session_signing_key = "tasklattice-local-development-secret"
+
+[auth.local]
+enabled = true
+initial_super_admin_username = "admin"
+initial_super_admin_password_hash = "$2b$12$Zx2mCLJZ0n/iY4Tq.Z3eXu0O.z5SHM.pKJyNNurKX/Z7CD5HHOg.e"
+
+[auth.oidc]
+enabled = false
+display_name = "SSO"
+issuer = ""
+client_id = ""
+client_secret = ""
+
+[runner]
+url = "http://127.0.0.1:9090"
+token = "local-dev-token"
+
+[litellm]
+url = "http://127.0.0.1:4000"
+master_key = ""
+
+[smtp]
+enabled = false
+host = ""
+port = 587
+secure = false
+username = ""
+password = ""
+from_address = ""
+from_name = "TaskLattice"
+reply_to = ""

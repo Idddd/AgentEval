@@ -1,0 +1,4 @@
+interface:
+  display_name: "Helm Chart Developer"
+  short_description: "Design and validate production Helm charts"
+  default_prompt: "Use $helm-chart-developer to review and validate this Helm chart change."
