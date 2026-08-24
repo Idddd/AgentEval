@@ -104,6 +104,26 @@ def test_chart_renders_one_recreate_deployment() -> None:
     assert len(deployment["spec"]["template"]["spec"]["containers"]) == 1
 
 
+def test_chart_rejects_multiple_replicas() -> None:
+    """Catch scaling that would give each Pod an independent embedded database."""
+    result = run(
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{ROOT.as_posix()}:/workspace",
+        "alpine/helm:3.18.4",
+        "template",
+        "agenteval",
+        "/workspace/deploy/helm/agenteval",
+        "--set",
+        "replicaCount=2",
+    )
+
+    assert result.returncode != 0
+    assert "replicaCount must be 1" in result.stderr
+
+
 def test_workflow_builds_one_image_and_pushes_the_embedded_chart() -> None:
     """Catch publication drift between the application image and Helm package."""
     workflow = yaml.safe_load(

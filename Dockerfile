@@ -39,6 +39,26 @@ FROM web-dependencies AS web-production-dependencies
 RUN npm prune --omit=dev
 
 
+FROM alpine/helm:3.18.4 AS chart
+
+ENTRYPOINT []
+
+ARG AGENTEVAL_CHART_VERSION=0.1.0-dev
+ARG AGENTEVAL_IMAGE_REPOSITORY=ghcr.io/idddd/agenteval
+ARG AGENTEVAL_IMAGE_TAG=dev
+
+WORKDIR /work
+
+COPY deploy/helm/agenteval ./agenteval
+RUN sed -i "s|^version:.*|version: ${AGENTEVAL_CHART_VERSION}|" agenteval/Chart.yaml \
+    && sed -i "s|^appVersion:.*|appVersion: ${AGENTEVAL_IMAGE_TAG}|" agenteval/Chart.yaml \
+    && sed -i "s|repository: ghcr.io/idddd/agenteval|repository: ${AGENTEVAL_IMAGE_REPOSITORY}|" agenteval/values.yaml \
+    && sed -i "s|tag: dev|tag: ${AGENTEVAL_IMAGE_TAG}|" agenteval/values.yaml \
+    && helm lint agenteval \
+    && mkdir -p /packages \
+    && helm package agenteval --destination /packages
+
+
 FROM postgres:17-bookworm AS runtime
 
 ENV NODE_ENV=production \
@@ -82,6 +102,8 @@ COPY main.py ./
 COPY config ./config
 COPY src ./src
 COPY deploy/runtime /opt/agenteval/runtime
+COPY --from=chart /work/agenteval /opt/agenteval/helm/agenteval
+COPY --from=chart /packages /opt/agenteval/helm/packages
 
 RUN chmod 0755 \
       /opt/agenteval/runtime/entrypoint.sh \
