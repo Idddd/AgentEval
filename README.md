@@ -6,15 +6,15 @@ provides the evaluation API, CLI, adapters, and SQLite persistence.
 
 ## Runtime architecture
 
-| Service | Default address | Storage | Purpose |
+| Runtime | Default address | Storage | Purpose |
 | --- | --- | --- | --- |
-| TALI Web | `http://127.0.0.1:18082` | PostgreSQL | Authentication, projects, and the control-console shell |
-| AgentEval API | `http://127.0.0.1:8000` | `data/web-workbench.db` | Targets, datasets, runs, reports, and demo fixtures |
+| AgentEval Demo container | `http://127.0.0.1:18082` | One Docker volume | PostgreSQL 17, TALI Web, and the loopback evaluation API |
 | AgentEval CLI | local process | `data/workbench.db` | Scripted evaluation and report workflows |
 
-The TALI server reverse-proxies `/api/v1/evaluations/*` to the Python API.
-PostgreSQL and the AgentEval SQLite databases have separate responsibilities
-and should not be pointed at the same file or volume.
+The container exposes only the TALI Web server. It reverse-proxies
+`/api/v1/evaluations/*` to the Python API on container loopback. PostgreSQL and
+the AgentEval SQLite database keep their separate responsibilities but persist
+beneath the same mounted `/var/lib/agenteval` volume.
 
 ## Quick start with Docker
 
@@ -26,23 +26,32 @@ docker compose up --build
 ```
 
 Open `http://127.0.0.1:18082` and sign in with `admin` / `admin`. The API is
-available at `http://127.0.0.1:8000/docs`.
+available only inside the Demo container and through the Web reverse proxy.
 
-Docker Compose starts PostgreSQL, the AgentEval FastAPI service, and the TALI
-Web service. The Web container applies Prisma migrations before it starts.
+Docker Compose starts one container. Its supervisor initializes PostgreSQL,
+applies Prisma migrations, starts the FastAPI service, and finally starts the
+TALI Web service. If any component exits, the container stops instead of
+leaving a partially working Demo online.
 
 ## Published container images
 
-GitHub Actions builds the API and Web services as separate OCI images and
-publishes them to GitHub Container Registry:
+GitHub Actions builds and publishes one self-contained OCI image:
 
-- `ghcr.io/idddd/agenteval-api`
-- `ghcr.io/idddd/agenteval-web`
+- `ghcr.io/idddd/agenteval`
 
 Every pushed build receives an immutable `sha-<12-character-commit>` tag.
 Branches under `codex/**` also receive a normalized branch tag, `main` receives
 `latest`, and release tags such as `v1.2.3` publish both `1.2.3` and `v1.2.3`.
-Pull requests build both images for validation but do not publish them.
+Pull requests build the image for validation but do not publish it.
+
+The same image contains the release's rendered Helm Chart:
+
+- source: `/opt/agenteval/helm/agenteval`
+- package: `/opt/agenteval/helm/packages/agenteval-<version>.tgz`
+
+For `main` and SemVer release tags, CI extracts that exact package from the
+published image and pushes it to `oci://ghcr.io/idddd/charts/agenteval`. This
+ensures the OCI Chart and the Chart embedded in the image cannot diverge.
 
 To run the published images instead of building locally, first copy the local
 environment template as usual. If the GHCR packages are private, authenticate
@@ -56,8 +65,36 @@ docker compose -f docker-compose.yml -f docker-compose.images.yml up -d
 ```
 
 Set `AGENTEVAL_IMAGE_TAG` to deploy a branch, release, or immutable SHA tag.
-Forks and alternative registries can override `AGENTEVAL_API_IMAGE` and
-`AGENTEVAL_WEB_IMAGE` with complete image names before running Compose.
+Forks and alternative registries can override `AGENTEVAL_IMAGE` with the
+complete combined image name before running Compose.
+
+## Helm Demo deployment
+
+Install a released OCI Chart with a matching SemVer release:
+
+```powershell
+$version = "1.2.3"
+helm upgrade --install agenteval `
+  oci://ghcr.io/idddd/charts/agenteval `
+  --version $version `
+  --namespace agenteval `
+  --create-namespace
+```
+
+The Chart creates one Deployment, one Service, one Secret, and one persistent
+volume claim. It intentionally rejects more than one replica because every Pod
+would otherwise have an independent embedded PostgreSQL database. For a local
+cluster, open the Demo with:
+
+```powershell
+kubectl port-forward --namespace agenteval service/agenteval 18082:80
+```
+
+This topology is intended only for demonstrations. Application and database
+upgrade together, and deleting the Docker volume or Kubernetes claim removes
+both PostgreSQL and evaluation data. Copy or snapshot the volume before an
+upgrade when Demo data matters. Override the built-in database credentials
+through Helm values or an existing Secret before sharing the deployment.
 
 ## Local development
 
