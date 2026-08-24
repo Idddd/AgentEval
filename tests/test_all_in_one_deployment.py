@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+from pathlib import Path
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        cwd=ROOT,
+        env={**os.environ, **(env or {})},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_compose_renders_one_service() -> None:
+    """Catch accidental restoration of the former three-container topology."""
+    result = run("docker", "compose", "config", "--format", "json")
+    assert result.returncode == 0, result.stderr
+    compose = json.loads(result.stdout)
+
+    assert list(compose["services"]) == ["agenteval"]
+    service = compose["services"]["agenteval"]
+    assert service["ports"][0]["published"] == "18082"
+    assert service["ports"][0]["target"] == 8080
+    assert service["volumes"][0]["target"] == "/var/lib/agenteval"
+    assert list(compose["volumes"]) == ["agenteval-data"]
+
+
+def test_published_image_override_renders_one_combined_image() -> None:
+    """Catch an override that deploys separate API or Web images."""
+    result = run(
+        "docker",
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "-f",
+        "docker-compose.images.yml",
+        "config",
+        "--format",
+        "json",
+        env={
+            "AGENTEVAL_IMAGE": "registry.example/agenteval",
+            "AGENTEVAL_IMAGE_TAG": "contract-test",
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    compose = json.loads(result.stdout)
+
+    assert list(compose["services"]) == ["agenteval"]
+    assert compose["services"]["agenteval"]["image"] == (
+        "registry.example/agenteval:contract-test"
+    )
+
+
+def test_chart_renders_one_recreate_deployment() -> None:
+    """Catch a Chart that splits the Demo across Pods or scales its database."""
+    result = run(
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{ROOT.as_posix()}:/workspace",
+        "alpine/helm:3.18.4",
+        "template",
+        "agenteval",
+        "/workspace/deploy/helm/agenteval",
+    )
+    assert result.returncode == 0, result.stderr
+    resources = [item for item in yaml.safe_load_all(result.stdout) if item]
+    deployments = [item for item in resources if item["kind"] == "Deployment"]
+
+    assert len(deployments) == 1
+    deployment = deployments[0]
+    assert deployment["spec"]["replicas"] == 1
+    assert deployment["spec"]["strategy"]["type"] == "Recreate"
+    assert len(deployment["spec"]["template"]["spec"]["containers"]) == 1
+
+
+def test_workflow_builds_one_image_and_pushes_the_embedded_chart() -> None:
+    """Catch publication drift between the application image and Helm package."""
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/container-images.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    jobs = workflow["jobs"]
+    serialized = yaml.safe_dump(jobs)
+
+    assert list(jobs) == ["build"]
+    assert serialized.count("docker/build-push-action") == 1
+    assert "helm push" in serialized
+    assert "/charts" in serialized
+    assert "agenteval-api" not in serialized
+    assert "agenteval-web" not in serialized
