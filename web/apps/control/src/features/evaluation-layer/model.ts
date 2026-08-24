@@ -102,6 +102,20 @@ export interface EvaluationLayerGuardrailTemplate {
   sourceGuardrailId?: string;
   /** Immutable Guardrail revision captured by this test-pack snapshot. */
   sourceGuardrailRevisionId?: string;
+  /** Policy definitions pinned by the immutable Guardrail release. */
+  sourcePolicies?: Array<{
+    id: string;
+    version: string;
+    name: string;
+    description: string;
+    ruleCount: number;
+    testCaseCount: number;
+  }>;
+  /** Runtime posture pinned by the immutable Guardrail release. */
+  runtimePosture?: {
+    safetyLevel: string;
+    outputDelivery: string;
+  };
   /** Historical snapshots remain resolvable by reports but are not selectable. */
   available?: boolean;
   required?: boolean;

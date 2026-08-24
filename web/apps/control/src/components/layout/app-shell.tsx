@@ -7,6 +7,7 @@ import {
   ChartNoAxesCombined,
   CheckCircle2,
   CircleHelp,
+  LibraryBig,
   Search,
   ShieldAlert,
   Sparkles,
@@ -93,6 +94,7 @@ type ProjectRoute =
   | "/$projectId/requests/new"
   | "/$projectId/guardrails"
   | "/$projectId/governance/guardrails"
+  | "/$projectId/governance/policy-library"
   | "/$projectId/governance/assignments"
   | "/$projectId/governance/enforcements"
   | "/$projectId/governance/integrations"
@@ -157,6 +159,12 @@ export const projectNavGroups: Array<{
         personas: ["admin"],
       },
       {
+        icon: LibraryBig,
+        label: "Policy Library",
+        to: "/$projectId/governance/policy-library",
+        personas: ["admin"],
+      },
+      {
         icon: ChartNoAxesCombined,
         label: "Monitor",
         to: "/$projectId/evaluation/overview",
@@ -170,6 +178,7 @@ const PERSONA_NAV_ORDER: Record<DemoPersona, string[]> = {
   admin: [
     "Eval",
     "Guardrails",
+    "Policy Library",
     "Monitor",
   ],
   "agent-wizard": ["Build", "Evaluate", "Agent Garden"],
@@ -208,6 +217,7 @@ export function itemIsActive(item: NavItemDefinition, pathname: string, projectI
     item.to === "/$projectId/access-policies" ||
     item.to === "/$projectId/evaluations" ||
     item.to === "/$projectId/governance/guardrails" ||
+    item.to === "/$projectId/governance/policy-library" ||
     item.to === "/$projectId/evaluation/behavior" ||
     item.to === "/$projectId/evaluation/overview"
   )

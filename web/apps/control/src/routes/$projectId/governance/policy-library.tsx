@@ -1,16 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { GuardrailImportProvider } from "@/features/guard-governance/guardrail-import/guardrail-import-provider";
-import { GuardrailsPage } from "@/features/guard-governance/guardrail-import/guardrails-main";
+import { PolicyLibraryPage } from "@/features/guard-governance/guardrail-import/policy-library";
 
-export const Route = createFileRoute("/$projectId/governance/guardrails/")({
-  component: GuardrailsRoute,
+export const Route = createFileRoute(
+  "/$projectId/governance/policy-library",
+)({
+  component: PolicyLibraryRoute,
 });
 
-function GuardrailsRoute() {
+function PolicyLibraryRoute() {
   const { projectId } = Route.useParams();
   return (
     <GuardrailImportProvider projectId={projectId}>
-      <GuardrailsPage projectId={projectId} />
+      <PolicyLibraryPage />
     </GuardrailImportProvider>
   );
 }

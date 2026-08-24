@@ -44,3 +44,24 @@ it("keeps testcase rows out of the compact Eval summary", () => {
 
   expect(screen.queryByRole("heading", { name: "Test case results" })).toBeNull();
 });
+
+it("keeps pinned Guardrail Policy versions visible in the immutable report", () => {
+  const evaluation = failedEvaluation();
+  evaluation.guardrailTemplates = [{
+    id: "guardrail-template:production:R3",
+    sourceGuardrailId: "production",
+    sourceGuardrailRevisionId: "production:R3",
+    version: "3",
+    name: "Production Safety",
+    sourcePolicies: [
+      { id: "prompt", version: "1", name: "Prompt Injection Protection", ruleCount: 1, testCaseCount: 1 },
+      { id: "pii", version: "2", name: "Sensitive Data Protection", ruleCount: 2, testCaseCount: 3 },
+    ],
+    runtimePosture: { safetyLevel: "strict", outputDelivery: "full_buffered" },
+  }];
+
+  render(<BusinessEvalReport evaluation={evaluation} datasetName="Claims Readiness" />);
+
+  expect(screen.getByText("Production Safety · R3")).not.toBeNull();
+  expect(screen.getByText("Prompt Injection Protection · v1, Sensitive Data Protection · v2")).not.toBeNull();
+});

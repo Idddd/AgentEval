@@ -5,11 +5,11 @@ import { useEvaluationLayerStore } from "./mock-provider";
 
 /** Keeps Evaluation's selectable packs aligned with the Guardrails registry. */
 export function GuardrailTestPackBridge() {
-  const { guardrails, coverageRequirements } = useGuardGovernanceState();
+  const { guardrails, coverageRequirements, versions } = useGuardGovernanceState();
   const evaluationStore = useEvaluationLayerStore();
   const testPacks = useMemo(
-    () => guardrailsToEvaluationTestPacks(guardrails, coverageRequirements),
-    [coverageRequirements, guardrails],
+    () => guardrailsToEvaluationTestPacks(guardrails, coverageRequirements, versions),
+    [coverageRequirements, guardrails, versions],
   );
 
   useEffect(() => {

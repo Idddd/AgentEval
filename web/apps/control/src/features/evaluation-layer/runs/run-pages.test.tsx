@@ -3,6 +3,8 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EvaluationLayerProvider } from '../mock-provider';
+import { cloneEvaluationLayerFixtures } from '../fixture-validation';
+import { createEvaluationLayerStore } from '../mock-store';
 import { EvaluationRunDetail, EvaluationRunSetup } from './run-pages';
 
 vi.mock('@/hooks/use-project', () => ({
@@ -42,6 +44,28 @@ describe('Evaluation run detail', () => {
 });
 
 describe('Evaluation run setup', () => {
+  it('shows the immutable Policy versions behind a Guardrail release', () => {
+    const state = cloneEvaluationLayerFixtures();
+    const template = state.guardrailTemplates.find((item) => item.name === 'Universal Safety Baseline')!;
+    template.sourcePolicies = [
+      { id: 'prompt', version: '1', name: 'Prompt Injection Protection', description: '', ruleCount: 1, testCaseCount: 2 },
+      { id: 'pii', version: '2', name: 'Sensitive Data Protection', description: '', ruleCount: 2, testCaseCount: 3 },
+    ];
+    template.runtimePosture = { safetyLevel: 'strict', outputDelivery: 'full_buffered' };
+
+    render(
+      <EvaluationLayerProvider projectId='individual' store={createEvaluationLayerStore(state)}>
+        <EvaluationRunSetup onRunCreated={vi.fn()} />
+      </EvaluationLayerProvider>,
+    );
+
+    const packs = screen.getByRole('group', { name: 'Safety checks' });
+    expect(within(packs).getByText('2 pinned Policies · 5 tests')).not.toBeNull();
+    expect(within(packs).getByText('Prompt Injection Protection · v1')).not.toBeNull();
+    expect(within(packs).getByText('Sensitive Data Protection · v2')).not.toBeNull();
+    expect(within(packs).getByText('strict · full buffered')).not.toBeNull();
+  });
+
   it('reuses the latest run Guardrail packs and keeps the baseline selection required', async () => {
     render(
       <EvaluationLayerProvider projectId='individual'>

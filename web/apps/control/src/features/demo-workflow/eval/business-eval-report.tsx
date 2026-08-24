@@ -42,6 +42,18 @@ export function BusinessEvalReport({ evaluation, submissionJustification, datase
           <ReportRow label="Required pass rate" value={`${evaluation.successThreshold}%`} />
           <ReportRow label="Business dataset" value={datasetName ?? evaluation.datasetId} />
           <ReportRow label="Safety checks" value={evaluation.guardrailTemplates.map((template) => `${template.name} · R${template.version}`).join(", ") || "None recorded"} />
+          {evaluation.guardrailTemplates.some((template) => template.sourcePolicies?.length) ? (
+            <ReportRow
+              label="Pinned Policies"
+              value={evaluation.guardrailTemplates.flatMap((template) => template.sourcePolicies ?? []).map((policy) => `${policy.name} · v${policy.version}`).join(", ")}
+            />
+          ) : null}
+          {evaluation.guardrailTemplates.some((template) => template.runtimePosture) ? (
+            <ReportRow
+              label="Runtime posture"
+              value={evaluation.guardrailTemplates.map((template) => template.runtimePosture ? `${template.runtimePosture.safetyLevel.replaceAll("_", " ")} · ${template.runtimePosture.outputDelivery.replaceAll("_", " ")}` : null).filter(Boolean).join(", ")}
+            />
+          ) : null}
           <ReportRow label="Residual risk" value={evaluation.residualRisk ?? "Pending"} />
           <ReportRow label="Actual cost" value={`$${evaluation.estimatedCost.toFixed(2)}`} />
           {evaluation.completedAt ? <ReportRow label="Completed" value={new Date(evaluation.completedAt).toLocaleString()} /> : null}

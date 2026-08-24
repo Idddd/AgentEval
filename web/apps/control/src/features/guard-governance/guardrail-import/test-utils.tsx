@@ -5,11 +5,14 @@ import { GuardGovernanceProvider } from "../mock-provider";
 import { GuardrailImportProvider } from "./guardrail-import-provider";
 import type { SupportedLanguage } from "./i18n";
 import type { MockScenario } from "./lib/mock-api";
+import type { GuardGovernanceStore } from "../store";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 type Options = {
   language?: SupportedLanguage;
   projectId?: string;
   scenario?: MockScenario;
+  store?: GuardGovernanceStore;
 };
 
 export function renderImported(
@@ -18,6 +21,7 @@ export function renderImported(
     language = "en",
     projectId = "individual",
     scenario = "populated",
+    store,
   }: Options = {},
 ) {
   const queryClient = new QueryClient({
@@ -25,13 +29,13 @@ export function renderImported(
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <GuardGovernanceProvider projectId={projectId}>
+      <GuardGovernanceProvider projectId={projectId} {...(store ? { store } : {})}>
         <GuardrailImportProvider
           projectId={projectId}
           language={language}
           scenario={scenario}
         >
-          {node}
+          <TooltipProvider>{node}</TooltipProvider>
         </GuardrailImportProvider>
       </GuardGovernanceProvider>
     </QueryClientProvider>,

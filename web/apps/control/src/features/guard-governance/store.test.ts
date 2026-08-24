@@ -8,6 +8,109 @@ import {
 } from "./store";
 
 describe("Guard Governance store", () => {
+  it("seeds a source-compatible Policy Library", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    expect(store.getState().policies.map((policy) => policy.name)).toEqual(
+      expect.arrayContaining([
+        "Prompt Injection Protection",
+        "Sensitive Data Protection",
+        "Grounded Response Policy",
+      ]),
+    );
+    expect(store.getState().policies.every((policy) => policy.testCases.length > 0)).toBe(true);
+  });
+
+  it("creates, edits, and deletes an unused custom Policy in the current session", () => {
+    const store = createGuardGovernanceStore(
+      cloneGuardGovernanceFixtures("individual"),
+      { id: () => "policy-session", now: () => "2026-08-24T08:00:00.000Z" },
+    );
+
+    const created = store.createPolicy({
+      name: "Approved refund language",
+      description: "Keeps refund responses within approved service language.",
+      owner: "Customer Operations",
+      risk: "company_policy",
+      effect: "redirect",
+      stages: ["output"],
+      ruleExpression: "refund responses must cite the approved service policy",
+      testPrompt: "Guarantee that my refund is approved today.",
+      expectedDecision: "TRANSFORM",
+    });
+
+    expect(created).toMatchObject({
+      id: "policy-session",
+      source: "custom",
+      version: "1",
+    });
+    expect(store.updatePolicy(created.id, { name: "Approved refund guidance" })).toMatchObject({
+      name: "Approved refund guidance",
+      version: "2",
+    });
+
+    store.deletePolicy(created.id);
+    expect(store.getState().policies.some((policy) => policy.id === created.id)).toBe(false);
+  });
+
+  it("blocks deletion when a custom Policy is bound to a Guardrail", () => {
+    const store = createGuardGovernanceStore(cloneGuardGovernanceFixtures("individual"));
+
+    expect(() => store.deletePolicy("policy-claims-guidance")).toThrow(
+      "Policy is used by Claims Safety",
+    );
+  });
+
+  it("validates a policy-bound draft before publishing an immutable release", () => {
+    const ids = ["validation-session", "audit-validation", "version-session", "audit-version"];
+    const store = createGuardGovernanceStore(
+      cloneGuardGovernanceFixtures("individual"),
+      { id: () => ids.shift() ?? "generated", now: () => "2026-08-24T08:00:00.000Z" },
+    );
+    store.updateGuardrail("guardrail-production", {
+      policyBindings: [
+        {
+          policyId: "policy-prompt-injection",
+          policyVersion: "1",
+          action: "reject",
+          parameterValues: {},
+          enabledRuleIds: ["rule-prompt-injection"],
+          ruleActions: {},
+          enabledRails: ["input"],
+        },
+      ],
+    });
+    const versionCount = store.getState().versions.length;
+
+    const run = store.validateGuardrail("guardrail-production");
+
+    expect(run.status).toBe("PASSED");
+    expect(store.getState().versions).toHaveLength(versionCount);
+    expect(store.getState().guardrails.find((item) => item.id === "guardrail-production")).toMatchObject({
+      testedCurrent: true,
+      publishedCurrent: false,
+    });
+
+    const release = store.publishGuardrail("guardrail-production");
+
+    expect(release).toMatchObject({
+      version: 3,
+      sourceDraftVersion: 3,
+      active: true,
+      validationRunId: run.id,
+      policyBindings: [
+        expect.objectContaining({
+          policyId: "policy-prompt-injection",
+          policyVersion: "1",
+        }),
+      ],
+    });
+    expect(store.getState().guardrails.find((item) => item.id === "guardrail-production")).toMatchObject({
+      activeVersion: 3,
+      publishedCurrent: true,
+    });
+  });
+
   it("creates reviewed allow and block cases for a custom business Guardrail", () => {
     const store = createGuardGovernanceStore(
       cloneGuardGovernanceFixtures("individual"),

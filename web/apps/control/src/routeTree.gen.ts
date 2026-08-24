@@ -45,6 +45,7 @@ import { Route as ProjectIdGovernanceAssignmentsRouteImport } from './routes/$pr
 import { Route as ProjectIdGovernanceEnforcementsRouteImport } from './routes/$projectId/governance/enforcements'
 import { Route as ProjectIdGovernanceEvidenceRouteImport } from './routes/$projectId/governance/evidence'
 import { Route as ProjectIdGovernanceIntegrationsRouteImport } from './routes/$projectId/governance/integrations'
+import { Route as ProjectIdGovernancePolicyLibraryRouteImport } from './routes/$projectId/governance/policy-library'
 import { Route as ProjectIdInstancesIndexRouteImport } from './routes/$projectId/instances/index'
 import { Route as ProjectIdInstancesInstanceIdRouteImport } from './routes/$projectId/instances/$instanceId'
 import { Route as ProjectIdRequestsIndexRouteImport } from './routes/$projectId/requests/index'
@@ -266,6 +267,12 @@ const ProjectIdGovernanceIntegrationsRoute =
     path: '/integrations',
     getParentRoute: () => ProjectIdGovernanceRoute,
   } as any)
+const ProjectIdGovernancePolicyLibraryRoute =
+  ProjectIdGovernancePolicyLibraryRouteImport.update({
+    id: '/policy-library',
+    path: '/policy-library',
+    getParentRoute: () => ProjectIdGovernanceRoute,
+  } as any)
 const ProjectIdInstancesIndexRoute = ProjectIdInstancesIndexRouteImport.update({
   id: '/$projectId/instances/',
   path: '/$projectId/instances/',
@@ -433,6 +440,7 @@ export interface FileRoutesByFullPath {
   '/$projectId/governance/enforcements': typeof ProjectIdGovernanceEnforcementsRoute
   '/$projectId/governance/evidence': typeof ProjectIdGovernanceEvidenceRoute
   '/$projectId/governance/integrations': typeof ProjectIdGovernanceIntegrationsRoute
+  '/$projectId/governance/policy-library': typeof ProjectIdGovernancePolicyLibraryRoute
   '/$projectId/instances/$instanceId': typeof ProjectIdInstancesInstanceIdRoute
   '/$projectId/requests/new': typeof ProjectIdRequestsNewRoute
   '/$projectId/access-policies/': typeof ProjectIdAccessPoliciesIndexRoute
@@ -493,6 +501,7 @@ export interface FileRoutesByTo {
   '/$projectId/governance/enforcements': typeof ProjectIdGovernanceEnforcementsRoute
   '/$projectId/governance/evidence': typeof ProjectIdGovernanceEvidenceRoute
   '/$projectId/governance/integrations': typeof ProjectIdGovernanceIntegrationsRoute
+  '/$projectId/governance/policy-library': typeof ProjectIdGovernancePolicyLibraryRoute
   '/$projectId/instances/$instanceId': typeof ProjectIdInstancesInstanceIdRoute
   '/$projectId/requests/new': typeof ProjectIdRequestsNewRoute
   '/$projectId/access-policies': typeof ProjectIdAccessPoliciesIndexRoute
@@ -555,6 +564,7 @@ export interface FileRoutesById {
   '/$projectId/governance/enforcements': typeof ProjectIdGovernanceEnforcementsRoute
   '/$projectId/governance/evidence': typeof ProjectIdGovernanceEvidenceRoute
   '/$projectId/governance/integrations': typeof ProjectIdGovernanceIntegrationsRoute
+  '/$projectId/governance/policy-library': typeof ProjectIdGovernancePolicyLibraryRoute
   '/$projectId/instances/$instanceId': typeof ProjectIdInstancesInstanceIdRoute
   '/$projectId/requests/new': typeof ProjectIdRequestsNewRoute
   '/$projectId/access-policies/': typeof ProjectIdAccessPoliciesIndexRoute
@@ -618,6 +628,7 @@ export interface FileRouteTypes {
     | '/$projectId/governance/enforcements'
     | '/$projectId/governance/evidence'
     | '/$projectId/governance/integrations'
+    | '/$projectId/governance/policy-library'
     | '/$projectId/instances/$instanceId'
     | '/$projectId/requests/new'
     | '/$projectId/access-policies/'
@@ -678,6 +689,7 @@ export interface FileRouteTypes {
     | '/$projectId/governance/enforcements'
     | '/$projectId/governance/evidence'
     | '/$projectId/governance/integrations'
+    | '/$projectId/governance/policy-library'
     | '/$projectId/instances/$instanceId'
     | '/$projectId/requests/new'
     | '/$projectId/access-policies'
@@ -739,6 +751,7 @@ export interface FileRouteTypes {
     | '/$projectId/governance/enforcements'
     | '/$projectId/governance/evidence'
     | '/$projectId/governance/integrations'
+    | '/$projectId/governance/policy-library'
     | '/$projectId/instances/$instanceId'
     | '/$projectId/requests/new'
     | '/$projectId/access-policies/'
@@ -1062,6 +1075,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectIdGovernanceIntegrationsRouteImport
       parentRoute: typeof ProjectIdGovernanceRoute
     }
+    '/$projectId/governance/policy-library': {
+      id: '/$projectId/governance/policy-library'
+      path: '/policy-library'
+      fullPath: '/$projectId/governance/policy-library'
+      preLoaderRoute: typeof ProjectIdGovernancePolicyLibraryRouteImport
+      parentRoute: typeof ProjectIdGovernanceRoute
+    }
     '/$projectId/instances/': {
       id: '/$projectId/instances/'
       path: '/$projectId/instances'
@@ -1275,6 +1295,7 @@ interface ProjectIdGovernanceRouteChildren {
   ProjectIdGovernanceEnforcementsRoute: typeof ProjectIdGovernanceEnforcementsRoute
   ProjectIdGovernanceEvidenceRoute: typeof ProjectIdGovernanceEvidenceRoute
   ProjectIdGovernanceIntegrationsRoute: typeof ProjectIdGovernanceIntegrationsRoute
+  ProjectIdGovernancePolicyLibraryRoute: typeof ProjectIdGovernancePolicyLibraryRoute
   ProjectIdGovernanceGuardrailsGuardrailIdRoute: typeof ProjectIdGovernanceGuardrailsGuardrailIdRoute
   ProjectIdGovernanceGuardrailsRelayPreviewRoute: typeof ProjectIdGovernanceGuardrailsRelayPreviewRoute
   ProjectIdGovernanceGuardrailsIndexRoute: typeof ProjectIdGovernanceGuardrailsIndexRoute
@@ -1285,6 +1306,7 @@ const ProjectIdGovernanceRouteChildren: ProjectIdGovernanceRouteChildren = {
   ProjectIdGovernanceEnforcementsRoute: ProjectIdGovernanceEnforcementsRoute,
   ProjectIdGovernanceEvidenceRoute: ProjectIdGovernanceEvidenceRoute,
   ProjectIdGovernanceIntegrationsRoute: ProjectIdGovernanceIntegrationsRoute,
+  ProjectIdGovernancePolicyLibraryRoute: ProjectIdGovernancePolicyLibraryRoute,
   ProjectIdGovernanceGuardrailsGuardrailIdRoute:
     ProjectIdGovernanceGuardrailsGuardrailIdRoute,
   ProjectIdGovernanceGuardrailsRelayPreviewRoute:

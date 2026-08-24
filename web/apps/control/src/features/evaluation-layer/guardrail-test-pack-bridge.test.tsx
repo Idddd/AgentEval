@@ -12,10 +12,10 @@ import { createEvaluationLayerStore } from "./mock-store";
 afterEach(cleanup);
 
 describe("GuardrailTestPackBridge", () => {
-  it("publishes a newly created Guardrail revision to Eval without a refresh", async () => {
+  it("publishes a validated immutable Guardrail release to Eval without a refresh", async () => {
     const governanceStore = createGuardGovernanceStore(
       cloneGuardGovernanceFixtures("individual"),
-      { id: () => "guardrail-session" },
+      { id: (() => { let value = 0; return () => value++ === 0 ? "guardrail-session" : `generated-${value}`; })() },
     );
     const evaluationStore = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
 
@@ -36,7 +36,27 @@ describe("GuardrailTestPackBridge", () => {
         allowedTopics: ["Approved service guidance"],
         restrictedTopics: ["Confidential customer data"],
         controls: [{ risk: "topic_control", action: "redirect", enabled: true }],
+        policyBindings: [{
+          policyId: "policy-prompt-injection",
+          policyVersion: "1",
+          action: "reject",
+          parameterValues: {},
+          enabledRuleIds: ["rule-prompt-injection"],
+          ruleActions: {},
+          enabledRails: ["input"],
+        }],
       });
+    });
+
+    await waitFor(() => {
+      expect(evaluationStore.getState().guardrailTemplates).not.toContainEqual(
+        expect.objectContaining({ sourceGuardrailId: "guardrail-session" }),
+      );
+    });
+
+    act(() => {
+      governanceStore.validateGuardrail("guardrail-session");
+      governanceStore.publishGuardrail("guardrail-session");
     });
 
     await waitFor(() => {
@@ -45,6 +65,7 @@ describe("GuardrailTestPackBridge", () => {
           id: "guardrail-template:guardrail-session:R1",
           sourceGuardrailRevisionId: "guardrail-session:R1",
           available: true,
+          sourcePolicies: [expect.objectContaining({ id: "policy-prompt-injection", version: "1" })],
         }),
       );
     });

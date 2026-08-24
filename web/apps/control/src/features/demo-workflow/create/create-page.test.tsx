@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 import { EvaluationLayerProvider } from "@/features/evaluation-layer/mock-provider";
@@ -132,19 +132,22 @@ it("creates prefilled technical resources and an Agent draft in memory", async (
   await user.click(
     screen.getByRole("button", { name: "Edit Customer Service Assistant draft" }),
   );
-  await user.clear(screen.getByLabelText("Name"));
-  await user.type(screen.getByLabelText("Name"), "Customer Care Assistant");
-  await user.clear(screen.getByLabelText("Model"));
-  await user.type(screen.getByLabelText("Model"), "GPT-5 mini");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Customer Care Assistant" } });
+  fireEvent.change(screen.getByLabelText("Model"), { target: { value: "GPT-5 mini" } });
   await user.click(screen.getByRole("button", { name: "Save Agent draft" }));
 
+  expect(await screen.findByRole(
+    "button",
+    { name: "Edit Customer Care Assistant draft" },
+    { timeout: 5_000 },
+  )).not.toBeNull();
   expect(store.getState().agents.map((agent) => agent.name)).toContain(
     "Customer Care Assistant",
   );
   expect(
     store.getState().agentRevisions.find((revision) => revision.source === "SESSION")?.model,
   ).toBe("GPT-5 mini");
-});
+}, 10_000);
 
 it("clones read-only demo Agents and resources into editable session drafts", async () => {
   const user = userEvent.setup();

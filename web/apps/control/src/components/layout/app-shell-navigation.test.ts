@@ -30,6 +30,7 @@ describe("role lifecycle navigation", () => {
     expect(labelsFor("admin")).toEqual([
       "Eval",
       "Guardrails",
+      "Policy Library",
       "Monitor",
     ]);
   });
@@ -48,6 +49,14 @@ describe("role lifecycle navigation", () => {
     expect(itemIsActive(
       navItem("Guardrails"),
       "/individual/governance/guardrails/guardrail-production",
+      "individual",
+    )).toBe(true);
+  });
+
+  it("keeps Policy Library active throughout its governance route", () => {
+    expect(itemIsActive(
+      navItem("Policy Library"),
+      "/individual/governance/policy-library",
       "individual",
     )).toBe(true);
   });

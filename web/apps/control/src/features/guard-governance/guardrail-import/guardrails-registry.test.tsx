@@ -56,9 +56,7 @@ it("retains the original template and blank creation choices", async () => {
     await screen.findByRole("button", { name: "Create Guardrail" }),
   );
 
-  expect(
-    screen.getByRole("navigation", { name: "Create Guardrail" }),
-  ).not.toBeNull();
+  expect(screen.getByRole("tablist")).not.toBeNull();
   expect(screen.getByLabelText("Find a local template")).not.toBeNull();
   expect(
     screen.getByRole("button", { name: /Customize Intent Create/ }),
@@ -126,11 +124,11 @@ it("describes custom intent creation without upload and mock-analyzes its purpos
   );
   expect(
     (await screen.findByLabelText(
-      "Allowed behavior",
+      "Allowed business domains",
     ) as HTMLTextAreaElement).value,
   ).not.toBe("");
   expect(
-    (screen.getByLabelText("Restricted behavior") as HTMLTextAreaElement).value,
+    (screen.getByLabelText("Restricted domains") as HTMLTextAreaElement).value,
   ).not.toBe("");
   expect(screen.getByRole("region", { name: "Business scenarios" })).not.toBeNull();
   expect(screen.getByRole("combobox", { name: "Risk level" })).not.toBeNull();

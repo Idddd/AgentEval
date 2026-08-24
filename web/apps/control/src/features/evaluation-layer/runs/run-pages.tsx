@@ -154,6 +154,19 @@ export function GuardrailTemplatePicker({
                   </span>
                   <span className='mt-1 block text-xs text-muted-foreground'>{template.description}</span>
                   <span className='mt-1.5 block text-[11px] text-muted-foreground'>Guardrail version {template.version} · {template.cases.length} cases</span>
+                  {template.sourcePolicies?.length ? <span className='mt-2 block border-t pt-2'>
+                    <span className='block text-[11px] font-medium text-foreground'>
+                      {template.sourcePolicies.length} pinned Policies · {template.sourcePolicies.reduce((total, policy) => total + policy.testCaseCount, 0)} tests
+                    </span>
+                    <span className='mt-1.5 flex flex-wrap gap-1'>
+                      {template.sourcePolicies.map((policy) => <span key={`${policy.id}:${policy.version}`} className='rounded-full border bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground'>
+                        {policy.name} · v{policy.version}
+                      </span>)}
+                    </span>
+                  </span> : null}
+                  {template.runtimePosture ? <span className='mt-2 block text-[11px] text-muted-foreground'>
+                    {template.runtimePosture.safetyLevel.replaceAll('_', ' ')} · {template.runtimePosture.outputDelivery.replaceAll('_', ' ')}
+                  </span> : null}
                 </span>
               </label>
             );

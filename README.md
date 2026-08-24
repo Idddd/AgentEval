@@ -31,6 +31,34 @@ available at `http://127.0.0.1:8000/docs`.
 Docker Compose starts PostgreSQL, the AgentEval FastAPI service, and the TALI
 Web service. The Web container applies Prisma migrations before it starts.
 
+## Published container images
+
+GitHub Actions builds the API and Web services as separate OCI images and
+publishes them to GitHub Container Registry:
+
+- `ghcr.io/idddd/agenteval-api`
+- `ghcr.io/idddd/agenteval-web`
+
+Every pushed build receives an immutable `sha-<12-character-commit>` tag.
+Branches under `codex/**` also receive a normalized branch tag, `main` receives
+`latest`, and release tags such as `v1.2.3` publish both `1.2.3` and `v1.2.3`.
+Pull requests build both images for validation but do not publish them.
+
+To run the published images instead of building locally, first copy the local
+environment template as usual. If the GHCR packages are private, authenticate
+Docker with a GitHub token that has `read:packages`, then start the image
+override:
+
+```powershell
+Copy-Item .env.example .env
+$env:CR_PAT | docker login ghcr.io -u <github-user> --password-stdin
+docker compose -f docker-compose.yml -f docker-compose.images.yml up -d
+```
+
+Set `AGENTEVAL_IMAGE_TAG` to deploy a branch, release, or immutable SHA tag.
+Forks and alternative registries can override `AGENTEVAL_API_IMAGE` and
+`AGENTEVAL_WEB_IMAGE` with complete image names before running Compose.
+
 ## Local development
 
 Prerequisites: Python 3.12+, Node.js 22+, npm, Docker Desktop, and a project

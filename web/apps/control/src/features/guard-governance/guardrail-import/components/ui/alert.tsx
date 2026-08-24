@@ -42,17 +42,11 @@ function AlertTitle({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-function AlertDescription({
-  className,
-  ...props
-}: React.ComponentProps<"div">) {
+function AlertDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="alert-description"
-      className={cn(
-        "col-start-2 text-sm leading-5 text-muted-foreground",
-        className,
-      )}
+      className={cn("col-start-2 text-sm leading-5 text-muted-foreground", className)}
       {...props}
     />
   );

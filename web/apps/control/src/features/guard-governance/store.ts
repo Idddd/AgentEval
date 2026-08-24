@@ -1,5 +1,6 @@
 import type {
   AuditEvent,
+  CreatePolicyInput,
   CreateAssignmentInput,
   CreateGuardrailInput,
   EffectiveEnforcement,
@@ -9,10 +10,13 @@ import type {
   GuardGovernanceState,
   GuardIntegration,
   Guardrail,
+  GuardrailPolicy,
+  GuardrailPolicyBinding,
   GuardrailCoverageRow,
   GuardrailAssignment,
   GuardrailTestCase,
   GuardrailTestRun,
+  GuardrailVersion,
   RegisterIntegrationInput,
   SetGuardrailCoverageInput,
   TrafficScopeExpression,
@@ -36,9 +40,14 @@ export type GuardGovernanceStore = {
   };
   createGuardrail: (input: CreateGuardrailInput) => Guardrail;
   updateGuardrail: (id: string, input: Partial<CreateGuardrailInput>) => Guardrail;
+  createPolicy: (input: CreatePolicyInput) => GuardrailPolicy;
+  updatePolicy: (id: string, input: Partial<CreatePolicyInput>) => GuardrailPolicy;
+  deletePolicy: (id: string) => void;
   addTestCase: (guardrailId: string, input: Omit<GuardrailTestCase, "id">) => GuardrailTestCase;
   deleteTestCase: (guardrailId: string, testCaseId: string) => void;
   runGuardrailTest: (guardrailId: string) => GuardrailTestRun;
+  validateGuardrail: (guardrailId: string) => GuardrailTestRun;
+  publishGuardrail: (guardrailId: string) => GuardrailVersion;
   createAssignment: (input: CreateAssignmentInput) => string;
   toggleAssignment: (id: string, enabled: boolean) => void;
   setGuardrailCoverage: (guardrailId: string, input: SetGuardrailCoverageInput) => void;
@@ -100,6 +109,48 @@ function starterTestCases(
       actualDecision: "BLOCK",
     },
   ];
+}
+
+function policyTestCases(
+  policies: GuardrailPolicy[],
+  bindings: GuardrailPolicyBinding[],
+  guardrailId: string,
+  updatedAt: string,
+): GuardrailTestCase[] {
+  return bindings.flatMap((binding) => {
+    const policy = policies.find(
+      (item) => item.id === binding.policyId && item.version === binding.policyVersion,
+    ) ?? policies.find((item) => item.id === binding.policyId);
+    if (!policy) throw new Error(`Unknown Policy: ${binding.policyId}`);
+    const enabledRules = new Set(binding.enabledRuleIds);
+    return policy.testCases
+      .filter((testCase) => testCase.coveredRuleIds.some((ruleId) => enabledRules.has(ruleId)))
+      .map((testCase) => {
+        const rule = policy.rules.find((candidate) =>
+          testCase.coveredRuleIds.includes(candidate.id),
+        );
+        return {
+          id: `${guardrailId}:${policy.id}:${testCase.id}`,
+          guardrailId,
+          name: testCase.name,
+          content: testCase.content,
+          phase: testCase.stage === "output" ? "output" : "input",
+          risk: rule?.risk ?? "company_policy",
+          expectedDecision: testCase.expectedDecision,
+          actualDecision: testCase.expectedDecision,
+          origin: "generated",
+          updatedAt,
+          trustedInstruction: "Apply the exact pinned Policy version.",
+          targetSource: testCase.stage === "output" ? "model_output" : "user_input",
+          query: "",
+          groundingSources: [],
+          expectedReasoningResult: null,
+          sourcePolicyId: policy.id,
+          sourcePolicyVersion: binding.policyVersion,
+          sourcePolicyCaseId: testCase.id,
+        } satisfies GuardrailTestCase;
+      });
+  });
 }
 
 function credentialPrefix(value: string) {
@@ -216,6 +267,146 @@ export function createGuardGovernanceStore(
     },
   });
 
+  const validateGuardrailInternal = (guardrailId: string): GuardrailTestRun => {
+    const current = guardrailById(guardrailId);
+    if (current.systemManaged) throw new Error("Built-in Guardrails are verified by the product");
+    if (!current.testCases.length) throw new Error("Add at least one Test Case before running validation");
+    const createdAt = now();
+    const results = current.testCases.map(resultFor);
+    const passed = results.filter((item) => item.passed).length;
+    const status = passed === results.length ? "PASSED" : "FAILED";
+    const runId = id();
+    const run: GuardrailTestRun = {
+      id: runId,
+      guardrailId,
+      guardrailVersion: null,
+      sourceDraftVersion: current.draftVersion,
+      status,
+      metrics: {
+        total: results.length,
+        passed,
+        complianceRate: Math.round((passed / results.length) * 100),
+        falsePositiveRate: 0,
+        falseNegativeRate: status === "PASSED" ? 0 : Math.round(((results.length - passed) / results.length) * 1000) / 10,
+        deepEscalationRate: Math.round((results.filter((item) => item.stageReached === "deep_judge").length / results.length) * 1000) / 10,
+        p95LatencyMs: Math.max(...results.map((item) => item.latencyMs)),
+      },
+      results,
+      createdAt,
+      caseResults: results.map((item) => ({ testCaseId: item.caseId, passed: item.passed, expectedDecision: item.expectedDecision, actualDecision: item.actualDecision })),
+    };
+    const generatedEvidence: EvidenceEvent[] = results.map((result, index) => ({
+      id: `${id()}-${index}`,
+      projectId: state.projectId,
+      guardrailId,
+      testRunId: runId,
+      risk: result.risk,
+      outcome: result.actualDecision,
+      input: result.inputContent,
+      output: result.outputContent,
+      matchedControls: current.controls.filter((control) => control.enabled && control.risk === result.risk).map((control) => `${control.risk}:${control.action}`),
+      stage: result.stageReached,
+      reason: result.reason,
+      durationMs: result.latencyMs,
+      trace: result.trace,
+      createdAt,
+    }));
+    const coverage = current.controls.map((control) => {
+      const matching = results.filter((item) => item.risk === control.risk);
+      const matchingPassed = matching.filter((item) => item.passed).length;
+      return { risk: control.risk, passed: matchingPassed, total: matching.length, score: matching.length ? Math.round((matchingPassed / matching.length) * 100) : null };
+    });
+    state = {
+      ...state,
+      guardrails: state.guardrails.map((item) => item.id === guardrailId ? {
+        ...item,
+        status: status === "PASSED" ? "READY" : "NEEDS_TESTING",
+        latestTestRun: run,
+        testedCurrent: status === "PASSED",
+        publishedCurrent: false,
+        coverage,
+        updatedAt: createdAt,
+      } : item),
+      auditEvents: [
+        audit("guardrail.validation.completed", `${current.name} validation ${status === "PASSED" ? "passed" : "failed"} at ${run.metrics.complianceRate}% compliance.`, { guardrailId, outcome: status === "PASSED" ? "SUCCESS" : "FAILED" }),
+        ...state.auditEvents,
+      ],
+      decisionEvidence: [...generatedEvidence, ...state.decisionEvidence],
+      evidence: [...generatedEvidence, ...state.evidence],
+    };
+    emit();
+    return run;
+  };
+
+  const publishGuardrailInternal = (guardrailId: string): GuardrailVersion => {
+    const current = guardrailById(guardrailId);
+    const validation = current.latestTestRun;
+    if (
+      !current.testedCurrent ||
+      !validation ||
+      validation.status !== "PASSED" ||
+      validation.sourceDraftVersion !== current.draftVersion
+    ) {
+      throw new Error("Run passing validation for the current draft before publishing");
+    }
+    const createdAt = now();
+    const nextVersion = Math.max(
+      0,
+      ...state.versions
+        .filter((item) => item.guardrailId === guardrailId)
+        .map((item) => item.version),
+    ) + 1;
+    const release: GuardrailVersion = {
+      guardrailId,
+      version: nextVersion,
+      sourceDraftVersion: current.draftVersion,
+      compilerVersion: "guard-compiler/mock-main",
+      planChecksum: `sha256:mock-${guardrailId}-${nextVersion}`,
+      createdAt,
+      active: true,
+      validationRunId: validation.id,
+      policyBindings: structuredClone(current.policyBindings),
+      safetyLevel: current.safetyLevel,
+      outputDelivery: current.outputDelivery,
+      policySnapshots: current.policyBindings.map((binding) => {
+        const policy = state.policies.find((item) => item.id === binding.policyId);
+        if (!policy) throw new Error(`Unknown Policy: ${binding.policyId}`);
+        return {
+          policyId: policy.id,
+          policyVersion: binding.policyVersion,
+          name: policy.name,
+          description: policy.description,
+          ruleCount: binding.enabledRuleIds.length,
+          testCaseCount: policy.testCases.length,
+        };
+      }),
+      testCases: structuredClone(current.testCases),
+    };
+    const publishedRun = { ...validation, guardrailVersion: nextVersion };
+    state = {
+      ...state,
+      guardrails: state.guardrails.map((item) => item.id === guardrailId ? {
+        ...item,
+        status: item.assignmentCount ? "PROTECTED" : "READY",
+        activeVersion: nextVersion,
+        latestTestRun: publishedRun,
+        testedCurrent: true,
+        publishedCurrent: true,
+        updatedAt: createdAt,
+      } : item),
+      versions: [
+        ...state.versions.map((item) => item.guardrailId === guardrailId ? { ...item, active: false } : item),
+        release,
+      ],
+      auditEvents: [
+        audit("guardrail.version.created", `Guardrail Version ${nextVersion} compiled and activated.`, { guardrailId }),
+        ...state.auditEvents,
+      ],
+    };
+    emit();
+    return release;
+  };
+
   return {
     getState: () => state,
     subscribe(listener) {
@@ -299,10 +490,116 @@ export function createGuardGovernanceStore(
         reviewNotes: ["Review the generated topics before creating the Guardrail."],
       };
     },
+    createPolicy(input) {
+      const createdAt = now();
+      const policyId = id();
+      const ruleId = `${policyId}-rule`;
+      const created: GuardrailPolicy = {
+        id: policyId,
+        name: required(input.name, "Policy name"),
+        description: required(input.description, "Policy description"),
+        source: "custom",
+        version: "1",
+        owner: required(input.owner, "Policy owner"),
+        tags: [
+          { id: `domain:${input.risk}`, namespace: "domain", value: input.risk, label: input.risk.replaceAll("_", " "), source: "declared" },
+          ...input.stages.map((stage) => ({ id: `rail:${stage}`, namespace: "rail" as const, value: stage, label: stage, source: "derived" as const })),
+        ],
+        stages: structuredClone(input.stages),
+        rules: [{
+          id: ruleId,
+          name: `${required(input.name, "Policy name")} rule`,
+          description: required(input.description, "Policy description"),
+          risk: input.risk,
+          effect: input.effect,
+          stages: structuredClone(input.stages),
+          form: "category",
+          expression: required(input.ruleExpression, "Rule expression"),
+        }],
+        testCases: [{
+          id: `${policyId}-case`,
+          name: `${required(input.name, "Policy name")} acceptance`,
+          description: "Session Policy acceptance case.",
+          stage: input.stages[0] ?? "input",
+          content: required(input.testPrompt, "Test prompt"),
+          expectedDecision: input.expectedDecision,
+          coveredRuleIds: [ruleId],
+          group: "Required acceptance",
+          kind: "rule_acceptance",
+          required: true,
+        }],
+        safetyLevel: input.effect === "reject" ? "strict" : "balanced",
+        outputDelivery: input.stages.includes("output") ? "full_buffered" : "interruptible",
+        updatedAt: createdAt,
+      };
+      state = {
+        ...state,
+        policies: [created, ...state.policies],
+        auditEvents: [audit("policy.created", `${created.name} created in the session Policy Library.`), ...state.auditEvents],
+      };
+      emit();
+      return created;
+    },
+    updatePolicy(policyId, input) {
+      const current = state.policies.find((item) => item.id === policyId);
+      if (!current) throw new Error("Policy not found");
+      if (current.source === "built_in") throw new Error("Built-in Policies are read-only");
+      const nextVersion = String(Number.parseInt(current.version, 10) + 1);
+      const updated: GuardrailPolicy = {
+        ...current,
+        name: input.name === undefined ? current.name : required(input.name, "Policy name"),
+        description: input.description === undefined ? current.description : required(input.description, "Policy description"),
+        owner: input.owner === undefined ? current.owner : required(input.owner, "Policy owner"),
+        version: nextVersion,
+        updatedAt: now(),
+        ...(input.stages === undefined ? {} : { stages: structuredClone(input.stages) }),
+        rules: current.rules.map((rule) => ({
+          ...rule,
+          ...(input.name === undefined ? {} : { name: `${required(input.name, "Policy name")} rule` }),
+          ...(input.description === undefined ? {} : { description: required(input.description, "Policy description") }),
+          ...(input.risk === undefined ? {} : { risk: input.risk }),
+          ...(input.effect === undefined ? {} : { effect: input.effect }),
+          ...(input.stages === undefined ? {} : { stages: structuredClone(input.stages) }),
+          ...(input.ruleExpression === undefined ? {} : { expression: required(input.ruleExpression, "Rule expression") }),
+        })),
+        testCases: current.testCases.map((testCase) => ({
+          ...testCase,
+          ...(input.name === undefined ? {} : { name: `${required(input.name, "Policy name")} acceptance` }),
+          ...(input.stages === undefined ? {} : { stage: input.stages[0] ?? "input" }),
+          ...(input.testPrompt === undefined ? {} : { content: required(input.testPrompt, "Test prompt") }),
+          ...(input.expectedDecision === undefined ? {} : { expectedDecision: input.expectedDecision }),
+        })),
+      };
+      state = {
+        ...state,
+        policies: state.policies.map((item) => item.id === policyId ? updated : item),
+        auditEvents: [audit("policy.updated", `${updated.name} published as Policy v${updated.version}.`), ...state.auditEvents],
+      };
+      emit();
+      return updated;
+    },
+    deletePolicy(policyId) {
+      const current = state.policies.find((item) => item.id === policyId);
+      if (!current) throw new Error("Policy not found");
+      if (current.source === "built_in") throw new Error("Built-in Policies are read-only");
+      const owner = state.guardrails.find((guardrail) =>
+        guardrail.policyBindings.some((binding) => binding.policyId === policyId),
+      );
+      if (owner) throw new Error(`Policy is used by ${owner.name}`);
+      state = {
+        ...state,
+        policies: state.policies.filter((item) => item.id !== policyId),
+        auditEvents: [audit("policy.deleted", `${current.name} removed from the session Policy Library.`), ...state.auditEvents],
+      };
+      emit();
+    },
     createGuardrail(input) {
       const createdAt = now();
       const guardrailId = id();
-      const testCases = starterTestCases(input, guardrailId, createdAt);
+      const policyBindings = structuredClone(input.policyBindings ?? []);
+      const testCases = policyBindings.length
+        ? policyTestCases(state.policies, policyBindings, guardrailId, createdAt)
+        : starterTestCases(input, guardrailId, createdAt);
       const created: Guardrail = {
         id: guardrailId,
         projectId: state.projectId,
@@ -314,6 +611,7 @@ export function createGuardGovernanceStore(
         allowedTopics: structuredClone(input.allowedTopics),
         restrictedTopics: structuredClone(input.restrictedTopics),
         controls: structuredClone(input.controls),
+        policyBindings,
         testCases,
         sourceTemplateId:
           input.sourceTemplateIds?.[0] ?? input.sourceTemplateId ?? null,
@@ -333,6 +631,7 @@ export function createGuardGovernanceStore(
         assignmentCount: 0,
         testCaseCount: testCases.length,
         testedCurrent: false,
+        publishedCurrent: false,
         isDefault: false,
         systemManaged: false,
         localOnly: false,
@@ -351,13 +650,23 @@ export function createGuardGovernanceStore(
       const current = guardrailById(guardrailId);
       if (current.systemManaged) throw new Error("System-managed Guardrails cannot be edited");
       const updatedAt = now();
+      const policyBindings = input.policyBindings === undefined
+        ? current.policyBindings
+        : structuredClone(input.policyBindings);
+      const testCases = input.policyBindings === undefined
+        ? current.testCases
+        : policyTestCases(state.policies, policyBindings, guardrailId, updatedAt);
       const updated: Guardrail = {
         ...current,
         ...structuredClone(input),
         name: input.name === undefined ? current.name : required(input.name, "Name"),
         purpose: input.purpose === undefined ? current.purpose : required(input.purpose, "Purpose"),
+        policyBindings,
+        testCases,
+        testCaseCount: testCases.length,
         draftVersion: current.draftVersion + 1,
         testedCurrent: false,
+        publishedCurrent: false,
         status: "NEEDS_TESTING",
         updatedAt,
       };
@@ -408,88 +717,16 @@ export function createGuardGovernanceStore(
       emit();
     },
     runGuardrailTest(guardrailId) {
-      const current = guardrailById(guardrailId);
-      if (current.systemManaged) throw new Error("Built-in Guardrails are verified by the product");
-      if (!current.testCases.length) throw new Error("Add at least one Test Case before running a test");
-      const createdAt = now();
-      const results = current.testCases.map(resultFor);
-      const passed = results.filter((item) => item.passed).length;
-      const status = passed === results.length ? "PASSED" : "FAILED";
-      const nextVersion = status === "PASSED"
-        ? Math.max(0, ...state.versions.filter((item) => item.guardrailId === guardrailId).map((item) => item.version)) + 1
-        : null;
-      const runId = id();
-      const run: GuardrailTestRun = {
-        id: runId,
-        guardrailId,
-        guardrailVersion: nextVersion,
-        sourceDraftVersion: current.draftVersion,
-        status,
-        metrics: {
-          total: results.length,
-          passed,
-          complianceRate: Math.round((passed / results.length) * 100),
-          falsePositiveRate: 0,
-          falseNegativeRate: status === "PASSED" ? 0 : Math.round(((results.length - passed) / results.length) * 1000) / 10,
-          deepEscalationRate: Math.round((results.filter((item) => item.stageReached === "deep_judge").length / results.length) * 1000) / 10,
-          p95LatencyMs: Math.max(...results.map((item) => item.latencyMs)),
-        },
-        results,
-        createdAt,
-        caseResults: results.map((item) => ({ testCaseId: item.caseId, passed: item.passed, expectedDecision: item.expectedDecision, actualDecision: item.actualDecision })),
-      };
-      const generatedEvidence: EvidenceEvent[] = results.map((result, index) => ({
-        id: `${id()}-${index}`,
-        projectId: state.projectId,
-        guardrailId,
-        testRunId: runId,
-        risk: result.risk,
-        outcome: result.actualDecision,
-        input: result.inputContent,
-        output: result.outputContent,
-        matchedControls: current.controls.filter((control) => control.enabled && control.risk === result.risk).map((control) => `${control.risk}:${control.action}`),
-        stage: result.stageReached,
-        reason: result.reason,
-        durationMs: result.latencyMs,
-        trace: result.trace,
-        createdAt,
-      }));
-      const newVersion = nextVersion === null ? null : {
-        guardrailId,
-        version: nextVersion,
-        sourceDraftVersion: current.draftVersion,
-        compilerVersion: "guard-compiler/mock-2.0",
-        planChecksum: `sha256:mock-${guardrailId}-${nextVersion}`,
-        createdAt,
-        active: true,
-      };
-      const coverage = current.controls.map((control) => {
-        const matching = results.filter((item) => item.risk === control.risk);
-        const matchingPassed = matching.filter((item) => item.passed).length;
-        return { risk: control.risk, passed: matchingPassed, total: matching.length, score: matching.length ? Math.round((matchingPassed / matching.length) * 100) : null };
-      });
-      const testAudit = audit("guardrail.test.completed", `${current.name} tests ${status === "PASSED" ? "passed" : "failed"} at ${run.metrics.complianceRate}% compliance.`, { guardrailId, outcome: status === "PASSED" ? "SUCCESS" : "FAILED" });
-      const versionAudit = newVersion ? audit("guardrail.version.created", `Guardrail Version ${newVersion.version} compiled and activated.`, { guardrailId }) : null;
-      state = {
-        ...state,
-        guardrails: state.guardrails.map((item) => item.id === guardrailId ? {
-          ...item,
-          status: status === "PASSED" ? (item.assignmentCount ? "PROTECTED" : "READY") : "NEEDS_TESTING",
-          latestTestRun: run,
-          activeVersion: nextVersion ?? item.activeVersion,
-          testedCurrent: status === "PASSED",
-          coverage,
-          updatedAt: createdAt,
-        } : item),
-        versions: newVersion
-          ? [...state.versions.map((item) => item.guardrailId === guardrailId ? { ...item, active: false } : item), newVersion]
-          : state.versions,
-        auditEvents: [...(versionAudit ? [versionAudit] : []), testAudit, ...state.auditEvents],
-        decisionEvidence: [...generatedEvidence, ...state.decisionEvidence],
-        evidence: [...generatedEvidence, ...state.evidence],
-      };
-      emit();
-      return run;
+      const run = validateGuardrailInternal(guardrailId);
+      if (run.status !== "PASSED") return run;
+      const release = publishGuardrailInternal(guardrailId);
+      return { ...run, guardrailVersion: release.version };
+    },
+    validateGuardrail(guardrailId) {
+      return validateGuardrailInternal(guardrailId);
+    },
+    publishGuardrail(guardrailId) {
+      return publishGuardrailInternal(guardrailId);
     },
     createAssignment(input) {
       const guardrail = guardrailById(input.guardrailId);

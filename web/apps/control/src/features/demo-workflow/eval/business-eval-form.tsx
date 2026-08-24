@@ -63,6 +63,25 @@ export function BusinessEvalForm({
                     </span>
                     <span className="mt-2 block text-xs leading-5 text-muted-foreground">{template.description}</span>
                     <span className="mt-3 block text-xs font-medium">{template.cases.length} safety scenarios</span>
+                    {template.sourcePolicies?.length ? (
+                      <div className="mt-3 border-t pt-3">
+                        <p className="text-xs font-medium">
+                          {template.sourcePolicies.length} pinned Policies · {template.sourcePolicies.reduce((total, policy) => total + policy.testCaseCount, 0)} Policy tests
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {template.sourcePolicies.map((policy) => (
+                            <Badge key={`${policy.id}:${policy.version}`} variant="secondary" className="font-normal">
+                              {policy.name} · v{policy.version}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {template.runtimePosture ? (
+                      <span className="mt-3 block text-xs text-muted-foreground">
+                        {template.runtimePosture.safetyLevel.replaceAll("_", " ")} · {template.runtimePosture.outputDelivery.replaceAll("_", " ")}
+                      </span>
+                    ) : null}
                   </div>
               ))}
             </div>

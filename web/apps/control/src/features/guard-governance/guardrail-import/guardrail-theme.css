@@ -1,3 +1,75 @@
+@font-face {
+  font-family: "Hanken Grotesk";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/hanken-grotesk/files/hanken-grotesk-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Hanken Grotesk";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("@fontsource/hanken-grotesk/files/hanken-grotesk-latin-500-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Hanken Grotesk";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("@fontsource/hanken-grotesk/files/hanken-grotesk-latin-600-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Noto Sans SC";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Noto Sans SC";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-500-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Noto Sans SC";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-600-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Noto Serif SC";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("@fontsource/noto-serif-sc/files/noto-serif-sc-chinese-simplified-600-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Chivo Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/chivo-mono/files/chivo-mono-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Chivo Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("@fontsource/chivo-mono/files/chivo-mono-latin-500-normal.woff2") format("woff2");
+}
+
 .guardrail-import {
   --background: #f7f8fa;
   --foreground: #182230;
@@ -17,14 +89,17 @@
   --border: #e4e7ec;
   --input: #d0d5dd;
   --ring: #2e90fa;
-  --radius-badge: 0.375rem;
-  --radius-control: 0.5rem;
-  --radius-card: 0.75rem;
-  --radius-large: 1rem;
+  --radius-badge: 0.25rem;
+  --radius-control: 0.375rem;
+  --radius-card: 0.5rem;
+  --radius-large: 0.625rem;
   --shadow-surface:
     0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.08);
   --shadow-overlay: 0 12px 32px rgb(16 24 40 / 0.16);
   color: var(--foreground);
+  font-family: "Hanken Grotesk", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.5;
 }
 
 .dark .guardrail-import {
@@ -57,6 +132,19 @@
 .guardrail-import h2,
 .guardrail-import h3,
 .guardrail-import h4 {
+  font-family: "Hanken Grotesk", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
   font-weight: 600;
   letter-spacing: -0.02em;
+}
+
+.guardrail-import .font-display {
+  font-family: "Noto Serif SC", "Songti SC", STSong, serif;
+}
+
+.guardrail-import code,
+.guardrail-import pre,
+.guardrail-import .font-mono {
+  font-family: "Chivo Mono", "Noto Sans SC", "PingFang SC", "SFMono-Regular", Consolas, monospace;
+  font-variant-ligatures: none;
+  font-variant-numeric: tabular-nums;
 }

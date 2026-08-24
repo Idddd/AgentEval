@@ -106,6 +106,18 @@ export function BusinessEvalPage() {
           sourceGuardrailRevisionId: template.sourceGuardrailRevisionId ?? `${template.id}:R${template.version}`,
           version: template.version,
           name: template.name,
+          ...(template.sourcePolicies ? {
+            sourcePolicies: template.sourcePolicies.map((policy) => ({
+              id: policy.id,
+              version: policy.version,
+              name: policy.name,
+              ruleCount: policy.ruleCount,
+              testCaseCount: policy.testCaseCount,
+            })),
+          } : {}),
+          ...(template.runtimePosture ? {
+            runtimePosture: { ...template.runtimePosture },
+          } : {}),
         })),
         approvalReason: "Evaluation evidence is ready for Admin review.",
       });

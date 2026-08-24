@@ -348,7 +348,7 @@ export function EvaluationOverviewPage() {
             <th>Trace</th>
             <th>Agent</th>
             <th>Case</th>
-            <th className="w-[300px]">Evaluator results</th>
+            <th className="w-[300px]">Score</th>
             <th>Status</th>
             <th>Observations</th>
             <th>Latency</th>

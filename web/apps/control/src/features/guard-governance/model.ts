@@ -26,6 +26,7 @@ export type GuardrailOutputDelivery =
   | "window_buffered"
   | "windowed"
   | "full_buffered";
+export type GuardrailRail = "input" | "output" | "retrieval" | "dialog" | "execution";
 export type EvidenceOutcome = GuardrailDecision | "ERROR" | "SUCCESS" | "FAILED";
 export type IntegrationProtocol = "litellm" | "http" | "a2a";
 export type IntegrationEnvironment = "production" | "staging" | "development" | "test";
@@ -124,6 +125,74 @@ export type GuardrailTestCase = {
   query: string;
   groundingSources: string[];
   expectedReasoningResult: AutomatedReasoningResult | null;
+  sourcePolicyId?: string | null;
+  sourcePolicyVersion?: string | null;
+  sourcePolicyCaseId?: string | null;
+};
+
+export type GuardrailPolicyTag = {
+  id: string;
+  namespace:
+    | "capability"
+    | "collection"
+    | "domain"
+    | "framework"
+    | "implementation"
+    | "jurisdiction"
+    | "rail";
+  value: string;
+  label: string;
+  source: "declared" | "derived";
+};
+
+export type GuardrailPolicyRule = {
+  id: string;
+  name: string;
+  description: string;
+  risk: GuardrailRisk;
+  effect: GuardrailAction;
+  stages: GuardrailRail[];
+  form: "regex" | "keyword" | "category" | "code_block" | "colang_flow";
+  expression: string;
+};
+
+export type GuardrailPolicyTestCase = {
+  id: string;
+  name: string;
+  description: string;
+  stage: GuardrailRail;
+  content: string;
+  expectedDecision: GuardrailDecision;
+  coveredRuleIds: string[];
+  group: string;
+  kind: "rule_acceptance" | "scenario";
+  required: boolean;
+};
+
+export type GuardrailPolicy = {
+  id: string;
+  name: string;
+  description: string;
+  source: "built_in" | "custom";
+  version: string;
+  owner: string;
+  tags: GuardrailPolicyTag[];
+  stages: GuardrailRail[];
+  rules: GuardrailPolicyRule[];
+  testCases: GuardrailPolicyTestCase[];
+  safetyLevel: GuardrailSafetyLevel;
+  outputDelivery: GuardrailOutputDelivery;
+  updatedAt: string;
+};
+
+export type GuardrailPolicyBinding = {
+  policyId: string;
+  policyVersion: string;
+  action: GuardrailAction | null;
+  parameterValues: Record<string, string>;
+  enabledRuleIds: string[];
+  ruleActions: Record<string, GuardrailAction>;
+  enabledRails: GuardrailRail[];
 };
 
 export type EvaluationCaseResult = {
@@ -195,6 +264,7 @@ export type Guardrail = {
   allowedTopics: string[];
   restrictedTopics: string[];
   controls: GuardrailControl[];
+  policyBindings: GuardrailPolicyBinding[];
   testCases: GuardrailTestCase[];
   latestTestRun?: GuardrailTestRun;
   sourceTemplateId: string | null;
@@ -206,6 +276,7 @@ export type Guardrail = {
   assignmentCount: number;
   testCaseCount: number;
   testedCurrent: boolean;
+  publishedCurrent: boolean;
   isDefault: boolean;
   systemManaged: boolean;
   localOnly: boolean;
@@ -221,6 +292,19 @@ export type GuardrailVersion = {
   planChecksum: string;
   createdAt: string;
   active: boolean;
+  validationRunId?: string | null;
+  policyBindings: GuardrailPolicyBinding[];
+  safetyLevel: GuardrailSafetyLevel;
+  outputDelivery: GuardrailOutputDelivery;
+  policySnapshots: Array<{
+    policyId: string;
+    policyVersion: string;
+    name: string;
+    description: string;
+    ruleCount: number;
+    testCaseCount: number;
+  }>;
+  testCases: GuardrailTestCase[];
 };
 
 export type GuardrailTemplateParameter = {
@@ -431,6 +515,7 @@ export type GuardGovernanceState = {
   controlDefinitions: ControlDefinition[];
   trafficScopeFields: TrafficScopeFieldDefinition[];
   guardrails: Guardrail[];
+  policies: GuardrailPolicy[];
   resources: GovernedResource[];
   coverageRequirements: GuardrailCoverageRequirement[];
   guardrailApplications: GuardrailApplication[];
@@ -466,10 +551,23 @@ export type CreateGuardrailInput = Pick<
   Guardrail,
   "name" | "purpose" | "safetyLevel" | "outputDelivery" | "allowedTopics" | "restrictedTopics" | "controls"
 > & {
+  policyBindings?: GuardrailPolicyBinding[];
   sourceTemplateId?: string | null;
   sourceTemplateIds?: string[];
   templateParameters?: Record<string, string>;
   templateParametersByTemplate?: Record<string, Record<string, string>>;
+};
+
+export type CreatePolicyInput = {
+  name: string;
+  description: string;
+  owner: string;
+  risk: GuardrailRisk;
+  effect: GuardrailAction;
+  stages: GuardrailRail[];
+  ruleExpression: string;
+  testPrompt: string;
+  expectedDecision: GuardrailDecision;
 };
 
 export type CreateAssignmentInput = Pick<

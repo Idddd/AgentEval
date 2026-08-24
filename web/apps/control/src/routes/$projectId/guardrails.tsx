@@ -1,6 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { GuardrailsPage } from "@/features/guardrails/guardrails-page";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/$projectId/guardrails")({
-  component: GuardrailsPage,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/$projectId/governance/guardrails",
+      params: { projectId: params.projectId },
+      replace: true,
+    });
+  },
 });

@@ -104,6 +104,17 @@ export interface DemoGuardrailTemplateSnapshot {
   sourceGuardrailRevisionId: string;
   version: string;
   name: string;
+  sourcePolicies?: Array<{
+    id: string;
+    version: string;
+    name: string;
+    ruleCount: number;
+    testCaseCount: number;
+  }>;
+  runtimePosture?: {
+    safetyLevel: string;
+    outputDelivery: string;
+  };
 }
 
 export interface DemoBusinessEvaluationInput {

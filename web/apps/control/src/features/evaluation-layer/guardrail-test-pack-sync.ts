@@ -1,6 +1,7 @@
 import type {
   Guardrail,
   GuardrailCoverageRequirement,
+  GuardrailVersion,
 } from "@/features/guard-governance/model";
 import type {
   EvaluationLayerGuardrailTemplate,
@@ -16,7 +17,7 @@ const ALL_TARGET_KINDS: EvaluationLayerTargetKind[] = [
 ];
 
 export function guardrailTemplateRevisionId(guardrail: Guardrail) {
-  return `${guardrail.id}:R${guardrail.draftVersion}`;
+  return `${guardrail.id}:R${guardrail.activeVersion ?? guardrail.draftVersion}`;
 }
 
 export function guardrailTemplateId(guardrail: Guardrail) {
@@ -26,15 +27,29 @@ export function guardrailTemplateId(guardrail: Guardrail) {
 export function guardrailsToEvaluationTestPacks(
   guardrails: Guardrail[],
   requirements: GuardrailCoverageRequirement[] = [],
+  versions: GuardrailVersion[] = [],
 ): EvaluationLayerGuardrailTemplate[] {
   return guardrails
     .filter(
       (guardrail) =>
-        guardrail.status !== "DISABLED" && guardrail.testCases.length > 0,
+        guardrail.status !== "DISABLED" &&
+        guardrail.activeVersion !== null &&
+        versions.some(
+          (version) =>
+            version.guardrailId === guardrail.id &&
+            version.version === guardrail.activeVersion &&
+            version.active,
+        ),
     )
     .map((guardrail) => {
-      const revisionId = guardrailTemplateRevisionId(guardrail);
-      const templateId = guardrailTemplateId(guardrail);
+      const release = versions.find(
+        (version) =>
+          version.guardrailId === guardrail.id &&
+          version.version === guardrail.activeVersion &&
+          version.active,
+      )!;
+      const revisionId = `${guardrail.id}:R${release.version}`;
+      const templateId = `guardrail-template:${revisionId}`;
       const requiredFor: EvaluationLayerTargetKind[] = requirements
         .filter(
           (requirement) =>
@@ -47,7 +62,19 @@ export function guardrailsToEvaluationTestPacks(
         sourceGuardrailRevisionId: revisionId,
         name: guardrail.name,
         description: guardrail.purpose,
-        version: String(guardrail.draftVersion),
+        version: String(release.version),
+        sourcePolicies: release.policySnapshots.map((policy) => ({
+          id: policy.policyId,
+          version: policy.policyVersion,
+          name: policy.name,
+          description: policy.description,
+          ruleCount: policy.ruleCount,
+          testCaseCount: policy.testCaseCount,
+        })),
+        runtimePosture: {
+          safetyLevel: release.safetyLevel,
+          outputDelivery: release.outputDelivery,
+        },
         applicableTargetKinds: [...ALL_TARGET_KINDS],
         defaultFor:
           guardrail.isDefault || guardrail.status === "PROTECTED"
@@ -56,7 +83,7 @@ export function guardrailsToEvaluationTestPacks(
         required: guardrail.isDefault,
         requiredFor: [...new Set(requiredFor)],
         available: true,
-        cases: guardrail.testCases.map((testCase) => ({
+        cases: release.testCases.map((testCase) => ({
           id: `${templateId}:${testCase.id}`,
           input: {
             prompt: testCase.content,
@@ -80,6 +107,8 @@ export function guardrailsToEvaluationTestPacks(
             sourceGuardrailId: guardrail.id,
             sourceGuardrailRevisionId: revisionId,
             sourceTestCaseId: testCase.id,
+            sourcePolicyId: testCase.sourcePolicyId,
+            sourcePolicyVersion: testCase.sourcePolicyVersion,
             actualDecision: testCase.actualDecision,
           },
         })),

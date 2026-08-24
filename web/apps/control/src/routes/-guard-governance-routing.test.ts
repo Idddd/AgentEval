@@ -19,6 +19,10 @@ describe("Guard Governance routes", () => {
       "/$projectId/governance/guardrails/relay-preview",
     ],
     ["/individual/governance/assignments", "/$projectId/governance/assignments"],
+    [
+      "/individual/governance/policy-library",
+      "/$projectId/governance/policy-library",
+    ],
     ["/individual/governance/enforcements", "/$projectId/governance/enforcements"],
     ["/individual/governance/integrations", "/$projectId/governance/integrations"],
     ["/individual/governance/evidence", "/$projectId/governance/evidence"],
@@ -36,7 +40,7 @@ describe("Guard Governance routes", () => {
     ).toContain("/$projectId/governance/guardrails/$guardrailId");
   });
 
-  it("preserves the existing Security Guardrails route", () => {
+  it("keeps the legacy Guardrails route available for canonical redirect", () => {
     expect(matchRouteIds("/individual/guardrails")).toContain(
       "/$projectId/guardrails",
     );
