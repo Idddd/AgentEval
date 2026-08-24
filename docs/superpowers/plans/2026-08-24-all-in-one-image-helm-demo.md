@@ -36,57 +36,67 @@
 
 - [ ] **Step 1: Write the failing contract**
 
+    import json
+    import os
+    import subprocess
     from pathlib import Path
     import yaml
 
     ROOT = Path(__file__).resolve().parents[1]
 
-    def read(path: str) -> str:
-        return (ROOT / path).read_text(encoding="utf-8")
+    def run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            args,
+            cwd=ROOT,
+            env={**os.environ, **(env or {})},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
 
-    def load_yaml(path: str) -> dict:
-        return yaml.safe_load(read(path))
-
-    def test_compose_is_one_service() -> None:
-        compose = load_yaml("docker-compose.yml")
+    def test_compose_renders_one_service() -> None:
+        result = run("docker", "compose", "config", "--format", "json")
+        assert result.returncode == 0, result.stderr
+        compose = json.loads(result.stdout)
         assert list(compose["services"]) == ["agenteval"]
         service = compose["services"]["agenteval"]
-        assert service["ports"] == ["127.0.0.1:18082:8080"]
-        assert "agenteval-data:/var/lib/agenteval" in service["volumes"]
+        assert service["ports"][0]["published"] == "18082"
+        assert service["ports"][0]["target"] == 8080
         assert list(compose["volumes"]) == ["agenteval-data"]
 
-    def test_combined_dockerfile_contract() -> None:
-        text = read("Dockerfile")
-        assert "FROM python:3.12-slim AS api" in text
-        assert "FROM node:22-bookworm-slim AS web-dependencies" in text
-        assert "FROM postgres:17-bookworm AS runtime" in text
-        assert "/opt/agenteval/runtime/entrypoint.sh" in text
-        assert "/opt/agenteval/helm/agenteval" in text
-        assert "/opt/agenteval/helm/packages" in text
-
-    def test_chart_contract() -> None:
-        chart = load_yaml("deploy/helm/agenteval/Chart.yaml")
-        values = load_yaml("deploy/helm/agenteval/values.yaml")
-        deployment = read("deploy/helm/agenteval/templates/deployment.yaml")
-        assert chart["name"] == "agenteval"
-        assert values["replicaCount"] == 1
-        assert values["image"]["repository"] == "ghcr.io/idddd/agenteval"
-        assert "type: Recreate" in deployment
-        assert "replicaCount must be 1" in deployment
+    def test_chart_renders_one_recreate_deployment() -> None:
+        result = run(
+            "docker", "run", "--rm",
+            "-v", f"{ROOT.as_posix()}:/workspace",
+            "alpine/helm:3.18.4", "template", "agenteval",
+            "/workspace/deploy/helm/agenteval",
+        )
+        assert result.returncode == 0, result.stderr
+        resources = [item for item in yaml.safe_load_all(result.stdout) if item]
+        deployments = [item for item in resources if item["kind"] == "Deployment"]
+        assert len(deployments) == 1
+        assert deployments[0]["spec"]["replicas"] == 1
+        assert deployments[0]["spec"]["strategy"]["type"] == "Recreate"
+        assert len(deployments[0]["spec"]["template"]["spec"]["containers"]) == 1
 
     def test_workflow_contract() -> None:
-        text = read(".github/workflows/container-images.yml")
-        assert "agenteval-api" not in text
-        assert "agenteval-web" not in text
-        assert "helm push" in text
-        assert "/charts" in text
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows/container-images.yml").read_text(encoding="utf-8")
+        )
+        jobs = workflow["jobs"]
+        assert list(jobs) == ["build"]
+        serialized = yaml.safe_dump(jobs)
+        assert serialized.count("docker/build-push-action") == 1
+        assert "helm push" in serialized
+        assert "agenteval-api" not in serialized
+        assert "agenteval-web" not in serialized
 
 - [ ] **Step 2: Verify the red state**
 
     .\.venv\Scripts\python.exe -m pytest tests\test_all_in_one_deployment.py -q
 
-Expected: failures identify the current multi-service topology, missing AgentEval
-Chart, and separate image publication.
+Expected: Compose renders three services, Helm cannot load the missing AgentEval
+Chart, and the workflow has not yet defined the single-image plus OCI behavior.
 
 - [ ] **Step 3: Commit the red test**
 
