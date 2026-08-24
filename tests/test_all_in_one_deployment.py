@@ -80,6 +80,24 @@ def test_runtime_shell_scripts_are_checked_out_with_lf() -> None:
     ]
 
 
+def test_python_and_postgres_stages_share_the_bookworm_runtime() -> None:
+    """Catch glibc drift that makes Python fail in the final Postgres image."""
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "FROM python:3.12-slim-bookworm AS api" in dockerfile
+    assert "FROM postgres:17-bookworm AS runtime" in dockerfile
+
+
+def test_runtime_recreates_node_cli_symlinks() -> None:
+    """Catch Docker COPY dereferencing npm links into broken standalone files."""
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "COPY --from=web-dependencies /usr/local/bin/npm" not in dockerfile
+    assert "COPY --from=web-dependencies /usr/local/bin/npx" not in dockerfile
+    assert "ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm" in dockerfile
+    assert "ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx" in dockerfile
+
+
 def test_chart_renders_one_recreate_deployment() -> None:
     """Catch a Chart that splits the Demo across Pods or scales its database."""
     result = run(

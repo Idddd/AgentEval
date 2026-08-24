@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS api
+FROM python:3.12-slim-bookworm AS api
 
 WORKDIR /build/api
 
@@ -82,9 +82,10 @@ RUN apt-get update \
 
 COPY --from=api /usr/local /usr/local
 COPY --from=web-dependencies /usr/local/bin/node /usr/local/bin/node
-COPY --from=web-dependencies /usr/local/bin/npm /usr/local/bin/npm
-COPY --from=web-dependencies /usr/local/bin/npx /usr/local/bin/npx
 COPY --from=web-dependencies /usr/local/lib/node_modules /usr/local/lib/node_modules
+
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
 COPY --from=web-production-dependencies /build/web/node_modules ./node_modules
 COPY web/package.json web/package-lock.json ./
