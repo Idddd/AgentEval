@@ -1,8 +1,4 @@
 services:
-  api:
-    image: "${AGENTEVAL_API_IMAGE:-ghcr.io/idddd/agenteval-api}:${AGENTEVAL_IMAGE_TAG:-latest}"
-    pull_policy: always
-
-  web:
-    image: "${AGENTEVAL_WEB_IMAGE:-ghcr.io/idddd/agenteval-web}:${AGENTEVAL_IMAGE_TAG:-latest}"
+  tali-ui-demo:
+    image: "${TALI_UI_DEMO_IMAGE:-ghcr.io/idddd/tali-ui-demo}:${TALI_UI_DEMO_IMAGE_TAG:-latest}"
     pull_policy: always

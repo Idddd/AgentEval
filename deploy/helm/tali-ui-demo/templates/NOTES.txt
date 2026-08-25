@@ -1,0 +1,4 @@
+The TALI UI Demo is available through service {{ include "tali-ui-demo.fullname" . }}.
+
+This release contains only a static frontend with browser-local Demo fixtures.
+It does not deploy an API, database, Secret, or persistent volume.

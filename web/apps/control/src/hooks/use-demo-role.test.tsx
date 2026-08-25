@@ -32,17 +32,19 @@ describe("demo personas", () => {
     expect(projectRoleForDemoPersona("end-user")).toBe("frt");
   });
 
-  it("persists the selected persona while exposing its mapped project role", async () => {
+  it("keeps the selected persona in memory and resets to Admin on a fresh mount", async () => {
+    window.localStorage.setItem("tasklattice.demo-role", "end-user");
     render(
       <DemoRoleProvider>
         <PersonaProbe />
       </DemoRoleProvider>,
     );
 
+    expect(screen.getByRole("button").textContent).toBe("admin:admin");
     await userEvent.click(screen.getByRole("button"));
     expect(screen.getByRole("button").textContent).toBe("agent-wizard:member");
     expect(window.localStorage.getItem("tasklattice.demo-role")).toBe(
-      "agent-wizard",
+      "end-user",
     );
   });
 });

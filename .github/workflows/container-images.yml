@@ -1,4 +1,4 @@
-name: Container images
+name: TALI UI Demo image and Helm chart
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: container-images-${{ github.ref }}
+  group: tali-ui-demo-artifacts-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -20,20 +20,8 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.component }} image
+    name: Build TALI UI Demo image and Chart
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - component: api
-            image: agenteval-api
-            context: .
-            dockerfile: ./Dockerfile
-          - component: web
-            image: agenteval-web
-            context: ./web
-            dockerfile: ./web/Dockerfile.control
 
     steps:
       - name: Check out source
@@ -41,6 +29,11 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.2.0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4.3.1
+        with:
+          version: v3.18.4
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -50,58 +43,112 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve image name and tags
-        id: image
+      - name: Resolve image and Chart metadata
+        id: artifact
         shell: bash
         env:
-          COMPONENT_IMAGE: ${{ matrix.image }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
-          image="${registry}/${COMPONENT_IMAGE}"
+
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           short_sha="${GITHUB_SHA::12}"
-          tags=("${image}:sha-${short_sha}")
+          immutable_tag="sha-${short_sha}"
+          chart_version="0.2.0-dev.${GITHUB_RUN_NUMBER}"
+          tags=("${image}:${immutable_tag}")
 
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            tags+=("${image}:pr-${{ github.event.pull_request.number }}")
+            tags+=("${image}:pr-${PR_NUMBER}")
           elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             if [[ ! "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-              echo "Release tag '${GITHUB_REF_NAME}' must use the form vMAJOR.MINOR.PATCH." >&2
+              echo "Release tag '${GITHUB_REF_NAME}' must use vMAJOR.MINOR.PATCH." >&2
               exit 1
             fi
-            version="${GITHUB_REF_NAME#v}"
-            tags+=("${image}:${version}" "${image}:${GITHUB_REF_NAME}")
+            chart_version="${GITHUB_REF_NAME#v}"
+            tags+=("${image}:${chart_version}" "${image}:${GITHUB_REF_NAME}")
           else
             branch="${GITHUB_REF_NAME,,}"
             branch="${branch//\//-}"
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+              chart_version="0.2.0-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
 
           {
-            echo "name=${image}"
+            echo "image=${image}"
+            echo "immutable_tag=${immutable_tag}"
+            echo "chart_version=${chart_version}"
             echo "tags<<EOF"
             printf '%s\n' "${tags[@]}"
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Build and optionally publish image
+      - name: Build and optionally publish the UI-only image
         uses: docker/build-push-action@v7.3.0
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
+          context: .
+          file: ./Dockerfile
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.image.outputs.tags }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ steps.artifact.outputs.tags }}
+          build-args: |
+            TALI_UI_DEMO_CHART_VERSION=${{ steps.artifact.outputs.chart_version }}
+            TALI_UI_DEMO_IMAGE_REPOSITORY=${{ steps.artifact.outputs.image }}
+            TALI_UI_DEMO_IMAGE_TAG=${{ steps.artifact.outputs.immutable_tag }}
           labels: |
-            org.opencontainers.image.title=AgentEval ${{ matrix.component }}
-            org.opencontainers.image.description=AgentEval ${{ matrix.component }} service
+            org.opencontainers.image.title=TALI UI Demo
+            org.opencontainers.image.description=Static three-role TALI workflow Demo with embedded Helm Chart
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha,scope=agenteval-${{ matrix.component }}
-          cache-to: type=gha,mode=max,scope=agenteval-${{ matrix.component }}
-          provenance: mode=max
-          sbom: true
+          cache-from: type=gha,scope=tali-ui-demo
+          cache-to: type=gha,mode=max,scope=tali-ui-demo
+          provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
+
+      - name: Pull the published immutable image
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          IMAGE: ${{ steps.artifact.outputs.image }}
+          IMAGE_TAG: ${{ steps.artifact.outputs.immutable_tag }}
+        run: docker pull "${IMAGE}:${IMAGE_TAG}"
+
+      - name: Extract and validate the embedded Chart
+        id: chart
+        shell: bash
+        env:
+          IMAGE: ${{ steps.artifact.outputs.image }}
+          IMAGE_TAG: ${{ steps.artifact.outputs.immutable_tag }}
+        run: |
+          set -euo pipefail
+          rm -rf .artifacts/helm
+          mkdir -p .artifacts/helm
+
+          container_id="$(docker create "${IMAGE}:${IMAGE_TAG}")"
+          trap 'docker rm -f "${container_id}" >/dev/null 2>&1 || true' EXIT
+          docker cp "${container_id}:/opt/tali/helm/tali-UI-demo.tgz" .artifacts/helm/tali-UI-demo.tgz
+
+          helm lint .artifacts/helm/tali-UI-demo.tgz
+          helm template tali-ui-demo .artifacts/helm/tali-UI-demo.tgz --namespace tali-ui-demo >/dev/null
+          echo "package=.artifacts/helm/tali-UI-demo.tgz" >> "${GITHUB_OUTPUT}"
+
+      - name: Log Helm in to GitHub Container Registry
+        if: github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "${GH_TOKEN}" | helm registry login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Publish the embedded Helm Chart
+        if: github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag')
+        shell: bash
+        env:
+          CHART_PACKAGE: ${{ steps.chart.outputs.package }}
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          helm push "${CHART_PACKAGE}" "oci://ghcr.io/${owner}/charts"

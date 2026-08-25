@@ -1,0 +1,10 @@
+apiVersion: v2
+name: agenteval
+description: Self-contained AgentEval Demo with embedded PostgreSQL
+type: application
+version: 0.1.0-dev
+appVersion: dev
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/Idddd/AgentEval
+sources:
+  - https://github.com/Idddd/AgentEval

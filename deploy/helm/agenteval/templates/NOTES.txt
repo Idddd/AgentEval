@@ -1,0 +1,13 @@
+AgentEval Demo is installed as one Pod with embedded PostgreSQL.
+
+{{- if eq .Values.service.type "LoadBalancer" }}
+Wait for an external address, then open port {{ .Values.service.port }}.
+{{- else }}
+Run:
+  kubectl port-forward service/{{ include "agenteval.fullname" . }} 18082:{{ .Values.service.port }}
+
+Then open http://127.0.0.1:18082 and sign in with admin / admin.
+{{- end }}
+
+The persistent volume stores both PostgreSQL and evaluation data. Deleting the
+claim permanently removes all Demo data.

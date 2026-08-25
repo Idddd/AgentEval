@@ -1,63 +1,100 @@
 # AgentEval
 
 AgentEval is a local workbench for evaluating Agents against versioned test
-cases. The TALI control console is the project's only Web UI; the Python code
-provides the evaluation API, CLI, adapters, and SQLite persistence.
+cases. Its deployable Demo artifact is the TALI control console running as a
+static, browser-mocked application. The Python code remains available for
+local development and CLI workflows, but is not included in the UI Demo image.
 
 ## Runtime architecture
 
-| Service | Default address | Storage | Purpose |
+| Runtime | Default address | Storage | Purpose |
 | --- | --- | --- | --- |
-| TALI Web | `http://127.0.0.1:18082` | PostgreSQL | Authentication, projects, and the control-console shell |
-| AgentEval API | `http://127.0.0.1:8000` | `data/web-workbench.db` | Targets, datasets, runs, reports, and demo fixtures |
+| TALI UI Demo container | `http://127.0.0.1:18082` | Browser memory | Three-role Build, Guardrail, Eval, approval, Agent Garden, Instance, and Monitor Demo |
 | AgentEval CLI | local process | `data/workbench.db` | Scripted evaluation and report workflows |
 
-The TALI server reverse-proxies `/api/v1/evaluations/*` to the Python API.
-PostgreSQL and the AgentEval SQLite databases have separate responsibilities
-and should not be pointed at the same file or volume.
+The container runs only unprivileged Nginx and compiled HTML, CSS, JavaScript,
+fonts, and images. It has no Node, Python, PostgreSQL, Prisma, API, source tree,
+or `node_modules`. `admin` / `admin` is validated in the browser. A refresh
+keeps the login session but resets mutable workflow data and the selected role
+to the initial Demo fixtures.
 
 ## Quick start with Docker
 
-Prerequisites: Docker Desktop.
+Prerequisite: Docker Desktop.
 
 ```powershell
-Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Open `http://127.0.0.1:18082` and sign in with `admin` / `admin`. The API is
-available at `http://127.0.0.1:8000/docs`.
-
-Docker Compose starts PostgreSQL, the AgentEval FastAPI service, and the TALI
-Web service. The Web container applies Prisma migrations before it starts.
+Open `http://127.0.0.1:18082` and sign in with `admin` / `admin`. Docker Compose
+starts one stateless UI container; no auxiliary service or volume is required.
 
 ## Published container images
 
-GitHub Actions builds the API and Web services as separate OCI images and
-publishes them to GitHub Container Registry:
+GitHub Actions builds and publishes one UI-only OCI image:
 
-- `ghcr.io/idddd/agenteval-api`
-- `ghcr.io/idddd/agenteval-web`
+- `ghcr.io/idddd/tali-ui-demo`
 
 Every pushed build receives an immutable `sha-<12-character-commit>` tag.
 Branches under `codex/**` also receive a normalized branch tag, `main` receives
 `latest`, and release tags such as `v1.2.3` publish both `1.2.3` and `v1.2.3`.
-Pull requests build both images for validation but do not publish them.
+Pull requests build the image for validation but do not publish it.
 
-To run the published images instead of building locally, first copy the local
-environment template as usual. If the GHCR packages are private, authenticate
-Docker with a GitHub token that has `read:packages`, then start the image
-override:
+The same image contains the release's packaged Helm Chart at:
+
+- `/opt/tali/helm/tali-UI-demo.tgz`
+
+For `main` and SemVer release tags, CI extracts that exact package from the
+published image and pushes it to `oci://ghcr.io/idddd/charts/tali-ui-demo`. This
+ensures the OCI Chart and the Chart embedded in the image cannot diverge.
+
+The Chart file inside the image is inert: Docker and Kubernetes do not install
+it when the container starts. It is included so the image is a self-contained
+Demo delivery bundle. To inspect or hand it to another system, copy it out:
 
 ```powershell
-Copy-Item .env.example .env
+$container = docker create ghcr.io/idddd/tali-ui-demo:latest
+docker cp "${container}:/opt/tali/helm/tali-UI-demo.tgz" .\tali-UI-demo.tgz
+docker rm $container
+```
+
+To run the published image instead of building locally, authenticate Docker if
+the GHCR package is private, then start the image override:
+
+```powershell
 $env:CR_PAT | docker login ghcr.io -u <github-user> --password-stdin
 docker compose -f docker-compose.yml -f docker-compose.images.yml up -d
 ```
 
-Set `AGENTEVAL_IMAGE_TAG` to deploy a branch, release, or immutable SHA tag.
-Forks and alternative registries can override `AGENTEVAL_API_IMAGE` and
-`AGENTEVAL_WEB_IMAGE` with complete image names before running Compose.
+Set `TALI_UI_DEMO_IMAGE_TAG` to deploy a branch, release, or immutable SHA tag.
+Forks and alternative registries can override `TALI_UI_DEMO_IMAGE` with the
+complete combined image name before running Compose.
+
+## Helm Demo deployment
+
+Install a released OCI Chart with a matching SemVer release:
+
+```powershell
+$version = "0.2.0"
+helm upgrade --install tali-ui-demo `
+  oci://ghcr.io/idddd/charts/tali-ui-demo `
+  --version $version `
+  --namespace tali-ui-demo `
+  --create-namespace
+```
+
+The Chart creates one Deployment and one Service. It creates no API, database,
+Secret, or persistent volume. Replicas may be increased because product state
+lives in each user's browser. For a local cluster, open the Demo with:
+
+```powershell
+kubectl port-forward --namespace tali-ui-demo service/tali-ui-demo 18082:80
+```
+
+During packaging, a disposable Node stage compiles the SPA, a disposable Helm
+stage validates and packages the Chart, and the final stage copies only the
+browser assets and Chart into a small Nginx image. The Node and Helm build tools
+do not enter the final image.
 
 ## Local development
 
@@ -94,10 +131,9 @@ in one continuous workspace with a single context-aware primary action. An
 Admin approves all-passing evaluations or rejects evaluations with findings;
 rejected Target revisions are returned to a Developer for changes and rerun.
 
-This demo uses an in-memory store and deterministic simulation. Edits reset
-when the page reloads. The API-backed evaluation store remains available for
-the ongoing persistence integration, including the real SQLite API and demo
-fallback behavior.
+This Demo uses in-memory stores and deterministic simulation. Edits reset when
+the page reloads, while the browser login remains active. The UI-only build
+constructs the local evaluation store directly and never probes a backend.
 
 ## CLI
 
@@ -148,5 +184,5 @@ docker compose down
 docker compose -f langfuse\docker-compose.yml down
 ```
 
-Volumes are retained across `docker compose down`. Do not add `-v` unless you
-intend to delete the local PostgreSQL and AgentEval data.
+The UI Demo Compose service has no volume. The optional Langfuse stack manages
+its own data separately.

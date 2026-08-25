@@ -59,6 +59,7 @@ import type {
 } from "@tasklattice/contracts";
 import { clearAuthToken, getAuthToken } from "./auth-token";
 import { projectIdFromPathname } from "./project-storage";
+import { isUiDemoBuild } from "@/demo/ui-demo-runtime";
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -77,6 +78,9 @@ export function projectScopedPath(path: string, projectId: string | null): strin
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (isUiDemoBuild()) {
+    throw new ApiError("This feature is not available in the UI Demo.", 501);
+  }
   const token = getAuthToken();
   const projectId =
     typeof window === "undefined"
@@ -109,6 +113,9 @@ async function requestBinary(
   path: string,
   fallbackFileName: string,
 ): Promise<{ blob: Blob; fileName: string }> {
+  if (isUiDemoBuild()) {
+    throw new ApiError("This feature is not available in the UI Demo.", 501);
+  }
   const token = getAuthToken();
   const projectId =
     typeof window === "undefined"

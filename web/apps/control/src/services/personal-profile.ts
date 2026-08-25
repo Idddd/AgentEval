@@ -1,4 +1,5 @@
 import { getAuthToken } from "@/lib/auth-token";
+import { isUiDemoBuild, uiDemoRuntime } from "@/demo/ui-demo-runtime";
 
 export interface PersonalProfile {
   city: string;
@@ -19,6 +20,9 @@ async function profileRequest<T = PersonalProfile>(
   path = "/api/v1/profile",
   init?: RequestInit,
 ): Promise<T> {
+  if (isUiDemoBuild()) {
+    throw new Error("This profile operation is not available in the UI Demo.");
+  }
   const token = getAuthToken();
   const response = await fetch(path, {
     ...init,
@@ -42,6 +46,7 @@ async function profileRequest<T = PersonalProfile>(
 }
 
 export function getPersonalProfile(): Promise<PersonalProfile> {
+  if (isUiDemoBuild()) return uiDemoRuntime.getProfile();
   return profileRequest();
 }
 
