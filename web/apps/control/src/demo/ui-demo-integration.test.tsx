@@ -44,6 +44,27 @@ describe("UI Demo service integration", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("restores the complete Agent Garden catalog without fetch", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("network disabled"));
+
+    const garden = await api.getAgentGarden();
+
+    expect(garden.agents).toHaveLength(19);
+    expect(garden.agents.map((agent) => agent.name)).toEqual(
+      expect.arrayContaining([
+        "OpenClaw Generalist",
+        "Hermes Deep Researcher",
+        "Customer Service",
+        "Global KYC Agent",
+      ]),
+    );
+    expect(garden.agents.filter((agent) => agent.status === "READY")).toHaveLength(18);
+    await expect(api.listAgents()).resolves.toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("constructs the local evaluation store without probing an API", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")

@@ -1,12 +1,32 @@
 /** @vitest-environment jsdom */
+import type { ReactNode } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { EvaluationLayerProvider } from "@/features/evaluation-layer/mock-provider";
 import { DemoWorkflowProvider } from "../provider";
 import { createDemoWorkflowStore } from "../store";
 import type { DemoWorkflowDependencies } from "../model";
 import { CreatePage } from "./create-page";
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    params,
+    to,
+  }: {
+    children: ReactNode;
+    params: { projectId: string };
+    to: string;
+  }) => (
+    <a
+      data-router-link="true"
+      href={to.replace("$projectId", params.projectId)}
+    >
+      {children}
+    </a>
+  ),
+}));
 
 afterEach(cleanup);
 
@@ -67,8 +87,9 @@ it("shows demo and session Agents together in one Build list", () => {
   expect(screen.queryByRole("heading", { name: "Session drafts" })).toBeNull();
   expect(screen.queryByText("DEMO")).toBeNull();
   expect(screen.getAllByText("Completed").length).toBeGreaterThan(0);
-  expect(screen.getByRole("link", { name: "Continue to Evaluate" }).getAttribute("href"))
-    .toBe("/individual/evaluation/catalog");
+  const continueLink = screen.getByRole("link", { name: "Continue to Evaluate" });
+  expect(continueLink.getAttribute("href")).toBe("/individual/evaluation/catalog");
+  expect(continueLink.getAttribute("data-router-link")).toBe("true");
 });
 
 it("offers the prebuilt MCP, Skill, and Knowledge Base in the Agent form", async () => {
@@ -101,6 +122,11 @@ it("creates prefilled technical resources and an Agent draft in memory", async (
 
   await user.click(screen.getByRole("tab", { name: "Skill" }));
   await user.click(screen.getByRole("button", { name: "Create Skill" }));
+  expect(
+    screen.queryByText(
+      "Demo only · values stay in this browser tab and are never contacted.",
+    ),
+  ).toBeNull();
   await user.click(screen.getByRole("button", { name: "Create session resource" }));
 
   await user.click(screen.getByRole("tab", { name: "Knowledge Base" }));

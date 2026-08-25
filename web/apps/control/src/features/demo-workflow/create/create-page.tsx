@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { ArrowRight, Bot, Database, GitBranch, Network, Pencil, Plus, Puzzle, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -213,9 +214,12 @@ function CreateWorkspaceContent() {
                   <Plus />Create Agent
                 </Button>
                 <Button asChild>
-                  <a href={`/${projectId}/evaluation/catalog`}>
+                  <Link
+                    to="/$projectId/evaluation/catalog"
+                    params={{ projectId }}
+                  >
                     Continue to Evaluate <ArrowRight />
-                  </a>
+                  </Link>
                 </Button>
               </div>
             )}
