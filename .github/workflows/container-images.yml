@@ -1,4 +1,4 @@
-name: AgentEval image and Helm chart
+name: TALI UI Demo image and Helm chart
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: agenteval-artifacts-${{ github.ref }}
+  group: tali-ui-demo-artifacts-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   build:
-    name: Build AgentEval image and Chart
+    name: Build TALI UI Demo image and Chart
     runs-on: ubuntu-24.04
 
     steps:
@@ -51,11 +51,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
-          image="${registry}/agenteval"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           short_sha="${GITHUB_SHA::12}"
           immutable_tag="sha-${short_sha}"
-          chart_version="0.1.0-dev.${GITHUB_RUN_NUMBER}"
+          chart_version="0.2.0-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${immutable_tag}")
 
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
@@ -73,7 +72,7 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.1.0-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.0-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
@@ -87,7 +86,7 @@ jobs:
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Build and optionally publish the all-in-one image
+      - name: Build and optionally publish the UI-only image
         uses: docker/build-push-action@v7.3.0
         with:
           context: .
@@ -97,16 +96,16 @@ jobs:
           load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.artifact.outputs.tags }}
           build-args: |
-            AGENTEVAL_CHART_VERSION=${{ steps.artifact.outputs.chart_version }}
-            AGENTEVAL_IMAGE_REPOSITORY=${{ steps.artifact.outputs.image }}
-            AGENTEVAL_IMAGE_TAG=${{ steps.artifact.outputs.immutable_tag }}
+            TALI_UI_DEMO_CHART_VERSION=${{ steps.artifact.outputs.chart_version }}
+            TALI_UI_DEMO_IMAGE_REPOSITORY=${{ steps.artifact.outputs.image }}
+            TALI_UI_DEMO_IMAGE_TAG=${{ steps.artifact.outputs.immutable_tag }}
           labels: |
-            org.opencontainers.image.title=AgentEval
-            org.opencontainers.image.description=Self-contained AgentEval Demo with PostgreSQL, API, Web, and Helm Chart
+            org.opencontainers.image.title=TALI UI Demo
+            org.opencontainers.image.description=Static three-role TALI workflow Demo with embedded Helm Chart
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha,scope=agenteval
-          cache-to: type=gha,mode=max,scope=agenteval
+          cache-from: type=gha,scope=tali-ui-demo
+          cache-to: type=gha,mode=max,scope=tali-ui-demo
           provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
           sbom: ${{ github.event_name != 'pull_request' }}
 
@@ -131,17 +130,11 @@ jobs:
 
           container_id="$(docker create "${IMAGE}:${IMAGE_TAG}")"
           trap 'docker rm -f "${container_id}" >/dev/null 2>&1 || true' EXIT
-          docker cp "${container_id}:/opt/agenteval/helm/." .artifacts/helm
+          docker cp "${container_id}:/opt/tali/helm/tali-UI-demo.tgz" .artifacts/helm/tali-UI-demo.tgz
 
-          mapfile -t packages < <(find .artifacts/helm/packages -maxdepth 1 -name 'agenteval-*.tgz' -print)
-          if [[ "${#packages[@]}" -ne 1 ]]; then
-            echo "Expected one embedded AgentEval Chart package, found ${#packages[@]}." >&2
-            exit 1
-          fi
-
-          helm lint .artifacts/helm/agenteval
-          helm template agenteval "${packages[0]}" --namespace agenteval >/dev/null
-          echo "package=${packages[0]}" >> "${GITHUB_OUTPUT}"
+          helm lint .artifacts/helm/tali-UI-demo.tgz
+          helm template tali-ui-demo .artifacts/helm/tali-UI-demo.tgz --namespace tali-ui-demo >/dev/null
+          echo "package=.artifacts/helm/tali-UI-demo.tgz" >> "${GITHUB_OUTPUT}"
 
       - name: Log Helm in to GitHub Container Registry
         if: github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag')

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useAuth } from "@/components/auth/auth-provider";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { getStoredProjectId, projectPath } from "@/lib/project-storage";
+import { isUiDemoBuild, uiDemoRuntime } from "@/demo/ui-demo-runtime";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -33,13 +34,23 @@ function LoginPage() {
     setSubmitting(true);
     setError("");
     try {
-      const response = await fetch("/api/v1/auth/local", {
-        body: JSON.stringify({ password, remember, username }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      });
-      const payload = (await response.json()) as { message?: string; token?: string };
-      if (!response.ok || !payload.token) throw new Error(payload.message ?? "Sign in failed.");
+      const payload = isUiDemoBuild()
+        ? await uiDemoRuntime.login(username, password)
+        : await (async () => {
+            const response = await fetch("/api/v1/auth/local", {
+              body: JSON.stringify({ password, remember, username }),
+              headers: { "content-type": "application/json" },
+              method: "POST",
+            });
+            const result = (await response.json()) as {
+              message?: string;
+              token?: string;
+            };
+            if (!response.ok || !result.token) {
+              throw new Error(result.message ?? "Sign in failed.");
+            }
+            return { token: result.token };
+          })();
       await loginWithToken(payload.token, remember, redirect);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Sign in failed.");
@@ -79,9 +90,8 @@ function LoginPage() {
           ) : null}
           {config?.developmentDefaults ? (
             <div className="mt-7 border-l-2 border-primary bg-primary/5 px-4 py-3 text-sm text-foreground">
-              The initial local account is <strong>admin / admin</strong>. Its
-              password is written to the database on first sign-in and can be
-              reset from My Account.
+              The UI Demo account is <strong>admin / admin</strong>. Sign-in is
+              validated in this browser and does not contact a backend.
             </div>
           ) : null}
 

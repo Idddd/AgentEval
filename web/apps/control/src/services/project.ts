@@ -1,4 +1,5 @@
 import { getAuthToken } from "@/lib/auth-token";
+import { isUiDemoBuild, uiDemoRuntime } from "@/demo/ui-demo-runtime";
 import type {
   ProjectQuota,
   UpdateProjectQuotaInput,
@@ -10,6 +11,9 @@ import type {
 } from "@/types/project";
 
 async function projectRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  if (isUiDemoBuild()) {
+    throw new Error("This project operation is not available in the UI Demo.");
+  }
   const token = getAuthToken();
   const response = await fetch(path, {
     ...init,
@@ -29,6 +33,7 @@ async function projectRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function getProjects(): Promise<Project[]> {
+  if (isUiDemoBuild()) return uiDemoRuntime.listProjects();
   const projects = await projectRequest<Project[]>("/api/v1/projects");
   return projects.map((project) =>
     project.id === "individual" && project.name.toLowerCase() === "admin"

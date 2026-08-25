@@ -1,15 +1,4 @@
-FROM python:3.12-slim-bookworm AS api
-
-WORKDIR /build/api
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-
-
-FROM node:22-bookworm-slim AS web-dependencies
+FROM node:22-bookworm-slim AS ui-dependencies
 
 WORKDIR /build/web
 
@@ -25,98 +14,56 @@ COPY web/packages/contracts/package.json packages/contracts/package.json
 RUN npm ci --include=optional
 
 
-FROM web-dependencies AS web-build
+FROM ui-dependencies AS ui-build
+
+ENV TALI_UI_DEMO=true
 
 COPY web/tsconfig.base.json ./
 COPY web/apps ./apps
 COPY web/packages ./packages
 COPY web/skills ./skills
-RUN npm run build:control
-
-
-FROM web-dependencies AS web-production-dependencies
-
-RUN npm prune --omit=dev
+RUN npm run build:control \
+    && test -f apps/control/dist/client/_shell.html
 
 
 FROM alpine/helm:3.18.4 AS chart
 
 ENTRYPOINT []
 
-ARG AGENTEVAL_CHART_VERSION=0.1.0-dev
-ARG AGENTEVAL_IMAGE_REPOSITORY=ghcr.io/idddd/agenteval
-ARG AGENTEVAL_IMAGE_TAG=dev
+ARG TALI_UI_DEMO_CHART_VERSION=0.2.0-dev
+ARG TALI_UI_DEMO_IMAGE_REPOSITORY=ghcr.io/idddd/tali-ui-demo
+ARG TALI_UI_DEMO_IMAGE_TAG=dev
 
 WORKDIR /work
 
-COPY deploy/helm/agenteval ./agenteval
-RUN sed -i "s|^version:.*|version: ${AGENTEVAL_CHART_VERSION}|" agenteval/Chart.yaml \
-    && sed -i "s|^appVersion:.*|appVersion: ${AGENTEVAL_IMAGE_TAG}|" agenteval/Chart.yaml \
-    && sed -i "s|repository: ghcr.io/idddd/agenteval|repository: ${AGENTEVAL_IMAGE_REPOSITORY}|" agenteval/values.yaml \
-    && sed -i "s|tag: dev|tag: ${AGENTEVAL_IMAGE_TAG}|" agenteval/values.yaml \
-    && helm lint agenteval \
-    && mkdir -p /packages \
-    && helm package agenteval --destination /packages
+COPY deploy/helm/tali-ui-demo ./tali-ui-demo
+RUN sed -i "s|^version:.*|version: ${TALI_UI_DEMO_CHART_VERSION}|" tali-ui-demo/Chart.yaml \
+    && sed -i "s|^appVersion:.*|appVersion: ${TALI_UI_DEMO_IMAGE_TAG}|" tali-ui-demo/Chart.yaml \
+    && sed -i "s|repository: ghcr.io/idddd/tali-ui-demo|repository: ${TALI_UI_DEMO_IMAGE_REPOSITORY}|" tali-ui-demo/values.yaml \
+    && sed -i "s|tag: dev|tag: ${TALI_UI_DEMO_IMAGE_TAG}|" tali-ui-demo/values.yaml \
+    && helm lint tali-ui-demo \
+    && helm template tali-ui-demo tali-ui-demo >/dev/null \
+    && mkdir -p /packages /embedded \
+    && helm package tali-ui-demo --destination /packages \
+    && cp /packages/tali-ui-demo-*.tgz /embedded/tali-UI-demo.tgz
 
 
-FROM postgres:17-bookworm AS runtime
+FROM nginx:1.31.4-alpine-slim AS runtime
 
-ENV NODE_ENV=production \
-    HOST=0.0.0.0 \
-    PORT=8080 \
-    EVAL_API_URL=http://127.0.0.1:8000 \
-    TASKLATTICE_CONFIG=/run/agenteval/control.toml \
-    PGDATA=/var/lib/agenteval/postgres \
-    WORKBENCH_WEB_DB=/var/lib/agenteval/evaluation/web-workbench.db \
-    POSTGRES_USER=tasklattice \
-    POSTGRES_PASSWORD=development \
-    POSTGRES_DB=tasklattice \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+COPY deploy/ui-demo/nginx.conf /etc/nginx/nginx.conf
+COPY --from=ui-build /build/web/apps/control/dist/client /usr/share/nginx/html
+COPY --from=chart /embedded/tali-UI-demo.tgz /opt/tali/helm/tali-UI-demo.tgz
 
-WORKDIR /app
+RUN mkdir -p /tmp/client_temp /tmp/proxy_temp /tmp/fastcgi_temp /tmp/uwsgi_temp /tmp/scgi_temp \
+    && chown -R nginx:nginx /tmp /usr/share/nginx/html /opt/tali
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tini \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=api /usr/local /usr/local
-COPY --from=web-dependencies /usr/local/bin/node /usr/local/bin/node
-COPY --from=web-dependencies /usr/local/lib/node_modules /usr/local/lib/node_modules
-
-RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
-    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
-
-COPY --from=web-production-dependencies /build/web/node_modules ./node_modules
-COPY web/package.json web/package-lock.json ./
-COPY web/apps/control/package.json apps/control/package.json
-COPY web/packages/contracts/package.json packages/contracts/package.json
-COPY --from=web-build /build/web/packages/contracts/dist ./packages/contracts/dist
-COPY --from=web-build /build/web/apps/control/.output ./apps/control/.output
-COPY --from=web-build /build/web/apps/control/prisma ./apps/control/prisma
-COPY --from=web-build /build/web/apps/control/prisma.config.ts ./apps/control/prisma.config.ts
-COPY --from=web-build /build/web/apps/control/server/config ./apps/control/server/config
-COPY --from=web-build /build/web/apps/control/server/generated ./apps/control/server/generated
-COPY --from=web-build /build/web/skills/vendor/dist ./skills/vendor/dist
-
-COPY main.py ./
-COPY config ./config
-COPY src ./src
-COPY deploy/runtime /opt/agenteval/runtime
-COPY --from=chart /work/agenteval /opt/agenteval/helm/agenteval
-COPY --from=chart /packages /opt/agenteval/helm/packages
-
-RUN chmod 0755 \
-      /opt/agenteval/runtime/entrypoint.sh \
-      /opt/agenteval/runtime/healthcheck.sh \
-    && mkdir -p /var/lib/agenteval/evaluation /run/agenteval \
-    && chown -R postgres:postgres /var/lib/agenteval /run/agenteval
+USER nginx
 
 EXPOSE 8080
 
-STOPSIGNAL SIGTERM
+STOPSIGNAL SIGQUIT
 
-HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=6 \
-    CMD ["/opt/agenteval/runtime/healthcheck.sh"]
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/opt/agenteval/runtime/entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]

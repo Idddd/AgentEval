@@ -1,26 +1,14 @@
 services:
-  agenteval:
+  tali-ui-demo:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
       - "127.0.0.1:18082:8080"
-    env_file:
-      - .env
-    environment:
-      POSTGRES_USER: tasklattice
-      POSTGRES_PASSWORD: development
-      POSTGRES_DB: tasklattice
-      TASKLATTICE_PUBLIC_URL: http://127.0.0.1:18082
-    volumes:
-      - agenteval-data:/var/lib/agenteval
     healthcheck:
-      test: ["CMD", "/opt/agenteval/runtime/healthcheck.sh"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
       interval: 10s
-      timeout: 5s
-      start_period: 60s
-      retries: 6
-    stop_grace_period: 30s
-
-volumes:
-  agenteval-data:
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    stop_grace_period: 10s

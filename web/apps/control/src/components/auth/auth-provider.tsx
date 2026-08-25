@@ -14,6 +14,7 @@ import {
   storeAuthToken,
 } from "@/lib/auth-token";
 import { getStoredProjectId, projectPath } from "@/lib/project-storage";
+import { isUiDemoBuild, uiDemoRuntime } from "@/demo/ui-demo-runtime";
 
 export interface AuthConfig {
   authRequired: boolean;
@@ -56,6 +57,7 @@ async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function loadUser(token: string): Promise<AuthUser> {
+  if (isUiDemoBuild()) return uiDemoRuntime.currentUser(token);
   const response = await jsonRequest<{ user: AuthUser }>("/api/v1/auth/me", {
     headers: { authorization: `Bearer ${token}` },
   });
@@ -75,7 +77,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       setError("");
       try {
-        const nextConfig = await jsonRequest<AuthConfig>("/api/v1/auth/config");
+        const nextConfig = isUiDemoBuild()
+          ? await uiDemoRuntime.authConfig()
+          : await jsonRequest<AuthConfig>("/api/v1/auth/config");
         if (disposed) return;
         setConfig(nextConfig);
         const token = getAuthToken();
@@ -138,13 +142,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let redirectUrl = "";
     try {
       if (token) {
-        const response = await jsonRequest<{ redirectUrl?: string }>(
-          "/api/v1/auth/logout",
-          {
-            headers: { authorization: `Bearer ${token}` },
-            method: "POST",
-          },
-        );
+        const response = isUiDemoBuild()
+          ? await uiDemoRuntime.logout()
+          : await jsonRequest<{ redirectUrl?: string }>(
+              "/api/v1/auth/logout",
+              {
+                headers: { authorization: `Bearer ${token}` },
+                method: "POST",
+              },
+            );
         redirectUrl = response.redirectUrl ?? "";
       }
     } catch {

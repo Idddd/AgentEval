@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen } from "@testing-library/react";
-import type { ComponentType, ReactNode } from "react";
+import { useLayoutEffect, type ComponentType, type ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import { DemoRoleProvider } from "@/hooks/use-demo-role";
+import { DemoRoleProvider, useDemoRole, type DemoPersona } from "@/hooks/use-demo-role";
 import { cloneEvaluationLayerFixtures } from "@/features/evaluation-layer/fixture-validation";
 import { EvaluationLayerProvider } from "@/features/evaluation-layer/mock-provider";
 import { createEvaluationLayerStore } from "@/features/evaluation-layer/mock-store";
@@ -14,13 +14,7 @@ import { Route as TechnicalValidationRoute } from "../technical-validation";
 
 vi.mock("@/hooks/use-project", () => ({
   useCurrentProjectId: () => "individual",
-}));
-
-vi.mock("@/hooks/use-project-permissions", () => ({
-  useEffectiveProjectRole: () =>
-    window.localStorage.getItem("tasklattice.demo-role") === "agent-wizard"
-      ? "member"
-      : "admin",
+  useProject: () => ({ currentProject: { role: "admin" } }),
 }));
 
 afterEach(() => {
@@ -28,11 +22,18 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
+function SelectPersona({ persona, children }: { persona: DemoPersona; children: ReactNode }) {
+  const { setPersona } = useDemoRole();
+  useLayoutEffect(() => {
+    setPersona(persona);
+  }, [persona, setPersona]);
+  return children;
+}
+
 function renderRoute(
   route: { options: { component?: ComponentType } },
   persona: "admin" | "agent-wizard",
 ) {
-  window.localStorage.setItem("tasklattice.demo-role", persona);
   const Page = route.options.component!;
   const workflowStore = createDemoWorkflowStore("individual");
   const evaluationStore = createEvaluationLayerStore(cloneEvaluationLayerFixtures());
@@ -42,13 +43,15 @@ function renderRoute(
   }).BuildEvaluationBridgeProvider ?? Passthrough);
   render(
     <DemoRoleProvider>
-      <EvaluationLayerProvider projectId="individual" store={evaluationStore}>
-        <DemoWorkflowProvider projectId="individual" store={workflowStore}>
-          <BridgeProvider>
-            <Page />
-          </BridgeProvider>
-        </DemoWorkflowProvider>
-      </EvaluationLayerProvider>
+      <SelectPersona persona={persona}>
+        <EvaluationLayerProvider projectId="individual" store={evaluationStore}>
+          <DemoWorkflowProvider projectId="individual" store={workflowStore}>
+            <BridgeProvider>
+              <Page />
+            </BridgeProvider>
+          </DemoWorkflowProvider>
+        </EvaluationLayerProvider>
+      </SelectPersona>
     </DemoRoleProvider>,
   );
 }

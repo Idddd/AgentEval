@@ -1,0 +1,6 @@
+apiVersion: v2
+name: tali-ui-demo
+description: Static TALI three-role UI Demo with browser-only fixtures
+type: application
+version: 0.2.0-dev
+appVersion: dev

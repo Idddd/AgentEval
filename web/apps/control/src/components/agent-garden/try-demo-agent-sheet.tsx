@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { createUuid } from "@/lib/uuid";
+import { isUiDemoBuild, uiDemoRuntime } from "@/demo/ui-demo-runtime";
 
 interface DemoResult {
   output: string;
@@ -52,6 +53,11 @@ export function TryDemoAgentSheet({
     setError("");
     setResult(undefined);
     try {
+      if (isUiDemoBuild()) {
+        const demoResult = await uiDemoRuntime.tryAgent(agent.id, prompt);
+        setResult({ output: demoResult.output, trace: demoResult.trace });
+        return;
+      }
       const response = await fetch(
         `/api/v1/demo-agents/${encodeURIComponent(agent.id)}`,
         {

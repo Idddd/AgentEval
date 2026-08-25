@@ -1,4 +1,4 @@
 services:
-  agenteval:
-    image: "${AGENTEVAL_IMAGE:-ghcr.io/idddd/agenteval}:${AGENTEVAL_IMAGE_TAG:-latest}"
+  tali-ui-demo:
+    image: "${TALI_UI_DEMO_IMAGE:-ghcr.io/idddd/tali-ui-demo}:${TALI_UI_DEMO_IMAGE_TAG:-latest}"
     pull_policy: always
