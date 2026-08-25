@@ -174,9 +174,6 @@ export function ResourceFormDialog({
               />
             </div>
           ) : null}
-          <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-200">
-            Demo only · values stay in this browser tab and are never contacted.
-          </div>
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

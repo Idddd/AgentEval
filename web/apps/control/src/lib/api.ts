@@ -60,6 +60,7 @@ import type {
 import { clearAuthToken, getAuthToken } from "./auth-token";
 import { projectIdFromPathname } from "./project-storage";
 import { isUiDemoBuild } from "@/demo/ui-demo-runtime";
+import { uiDemoAgentGarden } from "@/demo/ui-demo-agent-garden";
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -220,35 +221,47 @@ export const api = {
     (await request<{ data: ModelRoutingAuditEvent[] }>(`/api/v1/model-routings/${encodeURIComponent(id)}/audit`)).data,
   getResourceCatalog: () => request<ResourceCatalog>("/api/v1/catalog"),
   getAgentGarden: () =>
-    request<AgentGardenSnapshot>("/api/v1/agent-garden"),
+    isUiDemoBuild()
+      ? uiDemoAgentGarden.snapshot()
+      : request<AgentGardenSnapshot>("/api/v1/agent-garden"),
   registerGardenAgent: (input: CreateAgentGardenEntryInput) =>
-    request<AgentGardenEntry>("/api/v1/agent-garden/agents", {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
+    isUiDemoBuild()
+      ? uiDemoAgentGarden.register(input)
+      : request<AgentGardenEntry>("/api/v1/agent-garden/agents", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
   discoverGardenAgent: (id: string) =>
-    request<AgentGardenEntry>(
-      `/api/v1/agent-garden/agents/${encodeURIComponent(id)}/discover`,
-      {
-        method: "POST",
-        body: "{}",
-      },
-    ),
+    isUiDemoBuild()
+      ? uiDemoAgentGarden.discover(id)
+      : request<AgentGardenEntry>(
+          `/api/v1/agent-garden/agents/${encodeURIComponent(id)}/discover`,
+          {
+            method: "POST",
+            body: "{}",
+          },
+        ),
   removeGardenAgent: (id: string) =>
-    request<{ message: string }>(
-      `/api/v1/agent-garden/agents/${encodeURIComponent(id)}`,
-      { method: "DELETE" },
-    ),
+    isUiDemoBuild()
+      ? uiDemoAgentGarden.remove(id)
+      : request<{ message: string }>(
+          `/api/v1/agent-garden/agents/${encodeURIComponent(id)}`,
+          { method: "DELETE" },
+        ),
   connectGardenAgent: (input: CreateAgentConnectionInput) =>
-    request<AgentConnection>("/api/v1/agent-garden/connections", {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
+    isUiDemoBuild()
+      ? uiDemoAgentGarden.connect(input)
+      : request<AgentConnection>("/api/v1/agent-garden/connections", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
   disconnectGardenAgent: (id: string) =>
-    request<{ message: string }>(
-      `/api/v1/agent-garden/connections/${encodeURIComponent(id)}`,
-      { method: "DELETE" },
-    ),
+    isUiDemoBuild()
+      ? uiDemoAgentGarden.disconnect(id)
+      : request<{ message: string }>(
+          `/api/v1/agent-garden/connections/${encodeURIComponent(id)}`,
+          { method: "DELETE" },
+        ),
   createSkill: (input: CreateSkillDefinitionInput) =>
     request<SkillDefinition>("/api/v1/catalog/skills", {
       method: "POST",
@@ -408,7 +421,9 @@ export const api = {
       method: "DELETE",
     }),
   listAgents: async () =>
-    (await request<{ data: Agent[] }>("/api/v1/instances")).data,
+    isUiDemoBuild()
+      ? []
+      : (await request<{ data: Agent[] }>("/api/v1/instances")).data,
   getAgent: (id: string) => request<Agent>(`/api/v1/instances/${id}`),
   getAgentAudit: async (id: string) =>
     (
