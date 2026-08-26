@@ -1,0 +1,8 @@
+{
+  "name": "AgentEval Full UI Generator",
+  "id": "agenteval-full-ui-generator",
+  "api": "1.0.0",
+  "editorType": ["figma"],
+  "main": "code.js",
+  "documentAccess": "dynamic-page"
+}

@@ -1,0 +1,126 @@
+{
+  "meta": {
+    "project": "AgentEval / TaskLattice",
+    "viewport": { "width": 1440, "height": 1024 },
+    "roles": ["Agent Wizard", "Admin", "End User"],
+    "sourceCommit": "f268d6d"
+  },
+  "pages": [
+    {
+      "figmaPage": "03 Build",
+      "screens": [
+        "Build / Agent catalog",
+        "Build / Onboarding Assistant first",
+        "Build / Agent detail",
+        "Build / Agent edit",
+        "Build / Create Agent",
+        "Build / MCP Server catalog",
+        "Build / MCP Server detail",
+        "Build / Skill catalog",
+        "Build / Skill detail",
+        "Build / Knowledge Base catalog"
+      ]
+    },
+    {
+      "figmaPage": "04 Evaluate",
+      "screens": [
+        "Evaluate / Lifecycle catalog",
+        "Evaluate / Action required filter",
+        "Evaluate / Agent evaluation workspace",
+        "Evaluate / Dataset setup",
+        "Evaluate / Create dataset dialog",
+        "Evaluate / Running evaluation",
+        "Evaluate / Completed report preview",
+        "Evaluate / Full report detail",
+        "Evaluate / Test case results"
+      ]
+    },
+    {
+      "figmaPage": "05 Business Eval",
+      "screens": [
+        "Business Eval / Pending approval",
+        "Business Eval / Failed report",
+        "Business Eval / Passed report",
+        "Business Eval / Reject reason optional",
+        "Business Eval / Approved and published"
+      ]
+    },
+    {
+      "figmaPage": "06 Guardrails",
+      "screens": [
+        "Guardrails / Registry",
+        "Guardrails / Policy Library",
+        "Guardrails / Policy Studio",
+        "Guardrails / Compliance document import",
+        "Guardrails / Policy binding editor",
+        "Guardrails / Detail",
+        "Guardrails / Create flow",
+        "Guardrails / Assignment sheet",
+        "Guardrails / Traffic scope",
+        "Guardrails / Enforcements",
+        "Guardrails / Evidence",
+        "Guardrails / Integrations",
+        "Guardrails / Relay preview"
+      ]
+    },
+    {
+      "figmaPage": "07 Monitor",
+      "screens": [
+        "Monitor / All traces",
+        "Monitor / Failure filter",
+        "Monitor / Evaluator policy 2 active",
+        "Monitor / Evaluator policy 10 active",
+        "Monitor / Trace detail"
+      ]
+    },
+    {
+      "figmaPage": "08 Agent Garden",
+      "screens": [
+        "Agent Garden / Approved catalog",
+        "Agent Garden / Search results",
+        "Agent Garden / Agent detail",
+        "Agent Garden / Apply Instance"
+      ]
+    },
+    {
+      "figmaPage": "09 Instances",
+      "screens": [
+        "Instances / List",
+        "Instances / Creating",
+        "Instances / Ready",
+        "Instance / OpenClaw detail",
+        "Instance / Endpoint and credentials"
+      ]
+    },
+    {
+      "figmaPage": "10 Secondary & System",
+      "screens": [
+        "Login",
+        "Access Policies",
+        "Access Policy detail",
+        "Audit Logs",
+        "Audit Log detail",
+        "Model Cost",
+        "Runtime",
+        "Runtime Policies",
+        "Memory",
+        "Requests",
+        "Project Settings",
+        "Profile",
+        "Empty state",
+        "Error state",
+        "Loading state"
+      ]
+    },
+    {
+      "figmaPage": "99 Legacy Reference",
+      "screens": [
+        "Legacy / Evaluations list",
+        "Legacy / Evaluation setup",
+        "Legacy / Dataset detail",
+        "Legacy / Report comparison",
+        "Legacy / Trace workbench"
+      ]
+    }
+  ]
+}
