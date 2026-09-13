@@ -15,8 +15,9 @@ export default defineConfig({
   },
   plugins: [
     nitro({
-      serverDir: "server",
-      features: { websocket: true },
+      // Marketplace is a standalone UI. Do not boot the legacy control-plane
+      // jobs, database seeds or runtime endpoints just to preview the catalog.
+      serverDir: "marketplace-server",
     }),
     tailwindcss(),
     tanstackStart(),

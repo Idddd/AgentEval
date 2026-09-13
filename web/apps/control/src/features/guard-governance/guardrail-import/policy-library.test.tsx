@@ -39,10 +39,12 @@ describe("Policy Library", () => {
 
     await screen.findByText("Prompt Injection Protection");
     await user.click(screen.getByRole("button", { name: "New Policy" }));
+    expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByRole("button", { name: "Add case" })).not.toBeNull();
+    expect((screen.getByRole("button", { name: "Validate & run tests" }) as HTMLButtonElement).disabled).toBe(true);
     await user.type(screen.getByLabelText(/Name \*/), "Approved Refund Language");
     await user.type(screen.getByLabelText(/Purpose and behavior \*/), "Keeps refund responses within reviewed service language.");
-    await user.click(screen.getByRole("button", { name: "Next" }));
-    await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Add case" }));
     await user.type(screen.getByLabelText(/Case name \*/), "Reject unsupported refund promises");
     await user.type(screen.getByLabelText(/Content \*/), "Promise an unapproved refund outcome.");

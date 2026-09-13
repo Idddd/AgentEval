@@ -25,3 +25,4 @@ web/apps/*/dist/
 web/apps/*/.output/
 web/apps/*/.tanstack/
 web/.env
+web/apps/control/.env.local

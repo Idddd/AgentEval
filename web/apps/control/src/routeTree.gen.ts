@@ -10,7 +10,9 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as GuardrailsRouteImport } from './routes/guardrails'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as TemplatesRouteImport } from './routes/templates'
 import { Route as ProjectIdIndexRouteImport } from './routes/$projectId/index'
 import { Route as ProjectIdBuildsRouteImport } from './routes/$projectId/builds'
 import { Route as ProjectIdCostRouteImport } from './routes/$projectId/cost'
@@ -75,9 +77,19 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GuardrailsRoute = GuardrailsRouteImport.update({
+  id: '/guardrails',
+  path: '/guardrails',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TemplatesRoute = TemplatesRouteImport.update({
+  id: '/templates',
+  path: '/templates',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectIdIndexRoute = ProjectIdIndexRouteImport.update({
@@ -410,7 +422,9 @@ const ProjectIdSettingModelRoutingsRoutingIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/guardrails': typeof GuardrailsRoute
   '/login': typeof LoginRoute
+  '/templates': typeof TemplatesRoute
   '/$projectId/builds': typeof ProjectIdBuildsRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
   '/$projectId/create': typeof ProjectIdCreateRoute
@@ -472,7 +486,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/guardrails': typeof GuardrailsRoute
   '/login': typeof LoginRoute
+  '/templates': typeof TemplatesRoute
   '/$projectId/builds': typeof ProjectIdBuildsRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
   '/$projectId/create': typeof ProjectIdCreateRoute
@@ -534,7 +550,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/guardrails': typeof GuardrailsRoute
   '/login': typeof LoginRoute
+  '/templates': typeof TemplatesRoute
   '/$projectId/builds': typeof ProjectIdBuildsRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
   '/$projectId/create': typeof ProjectIdCreateRoute
@@ -598,7 +616,9 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/guardrails'
     | '/login'
+    | '/templates'
     | '/$projectId/builds'
     | '/$projectId/cost'
     | '/$projectId/create'
@@ -660,7 +680,9 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/guardrails'
     | '/login'
+    | '/templates'
     | '/$projectId/builds'
     | '/$projectId/cost'
     | '/$projectId/create'
@@ -721,7 +743,9 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/guardrails'
     | '/login'
+    | '/templates'
     | '/$projectId/builds'
     | '/$projectId/cost'
     | '/$projectId/create'
@@ -784,7 +808,9 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  GuardrailsRoute: typeof GuardrailsRoute
   LoginRoute: typeof LoginRoute
+  TemplatesRoute: typeof TemplatesRoute
   ProjectIdBuildsRoute: typeof ProjectIdBuildsRoute
   ProjectIdCostRoute: typeof ProjectIdCostRoute
   ProjectIdCreateRoute: typeof ProjectIdCreateRoute
@@ -830,11 +856,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/guardrails': {
+      id: '/guardrails'
+      path: '/guardrails'
+      fullPath: '/guardrails'
+      preLoaderRoute: typeof GuardrailsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/templates': {
+      id: '/templates'
+      path: '/templates'
+      fullPath: '/templates'
+      preLoaderRoute: typeof TemplatesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$projectId/': {
@@ -1320,7 +1360,9 @@ const ProjectIdGovernanceRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  GuardrailsRoute: GuardrailsRoute,
   LoginRoute: LoginRoute,
+  TemplatesRoute: TemplatesRoute,
   ProjectIdBuildsRoute: ProjectIdBuildsRoute,
   ProjectIdCostRoute: ProjectIdCostRoute,
   ProjectIdCreateRoute: ProjectIdCreateRoute,

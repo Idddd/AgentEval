@@ -1,21 +1,31 @@
 import type { QueryClient } from "@tanstack/react-query";
 import {
   HeadContent,
-  Outlet,
   Scripts,
   createRootRouteWithContext,
-  useRouterState,
+  redirect,
 } from "@tanstack/react-router";
-import { AuthGuard } from "@/components/auth/auth-guard";
-import { AuthProvider } from "@/components/auth/auth-provider";
-import { AppShell } from "@/components/layout/app-shell";
-import { ProjectProvider } from "@/components/project/project-provider";
+import { MarketplaceShell } from "@/features/marketplace/shell";
+import { marketplaceDestination } from "@/features/marketplace/contracts";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
-  component: RootApplication,
+  component: MarketplaceShell,
+  beforeLoad: ({ location }) => {
+    const guardrailDetail = location.pathname.match(
+      /^\/[^/]+\/governance\/guardrails\/([^/]+)\/?$/,
+    );
+    if (guardrailDetail?.[1])
+      throw redirect({
+        to: "/guardrails",
+        search: { item: decodeURIComponent(guardrailDetail[1]) },
+        replace: true,
+      });
+    const destination = marketplaceDestination(location.pathname);
+    if (destination) throw redirect({ to: destination, replace: true });
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -23,10 +33,11 @@ export const Route = createRootRouteWithContext<{
         name: "viewport",
         content: "width=device-width, initial-scale=1",
       },
-      { title: "TaskLattice" },
+      { title: "AI Marketplace" },
       {
         name: "description",
-        content: "Schedule and operate isolated agents on Kubernetes.",
+        content:
+          "Create business guardrails and discover reusable templates for thoughtful AI.",
       },
     ],
     links: [
@@ -37,36 +48,11 @@ export const Route = createRootRouteWithContext<{
   shellComponent: RootDocument,
 });
 
-function RootApplication() {
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const isPublic =
-    pathname === "/" || pathname === "/login" || pathname === "/auth/sso-complete";
-  return (
-    <AuthProvider>
-      {isPublic ? (
-        <Outlet />
-      ) : (
-        <AuthGuard>
-          <ProjectProvider>
-            <AppShell />
-          </ProjectProvider>
-        </AuthGuard>
-      )}
-    </AuthProvider>
-  );
-}
-
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "try{localStorage.setItem('tasklattice.account.theme','light');document.documentElement.classList.remove('dark');document.documentElement.style.colorScheme='light'}catch{}",
-          }}
-        />
       </head>
       <body>
         {children}

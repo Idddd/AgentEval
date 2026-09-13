@@ -1,4 +1,40 @@
-# AgentEval
+# AI Marketplace
+
+The current AgentEval frontend is **AI Marketplace**, with only **Guardrails**
+and **Templates** in the sidebar. The original Guardrails and Policy Library
+screens, styling, and local demo interactions have been restored; the Policy
+Library is presented under the Templates title. The new Marketplace visual
+redesign is not mounted.
+
+## Run the Marketplace UI
+
+Requires Node.js 22+ and npm. No database, Guard service, or Python API is needed.
+
+```powershell
+cd web
+npm ci
+npm run dev:control -- --host 127.0.0.1 --port 18082
+```
+
+Open [AI Marketplace](http://127.0.0.1:18082/guardrails). The UI uses a local
+demo workspace by default. The restored pages use their original in-memory
+mock providers; refreshing resets their session. Old Guardrail detail links
+redirect to `/guardrails?item=<id>`; other old project URLs redirect to the two
+Marketplace sections. Previously saved Marketplace preview data is not deleted.
+
+To build: `npm run build:control` from `web/`. The future Marketplace API adapter
+and its `VITE_MARKETPLACE_API_BASE_URL` option are retained, but are not wired
+to the restored screens. No live backend integration is enabled in this preview.
+
+See [Marketplace API contract](docs/ai-marketplace-api.md) for all six endpoints,
+request/response examples, Guard mappings, and fallback behavior.
+
+## Legacy evaluation platform reference
+
+The sections below describe the earlier evaluation platform, whose source is
+retained for reference. Its database/runtime services and old console navigation
+are not part of the current Marketplace UI. Use the quick start above for this
+branch.
 
 AgentEval is a local workbench for evaluating Agents against versioned test
 cases. The TALI control console is the project's only Web UI; the Python code

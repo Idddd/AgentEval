@@ -32,20 +32,23 @@ describe("latest Guardrail source workflow", () => {
     expect(within(row).getByText("3")).not.toBeNull();
   });
 
-  it("creates a policy-bound Guardrail from the prefilled source wizard", async () => {
+  it("creates a policy-bound Guardrail from a single prefilled form", async () => {
     const user = userEvent.setup();
     renderImported(<GuardrailsPage projectId="individual" />);
 
     await user.click(screen.getByRole("button", { name: "Create Guardrail" }));
     expect(screen.getByRole("dialog", { name: "Create Guardrail" })).not.toBeNull();
     expect(screen.getByLabelText(/Name \*/)).not.toBeNull();
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.getAllByText("Prompt Injection Protection").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Sensitive Data Protection").length).toBeGreaterThan(0);
-    await user.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getAllByText("Runtime posture").length).toBeGreaterThan(0);
-    await user.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByText("Review Guardrail")).not.toBeNull();
+    const name = screen.getByLabelText(/Name \*/);
+    await user.clear(name);
+    expect((screen.getByRole("button", { name: "Create Guardrail" }) as HTMLButtonElement).disabled).toBe(true);
+    await user.type(name, "Customer Interaction Guardrail");
     await user.click(screen.getByRole("button", { name: "Create Guardrail" }));
 
     const createdName = await screen.findByText("Customer Interaction Guardrail");

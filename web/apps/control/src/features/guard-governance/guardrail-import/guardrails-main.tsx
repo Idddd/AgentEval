@@ -5,7 +5,6 @@ import { Activity, ArrowLeft, Check, CheckCircle2, CircleAlert, FlaskConical, Gi
 import { useGuardGovernanceState, useGuardGovernanceStore } from "../mock-provider";
 import type { Guardrail, GuardrailPolicy } from "../model";
 import { EntitySheet } from "./components/entity-sheet";
-import { CreationFlow } from "./components/creation-flow";
 import { InfoNotice, PageHeader, StateBadge } from "./components/product-shell";
 import { PolicyBindingEditor, defaultPolicyBinding } from "./policy-binding-editor";
 import { RuntimePostureFields } from "./runtime-posture-fields";
@@ -167,7 +166,6 @@ function CreateGuardrailWizard({ open, onOpenChange }: { open: boolean; onOpenCh
   const { policies } = useGuardGovernanceState();
   const store = useGuardGovernanceStore();
   const sourcePolicies = useMemo(() => policies.map(toSourcePolicy), [policies]);
-  const [step, setStep] = useState(0);
   const [name, setName] = useState("Customer Interaction Guardrail");
   const [purpose, setPurpose] = useState("Protect customer-facing conversations from instruction override and sensitive data disclosure.");
   const [allowed, setAllowed] = useState("Approved customer assistance");
@@ -176,16 +174,9 @@ function CreateGuardrailWizard({ open, onOpenChange }: { open: boolean; onOpenCh
   const [safetyLevel, setSafetyLevel] = useState<Guardrail["safetyLevel"]>("strict");
   const [outputDelivery, setOutputDelivery] = useState<Guardrail["outputDelivery"]>("full_buffered");
   const [analyzingIntent, setAnalyzingIntent] = useState(false);
-  const steps = [
-    { label: t("guardrailWizard.steps.details"), description: t("guardrailWizard.steps.detailsDescription") },
-    { label: t("guardrailWizard.steps.policies"), description: t("guardrailWizard.steps.policiesDescription") },
-    { label: t("guardrailWizard.steps.runtime"), description: t("guardrailWizard.steps.runtimeDescription") },
-    { label: t("guardrailWizard.steps.review"), description: t("guardrailWizard.steps.reviewDescription") },
-  ];
   useEffect(() => {
     if (!open) return;
     const defaults = sourcePolicies.filter((policy) => ["policy-prompt-injection", "policy-sensitive-data"].includes(policy.id)).map(defaultPolicyBinding);
-    setStep(0);
     setName("Customer Interaction Guardrail");
     setPurpose("Protect customer-facing conversations from instruction override and sensitive data disclosure.");
     setAllowed("Approved customer assistance");
@@ -196,9 +187,10 @@ function CreateGuardrailWizard({ open, onOpenChange }: { open: boolean; onOpenCh
     setAnalyzingIntent(false);
   }, [open, sourcePolicies]);
   const selectedPolicies = policies.filter((policy) => bindings.some((binding) => binding.policy_id === policy.id));
-  const canContinue = step === 0 ? name.trim().length > 2 && purpose.trim().length > 10 : step === 1 ? bindings.length > 0 && bindings.every((binding) => binding.enabled_rule_ids.length) : true;
-  const close = () => { setStep(0); onOpenChange(false); };
+  const canCreate = name.trim().length > 2 && purpose.trim().length > 10 && bindings.length > 0 && bindings.every((binding) => binding.enabled_rule_ids.length > 0);
+  const close = () => onOpenChange(false);
   const create = () => {
+    if (!canCreate || analyzingIntent) return;
     const controls = selectedPolicies.flatMap((policy) => policy.rules.map((rule) => ({ risk: rule.risk, action: rule.effect, enabled: true })));
     store.createGuardrail({
       name,
@@ -229,14 +221,14 @@ function CreateGuardrailWizard({ open, onOpenChange }: { open: boolean; onOpenCh
       description={t("guardrailWizard.description")}
       width="xl"
       bodyClassName="p-0 sm:p-0"
-      footer={<><Button variant="outline" onClick={step === 0 ? close : () => setStep((current) => current - 1)}>{step ? <><ArrowLeft />{t("common.previous")}</> : t("common.cancel")}</Button>{step < steps.length - 1 ? <Button disabled={!canContinue} onClick={() => setStep((current) => current + 1)}>{t("common.next")}</Button> : <Button onClick={create}><ShieldCheck />{t("guardrailWizard.create")}</Button>}</>}
+      footer={<><Button variant="outline" onClick={close}>{t("common.cancel")}</Button><Button disabled={!canCreate || analyzingIntent} onClick={create}><ShieldCheck />{t("guardrailWizard.create")}</Button></>}
     >
-      <CreationFlow orientation="sidebar" currentStep={step} onStepChange={setStep} progressLabel={t("guardrailWizard.title")} steps={steps}>
-        {step === 0 ? <WizardSection title={t("guardrailWizard.detailsTitle")} description={t("guardrailWizard.detailsDescription")}><div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5"><Field label={`${t("guardrailWizard.name")} *`}><Input autoFocus className="min-h-11 bg-card" value={name} onChange={(event) => setName(event.target.value)} placeholder={t("guardrailWizard.namePlaceholder")} /></Field><ComplianceDocumentImport policies={sourcePolicies} resetKey={Number(open)} onApply={(analysis) => { setPurpose(analysis.summary); setBindings(sourcePolicies.filter((policy) => analysis.recommended_policy_ids.includes(policy.id)).map(defaultPolicyBinding)); }} /><Field label={`${t("guardrailWizard.purpose")} *`} hint={t("guardrailWizard.purposeHint")}><Textarea className="min-h-32 bg-card" value={purpose} onChange={(event) => setPurpose(event.target.value)} placeholder={t("guardrailWizard.purposePlaceholder")} /></Field><div className="flex flex-wrap items-center gap-3 rounded-xl border bg-muted/20 p-4"><div className="min-w-0 flex-1"><p className="text-sm font-medium">{t("guardrailWizard.intentTitle")}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{t("guardrailWizard.intentDescription")}</p></div><Button variant="outline" disabled={purpose.trim().length < 20 || analyzingIntent} onClick={analyzeIntent}>{analyzingIntent ? <LoaderCircle className="animate-spin" /> : <Sparkles />}{t("guardrailWizard.generateBoundaries")}</Button></div><div className="grid gap-4 sm:grid-cols-2"><Field label={t("guardrailWizard.allowedDomains")}><Textarea className="min-h-28 bg-card" value={allowed} onChange={(event) => setAllowed(event.target.value)} placeholder={t("guardrailWizard.onePerLine")} /></Field><Field label={t("guardrailWizard.restrictedDomains")}><Textarea className="min-h-28 bg-card" value={restricted} onChange={(event) => setRestricted(event.target.value)} placeholder={t("guardrailWizard.onePerLine")} /></Field></div></div></WizardSection> : null}
-        {step === 1 ? <WizardSection title={t("guardrailWizard.policiesTitle")} description={t("guardrailWizard.policiesDescription")}><PolicyBindingEditor policies={sourcePolicies} value={bindings} onChange={setBindings} /></WizardSection> : null}
-        {step === 2 ? <WizardSection title={t("guardrailWizard.runtimeTitle")} description={t("guardrailWizard.runtimeDescription")}><RuntimePostureFields safetyLevel={safetyLevel === "maximum" ? "strict" : safetyLevel === "standard" ? "balanced" : safetyLevel} outputDelivery={outputDelivery === "windowed" ? "window_buffered" : outputDelivery} onSafetyLevelChange={(value) => setSafetyLevel(value)} onOutputDeliveryChange={(value) => setOutputDelivery(value)} /><InfoNotice title={t("guardrailWizard.deploymentSeparateTitle")}>{t("guardrailWizard.deploymentSeparate")}</InfoNotice></WizardSection> : null}
-        {step === 3 ? <WizardSection title={t("guardrailWizard.reviewTitle")} description={t("guardrailWizard.reviewDescription")}><section className="overflow-hidden rounded-xl border bg-card"><ReviewRow label={t("guardrailWizard.name")} value={name} /><ReviewRow label={t("guardrailWizard.purpose")} value={purpose} /><ReviewRow label={t("guardrailWizard.policies")} value={selectedPolicies.map((policy) => policy.name).join(", ")} /><ReviewRow label={t("guardrailWizard.policyRules")} value={String(bindings.reduce((total, binding) => total + binding.enabled_rule_ids.length, 0))} /><ReviewRow label={t("guardrailWizard.runtimeProfile")} value={`nemo_only · Colang 2.x · ${safetyLevel} · ${outputDelivery}`} /></section><div className="mt-4 flex flex-wrap gap-2"><Badge variant="outline">{bindings.length} Policies</Badge><Badge variant="outline"><Check />{t("guardrailWizard.planReady")}</Badge></div></WizardSection> : null}
-      </CreationFlow>
+      <div className="space-y-8 p-4 sm:p-6 [&>section+section]:border-t [&>section+section]:pt-8">
+        <WizardSection title={t("guardrailWizard.detailsTitle")} description={t("guardrailWizard.detailsDescription")}><div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5"><Field label={`${t("guardrailWizard.name")} *`}><Input autoFocus className="min-h-11 bg-card" value={name} onChange={(event) => setName(event.target.value)} placeholder={t("guardrailWizard.namePlaceholder")} /></Field><ComplianceDocumentImport policies={sourcePolicies} resetKey={Number(open)} onApply={(analysis) => { setPurpose(analysis.summary); setBindings(sourcePolicies.filter((policy) => analysis.recommended_policy_ids.includes(policy.id)).map(defaultPolicyBinding)); }} /><Field label={`${t("guardrailWizard.purpose")} *`} hint={t("guardrailWizard.purposeHint")}><Textarea className="min-h-32 bg-card" value={purpose} onChange={(event) => setPurpose(event.target.value)} placeholder={t("guardrailWizard.purposePlaceholder")} /></Field><div className="flex flex-wrap items-center gap-3 rounded-xl border bg-muted/20 p-4"><div className="min-w-0 flex-1"><p className="text-sm font-medium">{t("guardrailWizard.intentTitle")}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{t("guardrailWizard.intentDescription")}</p></div><Button variant="outline" disabled={purpose.trim().length < 20 || analyzingIntent} onClick={analyzeIntent}>{analyzingIntent ? <LoaderCircle className="animate-spin" /> : <Sparkles />}{t("guardrailWizard.generateBoundaries")}</Button></div><div className="grid gap-4 sm:grid-cols-2"><Field label={t("guardrailWizard.allowedDomains")}><Textarea className="min-h-28 bg-card" value={allowed} onChange={(event) => setAllowed(event.target.value)} placeholder={t("guardrailWizard.onePerLine")} /></Field><Field label={t("guardrailWizard.restrictedDomains")}><Textarea className="min-h-28 bg-card" value={restricted} onChange={(event) => setRestricted(event.target.value)} placeholder={t("guardrailWizard.onePerLine")} /></Field></div></div></WizardSection>
+        <WizardSection title={t("guardrailWizard.policiesTitle")} description={t("guardrailWizard.policiesDescription")}><PolicyBindingEditor policies={sourcePolicies} value={bindings} onChange={setBindings} /></WizardSection>
+        <WizardSection title={t("guardrailWizard.runtimeTitle")} description={t("guardrailWizard.runtimeDescription")}><RuntimePostureFields safetyLevel={safetyLevel === "maximum" ? "strict" : safetyLevel === "standard" ? "balanced" : safetyLevel} outputDelivery={outputDelivery === "windowed" ? "window_buffered" : outputDelivery} onSafetyLevelChange={(value) => setSafetyLevel(value)} onOutputDeliveryChange={(value) => setOutputDelivery(value)} /><InfoNotice title={t("guardrailWizard.deploymentSeparateTitle")}>{t("guardrailWizard.deploymentSeparate")}</InfoNotice></WizardSection>
+        <WizardSection title={t("guardrailWizard.reviewTitle")} description={t("guardrailWizard.reviewDescription")}><section className="overflow-hidden rounded-xl border bg-card"><ReviewRow label={t("guardrailWizard.name")} value={name} /><ReviewRow label={t("guardrailWizard.purpose")} value={purpose} /><ReviewRow label={t("guardrailWizard.policies")} value={selectedPolicies.map((policy) => policy.name).join(", ")} /><ReviewRow label={t("guardrailWizard.policyRules")} value={String(bindings.reduce((total, binding) => total + binding.enabled_rule_ids.length, 0))} /><ReviewRow label={t("guardrailWizard.runtimeProfile")} value={`nemo_only · Colang 2.x · ${safetyLevel} · ${outputDelivery}`} /></section><div className="mt-4 flex flex-wrap gap-2"><Badge variant="outline">{bindings.length} Policies</Badge>{canCreate ? <Badge variant="outline"><Check />{t("guardrailWizard.planReady")}</Badge> : null}</div></WizardSection>
+      </div>
     </EntitySheet>
   );
 }

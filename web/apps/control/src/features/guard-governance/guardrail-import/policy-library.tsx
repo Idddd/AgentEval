@@ -60,7 +60,7 @@ const JURISDICTION_FLAGS: Record<string, string> = {
   uae: "🇦🇪",
 };
 
-export function PolicyLibraryPage() {
+export function PolicyLibraryPage({ title }: { title?: string } = {}) {
   const { t } = useTranslation();
   const api = useSourcePolicyApi();
   const queryClient = useQueryClient();
@@ -152,7 +152,7 @@ export function PolicyLibraryPage() {
   return (
     <section className="py-6 sm:py-8">
       <PageHeader
-        title={t("pages.policyLibrary.title")}
+        title={title ?? t("pages.policyLibrary.title")}
         description={t("pages.policyLibrary.description")}
       />
       <div className="mt-5 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">

@@ -1,8 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  ArrowLeft,
-  ArrowRight,
   Braces,
   Check,
   ChevronRight,
@@ -23,7 +21,6 @@ import {
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import { CreationFlow } from "./components/creation-flow";
 import { EntitySheet } from "./components/entity-sheet";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Badge } from "./components/ui/badge";
@@ -68,7 +65,6 @@ export function PolicyStudioSheet({ policy, imported = null, open, onOpenChange,
   const api = useSourcePolicyApi();
   const actionsQuery = useQuery({ queryKey: ["guardrail-source", "actions"], queryFn: api.getActionCatalog, enabled: open });
   const actions = actionsQuery.data?.items ?? [];
-  const [step, setStep] = useState(0);
   const [policyId, setPolicyId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -80,7 +76,6 @@ export function PolicyStudioSheet({ policy, imported = null, open, onOpenChange,
 
   useEffect(() => {
     if (!open) return;
-    setStep(0);
     setPolicyId(policy?.id ?? null);
     setName(policy?.name ?? imported?.name ?? "");
     setDescription(policy?.description ?? imported?.description ?? "");
@@ -143,7 +138,6 @@ export function PolicyStudioSheet({ policy, imported = null, open, onOpenChange,
     onError: (error) => toast.error(errorMessage(error, t("policyStudio.publishFailed"))),
   });
 
-  const steps = (["author", "runtime", "release"] as const).map((key) => ({ label: t(`policyStudio.steps.${key}`), description: t(`policyStudio.stepDescriptions.${key}`) }));
   const canContinue = [
     Boolean(name.trim() && description.trim() && owner.trim() && draft.sources.length > 0 && draft.sources.every((source) => source.path.trim() && source.content.trim())),
     draft.rail_bindings.length > 0 && draft.rail_bindings.every(railReady) && draft.parameter_schema.every(parameterReady),
@@ -163,22 +157,21 @@ export function PolicyStudioSheet({ policy, imported = null, open, onOpenChange,
       bodyClassName="p-0 sm:p-0"
       footer={
         <>
-          <Button variant="outline" disabled={busy} onClick={() => step ? setStep(step - 1) : onOpenChange(false)}>{step ? <><ArrowLeft />{t("common.previous")}</> : t("common.cancel")}</Button>
-          {step < 2 ? <Button disabled={!canContinue[step] || busy} onClick={() => setStep(step + 1)}>{t("common.next")}<ArrowRight /></Button> : null}
-          {step === 2 && !currentRevisionPassed ? <Button disabled={!canContinue.every(Boolean) || busy} onClick={() => testMutation.mutate()}>{testMutation.isPending ? <LoaderCircle className="animate-spin" /> : <PackageCheck />}{t("policyStudio.validateAndRun")}</Button> : null}
-          {step === 2 && currentRevisionPassed ? <Button disabled={busy} onClick={() => publishMutation.mutate()}>{publishMutation.isPending ? <LoaderCircle className="animate-spin" /> : <ShieldCheck />}{t("policyStudio.publish")}</Button> : null}
+          <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
+          {!currentRevisionPassed ? <Button disabled={!canContinue.every(Boolean) || busy} onClick={() => testMutation.mutate()}>{testMutation.isPending ? <LoaderCircle className="animate-spin" /> : <PackageCheck />}{t("policyStudio.validateAndRun")}</Button> : null}
+          {currentRevisionPassed ? <Button disabled={busy} onClick={() => publishMutation.mutate()}>{publishMutation.isPending ? <LoaderCircle className="animate-spin" /> : <ShieldCheck />}{t("policyStudio.publish")}</Button> : null}
         </>
       }
     >
-      <CreationFlow orientation="sidebar" currentStep={step} onStepChange={setStep} progressLabel={t("policyStudio.createTitle")} steps={steps}>
-        {step === 0 ? <div className="space-y-8">
+      <div className="space-y-8 p-4 sm:p-6 [&>div+div]:border-t [&>div+div]:pt-8">
+        <div className="space-y-8">
           {imported ? <Alert variant="info"><PackageCheck /><AlertTitle>{t("policyStudio.transferNoticeTitle")}</AlertTitle><AlertDescription>{t("policyStudio.transferNoticeDescription")}</AlertDescription></Alert> : null}
           <StudioSection title={t("policyStudio.definitionTitle")} description={t("policyStudio.definitionDescription")}><div className="grid gap-5"><Field label={`${t("policyStudio.name")} *`}><Input autoFocus className="min-h-11" value={name} onChange={(event) => { invalidateRelease(); setName(event.target.value); }} /></Field><Field label={`${t("policyStudio.description")} *`}><Textarea className="min-h-28" value={description} onChange={(event) => { invalidateRelease(); setDescription(event.target.value); }} /></Field><Field label={`${t("policyStudio.owner")} *`}><Input className="min-h-11" value={owner} onChange={(event) => { invalidateRelease(); setOwner(event.target.value); }} /></Field></div></StudioSection>
           <ColangEditor version={draft.colang_version} sources={draft.sources} error={compileError} onChange={(sources) => changeDraft({ ...draft, sources })} />
-        </div> : null}
-        {step === 1 ? <div className="space-y-8"><RailEditor rails={draft.rail_bindings} onChange={(rail_bindings) => changeDraft({ ...draft, rail_bindings })} /><ActionEditor actions={actions} selected={draft.action_references} onChange={(action_references) => changeDraft({ ...draft, action_references })} loading={actionsQuery.isLoading} /><ParameterEditor parameters={draft.parameter_schema} onChange={(parameter_schema) => changeDraft({ ...draft, parameter_schema })} /></div> : null}
-        {step === 2 ? <div className="space-y-8"><ReleaseStatus run={validationRun} error={compileError} running={testMutation.isPending} /><TestEditor rails={draft.rail_bindings} testCases={draft.test_cases} run={validationRun} error={compileError} onChange={(test_cases) => changeDraft({ ...draft, test_cases })} />{currentRevisionPassed ? <PublishReview name={name} draft={draft} run={validationRun} /> : null}</div> : null}
-      </CreationFlow>
+        </div>
+        <div className="space-y-8"><RailEditor rails={draft.rail_bindings} onChange={(rail_bindings) => changeDraft({ ...draft, rail_bindings })} /><ActionEditor actions={actions} selected={draft.action_references} onChange={(action_references) => changeDraft({ ...draft, action_references })} loading={actionsQuery.isLoading} /><ParameterEditor parameters={draft.parameter_schema} onChange={(parameter_schema) => changeDraft({ ...draft, parameter_schema })} /></div>
+        <div className="space-y-8"><ReleaseStatus run={validationRun} error={compileError} running={testMutation.isPending} /><TestEditor rails={draft.rail_bindings} testCases={draft.test_cases} run={validationRun} error={compileError} onChange={(test_cases) => changeDraft({ ...draft, test_cases })} />{currentRevisionPassed ? <PublishReview name={name} draft={draft} run={validationRun} /> : null}</div>
+      </div>
     </EntitySheet>
   );
 }
