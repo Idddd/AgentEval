@@ -1,5 +1,9 @@
 # AI Marketplace: UI and API contract
 
+> Superseded for the active Guardrails/Policies UI: see
+> [Guard OpenAPI connection](guard-openapi-connection.md) for runtime mock/live/auto
+> modes and the Controller contract. The facade proposal below is historical.
+
 > Design rollback: the active routes currently reuse the original Guardrails
 > and Policy Library UI, with the AI Marketplace name and two sidebar entries.
 > They use the original session mock providers. The adapter and proposed scope

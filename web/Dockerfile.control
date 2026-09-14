@@ -56,4 +56,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --retries=10 \
     CMD ["node", "-e", "fetch('http://127.0.0.1:8080/api/health').then((response) => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"]
 
-CMD ["sh", "-c", "npm run db:migrate:control && exec node apps/control/.output/server/index.mjs"]
+# Marketplace uses either browser-local data or the Guard API; it has no local DB.
+CMD ["node", "apps/control/.output/server/index.mjs"]

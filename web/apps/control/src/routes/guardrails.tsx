@@ -1,8 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import {
-  GuardrailsPage,
-  GuardrailDetailPage,
-} from "@/features/guard-governance/guardrail-import/guardrails-main";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { BusinessCatalog } from "@/features/business-demo/catalog";
 
 export const Route = createFileRoute("/guardrails")({
   validateSearch: (
@@ -11,14 +8,31 @@ export const Route = createFileRoute("/guardrails")({
     ...(typeof search.item === "string" ? { item: search.item } : {}),
   }),
   head: () => ({ meta: [{ title: "Guardrails · AI Marketplace" }] }),
+  beforeLoad: ({ search }) => {
+    if (search.item)
+      throw redirect({
+        to: "/guardrails/$guardrailId",
+        params: { guardrailId: search.item },
+        replace: true,
+      });
+  },
   component: GuardrailsRoute,
 });
 
 function GuardrailsRoute() {
   const { item } = Route.useSearch();
-  return item ? (
-    <GuardrailDetailPage projectId="individual" guardrailId={item} />
-  ) : (
-    <GuardrailsPage projectId="individual" />
+  const navigate = Route.useNavigate();
+  return (
+    <BusinessCatalog
+      kind="guardrails"
+      selectedId={item}
+      onSelect={(id) => {
+        if (id)
+          void navigate({
+            to: "/guardrails/$guardrailId",
+            params: { guardrailId: id },
+          });
+      }}
+    />
   );
 }

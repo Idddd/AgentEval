@@ -7,6 +7,10 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["server/**/*.test.ts", "src/**/*.test.{ts,tsx}"],
+    include: [
+      "server/**/*.test.ts",
+      "marketplace-server/**/*.test.ts",
+      "src/**/*.test.{ts,tsx}",
+    ],
   },
 });

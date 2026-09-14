@@ -6,7 +6,6 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { MarketplaceShell } from "@/features/marketplace/shell";
-import { marketplaceDestination } from "@/features/marketplace/contracts";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRouteWithContext<{
@@ -23,7 +22,13 @@ export const Route = createRootRouteWithContext<{
         search: { item: decodeURIComponent(guardrailDetail[1]) },
         replace: true,
       });
-    const destination = marketplaceDestination(location.pathname);
+    const destination =
+      /^\/guardrails\/[^/]+\/?$/.test(location.pathname) ||
+      ["/guardrails", "/policies", "/templates"].includes(location.pathname)
+        ? null
+        : /(?:template|policy-library)/.test(location.pathname)
+          ? ("/policies" as const)
+          : ("/guardrails" as const);
     if (destination) throw redirect({ to: destination, replace: true });
   },
   head: () => ({
@@ -36,13 +41,12 @@ export const Route = createRootRouteWithContext<{
       { title: "AI Marketplace" },
       {
         name: "description",
-        content:
-          "Create business guardrails and discover reusable templates for thoughtful AI.",
+        content: "AI Marketplace · Guardrails and Policies",
       },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "icon", href: "/api/branding/favicon" },
     ],
   }),
   shellComponent: RootDocument,

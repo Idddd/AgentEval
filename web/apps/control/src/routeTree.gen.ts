@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GuardrailsRouteImport } from './routes/guardrails'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as PoliciesRouteImport } from './routes/policies'
 import { Route as TemplatesRouteImport } from './routes/templates'
 import { Route as ProjectIdIndexRouteImport } from './routes/$projectId/index'
 import { Route as ProjectIdBuildsRouteImport } from './routes/$projectId/builds'
@@ -30,6 +31,7 @@ import { Route as ProjectIdSkillsRouteImport } from './routes/$projectId/skills'
 import { Route as ProjectIdTechnicalValidationRouteImport } from './routes/$projectId/technical-validation'
 import { Route as ProjectIdTracesRouteImport } from './routes/$projectId/traces'
 import { Route as AuthSsoCompleteRouteImport } from './routes/auth/sso-complete'
+import { Route as GuardrailsGuardrailIdRouteImport } from './routes/guardrails_.$guardrailId'
 import { Route as ProjectIdAccessPoliciesIndexRouteImport } from './routes/$projectId/access-policies/index'
 import { Route as ProjectIdAccessPoliciesPolicyIdRouteImport } from './routes/$projectId/access-policies/$policyId'
 import { Route as ProjectIdAgentGardenIndexRouteImport } from './routes/$projectId/agent-garden/index'
@@ -85,6 +87,11 @@ const GuardrailsRoute = GuardrailsRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PoliciesRoute = PoliciesRouteImport.update({
+  id: '/policies',
+  path: '/policies',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TemplatesRoute = TemplatesRouteImport.update({
@@ -177,6 +184,11 @@ const ProjectIdTracesRoute = ProjectIdTracesRouteImport.update({
 const AuthSsoCompleteRoute = AuthSsoCompleteRouteImport.update({
   id: '/auth/sso-complete',
   path: '/auth/sso-complete',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuardrailsGuardrailIdRoute = GuardrailsGuardrailIdRouteImport.update({
+  id: '/guardrails_/$guardrailId',
+  path: '/guardrails/$guardrailId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectIdAccessPoliciesIndexRoute =
@@ -424,6 +436,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/guardrails': typeof GuardrailsRoute
   '/login': typeof LoginRoute
+  '/policies': typeof PoliciesRoute
   '/templates': typeof TemplatesRoute
   '/$projectId/builds': typeof ProjectIdBuildsRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
@@ -441,6 +454,7 @@ export interface FileRoutesByFullPath {
   '/$projectId/technical-validation': typeof ProjectIdTechnicalValidationRoute
   '/$projectId/traces': typeof ProjectIdTracesRoute
   '/auth/sso-complete': typeof AuthSsoCompleteRoute
+  '/guardrails/$guardrailId': typeof GuardrailsGuardrailIdRoute
   '/$projectId/': typeof ProjectIdIndexRoute
   '/$projectId/access-policies/$policyId': typeof ProjectIdAccessPoliciesPolicyIdRoute
   '/$projectId/agent-garden/$agentId': typeof ProjectIdAgentGardenAgentIdRoute
@@ -488,6 +502,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/guardrails': typeof GuardrailsRoute
   '/login': typeof LoginRoute
+  '/policies': typeof PoliciesRoute
   '/templates': typeof TemplatesRoute
   '/$projectId/builds': typeof ProjectIdBuildsRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
@@ -504,6 +519,7 @@ export interface FileRoutesByTo {
   '/$projectId/technical-validation': typeof ProjectIdTechnicalValidationRoute
   '/$projectId/traces': typeof ProjectIdTracesRoute
   '/auth/sso-complete': typeof AuthSsoCompleteRoute
+  '/guardrails/$guardrailId': typeof GuardrailsGuardrailIdRoute
   '/$projectId': typeof ProjectIdIndexRoute
   '/$projectId/access-policies/$policyId': typeof ProjectIdAccessPoliciesPolicyIdRoute
   '/$projectId/agent-garden/$agentId': typeof ProjectIdAgentGardenAgentIdRoute
@@ -552,6 +568,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/guardrails': typeof GuardrailsRoute
   '/login': typeof LoginRoute
+  '/policies': typeof PoliciesRoute
   '/templates': typeof TemplatesRoute
   '/$projectId/builds': typeof ProjectIdBuildsRoute
   '/$projectId/cost': typeof ProjectIdCostRoute
@@ -569,6 +586,7 @@ export interface FileRoutesById {
   '/$projectId/technical-validation': typeof ProjectIdTechnicalValidationRoute
   '/$projectId/traces': typeof ProjectIdTracesRoute
   '/auth/sso-complete': typeof AuthSsoCompleteRoute
+  '/guardrails_/$guardrailId': typeof GuardrailsGuardrailIdRoute
   '/$projectId/': typeof ProjectIdIndexRoute
   '/$projectId/access-policies/$policyId': typeof ProjectIdAccessPoliciesPolicyIdRoute
   '/$projectId/agent-garden/$agentId': typeof ProjectIdAgentGardenAgentIdRoute
@@ -618,6 +636,7 @@ export interface FileRouteTypes {
     | '/'
     | '/guardrails'
     | '/login'
+    | '/policies'
     | '/templates'
     | '/$projectId/builds'
     | '/$projectId/cost'
@@ -635,6 +654,7 @@ export interface FileRouteTypes {
     | '/$projectId/technical-validation'
     | '/$projectId/traces'
     | '/auth/sso-complete'
+    | '/guardrails/$guardrailId'
     | '/$projectId/'
     | '/$projectId/access-policies/$policyId'
     | '/$projectId/agent-garden/$agentId'
@@ -682,6 +702,7 @@ export interface FileRouteTypes {
     | '/'
     | '/guardrails'
     | '/login'
+    | '/policies'
     | '/templates'
     | '/$projectId/builds'
     | '/$projectId/cost'
@@ -698,6 +719,7 @@ export interface FileRouteTypes {
     | '/$projectId/technical-validation'
     | '/$projectId/traces'
     | '/auth/sso-complete'
+    | '/guardrails/$guardrailId'
     | '/$projectId'
     | '/$projectId/access-policies/$policyId'
     | '/$projectId/agent-garden/$agentId'
@@ -745,6 +767,7 @@ export interface FileRouteTypes {
     | '/'
     | '/guardrails'
     | '/login'
+    | '/policies'
     | '/templates'
     | '/$projectId/builds'
     | '/$projectId/cost'
@@ -762,6 +785,7 @@ export interface FileRouteTypes {
     | '/$projectId/technical-validation'
     | '/$projectId/traces'
     | '/auth/sso-complete'
+    | '/guardrails_/$guardrailId'
     | '/$projectId/'
     | '/$projectId/access-policies/$policyId'
     | '/$projectId/agent-garden/$agentId'
@@ -810,6 +834,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   GuardrailsRoute: typeof GuardrailsRoute
   LoginRoute: typeof LoginRoute
+  PoliciesRoute: typeof PoliciesRoute
   TemplatesRoute: typeof TemplatesRoute
   ProjectIdBuildsRoute: typeof ProjectIdBuildsRoute
   ProjectIdCostRoute: typeof ProjectIdCostRoute
@@ -827,6 +852,7 @@ export interface RootRouteChildren {
   ProjectIdTechnicalValidationRoute: typeof ProjectIdTechnicalValidationRoute
   ProjectIdTracesRoute: typeof ProjectIdTracesRoute
   AuthSsoCompleteRoute: typeof AuthSsoCompleteRoute
+  GuardrailsGuardrailIdRoute: typeof GuardrailsGuardrailIdRoute
   ProjectIdIndexRoute: typeof ProjectIdIndexRoute
   ProjectIdAccessPoliciesPolicyIdRoute: typeof ProjectIdAccessPoliciesPolicyIdRoute
   ProjectIdAgentGardenAgentIdRoute: typeof ProjectIdAgentGardenAgentIdRoute
@@ -868,6 +894,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/policies': {
+      id: '/policies'
+      path: '/policies'
+      fullPath: '/policies'
+      preLoaderRoute: typeof PoliciesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/templates': {
@@ -994,6 +1027,13 @@ declare module '@tanstack/react-router' {
       path: '/auth/sso-complete'
       fullPath: '/auth/sso-complete'
       preLoaderRoute: typeof AuthSsoCompleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guardrails_/$guardrailId': {
+      id: '/guardrails_/$guardrailId'
+      path: '/guardrails/$guardrailId'
+      fullPath: '/guardrails/$guardrailId'
+      preLoaderRoute: typeof GuardrailsGuardrailIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$projectId/access-policies/': {
@@ -1362,6 +1402,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GuardrailsRoute: GuardrailsRoute,
   LoginRoute: LoginRoute,
+  PoliciesRoute: PoliciesRoute,
   TemplatesRoute: TemplatesRoute,
   ProjectIdBuildsRoute: ProjectIdBuildsRoute,
   ProjectIdCostRoute: ProjectIdCostRoute,
@@ -1379,6 +1420,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectIdTechnicalValidationRoute: ProjectIdTechnicalValidationRoute,
   ProjectIdTracesRoute: ProjectIdTracesRoute,
   AuthSsoCompleteRoute: AuthSsoCompleteRoute,
+  GuardrailsGuardrailIdRoute: GuardrailsGuardrailIdRoute,
   ProjectIdIndexRoute: ProjectIdIndexRoute,
   ProjectIdAccessPoliciesPolicyIdRoute: ProjectIdAccessPoliciesPolicyIdRoute,
   ProjectIdAgentGardenAgentIdRoute: ProjectIdAgentGardenAgentIdRoute,

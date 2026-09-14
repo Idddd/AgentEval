@@ -4,7 +4,7 @@ import {
   Outlet,
   useRouterState,
 } from "@tanstack/react-router";
-import { CircleHelp, Folder, Layers2, Search, ShieldCheck } from "lucide-react";
+import { FileText, Folder, ShieldCheck } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-logo";
 import {
   Sidebar,
@@ -24,8 +24,11 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { GuardGovernanceProvider } from "@/features/guard-governance/mock-provider";
-import { GuardrailImportProvider } from "@/features/guard-governance/guardrail-import/guardrail-import-provider";
+import {
+  BusinessDemoProvider,
+  BusinessConnectionStatus,
+} from "@/features/business-demo/provider";
+import { OwnerMenu } from "@/features/business-demo/owner-menu";
 
 // Restore the original visual shell without depending on live backend services.
 export function MarketplaceShell() {
@@ -39,7 +42,9 @@ export function MarketplaceShell() {
     >
       <TooltipProvider delayDuration={250}>
         <SidebarProvider>
-          <ShellContent />
+          <BusinessDemoProvider>
+            <ShellContent />
+          </BusinessDemoProvider>
         </SidebarProvider>
       </TooltipProvider>
     </ClientOnly>
@@ -50,7 +55,7 @@ function ShellContent() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
-  const section = pathname === "/templates" ? "Templates" : "Guardrails";
+  const section = pathname === "/policies" ? "Policies" : "Guardrails";
   return (
     <>
       <a
@@ -64,29 +69,18 @@ function ShellContent() {
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/94 px-4 backdrop-blur-md sm:px-6 lg:px-8">
           <SidebarTrigger />
           <div className="flex items-center gap-1 text-xs">
-            <span className="hidden sm:inline">Demo Project</span>
+            <span className="hidden sm:inline">Default Project</span>
             <span className="hidden text-muted-foreground sm:inline">/</span>
             <span className="font-medium">{section}</span>
           </div>
-          <button
-            disabled
-            className="ml-auto hidden h-9 w-64 items-center gap-2 rounded-md border bg-muted/25 px-3 text-left text-xs text-muted-foreground/55 lg:flex"
-          >
-            <Search className="size-4" />
-            Search project
-            <span className="ml-auto text-[9px] uppercase">Later</span>
-          </button>
         </header>
+        <BusinessConnectionStatus />
         <main
           id="marketplace-content"
           tabIndex={-1}
           className="mx-auto w-full max-w-[1600px] p-5 sm:p-6 lg:px-8"
         >
-          <GuardGovernanceProvider projectId="individual">
-            <GuardrailImportProvider projectId="individual">
-              <Outlet />
-            </GuardrailImportProvider>
-          </GuardGovernanceProvider>
+          <Outlet />
         </main>
       </SidebarInset>
     </>
@@ -98,7 +92,7 @@ function MarketplaceSidebar({ section }: { section: string }) {
   const compact = !isMobile && state === "collapsed";
   const sections = [
     { to: "/guardrails" as const, label: "Guardrails", icon: ShieldCheck },
-    { to: "/templates" as const, label: "Templates", icon: Layers2 },
+    { to: "/policies" as const, label: "Policies", icon: FileText },
   ];
   return (
     <Sidebar collapsible="icon">
@@ -118,10 +112,10 @@ function MarketplaceSidebar({ section }: { section: string }) {
         </Link>
         <div
           className="flex h-11 items-center gap-3 rounded-md border border-sidebar-border px-3 text-[13px] group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
-          title="Demo Project"
+          title="Default Project"
         >
           <Folder className="size-4 shrink-0 text-muted-foreground" />
-          {!compact && <span>Demo Project</span>}
+          {!compact && <span>Default Project</span>}
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -155,31 +149,7 @@ function MarketplaceSidebar({ section }: { section: string }) {
         </nav>
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-2">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton disabled tooltip="Help & documentation">
-              <CircleHelp />
-              <span>Help & documentation</span>
-              <span className="ml-auto text-[10px] uppercase">Later</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <div className="mt-1 flex items-center gap-3 border-t border-sidebar-border px-2 pt-3 pb-1 group-data-[collapsible=icon]:justify-center">
-          <span
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground"
-            aria-label="Local Administrator"
-          >
-            LA
-          </span>
-          {!compact && (
-            <div className="min-w-0 text-xs">
-              <div className="font-medium">Local Administrator</div>
-              <div className="text-[10px] text-muted-foreground">
-                Local account
-              </div>
-            </div>
-          )}
-        </div>
+        <OwnerMenu compact={compact} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

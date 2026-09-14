@@ -1,0 +1,22 @@
+# Standalone frontend: no legacy database or evaluation service required.
+services:
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.control
+    image: ai-marketplace:local
+    ports:
+      - "127.0.0.1:18082:8080"
+    environment:
+      MARKETPLACE_DATA_MODE: "${MARKETPLACE_DATA_MODE:-mock}"
+      GUARD_API_URL: "${GUARD_API_URL:-}"
+      GUARD_POLICY_AUTHORING_URL: "${GUARD_POLICY_AUTHORING_URL:-}"
+      MARKETPLACE_PUBLIC_ORIGIN: "${MARKETPLACE_PUBLIC_ORIGIN:-}"
+      BRAND_LOGO_PATH: "/app/branding/${BRAND_LOGO_FILE:-logo.svg}"
+      BRAND_FAVICON_PATH: "/app/branding/${BRAND_FAVICON_FILE:-favicon.svg}"
+    volumes:
+      - type: bind
+        source: ${BRANDING_DIR:-./branding}
+        target: /app/branding
+        read_only: true
+    command: ["node", "apps/control/.output/server/index.mjs"]

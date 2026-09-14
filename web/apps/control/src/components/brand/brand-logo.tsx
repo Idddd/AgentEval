@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 export function BrandMark({
   animated = false,
@@ -7,6 +8,17 @@ export function BrandMark({
   animated?: boolean;
   className?: string;
 }) {
+  const [failed, setFailed] = useState(false);
+  if (!failed)
+    return (
+      <img
+        src="/api/branding/logo"
+        alt=""
+        aria-hidden="true"
+        className={cn("object-contain", className)}
+        onError={() => setFailed(true)}
+      />
+    );
   return (
     <svg
       aria-hidden="true"
@@ -14,11 +26,21 @@ export function BrandMark({
       data-animated={animated || undefined}
       viewBox="0 0 64 64"
     >
-      <g className="brand-lattice-lines" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <g
+        className="brand-lattice-lines"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
         <path d="M8 10h48L32 56 8 10Z" />
         <path d="M32 10v46M16 30h32M8 10l40 20M56 10 16 30M16 30l16 26M48 30 32 56" />
       </g>
-      <g className="brand-lattice-nodes" fill="var(--brand-signal)" stroke="var(--brand-surface)" strokeWidth="1.5">
+      <g
+        className="brand-lattice-nodes"
+        fill="var(--brand-signal)"
+        stroke="var(--brand-surface)"
+        strokeWidth="1.5"
+      >
         <circle cx="8" cy="10" r="3.5" />
         <circle cx="32" cy="10" r="3.5" />
         <circle cx="56" cy="10" r="3.5" />

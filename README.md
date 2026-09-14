@@ -1,12 +1,14 @@
 # AI Marketplace
 
-The current AgentEval frontend is **AI Marketplace**, with only **Guardrails**
-and **Templates** in the sidebar. The original Guardrails and Policy Library
-screens, styling, and local demo interactions have been restored; the Policy
-Library is presented under the Templates title. The new Marketplace visual
-redesign is not mounted.
+The current AgentEval frontend is **AI Marketplace**, with **Guardrails** and
+**Policies** in the sidebar. It supports a local mock workspace and an authenticated
+connection to Guard Controller using runtime configuration.
 
 ## Run the Marketplace UI
+
+Docker icon replacement: [runtime branding](docs/runtime-branding.md).
+Use `docker-compose.marketplace.yml` for the standalone frontend with a read-only
+branding directory mount; logo/favicon changes do not require rebuilding.
 
 Requires Node.js 22+ and npm. No database, Guard service, or Python API is needed.
 
@@ -16,18 +18,19 @@ npm ci
 npm run dev:control -- --host 127.0.0.1 --port 18082
 ```
 
-Open [AI Marketplace](http://127.0.0.1:18082/guardrails). The UI uses a local
-demo workspace by default. The restored pages use their original in-memory
-mock providers; refreshing resets their session. Old Guardrail detail links
-redirect to `/guardrails?item=<id>`; other old project URLs redirect to the two
-Marketplace sections. Previously saved Marketplace preview data is not deleted.
+Open [AI Marketplace](http://127.0.0.1:18082/guardrails). Mock mode is the default;
+its records persist in browser storage. Guardrail details use `/guardrails/<id>`
+and display their pinned Policy versions. Existing local records are preserved.
 
-To build: `npm run build:control` from `web/`. The future Marketplace API adapter
-and its `VITE_MARKETPLACE_API_BASE_URL` option are retained, but are not wired
-to the restored screens. No live backend integration is enabled in this preview.
+To build: `npm run build:control` from `web/`. For live deployment set
+`MARKETPLACE_DATA_MODE=live` and `GUARD_API_URL=https://guard.internal/api/v1`.
+`auto` allows initial connection failure to fall back to a separate local dataset;
+writes never fall back. Connect with a personal Guard access token in the UI.
 
-See [Marketplace API contract](docs/ai-marketplace-api.md) for all six endpoints,
-request/response examples, Guard mappings, and fallback behavior.
+See [Guard OpenAPI connection](docs/guard-openapi-connection.md) for Docker setup,
+permissions, supported operations, and the optional backend extension required
+for text-only Policy creation. Without that extension, live users can query and
+validate existing policies and create Guardrails from published Policy versions.
 
 ## Legacy evaluation platform reference
 

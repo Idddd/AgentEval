@@ -1,11 +1,15 @@
 # AI Marketplace server boundary
 
-Intentionally contains no application handlers or startup jobs. Nitro serves the
-TanStack application only. The existing `server/` control-plane code is retained
+Contains runtime branding, connection configuration, an allowlisted Guard proxy
+and a lightweight health check, with no database startup jobs. Nitro serves the TanStack application. The existing `server/` control-plane code is retained
 for reference, but is not loaded by the Marketplace application.
 
-Marketplace data access is defined in `src/features/marketplace/api.ts`. The
-default adapter uses local preview data. A separately implemented Marketplace
-backend can be configured with `VITE_MARKETPLACE_API_BASE_URL`.
+Marketplace data access for active pages is defined in
+`src/features/business-demo/guard-api.ts` and `provider.tsx`. The old
+`src/features/marketplace/api.ts` facade proposal is not wired to these pages.
 
-See `docs/ai-marketplace-api.md` in the repository root for the future contract.
+## Guard connection
+
+The standalone server also provides runtime `/api/marketplace-config` and a
+per-user authenticated, allowlisted `/api/guard/*` proxy. See
+[`docs/guard-openapi-connection.md`](../../../../docs/guard-openapi-connection.md).
