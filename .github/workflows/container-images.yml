@@ -103,7 +103,7 @@ jobs:
           for mode in mock live; do
             container=$(docker run -d --read-only --tmpfs /tmp -p 127.0.0.1:18082:8080 \
               -e MARKETPLACE_DATA_MODE="$mode" -e GUARD_API_URL=http://guard.internal/api/v1 "$IMAGE")
-            curl --fail --retry 30 --retry-connrefused --retry-delay 2 http://127.0.0.1:18082/api/health
+            curl --fail --retry 30 --retry-all-errors --retry-delay 2 --retry-max-time 90 --max-time 5 http://127.0.0.1:18082/api/health
             curl --fail http://127.0.0.1:18082/api/marketplace-config | jq -e --arg mode "$mode" '.mode == $mode'
             curl --fail http://127.0.0.1:18082/guardrails > /dev/null
             docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" "artifacts/tali-ui-demo-${CHART_VERSION}.tgz"
