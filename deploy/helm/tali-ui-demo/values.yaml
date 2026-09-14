@@ -1,0 +1,42 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/idddd/tali-ui-demo
+  tag: dev
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+marketplace:
+  dataMode: mock
+  guardApiUrl: ""
+  policyAuthoringUrl: ""
+  publicOrigin: ""
+
+branding:
+  existingConfigMap: ""
+  logoFile: logo.svg
+  faviconFile: favicon.svg
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

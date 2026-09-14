@@ -6,6 +6,8 @@ connection to Guard Controller using runtime configuration.
 
 ## Run the Marketplace UI
 
+Versioned container and Helm installation: [release deployment](docs/marketplace-release.md).
+
 Docker icon replacement: [runtime branding](docs/runtime-branding.md).
 Use `docker-compose.marketplace.yml` for the standalone frontend with a read-only
 branding directory mount; logo/favicon changes do not require rebuilding.

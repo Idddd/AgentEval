@@ -1,4 +1,5 @@
 .git
+.tmp
 .worktrees
 .venv
 .pytest_cache

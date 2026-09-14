@@ -1,0 +1,106 @@
+{{- if not (has .Values.marketplace.dataMode (list "mock" "live" "auto")) }}
+{{- fail "marketplace.dataMode must be mock, live or auto" }}
+{{- end }}
+{{- if and (ne .Values.marketplace.dataMode "mock") (empty .Values.marketplace.guardApiUrl) }}
+{{- fail "marketplace.guardApiUrl is required in live/auto mode" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tali-ui-demo.fullname" . }}
+  labels:
+    {{- include "tali-ui-demo.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "tali-ui-demo.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "tali-ui-demo.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: ui
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: MARKETPLACE_DATA_MODE
+              value: {{ .Values.marketplace.dataMode | quote }}
+            - name: GUARD_API_URL
+              value: {{ .Values.marketplace.guardApiUrl | quote }}
+            - name: GUARD_POLICY_AUTHORING_URL
+              value: {{ .Values.marketplace.policyAuthoringUrl | quote }}
+            - name: MARKETPLACE_PUBLIC_ORIGIN
+              value: {{ .Values.marketplace.publicOrigin | quote }}
+            {{- if .Values.branding.existingConfigMap }}
+            - name: BRAND_LOGO_PATH
+              value: {{ printf "/app/branding/%s" .Values.branding.logoFile | quote }}
+            - name: BRAND_FAVICON_PATH
+              value: {{ printf "/app/branding/%s" .Values.branding.faviconFile | quote }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+            {{- if .Values.branding.existingConfigMap }}
+            - name: branding
+              mountPath: /app/branding
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: runtime-tmp
+          emptyDir: {}
+        {{- if .Values.branding.existingConfigMap }}
+        - name: branding
+          configMap:
+            name: {{ .Values.branding.existingConfigMap | quote }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

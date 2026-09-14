@@ -1,0 +1,9 @@
+AI Marketplace is available through service {{ include "tali-ui-demo.fullname" . }}.
+Data mode: {{ .Values.marketplace.dataMode }}
+
+kubectl --namespace {{ .Release.Namespace }} port-forward service/{{ include "tali-ui-demo.fullname" . }} 18082:{{ .Values.service.port }}
+
+Open http://127.0.0.1:18082/guardrails
+{{- if ne .Values.marketplace.dataMode "mock" }}
+Connect with your own Guard personal access token.
+{{- end }}
