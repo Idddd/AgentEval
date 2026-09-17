@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -15,10 +16,64 @@ beforeEach(() => localStorage.clear());
 afterEach(cleanup);
 const show = (id = "customer-interaction") =>
   render(
-    <BusinessDemoProvider config={{ mode: "mock", sourceId: "mock", policyAuthoring: true }}>
+    <BusinessDemoProvider
+      config={{ mode: "mock", sourceId: "mock", policyAuthoring: true }}
+    >
       <GuardrailDetails id={id} />
     </BusinessDemoProvider>,
   );
+
+it("deactivates before exposing delete and supports reactivation", async () => {
+  show();
+  expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
+  await act(async () => {
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Deactivate",
+      }),
+    );
+  });
+  expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
+  expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Reactivate" }));
+  await act(async () => {
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Reactivate",
+      }),
+    );
+  });
+  expect(screen.getByText("Active")).toBeTruthy();
+});
+
+it("saves unsaved changes before asking to deactivate", async () => {
+  show();
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
+    target: { value: "Updated active profile" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
+  expect(
+    screen.getByRole("alertdialog", {
+      name: "Save changes before continuing?",
+    }),
+  ).toBeTruthy();
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  });
+  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find(
+    (x: { id: string }) => x.id === "customer-interaction",
+  );
+  expect(stored.name).toBe("Updated active profile");
+  expect(stored.status).toBe("Active");
+  expect(
+    screen.getByRole("alertdialog", {
+      name: "Deactivate “Updated active profile”?",
+    }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+});
 
 it("opens a full detail page with policy versions, status and actions", () => {
   show();
@@ -33,8 +88,8 @@ it("opens a full detail page with policy versions, status and actions", () => {
     screen.getByRole("button", { name: "View Customer Interaction rules" }),
   ).toBeTruthy();
   expect(
-    screen.getByRole("button", { name: "Edit Customer Interaction rules" }),
-  ).toBeTruthy();
+    screen.queryByRole("button", { name: "Edit Customer Interaction rules" }),
+  ).toBeNull();
 });
 
 it("views pinned text and edits a Policy without replacing the Guardrail reference", () => {
@@ -46,19 +101,17 @@ it("views pinned text and edits a Policy without replacing the Guardrail referen
   expect(
     within(screen.getByRole("dialog")).getByText(original.text),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Edit Customer Interaction rules" }),
+  fireEvent.change(
+    within(screen.getByRole("dialog")).getByRole("textbox", {
+      name: "Rule text",
+    }),
+    {
+      target: { value: "Changed rule" },
+    },
   );
-  expect(
-    screen.getByRole("heading", { name: "Create Policy v2" }),
-  ).toBeTruthy();
-  fireEvent.change(screen.getByRole("textbox", { name: "Rule text" }), {
-    target: { value: "Changed rule" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
-  expect(screen.getByText("Edit latest")).toBeTruthy();
+  expect(screen.queryByText("Edit latest")).toBeNull();
   const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items;
   expect(
     stored.find((x: { id: string }) => x.id === "customer-interaction")
@@ -90,25 +143,25 @@ it("shows ready pinned version alongside processing latest and disables modifica
   show();
   expect(screen.getByText("Ready")).toBeTruthy();
   expect(screen.getByText("Processing")).toBeTruthy();
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Edit Customer Interaction rules",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: "View Customer Interaction rules" }),
+  );
+  expect(within(screen.getByRole("dialog")).queryByRole("textbox")).toBeNull();
 });
 
 it("can edit a Guardrail draft and protects unsaved changes", () => {
   show("sensitive-information");
-  fireEvent.click(screen.getByRole("button", { name: "Edit Guardrail" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
     target: { value: "Updated guard" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
-  expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(
+    (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
+  ).not.toBe("Updated guard");
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
+    target: { value: "Updated guard" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(
     screen.getByRole("heading", { name: "Updated guard", level: 1 }),
@@ -121,4 +174,17 @@ it("provides a return link for a missing guardrail", () => {
   expect(
     screen.getByRole("link", { name: "Guardrails" }).getAttribute("href"),
   ).toBe("/guardrails");
+});
+
+it("saves All as the scope of a profile", () => {
+  show();
+  fireEvent.change(screen.getByLabelText("Location"), {
+    target: { value: "All" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(
+    JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find(
+      (x: { id: string }) => x.id === "customer-interaction",
+    ).location,
+  ).toBe("All");
 });

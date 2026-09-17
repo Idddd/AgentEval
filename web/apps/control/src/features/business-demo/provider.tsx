@@ -10,6 +10,7 @@ import {
   advanceProcessing,
   restoreEntities,
   saveEntity,
+  deletionBlocker,
   STORAGE_KEY,
   OWNER_STORAGE_KEY,
   type Draft,
@@ -41,6 +42,8 @@ const DemoContext = createContext<{
   disconnect?: () => void;
   publish?: (item: Entity) => Promise<void>;
   validate?: (item: Entity) => Promise<void>;
+  remove?: (item: Entity) => void | Promise<void>;
+  setActivation?: (item: Entity, active: boolean) => void | Promise<void>;
   save: (
     kind: Kind,
     draft: Draft,
@@ -192,6 +195,33 @@ function MockProvider({
         items,
         sessionOnly,
         save,
+        remove: (item) => {
+          const reason = deletionBlocker(items, item);
+          if (reason) throw new Error(reason);
+          setItems((current) =>
+            current.filter((entry) => entry.id !== item.id),
+          );
+        },
+        setActivation: (item, active) => {
+          if (
+            item.kind !== "guardrails" ||
+            item.status !== (active ? "Ready" : "Active")
+          )
+            throw new Error(
+              "This profile's status has changed. Refresh and try again.",
+            );
+          setItems((current) =>
+            current.map((entry) =>
+              entry.id === item.id
+                ? {
+                    ...entry,
+                    status: active ? "Active" : "Ready",
+                    updatedAt: Date.now(),
+                  }
+                : entry,
+            ),
+          );
+        },
         mode: "mock",
         currentOwner,
         owners,
@@ -229,7 +259,7 @@ function LiveProvider({
     };
   }, []);
   async function connect() {
-    if (busy || !token.trim()) return;
+    if (busy || (!config.autoConnect && !token.trim())) return;
     setBusy(true);
     setError("");
     const next = new GuardAdapter(token.trim(), config);
@@ -251,6 +281,9 @@ function LiveProvider({
       if (alive.current) setBusy(false);
     }
   }
+  useEffect(() => {
+    if (config.autoConnect) void connect();
+  }, [config.autoConnect]);
   async function refresh() {
     if (!adapter || locked.current) return;
     locked.current = true;
@@ -358,6 +391,28 @@ function LiveProvider({
       }
     });
   }
+  if (!ready && config.autoConnect)
+    return (
+      <section className="mx-auto mt-16 max-w-md space-y-4 rounded-lg border bg-white p-6">
+        <h1 className="text-xl font-medium">
+          {error ? "Demo connection unavailable" : "Opening demo…"}
+        </h1>
+        {error ? (
+          <>
+            <p role="alert" className="text-sm text-red-700">
+              {error}
+            </p>
+            <Button disabled={busy} onClick={() => void connect()}>
+              {busy ? "Connecting…" : "Retry"}
+            </Button>
+          </>
+        ) : (
+          <p role="status" className="text-sm text-muted-foreground">
+            Loading your workspace
+          </p>
+        )}
+      </section>
+    );
   if (!ready)
     return (
       <section className="mx-auto mt-16 max-w-md space-y-4 rounded-lg border bg-white p-6">
@@ -408,14 +463,16 @@ function LiveProvider({
       >
         Refresh
       </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        disabled={busy || locked.current}
-        onClick={disconnect}
-      >
-        Disconnect
-      </Button>
+      {!config.autoConnect && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy || locked.current}
+          onClick={disconnect}
+        >
+          Disconnect
+        </Button>
+      )}
       {error && (
         <span role="alert" className="text-red-700">
           {error} · Showing last retrieved data
@@ -432,7 +489,7 @@ function LiveProvider({
         validate,
         sessionOnly: false,
         mode: "live",
-        disconnect,
+        ...(!config.autoConnect ? { disconnect } : {}),
         policyAuthoring: config.policyAuthoring,
         connection,
         busy,

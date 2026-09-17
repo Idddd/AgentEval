@@ -45,13 +45,46 @@ function connect() {
   fireEvent.click(screen.getByRole("button", { name: "Connect" }));
 }
 function responding() {
-  return vi.fn(async (url: string) => {
+  return vi.fn(async (url: string, _init?: RequestInit) => {
     if (url.endsWith("/policies"))
       return Response.json({ items: [policy], count: 1 });
     if (url.endsWith("/guardrails")) return Response.json({ items: [] });
     throw new Error("unexpected URL");
   });
 }
+it("opens the live demo automatically without a token form and reconnects on remount", async () => {
+  const fetcher = responding();
+  vi.stubGlobal("fetch", fetcher);
+  const mount = () => render(
+    <BusinessDemoProvider config={{ ...live, autoConnect: true }}>
+      <BusinessConnectionStatus />
+      <BusinessCatalog kind="policies" onSelect={() => {}} />
+    </BusinessDemoProvider>,
+  );
+  const first = mount();
+  expect(screen.queryByLabelText("Access token")).toBeNull();
+  await screen.findByRole("button", { name: /^Remote Privacy/ });
+  expect(screen.queryByRole("button", { name: "Disconnect" })).toBeNull();
+  expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).has("Authorization")).toBe(false);
+  first.unmount();
+  mount();
+  await screen.findByRole("button", { name: /^Remote Privacy/ });
+  expect(screen.queryByLabelText("Access token")).toBeNull();
+});
+it("offers retry instead of requiring a token when automatic demo connection fails", async () => {
+  const fetcher = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => { throw new Error("offline"); });
+  vi.stubGlobal("fetch", fetcher);
+  render(
+    <BusinessDemoProvider config={{ ...live, autoConnect: true }}>
+      <BusinessCatalog kind="policies" onSelect={() => {}} />
+    </BusinessDemoProvider>,
+  );
+  await screen.findByRole("alert");
+  expect(screen.queryByLabelText("Access token")).toBeNull();
+  fetcher.mockImplementation(responding());
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByRole("button", { name: /^Remote Privacy/ });
+});
 it("isolates live records from existing mock storage and keeps tokens out of storage", async () => {
   const stored = JSON.stringify({ version: 2, items: seedEntities() });
   localStorage.setItem(STORAGE_KEY, stored);

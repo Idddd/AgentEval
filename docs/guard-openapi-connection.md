@@ -49,6 +49,14 @@ from the origin seen by the Node server, so the write-origin check works over TL
 
 ## Authentication
 
+### Optional local demo connection
+
+For a trusted, single-machine demo, set `MARKETPLACE_DEMO_TOKEN` in the Node server environment to a dedicated Guard personal token. The frontend automatically loads live data without a token form, including after reload. The secret stays on the server; the runtime config exposes only `autoConnect: true`. Explicit browser Authorization headers are never replaced by the demo token.
+
+This option requires `MARKETPLACE_DATA_MODE=live`, an effective `NITRO_HOST`/`HOST` of `127.0.0.1`, `localhost` or `::1`, and a loopback `MARKETPLACE_PUBLIC_ORIGIN` and `GUARD_API_URL`. Optional authoring must also be loopback. Requests must match the configured public origin; cross-site requests are rejected. It is not enabled by the Compose or Helm defaults and is unsuitable for a shared deployment. When the token expires or is revoked, replace it and restart the local server.
+
+### Regular personal connection
+
 In live/auto mode, each user connects with their own Guard personal access token.
 The token stays in browser memory, is discarded on disconnect/reload, and is
 never written to localStorage, sessionStorage, a Docker environment variable,

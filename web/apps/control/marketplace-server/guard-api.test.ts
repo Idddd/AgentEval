@@ -4,6 +4,44 @@ const env = {
   MARKETPLACE_DATA_MODE: "live",
   GUARD_API_URL: "http://guard.internal:8080/api/v1",
 };
+const demoEnv = {
+  MARKETPLACE_DATA_MODE: "live",
+  GUARD_API_URL: "http://127.0.0.1:18083/api/v1",
+  HOST: "127.0.0.1",
+  MARKETPLACE_PUBLIC_ORIGIN: "http://127.0.0.1:18082",
+  MARKETPLACE_DEMO_TOKEN: "local-demo-secret",
+};
+it("connects a local demo using a server-only token", async () => {
+  const response = runtimeResponse(demoEnv);
+  expect(await response.clone().json()).toMatchObject({ autoConnect: true });
+  expect(await response.text()).not.toContain("local-demo-secret");
+  const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => Response.json({ items: [] }));
+  const result = await guardProxy(new Request("http://127.0.0.1:18082/api/guard/policies"), demoEnv, fetcher);
+  expect(result.status).toBe(200);
+  expect(fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer local-demo-secret" });
+});
+it("rejects demo credentials outside loopback and blocks foreign request origins", async () => {
+  for (const override of [
+    { HOST: "0.0.0.0" },
+    { NITRO_HOST: "0.0.0.0" },
+    { GUARD_API_URL: "https://guard.example/api/v1" },
+    { MARKETPLACE_PUBLIC_ORIGIN: "https://demo.example" },
+    { MARKETPLACE_PUBLIC_ORIGIN: "" },
+    { GUARD_POLICY_AUTHORING_URL: "https://authoring.example" },
+  ]) expect(runtimeResponse({ ...demoEnv, ...override }).status).toBe(503);
+  const fetcher = vi.fn();
+  for (const req of [
+    new Request("http://attacker.test:18082/api/guard/policies"),
+    new Request("http://127.0.0.1:18082/api/guard/policies", { headers: { "Sec-Fetch-Site": "cross-site" } }),
+  ]) expect((await guardProxy(req, demoEnv, fetcher)).status).toBe(403);
+  expect(fetcher).not.toHaveBeenCalled();
+});
+it("does not replace explicitly supplied authorization with the demo token", async () => {
+  const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => Response.json({}, { status: 401 }));
+  const req = new Request("http://127.0.0.1:18082/api/guard/policies", { headers: { Authorization: "Bearer invalid-user-token" } });
+  expect((await guardProxy(req, demoEnv, fetcher)).status).toBe(401);
+  expect(fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer invalid-user-token" });
+});
 const request = (path = "/policies", method = "GET", headers = {}) =>
   new Request(`http://localhost/api/guard${path}`, {
     method,

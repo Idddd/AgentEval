@@ -11,6 +11,7 @@ export const runtimeSchema = z.object({
   mode: z.enum(["mock", "live", "auto"]),
   sourceId: z.string(),
   policyAuthoring: z.boolean(),
+  autoConnect: z.boolean().optional(),
 });
 export type RuntimeConfig = z.infer<typeof runtimeSchema>;
 export class GuardApiError extends Error {
@@ -88,13 +89,22 @@ export async function jsonRequest(
 export const mayUseMock = (error: unknown) =>
   error instanceof GuardApiError && error.code === "upstream_unavailable";
 const object = z.record(z.string(), z.unknown());
+const bindingMetadata = {
+  rules: z.array(z.looseObject({ id: z.string() })).optional(),
+  rails: z.array(z.enum(["input", "output", "retrieval", "dialog", "execution"])).optional(),
+  parameters: z.array(z.looseObject({
+    name: z.string(), default: z.string().nullable().optional(),
+  })).optional(),
+};
 const snapshotSchema = z.looseObject({
+  ...bindingMetadata,
   version: z.string(),
   name: z.string(),
   description: z.string(),
   owner: z.string(),
 });
 const policySchema = z.looseObject({
+  ...bindingMetadata,
   id: z.string(),
   name: z.string(),
   description: z.string(),
@@ -150,6 +160,36 @@ const guardSchema = z.looseObject({
 type Policy = z.infer<typeof policySchema>;
 type Guard = z.infer<typeof guardSchema>;
 type Run = z.infer<typeof runSchema>;
+const validationResultsSchema = z.array(z.object({
+  passed: z.boolean(),
+  name: z.string().optional(),
+  policyId: z.string().optional(),
+  expectedDecision: z.string().nullable().optional(),
+  actualDecision: z.string().nullable().optional(),
+  assertionFailures: z.array(z.string()).optional(),
+  matchedRuleIds: z.array(z.string()).optional(),
+}));
+function validationFailure(run?: Run | null, policies: Entity[] = []): string {
+  const reason = run?.failureReason?.trim();
+  const parsed = validationResultsSchema.safeParse(run?.results);
+  const results = parsed.success ? parsed.data : [];
+  const failed = results.filter((result) => !result.passed);
+  if (!failed.length)
+    return reason || "Validation failed. The backend did not return test failure details.";
+  const summary = `${failed.length} of ${results.length} checks failed (${results.length - failed.length} passed).`;
+  const details = failed.map((result, index) => {
+    const policy = policies.find((item) => item.id === result.policyId);
+    const label = policy?.name ?? result.policyId;
+    return [
+      `${index + 1}. ${result.name || "Unnamed test"}${label ? ` — ${label}` : ""}`,
+      ...(result.expectedDecision && result.actualDecision
+        ? [`Expected: ${result.expectedDecision}. Actual: ${result.actualDecision}.`] : []),
+      ...(result.assertionFailures ?? []).filter((message) => message.trim()),
+      ...(result.matchedRuleIds?.length ? [`Matched rules: ${result.matchedRuleIds.join(", ")}`] : []),
+    ].join("\n");
+  });
+  return [summary, ...(reason ? [reason] : []), ...details].join("\n\n");
+}
 export type TrackedJob = {
   kind: Kind;
   id: string;
@@ -221,9 +261,7 @@ export function policyEntity(p: Policy, run?: Run | null): Entity {
       : {}),
     ...(currentRun?.status === "failed"
       ? {
-          question:
-            currentRun.failureReason ??
-            "Validation failed. Review the rules and submit again.",
+          question: validationFailure(currentRun),
         }
       : {}),
     remote: {
@@ -286,9 +324,9 @@ export function guardEntity(
     ...(status === "Needs input"
       ? {
           question:
-            version?.failureReason ??
-            run?.failureReason ??
-            "Validation failed.",
+            version?.status === "failed"
+              ? version.failureReason?.trim() || "Compilation failed. The backend did not return compilation details."
+              : validationFailure(run, policies),
         }
       : {}),
     remote: {
@@ -473,10 +511,8 @@ export class GuardAdapter {
           policy &&
           (policy.published_versions ??
             (policy.implementation_detail ? [] : [policy]));
-        if (
-          !available ||
-          !available.some((p) => p.version === String(ref.version))
-        )
+        const selected = available?.find((p) => p.version === String(ref.version));
+        if (!selected)
           throw new Error(
             "A selected Policy version is unavailable. Reload and select again.",
           );
@@ -489,6 +525,13 @@ export class GuardAdapter {
           pinned ?? {
             policyId: ref.policyId,
             policyVersion: String(ref.version),
+            enabledRuleIds: (selected.rules ?? []).map((rule) => rule.id),
+            enabledRails: selected.rails ?? [],
+            parameterValues: Object.fromEntries(
+              (selected.parameters ?? []).flatMap((parameter) =>
+                parameter.default == null ? [] : [[parameter.name, parameter.default]],
+              ),
+            ),
           }
         );
       });

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowLeft, ArrowRight, Pencil } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -8,6 +8,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
+  type EditorControls,
+  DeleteEntityAction,
   BackendActions,
   EntityDetail,
   EntityEditor,
@@ -32,6 +34,13 @@ export function GuardrailDetails({ id }: { id: string }) {
     version?: number | string;
     edit: boolean;
   } | null>(null);
+  const editorControls = useRef<EditorControls | null>(null);
+  const [guardDirty, setGuardDirty] = useState(false);
+  const [deleted, setDeleted] = useState(false);
+  useEffect(() => {
+    // Navigate after the removed editor has unmounted its unsaved-change guard.
+    if (deleted && !guard) window.location.href = "/guardrails";
+  }, [deleted, guard]);
   const [dirty, setDirty] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [notice, setNotice] = useState("");
@@ -48,8 +57,7 @@ export function GuardrailDetails({ id }: { id: string }) {
     setNotice("");
   }
   const canEdit = (item: Entity) =>
-    !item.remote?.readOnly &&
-    ["Draft", "Needs input", "Ready", "Validated"].includes(item.status);
+    !item.remote?.readOnly && item.status !== "Processing";
   function policyRow(ref: PolicyReference) {
     const policy = items.find(
       (p) => p.kind === "policies" && p.id === ref.policyId,
@@ -104,18 +112,6 @@ export function GuardrailDetails({ id }: { id: string }) {
               View
               <ArrowRight className="size-3" />
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!policy || !canEdit(policy)}
-              aria-label={`Edit ${ref.name}`}
-              onClick={() => policy && open(policy, true)}
-            >
-              <Pencil className="size-3" />
-              {policy && policy.version !== ref.version
-                ? "Edit latest"
-                : "Edit"}
-            </Button>
           </div>
         </td>
       </tr>
@@ -125,6 +121,10 @@ export function GuardrailDetails({ id }: { id: string }) {
     <section className="mx-auto max-w-[1320px] space-y-6 py-2 sm:py-5">
       <a
         href="/guardrails"
+        onClick={(event) => {
+          if (guardDirty && !window.confirm("Discard unsaved changes?"))
+            event.preventDefault();
+        }}
         className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary"
       >
         <ArrowLeft className="size-4" />
@@ -155,37 +155,37 @@ export function GuardrailDetails({ id }: { id: string }) {
                 </p>
               )}
             </div>
-            {(canEdit(guard) ||
-              (guard.remote && guard.status === "Active")) && (
-              <Button variant="outline" onClick={() => open(guard, true)}>
-                <Pencil className="size-4" />
-                Edit Guardrail
-              </Button>
-            )}
+            <DeleteEntityAction
+              item={guard}
+              dirty={guardDirty}
+              editorControls={editorControls}
+              onDeleted={() => {
+                setGuardDirty(false);
+                setDeleted(true);
+              }}
+            />
           </header>
           <div className="overflow-hidden rounded-lg border bg-white">
-            {!guard.remote && (
-              <dl className="grid gap-5 border-b p-5 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                <div className="sm:col-span-2 lg:col-span-4">
-                  <dt className="mb-1 text-xs text-muted-foreground">
-                    Use case
-                  </dt>
-                  <dd>{guard.useCase || "—"}</dd>
-                </div>
-                {scopeKeys.map((key) => (
-                  <div key={key}>
-                    <dt className="mb-1 text-xs text-muted-foreground">
-                      {scopeLabels[key]}
-                    </dt>
-                    <dd>{guard[key] || "—"}</dd>
-                  </div>
-                ))}
-              </dl>
+            {canEdit(guard) && (
+              <EntityEditor
+                key={`${guard.id}-${guard.updatedAt}`}
+                kind="guardrails"
+                initial={guard}
+                inline
+                controlsRef={editorControls}
+                onDirty={setGuardDirty}
+                onSave={async (draft, submit) => {
+                  await save("guardrails", draft, submit, guard);
+                  setGuardDirty(false);
+                  setNotice(submit ? "Submitted" : "Changes saved");
+                }}
+              />
             )}
             {guard.question && (
               <p
                 role="status"
-                className="border-b bg-amber-50 p-4 text-sm text-amber-900"
+                tabIndex={0}
+                className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words border-b bg-amber-50 p-4 text-sm leading-6 text-amber-900"
               >
                 {guard.question}
               </p>
@@ -310,6 +310,8 @@ export function GuardrailDetails({ id }: { id: string }) {
                 item={selected}
                 selectedVersion={panel.version}
                 onEdit={() => open(selected, true)}
+                onDirty={setDirty}
+                onDeleted={close}
               />
             )
           ) : (

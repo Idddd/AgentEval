@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, useRef } from "react";
+import { useEffect, useId, useState, useRef, type RefObject } from "react";
 import {
   ArrowRight,
   Check,
@@ -9,9 +9,14 @@ import {
   Plus,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -22,6 +27,7 @@ import {
 } from "@/components/ui/sheet";
 import {
   blankDraft,
+  deletionBlocker,
   availableRevisions,
   filterEntities,
   scopeKeys,
@@ -48,9 +54,271 @@ const statusStyles: Record<Status, string> = {
   Active: "bg-emerald-50 text-emerald-700",
   "Needs input": "bg-amber-50 text-amber-800",
   Review: "bg-amber-50 text-amber-800",
+  Deactivated: "bg-zinc-100 text-zinc-600",
   Deprecated: "bg-zinc-100 text-zinc-500",
   Validated: "bg-emerald-50 text-emerald-700",
 };
+
+function CheckboxFilter({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: readonly string[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+}) {
+  return (
+    <fieldset className="flex flex-wrap items-baseline gap-x-5 gap-y-2">
+      <legend className="float-left w-24 shrink-0 pt-1 text-xs font-medium text-muted-foreground">
+        {label}
+      </legend>
+      <div className="flex flex-1 flex-wrap gap-x-5 gap-y-2">
+        {["All", ...options].map((value) => (
+          <label
+            key={value}
+            className="flex cursor-pointer items-center gap-2 py-0.5 text-sm"
+          >
+            <input
+              type="checkbox"
+              className="size-4 rounded accent-primary"
+              checked={
+                value === "All"
+                  ? selected.length === 0
+                  : selected.includes(value)
+              }
+              onChange={() =>
+                onChange(
+                  value === "All"
+                    ? []
+                    : selected.includes(value)
+                      ? selected.filter((v) => v !== value)
+                      : [...selected, value],
+                )
+              }
+            />
+            {value}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+export type EditorControls = {
+  save: () => boolean | Promise<boolean>;
+  discard: () => void;
+};
+
+export function DeleteEntityAction({
+  item,
+  onDeleted,
+  dirty = false,
+  editorControls,
+}: {
+  item: Entity;
+  onDeleted?: (() => void) | undefined;
+  dirty?: boolean;
+  editorControls?: RefObject<EditorControls | null>;
+}) {
+  const { items, remove, setActivation } = useBusinessDemo();
+  const [action, setAction] = useState<
+    "Delete" | "Deactivate" | "Reactivate" | null
+  >(null);
+  const [resolveChanges, setResolveChanges] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [pending, setPending] = useState(false);
+  const running = useRef(false);
+  useEffect(() => {
+    if (resolveChanges && !dirty) setResolveChanges(false);
+  }, [dirty, resolveChanges]);
+  if (!remove || item.remote?.readOnly) return null;
+  const profile = item.kind === "guardrails";
+  const active = profile && item.status === "Active";
+  const inactive = profile && item.status === "Ready";
+  const blocked =
+    action === "Delete" ? deletionBlocker(items, item) : undefined;
+  const begin = (next: "Delete" | "Deactivate" | "Reactivate") => {
+    setAction(next);
+    setError("");
+    setNotice("");
+    setResolveChanges(dirty);
+  };
+  const close = () => {
+    setAction(null);
+    setResolveChanges(false);
+    setError("");
+  };
+  return (
+    <div className="space-y-3">
+      {!action ? (
+        <div className="flex gap-2">
+          {active ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => begin("Deactivate")}
+            >
+              Deactivate
+            </Button>
+          ) : (
+            <>
+              {inactive && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => begin("Reactivate")}
+                >
+                  Reactivate
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                className="text-red-700 hover:bg-red-50"
+                onClick={() => begin("Delete")}
+              >
+                {profile ? "Delete" : "Delete Policy"}
+              </Button>
+            </>
+          )}
+        </div>
+      ) : (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !pending) close();
+          }}
+        >
+          <DialogContent
+            showCloseButton={false}
+            role="alertdialog"
+            aria-label={
+              resolveChanges ? "Unsaved changes" : `${action} ${item.name}`
+            }
+            aria-describedby={`action-${item.id}`}
+            className="max-w-xl space-y-3 rounded-md border bg-white p-4 text-sm shadow-sm"
+          >
+            <DialogTitle className="font-medium">
+              {resolveChanges
+                ? "Save changes before continuing?"
+                : `${action} “${item.name}”?`}
+            </DialogTitle>
+            <DialogDescription
+              id={`action-${item.id}`}
+              className="text-muted-foreground"
+            >
+              {resolveChanges
+                ? "This profile has unsaved changes. Save or discard them before continuing."
+                : (blocked ??
+                  (action === "Deactivate"
+                    ? "This profile will stop applying its guardrails. Its configuration and linked policies will be kept. You can reactivate it later."
+                    : action === "Reactivate"
+                      ? "This profile will apply its guardrails again using its saved configuration."
+                      : profile
+                        ? "This will permanently delete this profile. Linked policies will not be deleted. This action cannot be undone."
+                        : "This will permanently delete this Policy. This action cannot be undone."))}
+            </DialogDescription>
+            {error && (
+              <p role="alert" className="text-red-700">
+                {error}
+              </p>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={close}
+              >
+                Cancel
+              </Button>
+              {resolveChanges ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => editorControls?.current?.discard()}
+                  >
+                    Discard changes
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={pending}
+                    onClick={async () => {
+                      setPending(true);
+                      try {
+                        const saved = await editorControls?.current?.save();
+                        if (!saved) close();
+                      } finally {
+                        setPending(false);
+                      }
+                    }}
+                  >
+                    Save changes
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  disabled={!!blocked || pending}
+                  onClick={async () => {
+                    if (running.current) return;
+                    if (dirty) {
+                      setResolveChanges(true);
+                      return;
+                    }
+                    running.current = true;
+                    setPending(true);
+                    try {
+                      if (action === "Delete") {
+                        await remove(item);
+                        onDeleted?.();
+                      } else {
+                        if (!setActivation)
+                          throw new Error("This action is unavailable.");
+                        await setActivation(item, action === "Reactivate");
+                        setNotice(
+                          action === "Deactivate"
+                            ? "Profile deactivated."
+                            : "Profile reactivated.",
+                        );
+                      }
+                      close();
+                    } catch (e) {
+                      setError(
+                        e instanceof Error
+                          ? e.message
+                          : "Unable to complete the action.",
+                      );
+                    } finally {
+                      running.current = false;
+                      setPending(false);
+                    }
+                  }}
+                >
+                  {pending
+                    ? "Please wait…"
+                    : action === "Delete" && profile
+                      ? "Delete profile"
+                      : action}
+                </Button>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+      {notice && (
+        <p role="status" className="text-sm text-emerald-700">
+          {notice}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function StatusBadge({ status }: { status: Status }) {
   return (
@@ -80,13 +348,21 @@ export function BusinessCatalog({
 }) {
   const { items, save, sessionOnly, mode, busy } = useBusinessDemo();
   const policy = kind === "policies";
-  const title = policy ? "Policies" : "Guardrails";
+  const title = policy ? "Policies" : "Guardrail Profile";
   const singular = policy ? "Policy" : "Guardrail";
   const Icon = policy ? FileText : ShieldCheck;
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("");
-  const [scope, setScope] = useState<Partial<Record<ScopeKey, string>>>({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [status, setStatus] = useState<string[]>([]);
+  const [selectedOwners, setSelectedOwners] = useState<string[]>([]);
+  const ownerOptions = [
+    ...new Set(
+      items
+        .filter((item) => item.kind === kind)
+        .map((item) => item.owner)
+        .filter(Boolean),
+    ),
+  ].sort();
+  const [scope, setScope] = useState<Partial<Record<ScopeKey, string[]>>>({});
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -96,14 +372,16 @@ export function BusinessCatalog({
   const selected = items.find(
     (item) => item.kind === kind && item.id === selectedId,
   );
-  const filtered = filterEntities(items, kind, query, status, scope);
+  const filtered = filterEntities(items, kind, query, status, scope).filter(
+    (item) =>
+      !policy || !selectedOwners.length || selectedOwners.includes(item.owner),
+  );
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pages);
   const visible = filtered.slice(
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
-  const filterCount = Object.values(scope).filter(Boolean).length;
   const availableStatuses: Status[] = policy
     ? [
         "Draft",
@@ -121,7 +399,7 @@ export function BusinessCatalog({
           "Validated",
           "Needs input",
         ]
-      : ["Draft", "Processing", "Review", "Active", "Deprecated"];
+      : ["Draft", "Processing", "Review", "Active", "Ready"];
   useEffect(() => {
     setEditing(false);
     setDirty(false);
@@ -142,7 +420,8 @@ export function BusinessCatalog({
   }
   function resetFilters() {
     setQuery("");
-    setStatus("");
+    setStatus([]);
+    setSelectedOwners([]);
     setScope({});
     setPage(1);
   }
@@ -200,73 +479,59 @@ export function BusinessCatalog({
               }}
             />
           </div>
-          <select
-            aria-label="Status"
-            className={`${selectClass} !w-auto`}
-            value={status}
-            onChange={(event) => {
-              setStatus(event.target.value);
+        </div>
+        <div className="space-y-4 border-b bg-zinc-50/40 px-5 py-4">
+          <CheckboxFilter
+            label="Status"
+            options={availableStatuses}
+            selected={status}
+            onChange={(values) => {
+              setStatus(values);
               setPage(1);
             }}
-          >
-            <option value="">All statuses</option>
-            {availableStatuses.map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
-          {!policy && mode !== "live" && (
-            <Button
-              variant="outline"
-              className="h-10"
-              aria-expanded={filtersOpen}
-              aria-controls="scope-filters"
-              onClick={() => setFiltersOpen(!filtersOpen)}
-            >
-              <SlidersHorizontal className="size-4" />
-              Filters
-              {filterCount > 0 && (
-                <span className="rounded bg-accent px-1.5 text-primary">
-                  {filterCount}
-                </span>
-              )}
-            </Button>
+          />
+          {policy && (
+            <CheckboxFilter
+              label="Owner"
+              options={ownerOptions}
+              selected={selectedOwners}
+              onChange={(values) => {
+                setSelectedOwners(values);
+                setPage(1);
+              }}
+            />
           )}
-        </div>
-        {filtersOpen && !policy && (
-          <div
-            id="scope-filters"
-            className="grid gap-3 border-b bg-muted/30 p-4 sm:grid-cols-2 lg:grid-cols-5"
-          >
-            {scopeKeys.map((key) => (
-              <label key={key} className="grid gap-1.5 text-xs font-medium">
-                {scopeLabels[key]}
-                <select
-                  className={selectClass}
-                  value={scope[key] ?? ""}
-                  onChange={(event) => {
-                    setScope({ ...scope, [key]: event.target.value });
-                    setPage(1);
-                  }}
-                >
-                  <option value="">All</option>
-                  {scopeOptions[key].map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
+          {!policy &&
+            mode !== "live" &&
+            scopeKeys.map((key) => (
+              <CheckboxFilter
+                key={key}
+                label={scopeLabels[key]}
+                options={scopeOptions[key].filter((value) => value !== "All")}
+                selected={scope[key] ?? []}
+                onChange={(values) => {
+                  setScope({ ...scope, [key]: values });
+                  setPage(1);
+                }}
+              />
             ))}
+          {(status.length > 0 ||
+            selectedOwners.length > 0 ||
+            Object.values(scope).some((v) => v?.length)) && (
             <Button
               variant="ghost"
-              className="self-end"
+              size="sm"
               onClick={() => {
+                setStatus([]);
+                setSelectedOwners([]);
                 setScope({});
                 setPage(1);
               }}
             >
               Clear filters
             </Button>
-          </div>
-        )}
+          )}
+        </div>
         <div className="relative overflow-x-auto">
           <table className="w-full text-left text-sm md:min-w-[660px]">
             <thead className="border-b bg-zinc-50/70 text-xs text-muted-foreground">
@@ -463,6 +728,8 @@ export function BusinessCatalog({
               item={selected}
               selectedVersion={selectedVersion}
               onEdit={() => setEditing(true)}
+              onDirty={setDirty}
+              onDeleted={close}
             />
           ) : (
             <div className="p-6">
@@ -483,10 +750,14 @@ export function EntityEditor({
   initial,
   onDirty,
   onSave,
+  inline = false,
+  controlsRef,
 }: {
+  controlsRef?: RefObject<EditorControls | null>;
+  inline?: boolean;
   kind: Kind;
   initial?: Entity | undefined;
-  onDirty: () => void;
+  onDirty: (dirty: boolean) => void;
   onSave: (draft: Draft, submit: boolean) => void | Promise<void>;
 }) {
   const { items, mode, policyAuthoring } = useBusinessDemo();
@@ -500,13 +771,39 @@ export function EntityEditor({
     {},
   );
   const id = useId();
+  const changed =
+    JSON.stringify(
+      Object.fromEntries(
+        Object.keys(blankDraft).map((k) => [k, draft[k as keyof Draft]]),
+      ),
+    ) !==
+    JSON.stringify(
+      Object.fromEntries(
+        Object.keys(blankDraft).map((k) => [
+          k,
+          (initial ?? blankDraft)[k as keyof Draft],
+        ]),
+      ),
+    );
+  useEffect(() => {
+    if (inline) onDirty(changed);
+  }, [changed, inline, onDirty]);
+  useEffect(() => {
+    if (!changed) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [changed]);
   function update(key: keyof Draft, value: string) {
     setDraft({ ...draft, [key]: value });
     setErrors({ ...errors, [key]: undefined });
-    onDirty();
+    onDirty(true);
   }
   function persist(submit: boolean) {
-    if (saving.current) return;
+    if (saving.current) return false;
     const next = validateDraft(kind, draft, live ? false : submit, items);
     if (live && kind === "policies" && !draft.text.trim())
       next.text = "Enter the rule text.";
@@ -516,7 +813,7 @@ export function EntityEditor({
     const invalid = Object.keys(next)[0];
     if (invalid) {
       document.getElementById(`${id}-${invalid}`)?.focus();
-      return;
+      return false;
     }
     setRequestError("");
     setSavedLink("");
@@ -525,7 +822,8 @@ export function EntityEditor({
       if (result instanceof Promise) {
         saving.current = true;
         setPending(true);
-        void result
+        return result
+          .then(() => true)
           .catch((error) => {
             setRequestError(
               error instanceof Error ? error.message : "Unable to save.",
@@ -536,18 +834,36 @@ export function EntityEditor({
                   ? `/guardrails/${encodeURIComponent(error.id)}`
                   : `/policies?item=${encodeURIComponent(error.id)}`,
               );
+            return false;
           })
           .finally(() => {
             saving.current = false;
             setPending(false);
           });
       }
+      return true;
     } catch (error) {
       setRequestError(
         error instanceof Error ? error.message : "Unable to save.",
       );
+      return false;
     }
   }
+  useEffect(() => {
+    if (!controlsRef) return;
+    controlsRef.current = {
+      save: () => persist(false),
+      discard: () => {
+        setDraft(initial ?? { ...blankDraft });
+        setErrors({});
+        setRequestError("");
+        onDirty(false);
+      },
+    };
+    return () => {
+      controlsRef.current = null;
+    };
+  });
   const fieldProps = (key: keyof Draft) => ({
     id: `${id}-${key}`,
     "aria-invalid": !!errors[key],
@@ -569,12 +885,16 @@ export function EntityEditor({
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        persist(true);
+        persist(inline ? false : true);
       }}
     >
       <fieldset
-        disabled={pending}
-        className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6"
+        disabled={pending || initial?.status === "Processing"}
+        className={
+          inline && kind === "guardrails"
+            ? "grid min-h-0 flex-1 content-start gap-6 p-6 lg:grid-cols-2"
+            : "min-h-0 flex-1 space-y-6 overflow-y-auto p-6"
+        }
       >
         <label
           className="grid gap-2 text-sm font-medium"
@@ -607,6 +927,15 @@ export function EntityEditor({
             {error("text")}
           </label>
         )}
+        {inline &&
+          initial?.kind === "policies" &&
+          initial.status === "Ready" &&
+          !live && (
+            <p className="text-xs leading-5 text-muted-foreground">
+              Saving creates a new version. Linked profiles keep their currently
+              selected version.
+            </p>
+          )}
         {kind === "guardrails" && (
           <>
             <fieldset
@@ -615,7 +944,11 @@ export function EntityEditor({
               aria-describedby={
                 errors.policies ? `${id}-policies-error` : undefined
               }
-              className="space-y-3 outline-primary"
+              className={
+                inline
+                  ? "space-y-3 outline-primary lg:col-start-2 lg:row-start-1 lg:row-span-3"
+                  : "space-y-3 outline-primary"
+              }
             >
               <legend className="mb-3 text-sm font-medium">
                 Policies{" "}
@@ -629,7 +962,7 @@ export function EntityEditor({
                 onChange={(policies) => {
                   setDraft({ ...draft, policies });
                   setErrors({ ...errors, policies: "" });
-                  onDirty();
+                  onDirty(true);
                 }}
               />
               {error("policies")}
@@ -695,27 +1028,75 @@ export function EntityEditor({
           Open saved draft
         </a>
       )}
-      <footer className="flex shrink-0 justify-end gap-3 border-t bg-white px-6 py-4">
-        <Button
-          disabled={
-            pending || (live && kind === "policies" && !policyAuthoring)
-          }
-          type="button"
-          variant="outline"
-          onClick={() => persist(false)}
-        >
-          Save draft
-        </Button>
-        <Button
-          disabled={
-            pending || (live && kind === "policies" && !policyAuthoring)
-          }
-          type="submit"
-        >
-          {pending ? "Saving…" : "Submit"}
-          <ArrowRight className="size-4" />
-        </Button>
-      </footer>
+      {inline ? (
+        (changed ||
+          initial?.status === "Draft" ||
+          initial?.status === "Needs input") && (
+          <footer className="sticky bottom-0 flex shrink-0 items-center justify-end gap-3 border-t bg-white px-6 py-4">
+            {changed && (
+              <>
+                <span className="mr-auto text-xs text-muted-foreground">
+                  Unsaved changes
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => {
+                    setDraft(initial ?? { ...blankDraft });
+                    setErrors({});
+                    setRequestError("");
+                    onDirty(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    pending || (live && kind === "policies" && !policyAuthoring)
+                  }
+                >
+                  {pending ? "Saving…" : "Save"}
+                </Button>
+              </>
+            )}
+            {!changed && (
+              <Button
+                type="button"
+                disabled={
+                  pending || (live && kind === "policies" && !policyAuthoring)
+                }
+                onClick={() => persist(true)}
+              >
+                Submit
+              </Button>
+            )}
+          </footer>
+        )
+      ) : (
+        <footer className="flex shrink-0 justify-end gap-3 border-t bg-white px-6 py-4">
+          <Button
+            disabled={
+              pending || (live && kind === "policies" && !policyAuthoring)
+            }
+            type="button"
+            variant="outline"
+            onClick={() => persist(false)}
+          >
+            Save draft
+          </Button>
+          <Button
+            disabled={
+              pending || (live && kind === "policies" && !policyAuthoring)
+            }
+            type="submit"
+          >
+            {pending ? "Saving…" : "Submit"}
+            <ArrowRight className="size-4" />
+          </Button>
+        </footer>
+      )}
     </form>
   );
 }
@@ -793,12 +1174,18 @@ export function EntityDetail({
   item,
   selectedVersion,
   onEdit,
+  onDirty,
+  onDeleted,
 }: {
+  onDirty?: (dirty: boolean) => void;
+  onDeleted?: () => void;
   item: Entity;
   selectedVersion?: string | number | undefined;
   onEdit: () => void;
 }) {
-  const { items } = useBusinessDemo();
+  const { items, save } = useBusinessDemo();
+  const [detailDirty, setDetailDirty] = useState(false);
+  const controlsRef = useRef<EditorControls | null>(null);
   const version = selectedVersion ?? item.version;
   const historical =
     item.kind === "policies" && String(version) !== String(item.version);
@@ -807,6 +1194,8 @@ export function EntityDetail({
         (r) => String(r.version) === String(version),
       )
     : undefined;
+  const editable =
+    !historical && !item.remote?.readOnly && item.status !== "Processing";
   const viewed = revision
     ? { ...item, ...revision, status: "Ready" as const }
     : item;
@@ -844,53 +1233,91 @@ export function EntityDetail({
           </div>
         )}
         {!historical && item.status === "Needs input" && (
-          <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p
+            tabIndex={0}
+            className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900"
+          >
             {item.question}
           </p>
         )}
-        {item.kind === "policies" ? (
-          <section className="space-y-2">
-            <h3 className="text-sm font-medium">Rule text</h3>
-            <p className="whitespace-pre-wrap break-words rounded-md border bg-zinc-50/60 p-4 text-sm leading-7">
-              {viewed.text || "—"}
-            </p>
-          </section>
-        ) : (
-          <section className="space-y-3">
-            <h3 className="text-sm font-medium">
-              Policies{" "}
-              <span className="text-muted-foreground">
-                ({item.policies.length})
-              </span>
-            </h3>
-            <div className="divide-y rounded-md border">
-              {item.policies.map((ref) => (
-                <div key={ref.policyId} className="p-4">
-                  <a
-                    className="flex items-center justify-between gap-3 text-sm font-medium hover:text-primary"
-                    href={`/policies?item=${encodeURIComponent(ref.policyId)}&version=${ref.version}`}
-                  >
-                    <span>{ref.name}</span>
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      v{ref.version}
-                      <ArrowRight className="size-4" />
-                    </span>
-                  </a>
-                  <details className="mt-2 text-xs text-muted-foreground">
-                    <summary className="cursor-pointer">Rule text</summary>
-                    <p className="mt-2 whitespace-pre-wrap break-words leading-6">
-                      {ref.text}
-                    </p>
-                  </details>
-                </div>
-              ))}
-              {!item.policies.length && (
-                <p className="p-4 text-sm text-muted-foreground">
-                  No policies selected
-                </p>
-              )}
-            </div>
-          </section>
+        {editable && (
+          <EntityEditor
+            key={`${item.id}-${item.updatedAt}-${item.version}`}
+            kind={item.kind}
+            initial={item}
+            inline
+            controlsRef={controlsRef}
+            onDirty={(value) => {
+              setDetailDirty(value);
+              onDirty?.(value);
+            }}
+            onSave={(draft, submit) => {
+              const result = save(item.kind, draft, submit, item);
+              if (result instanceof Promise)
+                return result.then(() => {
+                  onDirty?.(false);
+                });
+              onDirty?.(false);
+            }}
+          />
+        )}
+        {!editable &&
+          (item.kind === "policies" ? (
+            <section className="space-y-2">
+              <h3 className="text-sm font-medium">Rule text</h3>
+              <p className="whitespace-pre-wrap break-words rounded-md border bg-zinc-50/60 p-4 text-sm leading-7">
+                {viewed.text || "—"}
+              </p>
+            </section>
+          ) : (
+            <section className="space-y-3">
+              <h3 className="text-sm font-medium">
+                Policies{" "}
+                <span className="text-muted-foreground">
+                  ({item.policies.length})
+                </span>
+              </h3>
+              <div className="divide-y rounded-md border">
+                {item.policies.map((ref) => (
+                  <div key={ref.policyId} className="p-4">
+                    <a
+                      className="flex items-center justify-between gap-3 text-sm font-medium hover:text-primary"
+                      href={`/policies?item=${encodeURIComponent(ref.policyId)}&version=${ref.version}`}
+                    >
+                      <span>{ref.name}</span>
+                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                        v{ref.version}
+                        <ArrowRight className="size-4" />
+                      </span>
+                    </a>
+                    <details className="mt-2 text-xs text-muted-foreground">
+                      <summary className="cursor-pointer">Rule text</summary>
+                      <p className="mt-2 whitespace-pre-wrap break-words leading-6">
+                        {ref.text}
+                      </p>
+                    </details>
+                  </div>
+                ))}
+                {!item.policies.length && (
+                  <p className="p-4 text-sm text-muted-foreground">
+                    No policies selected
+                  </p>
+                )}
+              </div>
+            </section>
+          ))}
+        {editable && item.kind === "guardrails" && (
+          <div className="flex flex-wrap gap-3">
+            {item.policies.map((ref) => (
+              <a
+                key={ref.policyId}
+                className="text-sm text-primary underline"
+                href={`/policies?item=${encodeURIComponent(ref.policyId)}&version=${encodeURIComponent(ref.version)}`}
+              >
+                {ref.name} · v{ref.version}
+              </a>
+            ))}
+          </div>
         )}
         {item.kind === "policies" && (
           <>
@@ -948,7 +1375,7 @@ export function EntityDetail({
             </section>
           </>
         )}
-        {item.kind === "guardrails" && (
+        {!editable && item.kind === "guardrails" && (
           <dl className="grid grid-cols-2 gap-5 text-sm">
             <div className="col-span-2">
               <dt className="mb-1 text-xs text-muted-foreground">Use case</dt>
@@ -985,23 +1412,16 @@ export function EntityDetail({
         )}
       </div>
       {!historical && <BackendActions item={item} />}
-      {!historical &&
-        !item.remote?.readOnly &&
-        (item.status === "Draft" ||
-          item.status === "Validated" ||
-          item.status === "Needs input" ||
-          (item.kind === "policies" && item.status === "Ready")) && (
-          <footer className="flex justify-end border-t px-6 py-4">
-            <Button onClick={onEdit}>
-              {item.status === "Ready"
-                ? "Create new version"
-                : item.status === "Draft"
-                  ? "Edit draft"
-                  : "Update rules"}
-              <ArrowRight className="size-4" />
-            </Button>
-          </footer>
-        )}
+      {!historical && (
+        <div className="border-t px-6 py-4">
+          <DeleteEntityAction
+            item={item}
+            onDeleted={onDeleted}
+            dirty={detailDirty}
+            editorControls={controlsRef}
+          />
+        </div>
+      )}
     </div>
   );
 }

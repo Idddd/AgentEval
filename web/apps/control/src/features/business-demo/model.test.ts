@@ -10,9 +10,65 @@ import {
   validateDraft,
   availableRevisions,
   migrateLegacy,
+  deletionBlocker,
 } from "./model";
 
 describe("business demo", () => {
+  it("migrates stopped profiles to Ready and removes deprecated profiles without removing policies", () => {
+    const base = seedEntities()[0]!;
+    const policy = seedEntities().find((x) => x.kind === "policies")!;
+    const restored = restoreEntities(
+      JSON.stringify({
+        version: 2,
+        items: [
+          { ...base, id: "stopped", status: "Deactivated" },
+          { ...base, id: "retired", status: "Deprecated" },
+          policy,
+        ],
+      }),
+    );
+    expect(restored.find((x) => x.id === "stopped")?.status).toBe("Ready");
+    expect(restored.some((x) => x.id === "retired")).toBe(false);
+    expect(restored.find((x) => x.id === policy.id)).toEqual(policy);
+    expect(seedEntities().some((x) => x.status === "Deprecated")).toBe(false);
+  });
+  it("requires deactivation before deletion and preserves lifecycle on save", () => {
+    const active = seedEntities()[0]!;
+    expect(deletionBlocker([active], active)).toMatch(/Deactivate/);
+    expect(
+      saveEntity(
+        "guardrails",
+        { ...active, name: "Renamed" },
+        false,
+        10,
+        active.id,
+        active,
+      ).status,
+    ).toBe("Active");
+    const inactive = { ...active, status: "Ready" as const };
+    expect(
+      saveEntity("guardrails", inactive, false, 10, inactive.id, inactive)
+        .status,
+    ).toBe("Ready");
+    expect(deletionBlocker([inactive], inactive)).toBeUndefined();
+  });
+  it("combines checkbox selections and includes all-location profiles", () => {
+    const base = seedEntities()[0]!;
+    const items = [
+      { ...base, id: "sg", location: "SG" },
+      { ...base, id: "cn", location: "CN" },
+      { ...base, id: "all", location: "All" },
+      { ...base, id: "hk", location: "HK", status: "Draft" as const },
+    ];
+    expect(
+      filterEntities(items, "guardrails", "", ["Active"], {
+        location: ["SG", "CN"],
+      }).map((x) => x.id),
+    ).toEqual(["sg", "cn", "all"]);
+    expect(
+      filterEntities(items, "guardrails", "", [], { location: [] }),
+    ).toHaveLength(4);
+  });
   it("uses Admin for new records and migrates only the old local owner label", () => {
     const created = saveEntity(
       "policies",
@@ -36,7 +92,7 @@ describe("business demo", () => {
     const items = seedEntities();
     const draft = {
       ...items[0]!,
-      policies: [availableRevisions(items[4]!)[0]!, ...items[0]!.policies],
+      policies: [availableRevisions(items.find(item => item.id === "customer-data")!)[0]!, ...items[0]!.policies],
     };
     const saved = saveEntity(
       "guardrails",
@@ -71,7 +127,7 @@ describe("business demo", () => {
     expect(availableRevisions(items[6]!)).toEqual([]);
   });
   it("keeps referenced text immutable while a policy moves to a new version", () => {
-    const ready = seedEntities()[4]!;
+    const ready = seedEntities().find(item => item.id === "customer-data")!;
     const reference = availableRevisions(ready)[0]!;
     const guard = { ...seedEntities()[0]!, policies: [reference] };
     const updated = saveEntity(
@@ -154,7 +210,7 @@ describe("business demo", () => {
         "guardrails",
         {
           ...policy,
-          policies: availableRevisions(seedEntities()[4]!),
+          policies: availableRevisions(seedEntities().find(item => item.id === "customer-data")!),
           useCase: "Support",
           busu: "ISS",
           location: "SG",

@@ -26,11 +26,21 @@ export function guardConfig(env = process.env) {
       new URL(publicOrigin).origin !== publicOrigin)
   )
     throw new Error("Invalid MARKETPLACE_PUBLIC_ORIGIN");
+  const demoToken = env.MARKETPLACE_DEMO_TOKEN?.trim();
+  const loopback = (host: string) => ["127.0.0.1", "localhost", "::1", "[::1]"].includes(host);
+  if (demoToken && (
+    mode !== "live" || !/^\S+$/.test(demoToken) ||
+    !loopback(env.NITRO_HOST ?? env.HOST ?? "") ||
+    !base || !loopback(new URL(base).hostname) ||
+    !publicOrigin || !loopback(new URL(publicOrigin).hostname) ||
+    (env.GUARD_POLICY_AUTHORING_URL && !loopback(new URL(env.GUARD_POLICY_AUTHORING_URL).hostname))
+  )) throw new Error("Automatic demo connection requires loopback-only live services");
   return {
     mode: mode as GuardMode,
     base,
     authoring: env.GUARD_POLICY_AUTHORING_URL,
     publicOrigin,
+    demoToken,
     sourceId: createHash("sha256")
       .update(base ?? "mock")
       .digest("hex")
@@ -45,6 +55,7 @@ export function runtimeResponse(env = process.env) {
         mode: config.mode,
         sourceId: config.sourceId,
         policyAuthoring: !!config.authoring,
+        autoConnect: !!config.demoToken,
       },
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -63,7 +74,8 @@ function failure(status: number, code: string, message: string) {
   );
 }
 // Intentionally not a general-purpose HTTP proxy. No deletes, account changes,
-// arbitrary destinations, cookies, redirect following, or service-admin tokens.
+// arbitrary destinations, cookies or redirect following. An explicitly configured
+// loopback demo can use its server-held token when no user credential is supplied.
 export function allowedGuardRoute(path: string, method: string) {
   const id = "[A-Za-z0-9_.~-]+";
   if (method === "GET")
@@ -108,13 +120,18 @@ export async function guardProxy(
   if (url.search)
     return failure(400, "invalid_query", "Unexpected query parameters.");
   const origin = request.headers.get("origin");
+  if (config.demoToken && (
+    url.origin !== config.publicOrigin ||
+    request.headers.get("sec-fetch-site") === "cross-site"
+  )) return failure(403, "origin_mismatch", "Local demo requests must use the configured origin.");
   if (origin && origin !== (config.publicOrigin ?? url.origin))
     return failure(
       403,
       "origin_mismatch",
       "Cross-origin requests are not allowed.",
     );
-  const authorization = request.headers.get("authorization");
+  const authorization = request.headers.get("authorization") ??
+    (config.demoToken ? `Bearer ${config.demoToken}` : null);
   if (!authorization?.match(/^Bearer [^\s]+$/))
     return failure(401, "unauthorized", "Connect with a Guard access token.");
   if (authoring && !config.authoring)

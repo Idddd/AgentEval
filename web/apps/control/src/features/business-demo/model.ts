@@ -7,6 +7,7 @@ export const statuses = [
   "Needs input",
   "Review",
   "Active",
+  "Deactivated",
   "Deprecated",
   "Validated",
 ] as const;
@@ -14,7 +15,7 @@ export type Status = (typeof statuses)[number];
 export type Kind = "guardrails" | "policies";
 export const scopeOptions = {
   busu: ["CBG", "IBG", "ISS", "RMG", "Compliance", "GFM"],
-  location: ["SG", "CN", "IN", "ID", "HK", "TW"],
+  location: ["All", "SG", "CN", "IN", "ID", "HK", "TW"],
   agentType: ["Customer", "Employee", "Financials", "Security", "Productivity"],
   dataType: ["Financial data", "Personal data", "No sensitive data"],
 };
@@ -163,7 +164,8 @@ export function saveEntity(
     policies:
       kind === "guardrails" ? draft.policies.map((r) => ({ ...r })) : [],
     version: existing
-      ? Number(existing.version) + (existing.status === "Ready" ? 1 : 0)
+      ? Number(existing.version) +
+        (existing.kind === "policies" && existing.status === "Ready" ? 1 : 0)
       : 1,
     revisions:
       existing?.kind === "policies"
@@ -177,7 +179,13 @@ export function saveEntity(
         : (existing?.owner ?? currentOwner),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
-    status: submit ? "Processing" : "Draft",
+    status:
+      kind === "guardrails" &&
+      (existing?.status === "Active" || existing?.status === "Ready")
+        ? existing.status
+        : submit
+          ? "Processing"
+          : "Draft",
     submittedAt: submit ? now : undefined,
   };
 }
@@ -273,16 +281,6 @@ export function seedEntities(now = Date.now()): Entity[] {
       "Safe employee interactions",
     ),
     make(
-      "financial-transactions",
-      "guardrails",
-      "Financial Transactions",
-      "Deprecated",
-      "RMG",
-      "Require an authorized reviewer before executing a financial transaction.",
-      3,
-      "Payment authorization",
-    ),
-    make(
       "customer-data",
       "policies",
       "Customer data protection",
@@ -324,26 +322,36 @@ export function seedEntities(now = Date.now()): Entity[] {
 // Preserve exact legacy rule text by extracting it into a separately addressable Policy.
 export function migrateLegacy(items: Entity[]): Entity[] {
   const added: Entity[] = [];
-  const migrated = items.map((item) => {
-    if (item.owner === "Local Administrator")
-      item = { ...item, owner: "Admin" };
-    if (item.kind !== "guardrails" || item.policies.length || !item.text.trim())
-      return item;
-    let id = `policy-from-${item.id}`;
-    while ([...items, ...added].some((entry) => entry.id === id)) id += "-1";
-    const policy: Entity = {
-      ...item,
-      id,
-      kind: "policies",
-      name: `${item.name} rules`,
-      status: "Ready",
-      version: 1,
-      revisions: [],
-      policies: [],
-    };
-    added.push(policy);
-    return { ...item, text: "", policies: availableRevisions(policy) };
-  });
+  const migrated = items
+    .filter(
+      (item) => !(item.kind === "guardrails" && item.status === "Deprecated"),
+    )
+    .map((item) => {
+      if (item.kind === "guardrails" && item.status === "Deactivated")
+        item = { ...item, status: "Ready" };
+      if (item.owner === "Local Administrator")
+        item = { ...item, owner: "Admin" };
+      if (
+        item.kind !== "guardrails" ||
+        item.policies.length ||
+        !item.text.trim()
+      )
+        return item;
+      let id = `policy-from-${item.id}`;
+      while ([...items, ...added].some((entry) => entry.id === id)) id += "-1";
+      const policy: Entity = {
+        ...item,
+        id,
+        kind: "policies",
+        name: `${item.name} rules`,
+        status: "Ready",
+        version: 1,
+        revisions: [],
+        policies: [],
+      };
+      added.push(policy);
+      return { ...item, text: "", policies: availableRevisions(policy) };
+    });
   return [...migrated, ...added];
 }
 
@@ -369,14 +377,16 @@ export function filterEntities(
   items: Entity[],
   kind: Kind,
   query: string,
-  status: string,
-  scope: Partial<Record<ScopeKey, string>> = {},
+  status: string | string[],
+  scope: Partial<Record<ScopeKey, string | string[]>> = {},
 ) {
   const search = query.trim().toLowerCase();
   return items.filter(
     (item) =>
       item.kind === kind &&
-      (!status || item.status === status) &&
+      (Array.isArray(status)
+        ? !status.length || status.includes(item.status)
+        : !status || item.status === status) &&
       (!search ||
         [
           item.name,
@@ -385,6 +395,34 @@ export function filterEntities(
           item.owner,
           ...item.policies.flatMap((r) => [r.name, r.text]),
         ].some((value) => value.toLowerCase().includes(search))) &&
-      scopeKeys.every((key) => !scope[key] || item[key] === scope[key]),
+      scopeKeys.every((key) => {
+        const value = scope[key];
+        const selected = Array.isArray(value) ? value : value ? [value] : [];
+        return (
+          !selected.length ||
+          selected.includes(item[key]) ||
+          (key === "location" && item[key] === "All")
+        );
+      }),
   );
+}
+
+export function deletionBlocker(
+  items: Entity[],
+  item: Entity,
+): string | undefined {
+  if (item.kind === "guardrails" && item.status === "Active")
+    return "Deactivate this profile before deleting it.";
+  if (item.status === "Processing")
+    return "Wait for processing to finish before deleting.";
+  if (item.kind === "policies") {
+    const linked = items.filter(
+      (g) =>
+        g.kind === "guardrails" &&
+        g.policies.some((p) => p.policyId === item.id),
+    );
+    if (linked.length)
+      return `Remove this Policy from these Guardrail Profiles first: ${linked.map((g) => g.name).join(", ")}.`;
+  }
+  return undefined;
 }

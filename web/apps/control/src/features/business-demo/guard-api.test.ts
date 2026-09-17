@@ -76,6 +76,8 @@ export const guard = {
         policyVersion: "2026.09",
         parameterValues: { locale: "SG" },
         ruleActions: { privacy: "reject" },
+        enabledRuleIds: ["privacy/custom-selection"],
+        enabledRails: ["output"],
       },
     ],
   },
@@ -100,6 +102,74 @@ export function apiFetch(
   });
 }
 describe("Guard OpenAPI adapter", () => {
+  it("shows failed case details when the backend has no overall failure reason", async () => {
+    const fetcher = apiFetch((path) => path === "/api/guard/guardrails/guard-1" ? json({
+      ...guard,
+      latestValidationRun: {
+        id: "failed-run", status: "failed", sourceDraftRevision: 2, failureReason: null,
+        metrics: { total: 3, passed: 1 },
+        results: [
+          { name: "Passing case", policyId: "builtin", passed: true },
+          { name: "Trigger UK passport", policyId: "builtin", passed: false,
+            expectedDecision: "transform", actualDecision: "transform",
+            assertionFailures: ["Expected Policy/Rule evidence was not observed."],
+            matchedRuleIds: ["passport_us"], inputContent: "DO NOT SHOW SENSITIVE INPUT" },
+          { name: "Trigger AWS Access Key", policyId: "builtin", passed: false,
+            expectedDecision: "block", actualDecision: "transform",
+            assertionFailures: ["Expected block; received transform."] },
+        ],
+      },
+    }) : undefined);
+    const api = new GuardAdapter("token", config, fetcher);
+    const item = (await api.load()).find((i) => i.id === guard.id)!;
+    expect(item.question).toContain("2 of 3 checks failed");
+    expect(item.question).toContain("Trigger UK passport");
+    expect(item.question).toContain("Privacy");
+    expect(item.question).toContain("Expected Policy/Rule evidence was not observed.");
+    expect(item.question).toContain("Matched rules: passport_us");
+    expect(item.question).toContain("Expected: block. Actual: transform.");
+    expect(item.question).not.toContain("Passing case");
+    expect(item.question).not.toContain("SENSITIVE INPUT");
+  });
+  it("keeps explicit backend failures and does not show errors from a stale revision", () => {
+    const run = { id: "failure", status: "failed" as const, sourceDraftRevision: 2,
+      failureReason: "Runner unavailable", results: [] };
+    expect(guardEntity({ ...guard, latestValidationRun: run }, []).question).toBe("Runner unavailable");
+    expect(guardEntity({ ...guard, latestValidationRun: { ...run, sourceDraftRevision: 1 } }, []).question).toBeUndefined();
+    expect(guardEntity({ ...guard, latestValidationRun: { ...run, failureReason: "" } }, []).question)
+      .toBe("Validation failed. The backend did not return test failure details.");
+  });
+  it("enables published Policy rules and rails with their default parameters for new bindings", async () => {
+    let saved: unknown;
+    const fetcher = apiFetch((path, method, body) => {
+      if (path === "/api/guard/policies") return json({ items: [{
+        ...builtin,
+        rules: [{ id: "sql/drop-table" }, { id: "sql/union-select" }],
+        rails: ["input", "output"],
+        parameters: [
+          { name: "threshold", default: "medium" },
+          { name: "optional", default: null },
+          { name: "empty", default: "" },
+        ],
+      }] });
+      if (path === "/api/guard/guardrails" && method === "POST") {
+        saved = body;
+        return json(guard, 201);
+      }
+      return undefined;
+    });
+    const api = new GuardAdapter("token", config, fetcher);
+    const items = await api.load();
+    await api.save("guardrails", {
+      ...blankDraft, name: "Local SQL protection", policies: items[1]!.policies,
+    }, false);
+    expect(saved).toMatchObject({ draftConfig: { policyBindings: [{
+      policyId: "builtin", policyVersion: "2026.09",
+      enabledRuleIds: ["sql/drop-table", "sql/union-select"],
+      enabledRails: ["input", "output"],
+      parameterValues: { threshold: "medium", empty: "" },
+    }] } });
+  });
   it("loads real data without seeding mock records and pins opaque Policy versions", async () => {
     const fetcher = apiFetch();
     const api = new GuardAdapter("user-token", config, fetcher);
@@ -110,6 +180,37 @@ describe("Guard OpenAPI adapter", () => {
     expect(fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({
       Authorization: "Bearer user-token",
     });
+  });
+  it("uses binding metadata from the selected immutable native version", async () => {
+    let saved: unknown;
+    const fetcher = apiFetch((path, method, body) => {
+      if (path === "/api/guard/policies") return json({ items: [{
+        ...native, version: "2",
+        rules: [{ id: "flow/output/new" }], rails: ["output"],
+        parameters: [{ name: "region", default: "new" }],
+        published_versions: [{
+          ...native.published_versions[0],
+          rules: [{ id: "flow/input/old" }], rails: ["input"],
+          parameters: [{ name: "region", default: "old" }],
+        }],
+      }] });
+      if (path.endsWith("/validation-runs/latest")) return json(null);
+      if (path === "/api/guard/guardrails" && method === "POST") {
+        saved = body;
+        return json(guard, 201);
+      }
+      return undefined;
+    });
+    const api = new GuardAdapter("token", config, fetcher);
+    await api.load();
+    await api.save("guardrails", {
+      ...blankDraft, name: "Pinned native policy",
+      policies: [{ policyId: "custom", version: "1", name: "Old", text: "Old" }],
+    }, false);
+    expect(saved).toMatchObject({ draftConfig: { policyBindings: [{
+      policyId: "custom", policyVersion: "1", enabledRuleIds: ["flow/input/old"],
+      enabledRails: ["input"], parameterValues: { region: "old" },
+    }] } });
   });
   it("keeps published metadata separate from a newer editable native Policy draft", () => {
     const item = policyEntity(native);

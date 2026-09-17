@@ -8,7 +8,7 @@ For live/auto deployment and the supported Controller OpenAPI operations, see
 
 - `/guardrails`: registry, search, status/scope filters, pagination and creation drawer. Selecting or saving a Guardrail opens its detail page.
 - `/guardrails/:guardrailId`: full Guardrail detail page, scope, pinned Policy versions/statuses and latest Policy statuses. View and edit Policies in a drawer without leaving the Guardrail; edit ready Policies by creating a new version. Processing Policies are read-only. Guardrail drafts can be edited here. Legacy `?item=` links redirect to this page.
-- `/policies`: registry, search, status filter, pagination, create and detail drawer.
+- `/policies`: registry, search, status and owner checkbox filters, pagination, create and detail drawer.
 - `/templates`: compatibility redirect to `/policies`.
 
 The light sidebar layout is retained. Red is the brand/accent color; processing, ready and attention statuses retain separate semantic colors. Placeholder search/help controls and technical configuration are removed.
@@ -46,3 +46,18 @@ node ../../node_modules/vite/bin/vite.js build
 ```
 
 Tests cover draft/submission requirements, scope fields, mock transitions, refresh persistence, malformed storage, queries, pagination, unsaved-change protection, Policy selection, forward/reverse links, immutable revisions, unavailable references and idempotent migration.
+
+## Version 0.2.3
+
+The Guardrails registry heading is **Guardrail Profile**; navigation keeps the
+Guardrails label. Filters are always-visible checkboxes with an All option.
+The All location covers every location. Policies also support owner filtering.
+
+Details are directly editable, with Save and Cancel appearing after changes.
+Active Guardrails must be deactivated before deletion. Deactivation returns a
+Guardrail to Ready; Ready profiles offer Reactivate and Delete. Pending changes
+must be saved or discarded before a lifecycle action. Delete requires a dialog
+confirmation. Policies referenced by a Guardrail cannot be deleted until unlinked.
+Legacy Deactivated profiles migrate to Ready, and Deprecated mock profiles are
+removed from the local dataset. Ready Policy edits create a new revision while
+existing Guardrail references retain the previous immutable revision.
