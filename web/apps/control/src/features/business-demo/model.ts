@@ -79,7 +79,7 @@ export const blankDraft: Draft = {
 };
 export const STORAGE_KEY = "ai-marketplace.business-demo.v1";
 export const OWNER_STORAGE_KEY = "ai-marketplace.active-owner.v1";
-export const PROCESSING_MS = 8000;
+export const PROCESSING_MS = 1000;
 
 export function availableRevisions(policy: Entity): PolicyReference[] {
   if (policy.kind !== "policies") return [];
@@ -150,6 +150,8 @@ export function saveEntity(
   items?: Entity[],
   currentOwner = "Admin",
 ): Entity {
+  if (existing?.kind === "guardrails" && existing.status === "Active")
+    throw new Error("Deactivate this profile before editing.");
   if (Object.keys(validateDraft(kind, draft, submit, items)).length)
     throw new Error("Invalid draft");
   return {

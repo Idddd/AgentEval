@@ -165,7 +165,7 @@ export function CreateResourceDialog({
               <div className="mp-form-columns">
                 <label className="mp-field">
                   <span>
-                    {isTemplate ? "Template" : "Guardrail"} name <b>*</b>
+                    {isTemplate ? "Template" : "Guardrail Profile"} name <b>*</b>
                   </span>
                   <input
                     required

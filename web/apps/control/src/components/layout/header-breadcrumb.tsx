@@ -16,7 +16,7 @@ const routeLabels: Record<string, string> = {
   evaluations: "Evaluations",
   evaluation: "Evaluation",
   governance: "Governance",
-  guardrails: "Guardrails",
+  guardrails: "Guardrail Profiles",
   instances: "Instances",
   instace: "Instances",
   knowledge: "Knowledge Base",

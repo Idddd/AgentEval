@@ -1,5 +1,11 @@
 import { useEffect, useState, useRef } from "react";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, Plus } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -43,6 +49,9 @@ export function GuardrailDetails({ id }: { id: string }) {
   }, [deleted, guard]);
   const [dirty, setDirty] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [removing, setRemoving] = useState<PolicyReference | null>(null);
+  const [removeError, setRemoveError] = useState("");
+  const [removingBusy, setRemovingBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const selected = items.find((item) => item.id === panel?.id);
   function close() {
@@ -66,21 +75,48 @@ export function GuardrailDetails({ id }: { id: string }) {
       policy &&
       availableRevisions(policy).find((r) => r.version === ref.version);
     return (
-      <tr key={ref.policyId} className="align-top">
+      <tr key={ref.policyId} className="group/policy align-top">
         <td className="px-5 py-5">
-          <button
-            className="text-left font-medium hover:text-primary disabled:text-muted-foreground"
-            disabled={!policy}
-            onClick={() => policy && open(policy, false, ref.version)}
-          >
-            {ref.name}
-          </button>
-          <details className="mt-2 text-xs text-muted-foreground">
-            <summary className="cursor-pointer">Rule text</summary>
-            <p className="mt-3 max-w-lg whitespace-pre-wrap break-words leading-6">
-              {ref.text}
-            </p>
-          </details>
+          <div className="flex w-max items-center gap-2">
+            <button
+              className="text-left font-medium hover:text-primary disabled:text-muted-foreground"
+              disabled={!policy}
+              onClick={() => policy && open(policy, false, ref.version)}
+            >
+              {ref.name}
+            </button>
+            {guard?.status !== "Active" && (
+              <span className="inline-flex shrink-0 gap-1 opacity-0 transition-opacity group-hover/policy:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                <button
+                  type="button"
+                  aria-label={`Edit ${ref.name}`}
+                  title="Edit Policy"
+                  className="rounded p-1 text-zinc-400 hover:text-zinc-800"
+                  disabled={!policy || !canEdit(policy)}
+                  onClick={() => policy && open(policy, true)}
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Remove ${ref.name}`}
+                  title={
+                    guardDirty
+                      ? "Save or cancel profile changes first"
+                      : "Remove from profile"
+                  }
+                  className="rounded p-1 text-zinc-400 hover:text-red-700 disabled:opacity-40"
+                  disabled={guardDirty || busy}
+                  onClick={() => {
+                    setRemoving(ref);
+                    setRemoveError("");
+                  }}
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </span>
+            )}
+          </div>
         </td>
         <td className="px-5 py-5 text-sm">v{ref.version}</td>
         <td className="px-5 py-5">
@@ -100,20 +136,6 @@ export function GuardrailDetails({ id }: { id: string }) {
             "—"
           )}
         </td>
-        <td className="px-5 py-4">
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!policy}
-              aria-label={`View ${ref.name}`}
-              onClick={() => policy && open(policy, false, ref.version)}
-            >
-              View
-              <ArrowRight className="size-3" />
-            </Button>
-          </div>
-        </td>
       </tr>
     );
   }
@@ -128,11 +150,11 @@ export function GuardrailDetails({ id }: { id: string }) {
         className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary"
       >
         <ArrowLeft className="size-4" />
-        Guardrails
+        Guardrail Profiles
       </a>
       {!guard ? (
         <div className="rounded-lg border bg-white p-8">
-          <h1 className="font-heading text-2xl">Guardrail not found</h1>
+          <h1 className="font-heading text-2xl">Guardrail Profile not found</h1>
         </div>
       ) : (
         <>
@@ -166,6 +188,11 @@ export function GuardrailDetails({ id }: { id: string }) {
             />
           </header>
           <div className="overflow-hidden rounded-lg border bg-white">
+            {guard.status === "Active" && (
+              <p className="border-b bg-zinc-50 px-6 py-3 text-sm text-muted-foreground">
+                Deactivate this profile to edit its fields or policies.
+              </p>
+            )}
             {canEdit(guard) && (
               <EntityEditor
                 key={`${guard.id}-${guard.updatedAt}`}
@@ -196,18 +223,27 @@ export function GuardrailDetails({ id }: { id: string }) {
                 <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                   {guard.policies.length}
                 </span>
+                {canEdit(guard) && guard.status !== "Active" && (
+                  <button
+                    type="button"
+                    aria-label="Add Policy"
+                    title="Add Policy"
+                    disabled={busy}
+                    onClick={() => editorControls.current?.editPolicies?.()}
+                    className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-zinc-100 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
+                  >
+                    <Plus className="size-4" aria-hidden="true" />
+                  </button>
+                )}
               </div>
               <div className="relative overflow-x-auto">
-                <table className="w-full min-w-[760px] text-left text-sm">
+                <table className="w-full min-w-[640px] text-left text-sm">
                   <thead className="border-b bg-zinc-50 text-xs text-muted-foreground">
                     <tr>
                       <th className="w-[35%] px-5 py-3 font-medium">Policy</th>
                       <th className="px-5 py-3 font-medium">Used version</th>
                       <th className="px-5 py-3 font-medium">Version status</th>
                       <th className="px-5 py-3 font-medium">Latest Policy</th>
-                      <th className="px-5 py-3 text-right font-medium">
-                        Actions
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -238,6 +274,66 @@ export function GuardrailDetails({ id }: { id: string }) {
           )}
         </>
       )}
+      <Dialog
+        open={!!removing}
+        onOpenChange={(open) => {
+          if (!open && !removingBusy) setRemoving(null);
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Remove Policy from profile?</DialogTitle>
+          <DialogDescription>
+            Remove “{removing?.name}” from this Guardrail Profile? The Policy itself and
+            its other profile links will be kept.
+          </DialogDescription>
+          {removeError && (
+            <p role="alert" className="text-sm text-red-700">
+              {removeError}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              disabled={removingBusy}
+              onClick={() => setRemoving(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={removingBusy}
+              onClick={async () => {
+                if (!guard || !removing || removingBusy) return;
+                setRemovingBusy(true);
+                try {
+                  await save(
+                    "guardrails",
+                    {
+                      ...guard,
+                      policies: guard.policies.filter(
+                        (ref) => ref.policyId !== removing.policyId,
+                      ),
+                    },
+                    false,
+                    guard,
+                  );
+                  setRemoving(null);
+                  setNotice("Policy removed from profile.");
+                } catch (error) {
+                  setRemoveError(
+                    error instanceof Error
+                      ? error.message
+                      : "Unable to remove Policy.",
+                  );
+                } finally {
+                  setRemovingBusy(false);
+                }
+              }}
+            >
+              Remove from profile
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Sheet
         open={!!panel}
         onOpenChange={(value) => {
@@ -252,7 +348,7 @@ export function GuardrailDetails({ id }: { id: string }) {
           <SheetHeader className="border-b px-6 py-5 pr-14">
             <SheetTitle className="text-xl">
               {selected?.kind === "guardrails"
-                ? "Edit Guardrail"
+                ? "Edit Guardrail Profile"
                 : panel?.edit
                   ? selected?.status === "Ready"
                     ? selected.remote
@@ -308,7 +404,9 @@ export function GuardrailDetails({ id }: { id: string }) {
             ) : (
               <EntityDetail
                 item={selected}
+                readOnly={guard?.status === "Active"}
                 selectedVersion={panel.version}
+                onVersionChange={(version) => setPanel({ ...panel, version })}
                 onEdit={() => open(selected, true)}
                 onDirty={setDirty}
                 onDeleted={close}

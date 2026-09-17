@@ -24,9 +24,9 @@ which disconnects and requires the other user's Guard token instead.
 
 Policy creation takes a name and plain-language rule text. Guardrail creation selects one or more ready Policy versions, plus a name, use case, BUSU, location, agent type and data type. Guardrails no longer accept a second copy of rule text. A named draft can be saved before the rest of the form is complete.
 
-Guardrails store immutable Policy references (`policyId`, `version`, `name`, `text`). Detail links open that exact Policy version; Policy details list Guardrails using the viewed version. Creating a new version of a ready Policy archives the previous ready revision. Existing references remain unchanged, including while the new revision is a draft or processing. Previously ready revisions remain selectable; unfinished new revisions are not selectable. List rows show the Policy count or reverse Guardrail count.
+Guardrails store immutable Policy references (`policyId`, `version`, `name`, `text`). Detail links open that exact Policy version; Policy details list all linked Guardrail Profiles and their pinned versions. Creating a new version of a ready Policy archives the previous ready revision. Existing references remain unchanged, including while the new revision is a draft or processing. Previously ready revisions remain selectable; unfinished new revisions are not selectable. List rows show the Policy count or reverse Guardrail count.
 
-Submitting starts an eight-second local simulation. A Policy becomes `Ready`; a Guardrail becomes `Review`, never automatically approved or published. A seeded `Needs input` Policy demonstrates updating rules and resubmitting. Demo labels are intentionally omitted from the interface; all business data and processing remain simulated.
+Submitting starts a one-second local simulation. A Policy becomes `Ready`; a Guardrail becomes `Review`, never automatically approved or published. A seeded `Needs input` Policy demonstrates updating rules and resubmitting. Demo labels are intentionally omitted from the interface; all business data and processing remain simulated.
 
 `src/features/business-demo/model.ts` contains the model, validation, seed data, filtering and mock transitions. `provider.tsx` owns runtime mode selection and separate mock/live providers. `catalog.tsx` renders both registries and drawers. No Guard backend requests are made in mock mode. `Ready` is not evidence of an actual validation run in this mode.
 
@@ -49,15 +49,28 @@ Tests cover draft/submission requirements, scope fields, mock transitions, refre
 
 ## Version 0.2.3
 
-The Guardrails registry heading is **Guardrail Profile**; navigation keeps the
-Guardrails label. Filters are always-visible checkboxes with an All option.
+The registry, navigation, breadcrumbs and actions use **Guardrail Profile**
+(or **Guardrail Profiles** for plural labels). Filters are always-visible checkboxes with an All option.
 The All location covers every location. Policies also support owner filtering.
 
 Details are directly editable, with Save and Cancel appearing after changes.
 Active Guardrails must be deactivated before deletion. Deactivation returns a
-Guardrail to Ready; Ready profiles offer Reactivate and Delete. Pending changes
+Guardrail to Ready; Ready profiles offer Active and Delete. Pending changes
 must be saved or discarded before a lifecycle action. Delete requires a dialog
 confirmation. Policies referenced by a Guardrail cannot be deleted until unlinked.
 Legacy Deactivated profiles migrate to Ready, and Deprecated mock profiles are
 removed from the local dataset. Ready Policy edits create a new revision while
 existing Guardrail references retain the previous immutable revision.
+
+## Version 0.2.4
+
+Details display values with edit icons revealed on hover or keyboard focus.
+Active Guardrail Profiles must be deactivated before editing. Policy rows offer
+edit and unlink actions; selecting a name opens its details. A plus button opens
+the Policy picker, which closes after clicking outside and allows row selection.
+Each Policy has a version selector: existing bindings remain pinned until saved,
+new selections default to the latest Ready version, and unfinished versions are
+disabled. Switching versions updates rule text without changing persisted data
+until Save. Policy detail version switching keeps the drawer open and protects
+unsaved edits. The Policies registry supports Updated sorting before pagination.
+Mock processing completes after one second, plus the polling interval.

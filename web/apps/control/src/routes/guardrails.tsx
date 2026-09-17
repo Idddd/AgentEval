@@ -7,7 +7,7 @@ export const Route = createFileRoute("/guardrails")({
   ): { item?: string; template?: string } => ({
     ...(typeof search.item === "string" ? { item: search.item } : {}),
   }),
-  head: () => ({ meta: [{ title: "Guardrails · AI Marketplace" }] }),
+  head: () => ({ meta: [{ title: "Guardrail Profiles · AI Marketplace" }] }),
   beforeLoad: ({ search }) => {
     if (search.item)
       throw redirect({

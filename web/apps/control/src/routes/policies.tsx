@@ -24,6 +24,12 @@ function PoliciesRoute() {
       kind="policies"
       selectedId={item}
       selectedVersion={version}
+      onVersionChange={(nextVersion) =>
+        void navigate({
+          search: { ...(item ? { item } : {}), version: nextVersion },
+          resetScroll: false,
+        })
+      }
       onSelect={(id) => void navigate({ search: id ? { item: id } : {} })}
     />
   );

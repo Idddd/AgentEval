@@ -36,43 +36,35 @@ it("deactivates before exposing delete and supports reactivation", async () => {
   });
   expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
   expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Reactivate" }));
+  fireEvent.click(screen.getByRole("button", { name: "Active" }));
   await act(async () => {
     fireEvent.click(
       within(screen.getByRole("alertdialog")).getByRole("button", {
-        name: "Reactivate",
+        name: "Active",
       }),
     );
   });
   expect(screen.getByText("Active")).toBeTruthy();
 });
 
-it("saves unsaved changes before asking to deactivate", async () => {
+it("locks active fields and policy editing until deactivated", async () => {
   show();
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
-    target: { value: "Updated active profile" },
-  });
+  expect(screen.queryByRole("button", { name: "Edit Name" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Edit Customer Interaction rules" }),
+  ).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
-  expect(
-    screen.getByRole("alertdialog", {
-      name: "Save changes before continuing?",
-    }),
-  ).toBeTruthy();
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Deactivate",
+      }),
+    );
   });
-  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find(
-    (x: { id: string }) => x.id === "customer-interaction",
-  );
-  expect(stored.name).toBe("Updated active profile");
-  expect(stored.status).toBe("Active");
+  expect(screen.getByRole("button", { name: "Edit Name" })).toBeTruthy();
   expect(
-    screen.getByRole("alertdialog", {
-      name: "Deactivate “Updated active profile”?",
-    }),
+    screen.getByRole("button", { name: "Edit Customer Interaction rules" }),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
 it("opens a full detail page with policy versions, status and actions", () => {
@@ -85,22 +77,38 @@ it("opens a full detail page with policy versions, status and actions", () => {
     screen.getByRole("columnheader", { name: "Version status" }),
   ).toBeTruthy();
   expect(
-    screen.getByRole("button", { name: "View Customer Interaction rules" }),
+    screen.getByRole("button", { name: "Customer Interaction rules" }),
   ).toBeTruthy();
   expect(
     screen.queryByRole("button", { name: "Edit Customer Interaction rules" }),
   ).toBeNull();
 });
 
-it("views pinned text and edits a Policy without replacing the Guardrail reference", () => {
+it("views pinned text and edits a Policy without replacing the Guardrail Profile reference", () => {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      version: 2,
+      items: seedEntities().map((item) =>
+        item.id === "customer-interaction"
+          ? { ...item, status: "Ready" }
+          : item,
+      ),
+    }),
+  );
   show();
   const original = seedEntities()[0]!.policies[0]!;
   fireEvent.click(
-    screen.getByRole("button", { name: "View Customer Interaction rules" }),
+    screen.getByRole("button", { name: "Customer Interaction rules" }),
   );
   expect(
     within(screen.getByRole("dialog")).getByText(original.text),
   ).toBeTruthy();
+  fireEvent.click(
+    within(screen.getByRole("dialog")).getByRole("button", {
+      name: "Edit Rule text",
+    }),
+  );
   fireEvent.change(
     within(screen.getByRole("dialog")).getByRole("textbox", {
       name: "Rule text",
@@ -144,20 +152,25 @@ it("shows ready pinned version alongside processing latest and disables modifica
   expect(screen.getByText("Ready")).toBeTruthy();
   expect(screen.getByText("Processing")).toBeTruthy();
   fireEvent.click(
-    screen.getByRole("button", { name: "View Customer Interaction rules" }),
+    screen.getByRole("button", { name: "Customer Interaction rules" }),
   );
   expect(within(screen.getByRole("dialog")).queryByRole("textbox")).toBeNull();
 });
 
-it("can edit a Guardrail draft and protects unsaved changes", () => {
+it("can edit a Guardrail Profile draft and protects unsaved changes", () => {
   show("sensitive-information");
+  if (screen.queryByRole("button", { name: "Edit Name" }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Name" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
     target: { value: "Updated guard" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(
-    (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
+    screen.getByRole("button", { name: "Edit Name" }).parentElement
+      ?.textContent,
   ).not.toBe("Updated guard");
+  if (screen.queryByRole("button", { name: "Edit Name" }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Name" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
     target: { value: "Updated guard" },
   });
@@ -170,14 +183,27 @@ it("can edit a Guardrail draft and protects unsaved changes", () => {
 
 it("provides a return link for a missing guardrail", () => {
   show("missing");
-  expect(screen.getByText("Guardrail not found")).toBeTruthy();
+  expect(screen.getByText("Guardrail Profile not found")).toBeTruthy();
   expect(
-    screen.getByRole("link", { name: "Guardrails" }).getAttribute("href"),
+    screen.getByRole("link", { name: "Guardrail Profiles" }).getAttribute("href"),
   ).toBe("/guardrails");
 });
 
 it("saves All as the scope of a profile", () => {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      version: 2,
+      items: seedEntities().map((item) =>
+        item.id === "customer-interaction"
+          ? { ...item, status: "Ready" }
+          : item,
+      ),
+    }),
+  );
   show();
+  if (screen.queryByRole("button", { name: "Edit Location" }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Location" }));
   fireEvent.change(screen.getByLabelText("Location"), {
     target: { value: "All" },
   });
@@ -187,4 +213,216 @@ it("saves All as the scope of a profile", () => {
       (x: { id: string }) => x.id === "customer-interaction",
     ).location,
   ).toBe("All");
+});
+
+it("shows persistent edit icons and only opens a field through its icon", () => {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      version: 2,
+      items: seedEntities().map((item) =>
+        item.id === "customer-interaction"
+          ? { ...item, status: "Ready" }
+          : item,
+      ),
+    }),
+  );
+  show();
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  const edit = screen.getByRole("button", { name: "Edit Name" });
+  fireEvent.click(edit.parentElement!.querySelector("span")!);
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  fireEvent.click(edit);
+  const input = screen.getByRole("textbox", { name: "Name" });
+  expect(document.activeElement).toBe(input);
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  fireEvent.change(input, { target: { value: "Icon edit draft" } });
+  fireEvent.blur(input, {
+    relatedTarget: screen.getByRole("button", { name: "Edit Location" }),
+  });
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  expect(screen.getByText("Icon edit draft")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByText("Icon edit draft")).toBeNull();
+  expect(screen.getByRole("button", { name: "Edit Name" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Edit Policies" }));
+  expect(
+    screen.getByRole("textbox", { name: "Search ready policies" }),
+  ).toBeTruthy();
+});
+
+it("removes a policy link without deleting the shared policy", async () => {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      version: 2,
+      items: seedEntities().map((item) =>
+        item.id === "customer-interaction"
+          ? { ...item, status: "Ready" }
+          : item,
+      ),
+    }),
+  );
+  show();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Remove Customer Interaction rules" }),
+  );
+  await act(async () => {
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove from profile" }),
+    );
+  });
+  const items = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items;
+  expect(
+    items.find((item: { id: string }) => item.id === "customer-interaction")
+      .policies,
+  ).toHaveLength(0);
+  expect(
+    items.some(
+      (item: { name: string; kind: string }) =>
+        item.kind === "policies" && item.name === "Customer Interaction rules",
+    ),
+  ).toBe(true);
+});
+
+it("adds a policy through the section plus button and saves the selection", () => {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      version: 2,
+      items: seedEntities().map((item) =>
+        item.id === "customer-interaction"
+          ? { ...item, status: "Ready" }
+          : item,
+      ),
+    }),
+  );
+  show();
+  fireEvent.click(screen.getByRole("button", { name: "Add Policy" }));
+  expect(document.activeElement).toBe(
+    screen.getByRole("textbox", { name: "Search ready policies" }),
+  );
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: /Customer data protection/ }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const items = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items;
+  expect(
+    items.find((item: { id: string }) => item.id === "customer-interaction")
+      .policies,
+  ).toHaveLength(2);
+  expect(
+    screen.getByRole("button", { name: "Customer data protection" }),
+  ).toBeTruthy();
+});
+
+it("opens policy details from its name without a View action or inline rule text", () => {
+  show();
+  expect(screen.queryByRole("button", { name: /^View / })).toBeNull();
+  expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
+  expect(screen.queryByText("Rule text")).toBeNull();
+  const rule = seedEntities()[0]!.policies[0]!.text;
+  expect(screen.queryByText(rule)).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Customer Interaction rules" }),
+  );
+  expect(within(screen.getByRole("dialog")).getByText(rule)).toBeTruthy();
+});
+
+it("keeps the policy picker open inside and toggles selection from row padding", () => {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      version: 2,
+      items: seedEntities().map((item) =>
+        item.id === "customer-interaction"
+          ? { ...item, status: "Ready" }
+          : item,
+      ),
+    }),
+  );
+  show();
+  fireEvent.click(screen.getByRole("button", { name: "Add Policy" }));
+  const search = screen.getByRole("textbox", { name: "Search ready policies" });
+  fireEvent.blur(search, { relatedTarget: null });
+  expect(screen.getByRole("textbox", { name: "Search ready policies" })).toBe(
+    search,
+  );
+  const checkbox = screen.getByRole("checkbox", {
+    name: /Customer data protection/,
+  }) as HTMLInputElement;
+  const row = checkbox.closest("label")!.parentElement!;
+  fireEvent.pointerDown(row);
+  fireEvent.click(row);
+  expect(checkbox.checked).toBe(true);
+  const summary = row.querySelector("summary")!;
+  fireEvent.pointerDown(summary);
+  fireEvent.click(summary);
+  expect(checkbox.checked).toBe(true);
+  expect(screen.getByRole("textbox", { name: "Search ready policies" })).toBe(
+    search,
+  );
+  fireEvent.click(
+    screen.getByRole("heading", { name: "Customer Interaction", level: 1 }),
+  );
+  expect(
+    screen.queryByRole("textbox", { name: "Search ready policies" }),
+  ).toBeNull();
+  expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
+});
+
+it("keeps the pinned version until a ready upgrade is selected and saved", () => {
+  const items = seedEntities();
+  const guard = items.find((item) => item.id === "customer-interaction")!;
+  guard.status = "Ready";
+  const policy = items.find((item) => item.id === guard.policies[0]!.policyId)!;
+  policy.revisions = [{ version: 1, name: policy.name, text: policy.text }];
+  policy.version = 2;
+  policy.text = "Version two rule";
+  policy.status = "Ready";
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, items }));
+  show();
+  fireEvent.click(screen.getByRole("button", { name: "Add Policy" }));
+  const versions = screen.getByRole("combobox", {
+    name: `Version for ${policy.name}`,
+  }) as HTMLSelectElement;
+  expect(versions.value).toBe("1");
+  expect(screen.getByText("New version v2 available")).toBeTruthy();
+  fireEvent.change(versions, { target: { value: "2" } });
+  const saveButton = screen.getByRole("button", { name: "Save" });
+  fireEvent.pointerDown(saveButton);
+  fireEvent.mouseDown(saveButton);
+  expect(screen.getByRole("combobox", { name: `Version for ${policy.name}` })).toBe(versions);
+  expect(screen.getByRole("button", { name: "Save" })).toBe(saveButton);
+  fireEvent.pointerUp(saveButton);
+  fireEvent.mouseUp(saveButton);
+
+  expect(screen.getByText("Version two rule")).toBeTruthy();
+  expect(
+    JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find(
+      (item: { id: string }) => item.id === guard.id,
+    ).policies[0].version,
+  ).toBe(1);
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(
+    JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find(
+      (item: { id: string }) => item.id === guard.id,
+    ).policies[0],
+  ).toMatchObject({ version: 2, text: "Version two rule" });
+});
+
+it("shows an unfinished latest version but prevents selecting it", () => {
+  const items = seedEntities();
+  const guard = items.find((item) => item.id === "customer-interaction")!;
+  guard.status = "Ready";
+  const policy = items.find((item) => item.id === guard.policies[0]!.policyId)!;
+  policy.revisions = [{ version: 1, name: policy.name, text: policy.text }];
+  policy.version = 2;
+  policy.status = "Processing";
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, items }));
+  show();
+  fireEvent.click(screen.getByRole("button", { name: "Add Policy" }));
+  const versions = screen.getByRole("combobox", { name: `Version for ${policy.name}` }) as HTMLSelectElement;
+  expect(versions.value).toBe("1");
+  expect((within(versions).getByRole("option", { name: "v2 · Latest · Processing (not ready)" }) as HTMLOptionElement).disabled).toBe(true);
 });

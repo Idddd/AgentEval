@@ -1,6 +1,6 @@
 # AI Marketplace release deployment
 
-The v0.2.3 delivery format matches v0.2.1: the `tali-ui-demo` image includes
+The v0.2.4 delivery format matches v0.2.1: the `tali-ui-demo` image includes
 `/opt/tali/helm/tali-UI-demo.tgz`, and the chart is also published to GHCR as OCI.
 The application now runs a Node server on port 8080, supporting both mock and
 live Guard API connections. The default is mock; no database is required.
@@ -8,15 +8,15 @@ live Guard API connections. The default is mock; no database is required.
 ## Docker
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.3
-docker run --rm -p 8080:8080 ghcr.io/idddd/tali-ui-demo:0.2.3
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.4
+docker run --rm -p 8080:8080 ghcr.io/idddd/tali-ui-demo:0.2.4
 ```
 
 ## Kubernetes
 
 ```sh
 helm upgrade --install tali-ui-demo oci://ghcr.io/idddd/charts/tali-ui-demo \
-  --version 0.2.3 --namespace ai-marketplace --create-namespace
+  --version 0.2.4 --namespace ai-marketplace --create-namespace
 kubectl -n ai-marketplace port-forward svc/tali-ui-demo 8080:80
 ```
 
@@ -43,9 +43,9 @@ overrides. The chart defaults to a non-root, read-only container.
 On a connected machine:
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.3
-docker save -o ai-marketplace-0.2.3.tar ghcr.io/idddd/tali-ui-demo:0.2.3
-container=$(docker create ghcr.io/idddd/tali-ui-demo:0.2.3)
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.4
+docker save -o ai-marketplace-0.2.4.tar ghcr.io/idddd/tali-ui-demo:0.2.4
+container=$(docker create ghcr.io/idddd/tali-ui-demo:0.2.4)
 docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" ./tali-UI-demo.tgz
 docker rm "$container"
 ```
@@ -54,7 +54,7 @@ Transfer both files. Load the image into your internal registry or every cluster
 node's container runtime, then install the local chart with `image.repository`
 and `image.tag` set to that imported image. `docker load` alone does not populate
 a Kubernetes containerd image store. The embedded chart normally pins the exact
-CI image tag; override it when importing under `0.2.3` or an internal name.
+CI image tag; override it when importing under `0.2.4` or an internal name.
 
 ## Branding
 

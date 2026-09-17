@@ -95,7 +95,7 @@ it("isolates live records from existing mock storage and keeps tokens out of sto
   expect(
     await screen.findByRole("button", { name: /^Remote Privacy/ }),
   ).toBeTruthy();
-  expect(screen.queryByText("Customer Interaction Guardrail")).toBeNull();
+  expect(screen.queryByText("Customer Interaction Guardrail Profile")).toBeNull();
   expect(localStorage.getItem(STORAGE_KEY)).toBe(stored);
   expect(JSON.stringify(sessionStorage)).not.toContain("personal-secret");
   fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));

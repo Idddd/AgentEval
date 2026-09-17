@@ -1,12 +1,22 @@
-import { useEffect, useId, useState, useRef, type RefObject } from "react";
+import {
+  useEffect,
+  useId,
+  useState,
+  useRef,
+  type RefObject,
+  type ReactNode,
+} from "react";
 import {
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
   Check,
   ChevronLeft,
   ChevronRight,
   FileText,
   LoaderCircle,
   Plus,
+  Pencil,
   Search,
   ShieldCheck,
 } from "lucide-react";
@@ -108,6 +118,7 @@ function CheckboxFilter({
 }
 
 export type EditorControls = {
+  editPolicies?: () => void;
   save: () => boolean | Promise<boolean>;
   discard: () => void;
 };
@@ -125,7 +136,7 @@ export function DeleteEntityAction({
 }) {
   const { items, remove, setActivation } = useBusinessDemo();
   const [action, setAction] = useState<
-    "Delete" | "Deactivate" | "Reactivate" | null
+    "Delete" | "Deactivate" | "Active" | null
   >(null);
   const [resolveChanges, setResolveChanges] = useState(false);
   const [error, setError] = useState("");
@@ -141,7 +152,7 @@ export function DeleteEntityAction({
   const inactive = profile && item.status === "Ready";
   const blocked =
     action === "Delete" ? deletionBlocker(items, item) : undefined;
-  const begin = (next: "Delete" | "Deactivate" | "Reactivate") => {
+  const begin = (next: "Delete" | "Deactivate" | "Active") => {
     setAction(next);
     setError("");
     setNotice("");
@@ -170,9 +181,9 @@ export function DeleteEntityAction({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => begin("Reactivate")}
+                  onClick={() => begin("Active")}
                 >
-                  Reactivate
+                  Active
                 </Button>
               )}
               <Button
@@ -215,9 +226,9 @@ export function DeleteEntityAction({
                 ? "This profile has unsaved changes. Save or discard them before continuing."
                 : (blocked ??
                   (action === "Deactivate"
-                    ? "This profile will stop applying its guardrails. Its configuration and linked policies will be kept. You can reactivate it later."
-                    : action === "Reactivate"
-                      ? "This profile will apply its guardrails again using its saved configuration."
+                    ? "This Guardrail Profile will stop applying its policies. Its configuration and linked policies will be kept. You can activate it later."
+                    : action === "Active"
+                      ? "This Guardrail Profile will apply its policies using its saved configuration."
                       : profile
                         ? "This will permanently delete this profile. Linked policies will not be deleted. This action cannot be undone."
                         : "This will permanently delete this Policy. This action cannot be undone."))}
@@ -280,11 +291,11 @@ export function DeleteEntityAction({
                       } else {
                         if (!setActivation)
                           throw new Error("This action is unavailable.");
-                        await setActivation(item, action === "Reactivate");
+                        await setActivation(item, action === "Active");
                         setNotice(
                           action === "Deactivate"
                             ? "Profile deactivated."
-                            : "Profile reactivated.",
+                            : "Profile activated.",
                         );
                       }
                       close();
@@ -340,16 +351,18 @@ export function BusinessCatalog({
   selectedId,
   selectedVersion,
   onSelect,
+  onVersionChange,
 }: {
   kind: Kind;
   selectedId?: string | undefined;
   selectedVersion?: string | number | undefined;
   onSelect: (id?: string) => void;
+  onVersionChange?: (version: string | number) => void;
 }) {
   const { items, save, sessionOnly, mode, busy } = useBusinessDemo();
   const policy = kind === "policies";
   const title = policy ? "Policies" : "Guardrail Profile";
-  const singular = policy ? "Policy" : "Guardrail";
+  const singular = policy ? "Policy" : "Guardrail Profile";
   const Icon = policy ? FileText : ShieldCheck;
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string[]>([]);
@@ -364,6 +377,9 @@ export function BusinessCatalog({
   ].sort();
   const [scope, setScope] = useState<Partial<Record<ScopeKey, string[]>>>({});
   const [page, setPage] = useState(1);
+  const [updatedOrder, setUpdatedOrder] = useState<"ascending" | "descending">(
+    "descending",
+  );
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -376,6 +392,12 @@ export function BusinessCatalog({
     (item) =>
       !policy || !selectedOwners.length || selectedOwners.includes(item.owner),
   );
+  if (policy)
+    filtered.sort((a, b) =>
+      updatedOrder === "descending"
+        ? b.updatedAt - a.updatedAt
+        : a.updatedAt - b.updatedAt,
+    );
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pages);
   const visible = filtered.slice(
@@ -549,8 +571,28 @@ export function BusinessCatalog({
                   Owner
                 </th>
                 {policy && (
-                  <th className="hidden px-5 py-3 font-medium md:table-cell">
-                    Updated
+                  <th
+                    className="hidden px-5 py-3 font-medium md:table-cell"
+                    aria-sort={updatedOrder}
+                  >
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+                      aria-label={`Updated: ${updatedOrder === "descending" ? "newest first; sort oldest first" : "oldest first; sort newest first"}`}
+                      onClick={() => {
+                        setUpdatedOrder((order) =>
+                          order === "descending" ? "ascending" : "descending",
+                        );
+                        setPage(1);
+                      }}
+                    >
+                      Updated
+                      {updatedOrder === "descending" ? (
+                        <ArrowDown className="size-3.5" aria-hidden="true" />
+                      ) : (
+                        <ArrowUp className="size-3.5" aria-hidden="true" />
+                      )}
+                    </button>
                   </th>
                 )}
                 <th className="hidden w-10 md:table-cell">
@@ -577,7 +619,7 @@ export function BusinessCatalog({
                         <span className="mt-1 block text-xs font-normal text-muted-foreground">
                           {item.kind === "guardrails"
                             ? `${item.policies.length} policies`
-                            : `v${item.version} · ${items.filter((g) => g.kind === "guardrails" && g.policies.some((r) => r.policyId === item.id)).length} guardrails`}
+                            : `v${item.version} · ${items.filter((g) => g.kind === "guardrails" && g.policies.some((r) => r.policyId === item.id)).length} guardrail profiles`}
                         </span>
                       </span>
                     </button>
@@ -727,6 +769,7 @@ export function BusinessCatalog({
             <EntityDetail
               item={selected}
               selectedVersion={selectedVersion}
+              onVersionChange={onVersionChange}
               onEdit={() => setEditing(true)}
               onDirty={setDirty}
               onDeleted={close}
@@ -742,6 +785,83 @@ export function BusinessCatalog({
         </SheetContent>
       </Sheet>
     </section>
+  );
+}
+
+function ClickToEdit({
+  label,
+  value,
+  expanded,
+  onOpen,
+  onClose,
+  children,
+  readOnly = false,
+  closeOnOutsideClick = false,
+}: {
+  closeOnOutsideClick?: boolean;
+  readOnly?: boolean;
+  label: string;
+  value: string;
+  expanded: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const container = useRef<HTMLSpanElement>(null);
+  const previouslyExpanded = useRef(expanded);
+  useEffect(() => {
+    if (expanded && !previouslyExpanded.current)
+      container.current
+        ?.querySelector<HTMLElement>("input, textarea, select")
+        ?.focus();
+    previouslyExpanded.current = expanded;
+  }, [expanded]);
+  useEffect(() => {
+    if (!expanded || !closeOnOutsideClick) return;
+    const outside = (event: MouseEvent) => {
+      if (
+        event.target instanceof Node &&
+        !container.current?.contains(event.target)
+      )
+        onClose();
+    };
+    // Let the target click (especially Save) finish before collapsing and moving the form.
+    document.addEventListener("click", outside);
+    return () => document.removeEventListener("click", outside);
+  }, [expanded, closeOnOutsideClick, onClose]);
+  return (
+    <span
+      ref={container}
+      className="block min-w-0"
+      onBlur={(event) => {
+        if (
+          !closeOnOutsideClick &&
+          !event.currentTarget.contains(event.relatedTarget)
+        )
+          onClose();
+      }}
+    >
+      {expanded ? (
+        children
+      ) : (
+        <span className="group/field flex min-h-11 items-start gap-2 py-2.5">
+          <span className="min-w-0 whitespace-pre-wrap break-words font-normal">
+            {value || <span className="text-muted-foreground">Not set</span>}
+          </span>
+          {!readOnly && (
+            <button
+              type="button"
+              aria-label={`Edit ${label}`}
+              title={`Edit ${label}`}
+              onClick={onOpen}
+              className="inline-flex size-6 shrink-0 items-center justify-center rounded text-zinc-400 opacity-0 transition-[color,opacity] group-hover/field:opacity-100 group-focus-within/field:opacity-100 hover:text-zinc-800 focus-visible:text-zinc-800 focus-visible:outline-2 focus-visible:outline-primary [@media(hover:none)]:opacity-100"
+            >
+              <Pencil className="size-3.5" aria-hidden="true" />
+            </button>
+          )}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -762,6 +882,9 @@ export function EntityEditor({
 }) {
   const { items, mode, policyAuthoring } = useBusinessDemo();
   const live = mode === "live";
+  const readOnly =
+    initial?.kind === "guardrails" && initial.status === "Active";
+  const [editingField, setEditingField] = useState<keyof Draft | null>(null);
   const [pending, setPending] = useState(false);
   const [requestError, setRequestError] = useState("");
   const [savedLink, setSavedLink] = useState("");
@@ -803,7 +926,7 @@ export function EntityEditor({
     onDirty(true);
   }
   function persist(submit: boolean) {
-    if (saving.current) return false;
+    if (saving.current || readOnly) return false;
     const next = validateDraft(kind, draft, live ? false : submit, items);
     if (live && kind === "policies" && !draft.text.trim())
       next.text = "Enter the rule text.";
@@ -852,8 +975,12 @@ export function EntityEditor({
   useEffect(() => {
     if (!controlsRef) return;
     controlsRef.current = {
+      editPolicies: () => {
+        if (!readOnly && !pending) setEditingField("policies");
+      },
       save: () => persist(false),
       discard: () => {
+        setEditingField(null);
         setDraft(initial ?? { ...blankDraft });
         setErrors({});
         setRequestError("");
@@ -864,8 +991,36 @@ export function EntityEditor({
       controlsRef.current = null;
     };
   });
+  const editable = (
+    key: keyof Draft,
+    label: string,
+    value: string,
+    children: ReactNode,
+  ) => (
+    <ClickToEdit
+      label={label}
+      value={value}
+      readOnly={readOnly}
+      closeOnOutsideClick={key === "policies"}
+      expanded={!readOnly && (!inline || editingField === key || !!errors[key])}
+      onOpen={() => setEditingField(key)}
+      onClose={() =>
+        setEditingField((current) => (current === key ? null : current))
+      }
+    >
+      {children}
+    </ClickToEdit>
+  );
   const fieldProps = (key: keyof Draft) => ({
     id: `${id}-${key}`,
+    "aria-label":
+      key === "name"
+        ? "Name"
+        : key === "text"
+          ? "Rule text"
+          : key === "useCase"
+            ? "Use case"
+            : scopeLabels[key as ScopeKey],
     "aria-invalid": !!errors[key],
     "aria-describedby": errors[key] ? `${id}-${key}-error` : undefined,
   });
@@ -901,13 +1056,18 @@ export function EntityEditor({
           htmlFor={`${id}-name`}
         >
           Name
-          <Input
-            {...fieldProps("name")}
-            className="h-11"
-            value={draft.name}
-            maxLength={160}
-            onChange={(event) => update("name", event.target.value)}
-          />
+          {editable(
+            "name",
+            "Name",
+            draft.name,
+            <Input
+              {...fieldProps("name")}
+              className="h-11"
+              value={draft.name}
+              maxLength={160}
+              onChange={(event) => update("name", event.target.value)}
+            />,
+          )}
           {error("name")}
         </label>
         {kind === "policies" && (
@@ -916,14 +1076,19 @@ export function EntityEditor({
             htmlFor={`${id}-text`}
           >
             Rule text
-            <Textarea
-              {...fieldProps("text")}
-              className="min-h-60 resize-y bg-white p-3 font-normal leading-7 [field-sizing:fixed] sm:min-h-72"
-              placeholder="Enter your rules…"
-              maxLength={live ? 2000 : undefined}
-              value={draft.text}
-              onChange={(event) => update("text", event.target.value)}
-            />
+            {editable(
+              "text",
+              "Rule text",
+              draft.text,
+              <Textarea
+                {...fieldProps("text")}
+                className="min-h-60 resize-y bg-white p-3 font-normal leading-7 [field-sizing:fixed] sm:min-h-72"
+                placeholder="Enter your rules…"
+                maxLength={live ? 2000 : undefined}
+                value={draft.text}
+                onChange={(event) => update("text", event.target.value)}
+              />,
+            )}
             {error("text")}
           </label>
         )}
@@ -956,15 +1121,20 @@ export function EntityEditor({
                   {draft.policies.length} selected
                 </span>
               </legend>
-              <PolicyPicker
-                items={items}
-                selected={draft.policies}
-                onChange={(policies) => {
-                  setDraft({ ...draft, policies });
-                  setErrors({ ...errors, policies: "" });
-                  onDirty(true);
-                }}
-              />
+              {editable(
+                "policies",
+                "Policies",
+                draft.policies.map((policy) => policy.name).join("\n"),
+                <PolicyPicker
+                  items={items}
+                  selected={draft.policies}
+                  onChange={(policies) => {
+                    setDraft({ ...draft, policies });
+                    setErrors({ ...errors, policies: "" });
+                    onDirty(true);
+                  }}
+                />,
+              )}
               {error("policies")}
             </fieldset>
             {!live && (
@@ -974,12 +1144,19 @@ export function EntityEditor({
                   htmlFor={`${id}-useCase`}
                 >
                   Use case
-                  <Input
-                    {...fieldProps("useCase")}
-                    className="h-11"
-                    value={draft.useCase}
-                    onChange={(event) => update("useCase", event.target.value)}
-                  />
+                  {editable(
+                    "useCase",
+                    "Use case",
+                    draft.useCase,
+                    <Input
+                      {...fieldProps("useCase")}
+                      className="h-11"
+                      value={draft.useCase}
+                      onChange={(event) =>
+                        update("useCase", event.target.value)
+                      }
+                    />,
+                  )}
                   {error("useCase")}
                 </label>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -990,17 +1167,22 @@ export function EntityEditor({
                       htmlFor={`${id}-${key}`}
                     >
                       {scopeLabels[key]}
-                      <select
-                        {...fieldProps(key)}
-                        className={selectClass}
-                        value={draft[key]}
-                        onChange={(event) => update(key, event.target.value)}
-                      >
-                        <option value="">Select</option>
-                        {scopeOptions[key].map((value) => (
-                          <option key={value}>{value}</option>
-                        ))}
-                      </select>
+                      {editable(
+                        key,
+                        scopeLabels[key],
+                        draft[key],
+                        <select
+                          {...fieldProps(key)}
+                          className={selectClass}
+                          value={draft[key]}
+                          onChange={(event) => update(key, event.target.value)}
+                        >
+                          <option value="">Select</option>
+                          {scopeOptions[key].map((value) => (
+                            <option key={value}>{value}</option>
+                          ))}
+                        </select>,
+                      )}
                       {error(key)}
                     </label>
                   ))}
@@ -1043,6 +1225,7 @@ export function EntityEditor({
                   variant="outline"
                   disabled={pending}
                   onClick={() => {
+                    setEditingField(null);
                     setDraft(initial ?? { ...blankDraft });
                     setErrors({});
                     setRequestError("");
@@ -1111,11 +1294,16 @@ function PolicyPicker({
   onChange: (refs: PolicyReference[]) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [preferred, setPreferred] = useState<Record<string, string>>({});
   const choices = items
     .filter((p) => p.kind === "policies")
     .map((p) => {
       const revisions = availableRevisions(p);
-      return selected.find((r) => r.policyId === p.id) ?? revisions.at(-1);
+      return (
+        selected.find((r) => r.policyId === p.id) ??
+        revisions.find((r) => String(r.version) === preferred[p.id]) ??
+        revisions.at(-1)
+      );
     })
     .filter((r): r is PolicyReference => !!r);
   const visible = choices.filter((r) =>
@@ -1132,34 +1320,128 @@ function PolicyPicker({
         />
       </div>
       <div className="max-h-72 overflow-y-auto divide-y">
-        {visible.map((ref) => (
-          <div key={ref.policyId} className="p-3">
-            <label className="flex cursor-pointer items-center gap-3 text-sm font-medium">
-              <input
-                type="checkbox"
-                className="size-4 accent-primary"
-                checked={selected.some((r) => r.policyId === ref.policyId)}
-                onChange={(e) =>
-                  onChange(
-                    e.target.checked
-                      ? [...selected, ref]
-                      : selected.filter((r) => r.policyId !== ref.policyId),
+        {visible.map((ref) => {
+          const policy = items.find((item) => item.id === ref.policyId)!;
+          const ready = availableRevisions(policy);
+          const versions = [...ready];
+          if (
+            !versions.some(
+              (revision) => String(revision.version) === String(ref.version),
+            )
+          )
+            versions.push(ref);
+          const latestReady = ready.at(-1);
+          const currentUnavailable = !ready.some(
+            (revision) => String(revision.version) === String(policy.version),
+          );
+          return (
+            <div
+              key={ref.policyId}
+              className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-x-2 p-3 hover:bg-zinc-50"
+              onClick={(event) => {
+                if (
+                  !(event.target instanceof Element) ||
+                  event.target.closest("label, details, input, select, option")
+                )
+                  return;
+                event.currentTarget
+                  .querySelector<HTMLInputElement>('input[type="checkbox"]')
+                  ?.click();
+              }}
+            >
+              <label className="flex cursor-pointer items-center gap-3 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-primary"
+                  checked={selected.some((r) => r.policyId === ref.policyId)}
+                  onChange={(e) =>
+                    onChange(
+                      e.target.checked
+                        ? [...selected, ref]
+                        : selected.filter((r) => r.policyId !== ref.policyId),
+                    )
+                  }
+                />
+                <span className="min-w-0 flex-1 break-words">{ref.name}</span>
+              </label>
+              <select
+                aria-label={`Version for ${policy.name}`}
+                className="h-8 max-w-36 rounded border bg-white px-2 text-xs"
+                value={String(ref.version)}
+                onChange={(event) => {
+                  const next = ready.find(
+                    (revision) =>
+                      String(revision.version) === event.target.value,
+                  );
+                  if (!next) return;
+                  setPreferred((current) => ({
+                    ...current,
+                    [policy.id]: String(next.version),
+                  }));
+                  if (
+                    selected.some((revision) => revision.policyId === policy.id)
                   )
-                }
-              />
-              <span className="min-w-0 flex-1 break-words">{ref.name}</span>
-              <span className="text-xs text-muted-foreground">
-                v{ref.version}
-              </span>
-            </label>
-            <details className="mt-2 pl-7 text-xs text-muted-foreground">
-              <summary className="cursor-pointer">Rule text</summary>
-              <p className="mt-2 whitespace-pre-wrap break-words leading-6">
-                {ref.text}
-              </p>
-            </details>
-          </div>
-        ))}
+                    onChange(
+                      selected.map((revision) =>
+                        revision.policyId === policy.id ? next : revision,
+                      ),
+                    );
+                }}
+              >
+                {versions
+                  .slice()
+                  .reverse()
+                  .map((revision) => (
+                    <option
+                      key={revision.version}
+                      value={String(revision.version)}
+                      disabled={
+                        !ready.some(
+                          (candidate) =>
+                            String(candidate.version) ===
+                            String(revision.version),
+                        )
+                      }
+                    >
+                      v{revision.version}
+                      {String(revision.version) === String(policy.version)
+                        ? " · Latest"
+                        : ""}{" "}
+                      ·{" "}
+                      {ready.some(
+                        (candidate) =>
+                          String(candidate.version) ===
+                          String(revision.version),
+                      )
+                        ? "Ready"
+                        : "Unavailable"}
+                    </option>
+                  ))}
+                {currentUnavailable &&
+                  !versions.some(
+                    (revision) =>
+                      String(revision.version) === String(policy.version),
+                  ) && (
+                    <option disabled value={String(policy.version)}>
+                      v{policy.version} · Latest · {policy.status} (not ready)
+                    </option>
+                  )}
+              </select>
+              {latestReady &&
+                String(ref.version) !== String(latestReady.version) && (
+                  <p className="col-span-2 mt-1 pl-7 text-xs text-amber-700">
+                    New version v{latestReady.version} available
+                  </p>
+                )}
+              <details className="col-span-2 mt-2 pl-7 text-xs text-muted-foreground">
+                <summary className="cursor-pointer">Rule text</summary>
+                <p className="mt-2 whitespace-pre-wrap break-words leading-6">
+                  {ref.text}
+                </p>
+              </details>
+            </div>
+          );
+        })}
         {!visible.length && (
           <p className="p-5 text-sm text-muted-foreground">
             {choices.length ? "No matching policies" : "No ready policies"}
@@ -1173,20 +1455,39 @@ function PolicyPicker({
 export function EntityDetail({
   item,
   selectedVersion,
+  onVersionChange,
   onEdit,
   onDirty,
   onDeleted,
+  readOnly = false,
 }: {
+  readOnly?: boolean;
   onDirty?: (dirty: boolean) => void;
   onDeleted?: () => void;
   item: Entity;
   selectedVersion?: string | number | undefined;
+  onVersionChange?: ((version: string | number) => void) | undefined;
   onEdit: () => void;
 }) {
   const { items, save } = useBusinessDemo();
   const [detailDirty, setDetailDirty] = useState(false);
   const controlsRef = useRef<EditorControls | null>(null);
-  const version = selectedVersion ?? item.version;
+  const [localVersion, setLocalVersion] = useState(selectedVersion);
+  const [pendingVersion, setPendingVersion] = useState<string | number | null>(
+    null,
+  );
+  useEffect(() => {
+    setLocalVersion(selectedVersion);
+  }, [selectedVersion, item.id]);
+  const version = localVersion ?? item.version;
+  function switchVersion(next: string | number) {
+    if (String(next) === String(version)) return;
+    setLocalVersion(next);
+    setPendingVersion(null);
+    setDetailDirty(false);
+    onDirty?.(false);
+    onVersionChange?.(next);
+  }
   const historical =
     item.kind === "policies" && String(version) !== String(item.version);
   const revision = historical
@@ -1195,7 +1496,10 @@ export function EntityDetail({
       )
     : undefined;
   const editable =
-    !historical && !item.remote?.readOnly && item.status !== "Processing";
+    !readOnly &&
+    !historical &&
+    !item.remote?.readOnly &&
+    item.status !== "Processing";
   const viewed = revision
     ? { ...item, ...revision, status: "Ready" as const }
     : item;
@@ -1203,13 +1507,39 @@ export function EntityDetail({
     (guard) =>
       guard.kind === "guardrails" &&
       guard.policies.some(
-        (r) => r.policyId === item.id && String(r.version) === String(version),
+        (r) => r.policyId === item.id,
       ),
   );
   if (historical && !revision)
     return <p className="p-6 text-sm">Policy version not found</p>;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <Dialog
+        open={pendingVersion !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingVersion(null);
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Discard unsaved changes?</DialogTitle>
+          <DialogDescription>
+            Switching versions will discard your unsaved changes.
+          </DialogDescription>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPendingVersion(null)}>
+              Keep editing
+            </Button>
+            <Button
+              onClick={() => {
+                if (pendingVersion !== null) switchVersion(pendingVersion);
+              }}
+            >
+              Discard and switch
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
         <div className="space-y-3">
           <div className="flex items-center gap-3">
@@ -1323,7 +1653,7 @@ export function EntityDetail({
           <>
             <section className="space-y-3">
               <h3 className="text-sm font-medium">
-                Used by Guardrails{" "}
+                Used by Guardrail Profiles{" "}
                 <span className="text-muted-foreground">({usedBy.length})</span>
               </h3>
               <div className="divide-y rounded-md border">
@@ -1333,13 +1663,19 @@ export function EntityDetail({
                     className="flex items-center justify-between gap-3 p-4 text-sm hover:bg-red-50/40"
                     href={`/guardrails?item=${encodeURIComponent(guard.id)}`}
                   >
-                    <span>{guard.name}</span>
+                    <span className="space-y-1">
+                      <span className="block">{guard.name}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Uses v{guard.policies.find((ref) => ref.policyId === item.id)?.version}
+                        {String(guard.policies.find((ref) => ref.policyId === item.id)?.version) === String(version) ? " · Viewing this version" : " · Different version"}
+                      </span>
+                    </span>
                     <StatusBadge status={guard.status} />
                   </a>
                 ))}
                 {!usedBy.length && (
                   <p className="p-4 text-sm text-muted-foreground">
-                    No linked guardrails
+                    No linked guardrail profiles
                   </p>
                 )}
               </div>
@@ -1359,17 +1695,22 @@ export function EntityDetail({
                     }),
                   )
                   .map((v) => (
-                    <a
+                    <button
+                      type="button"
                       key={v}
                       aria-current={
                         String(v) === String(version) ? "page" : undefined
                       }
                       className={`rounded border px-3 py-1 text-xs ${String(v) === String(version) ? "border-primary bg-red-50 text-primary" : "hover:bg-muted"}`}
-                      href={`/policies?item=${encodeURIComponent(item.id)}&version=${encodeURIComponent(v)}`}
+                      onClick={() => {
+                        if (String(v) === String(version)) return;
+                        if (detailDirty) setPendingVersion(v);
+                        else switchVersion(v);
+                      }}
                     >
                       v{v}
                       {v === item.version ? " · Latest" : ""}
-                    </a>
+                    </button>
                   ))}
               </div>
             </section>
@@ -1411,8 +1752,8 @@ export function EntityDetail({
           </dl>
         )}
       </div>
-      {!historical && <BackendActions item={item} />}
-      {!historical && (
+      {!readOnly && !historical && <BackendActions item={item} />}
+      {!readOnly && !historical && (
         <div className="border-t px-6 py-4">
           <DeleteEntityAction
             item={item}

@@ -35,7 +35,7 @@ describe("business demo", () => {
   it("requires deactivation before deletion and preserves lifecycle on save", () => {
     const active = seedEntities()[0]!;
     expect(deletionBlocker([active], active)).toMatch(/Deactivate/);
-    expect(
+    expect(() =>
       saveEntity(
         "guardrails",
         { ...active, name: "Renamed" },
@@ -43,8 +43,8 @@ describe("business demo", () => {
         10,
         active.id,
         active,
-      ).status,
-    ).toBe("Active");
+      ),
+    ).toThrow("Deactivate this profile before editing.");
     const inactive = { ...active, status: "Ready" as const };
     expect(
       saveEntity("guardrails", inactive, false, 10, inactive.id, inactive)
@@ -92,7 +92,12 @@ describe("business demo", () => {
     const items = seedEntities();
     const draft = {
       ...items[0]!,
-      policies: [availableRevisions(items.find(item => item.id === "customer-data")!)[0]!, ...items[0]!.policies],
+      policies: [
+        availableRevisions(
+          items.find((item) => item.id === "customer-data")!,
+        )[0]!,
+        ...items[0]!.policies,
+      ],
     };
     const saved = saveEntity(
       "guardrails",
@@ -127,7 +132,7 @@ describe("business demo", () => {
     expect(availableRevisions(items[6]!)).toEqual([]);
   });
   it("keeps referenced text immutable while a policy moves to a new version", () => {
-    const ready = seedEntities().find(item => item.id === "customer-data")!;
+    const ready = seedEntities().find((item) => item.id === "customer-data")!;
     const reference = availableRevisions(ready)[0]!;
     const guard = { ...seedEntities()[0]!, policies: [reference] };
     const updated = saveEntity(
@@ -210,7 +215,9 @@ describe("business demo", () => {
         "guardrails",
         {
           ...policy,
-          policies: availableRevisions(seedEntities().find(item => item.id === "customer-data")!),
+          policies: availableRevisions(
+            seedEntities().find((item) => item.id === "customer-data")!,
+          ),
           useCase: "Support",
           busu: "ISS",
           location: "SG",

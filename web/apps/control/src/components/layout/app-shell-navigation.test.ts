@@ -29,7 +29,7 @@ describe("role lifecycle navigation", () => {
   it("gives Admin review, governance, monitoring, and published catalog surfaces", () => {
     expect(labelsFor("admin")).toEqual([
       "Eval",
-      "Guardrails",
+      "Guardrail Profiles",
       "Policy Library",
       "Monitor",
     ]);
@@ -45,9 +45,9 @@ describe("role lifecycle navigation", () => {
     expect(itemIsActive(navItem("Evaluate"), "/individual/technical-validation", "individual")).toBe(true);
   });
 
-  it("keeps Guardrails active on its detail pages", () => {
+  it("keeps Guardrail Profiles active on its detail pages", () => {
     expect(itemIsActive(
-      navItem("Guardrails"),
+      navItem("Guardrail Profiles"),
       "/individual/governance/guardrails/guardrail-production",
       "individual",
     )).toBe(true);

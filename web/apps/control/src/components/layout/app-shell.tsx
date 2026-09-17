@@ -154,7 +154,7 @@ export const projectNavGroups: Array<{
       },
       {
         icon: ShieldAlert,
-        label: "Guardrails",
+        label: "Guardrail Profiles",
         to: "/$projectId/governance/guardrails",
         personas: ["admin"],
       },
@@ -177,7 +177,7 @@ export const projectNavGroups: Array<{
 const PERSONA_NAV_ORDER: Record<DemoPersona, string[]> = {
   admin: [
     "Eval",
-    "Guardrails",
+    "Guardrail Profiles",
     "Policy Library",
     "Monitor",
   ],
