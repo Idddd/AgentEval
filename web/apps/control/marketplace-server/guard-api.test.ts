@@ -11,6 +11,16 @@ const demoEnv = {
   MARKETPLACE_PUBLIC_ORIGIN: "http://127.0.0.1:18082",
   MARKETPLACE_DEMO_TOKEN: "local-demo-secret",
 };
+it("allows CRUD deletion with empty upstream response and blocks evaluation", async () => {
+  const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+  const config = { ...demoEnv, MARKETPLACE_CRUD_ONLY: "true" };
+  const deleted = await guardProxy(new Request("http://127.0.0.1:18082/api/guard/policies/custom", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: "{}" }), config, fetcher);
+  expect(deleted.status).toBe(200);
+  expect(await deleted.json()).toEqual({ deleted: true });
+  const blocked = await guardProxy(new Request("http://127.0.0.1:18082/api/guard/policies/custom/validation-runs", { method: "POST" }), config, fetcher);
+  expect(blocked.status).toBe(409);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
 it("connects a local demo using a server-only token", async () => {
   const response = runtimeResponse(demoEnv);
   expect(await response.clone().json()).toMatchObject({ autoConnect: true });

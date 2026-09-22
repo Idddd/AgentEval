@@ -8,7 +8,7 @@ import {
 } from "react";
 import {
   advanceProcessing,
-  restoreEntities,
+  restoreIntegratedEntities,
   saveEntity,
   deletionBlocker,
   STORAGE_KEY,
@@ -28,12 +28,21 @@ import {
 } from "./guard-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MultiSourceAdapter } from "./multi-source-api";
+import { saveBusinessPolicy, configurePolicy, type DemoRole, type WorkflowAction } from "./policy-workflow";
+import { MarketplaceAdapter } from "./marketplace-adapter";
 
 const DemoContext = createContext<{
   items: Entity[];
   sessionOnly: boolean;
   mode: "mock" | "live";
   policyAuthoring: boolean;
+  dualSource?: boolean;
+  crudOnly?: boolean;
+  role?: DemoRole;
+  switchRole?: (role: DemoRole) => void;
+  configure?: (id: string, action: WorkflowAction, configs: Record<string, string>, comment?: string) => void;
+  retrySync?: (item: Entity) => Promise<void>;
   connection?: ReactNode;
   busy?: boolean;
   currentOwner?: string;
@@ -128,11 +137,15 @@ function MockProvider({
   children: ReactNode;
   connection?: ReactNode;
 }) {
+  const [role, setRole] = useState<DemoRole>(() => {
+    try { return localStorage.getItem("marketplace.demo.role") === "Agent Wizard" ? "Agent Wizard" : "User"; } catch { return "User"; }
+  });
+  function switchRole(next: DemoRole) { setRole(next); try { localStorage.setItem("marketplace.demo.role", next); } catch { /* Session still works. */ } }
   const [items, setItems] = useState(() => {
     try {
-      return restoreEntities(localStorage.getItem(STORAGE_KEY));
+      return restoreIntegratedEntities(localStorage.getItem(STORAGE_KEY));
     } catch {
-      return restoreEntities(null);
+      return restoreIntegratedEntities(null);
     }
   });
   const [sessionOnly, setSessionOnly] = useState(false);
@@ -159,7 +172,7 @@ function MockProvider({
   }
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, items }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, items }));
       setSessionOnly(false);
     } catch {
       setSessionOnly(true);
@@ -173,7 +186,7 @@ function MockProvider({
     return () => window.clearInterval(timer);
   }, []);
   function save(kind: Kind, draft: Draft, submit: boolean, existing?: Entity) {
-    const item = saveEntity(
+    const item = kind === "policies" ? saveBusinessPolicy(draft, submit, currentOwner, role, items, existing) : saveEntity(
       kind,
       draft,
       submit,
@@ -223,11 +236,13 @@ function MockProvider({
           );
         },
         mode: "mock",
+        role, switchRole,
+        configure: (id, action, configs, comment) => setItems(configurePolicy(items, id, action, role, currentOwner, configs, comment)),
         currentOwner,
         owners,
         switchOwner,
         policyAuthoring: true,
-        connection,
+        connection: connection || <div className="flex flex-wrap items-center gap-2 border-b bg-slate-50 px-6 py-2 text-xs text-slate-600"><span className="rounded border bg-white px-2 py-0.5 font-medium">Mock demo</span> F5 + Nemo · Changes are saved in this browser. No backend requests.</div>,
       }}
     >
       {children}
@@ -262,7 +277,7 @@ function LiveProvider({
     if (busy || (!config.autoConnect && !token.trim())) return;
     setBusy(true);
     setError("");
-    const next = new GuardAdapter(token.trim(), config);
+    const next = config.marketplaceDb ? new MarketplaceAdapter(token.trim(), config) : config.f5Mock ? new MultiSourceAdapter(token.trim(), config) : new GuardAdapter(token.trim(), config);
     try {
       const loaded = await next.load();
       if (!alive.current) return;
@@ -314,8 +329,12 @@ function LiveProvider({
   async function write<T>(
     operation: (api: GuardAdapter) => Promise<T>,
   ): Promise<T> {
-    if (!adapter || locked.current)
-      throw new Error("A request is in progress. Try again shortly.");
+    if (!adapter) throw new Error("Connect before saving.");
+    setBusy(true);
+    while (locked.current) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (!alive.current) throw new Error("Connection closed.");
+    }
     locked.current = true;
     setBusy(true);
     try {
@@ -454,7 +473,8 @@ function LiveProvider({
   }
   const connection = (
     <div className="flex flex-wrap items-center gap-3 border-b px-6 py-2 text-xs">
-      <span>Connected to Guard</span>
+      <span>{config.marketplaceDb ? "Marketplace DB · Nemo backend / F5 Mock API · CRUD only" : config.f5Mock ? "Nemo · Live backend / F5 · Mock API · CRUD only" : "Connected to Nemo"}</span>
+      {adapter instanceof MarketplaceAdapter && adapter.warnings.map((warning) => <span key={warning} role="alert" className="text-amber-700">{warning}</span>)}
       <Button
         variant="ghost"
         size="sm"
@@ -485,8 +505,16 @@ function LiveProvider({
       value={{
         items,
         save,
-        publish,
-        validate,
+        ...(config.crudOnly ? { remove: (item: Entity) => write(async (api) => {
+          await api.remove(item);
+          if (api instanceof MarketplaceAdapter) setItems(await api.load());
+          else setItems((current) => current.filter((p) => p.id !== item.id));
+        }) } : { publish, validate }),
+        ...(config.marketplaceDb ? { retrySync: (item: Entity) => write(async (api) => {
+          if (api instanceof MarketplaceAdapter) { await api.retry(item); setItems(await api.load()); }
+        }) } : {}),
+        dualSource: !!config.f5Mock,
+        crudOnly: !!config.crudOnly,
         sessionOnly: false,
         mode: "live",
         ...(!config.autoConnect ? { disconnect } : {}),

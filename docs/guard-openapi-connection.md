@@ -1,5 +1,10 @@
 # Guard OpenAPI connection
 
+For the proposed dual-source F5 + Guard architecture, resource mappings and
+implementation phases, see [F5 and Guard integration plan](f5-guard-integration-plan.md).
+That document is a design proposal; the single-Guard connection described here
+remains the current implementation.
+
 Baseline: tasklattice-guard `main` / `7b33ef8`, Controller OpenAPI 3.1,
 `controller/openapi/controller.openapi.json` (82 paths, 98 operations).
 The remote update could not be verified because GitHub was unreachable.

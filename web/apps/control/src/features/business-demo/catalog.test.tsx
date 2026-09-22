@@ -9,7 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { BusinessCatalog, EntityDetail } from "./catalog";
+import { BusinessCatalog, EntityDetail, PolicyWorkflowStatus } from "./catalog";
 import { BusinessDemoProvider } from "./provider";
 import { PROCESSING_MS, seedEntities, STORAGE_KEY, type Kind } from "./model";
 
@@ -25,6 +25,33 @@ function App({ kind = "policies" }: { kind?: Kind }) {
 }
 beforeEach(() => {
   localStorage.clear();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, items: seedEntities() }));
+});
+
+it("creates business requirements without asking User to choose a source", () => {
+  render(<App />);
+  fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
+  const dialog = within(screen.getByRole("dialog"));
+  expect(dialog.queryByRole("checkbox", { name: "F5" })).toBeNull();
+  fireEvent.change(dialog.getByRole("textbox", { name: "Name" }), { target: { value: "Shared policy" } });
+  fireEvent.change(dialog.getByRole("textbox", { name: "Rule text" }), { target: { value: "Protect customer data" } });
+  fireEvent.click(dialog.getByRole("button", { name: "Save draft" }));
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.filter((p: { name: string }) => p.name === "Shared policy");
+  expect(saved).toHaveLength(1);
+  expect(saved[0].source).toBeUndefined();
+  expect(saved[0].workflow.stage).toBe("Draft");
+  expect(saved.every((p: { text: string }) => p.text === "Protect customer data")).toBe(true);
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});
+
+it("allows User to save a draft before technical source selection", () => {
+  render(<App />);
+  fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
+  const dialog = within(screen.getByRole("dialog"));
+  expect(dialog.queryByRole("checkbox", { name: "Nemo" })).toBeNull();
+  fireEvent.change(dialog.getByRole("textbox", { name: "Name" }), { target: { value: "No source" } });
+  fireEvent.click(dialog.getByRole("button", { name: "Save draft" }));
+  expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.some((p: { name: string }) => p.name === "No source")).toBe(true);
 });
 
 it("combines owner checkboxes with status and resets both filters", () => {
@@ -112,7 +139,7 @@ it("shows a two-field policy editor without technical configuration", () => {
   expect(dialog.getByText("Enter the rule text.")).toBeTruthy();
 });
 
-it("saves a draft, opens details, submits and completes with persisted text", () => {
+it("saves a draft, submits and stays waiting for Agent Wizard", () => {
   vi.useFakeTimers();
   render(<App />);
   fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
@@ -134,21 +161,22 @@ it("saves a draft, opens details, submits and completes with persisted text", ()
   });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   fireEvent.click(screen.getByRole("button", { name: "Submit" }));
-  expect(screen.getByText("Processing rules")).toBeTruthy();
+  expect(screen.getByText("Waiting for Agent Wizard to configure this policy.")).toBeTruthy();
   expect(screen.queryByText(/demo/i)).toBeNull();
   act(() => {
     vi.advanceTimersByTime(PROCESSING_MS);
   });
-  expect(within(screen.getByRole("dialog")).getByText("Ready")).toBeTruthy();
+  expect(within(screen.getByRole("dialog")).getByText("Pending implement")).toBeTruthy();
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items[0];
   expect(saved).toMatchObject({
     name: "UI test policy",
     text: "Keep customer records private.",
-    status: "Ready",
+    status: "Draft",
+    workflow: { stage: "Awaiting Agent Wizard" },
   });
 });
 
-it("guards unsaved changes when closing the drawer", () => {
+it("closes policy creation directly and discards unsaved input", () => {
   render(<App />);
   fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
   if (screen.queryByRole("button", { name: "Edit Name" }))
@@ -157,14 +185,9 @@ it("guards unsaved changes when closing the drawer", () => {
     target: { value: "Unsaved" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
-  expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
-  expect(
-    (screen.getByLabelText("Name", { exact: true }) as HTMLInputElement).value,
-  ).toBe("Unsaved");
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
-  fireEvent.click(screen.getByRole("button", { name: "Discard" }));
   expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
+  expect((screen.getByLabelText("Name", { exact: true }) as HTMLInputElement).value).toBe("");
 });
 
 it("exposes guardrail business scope and prevents incomplete submission", () => {
@@ -214,7 +237,7 @@ it("shows reverse links on a policy and creates a new immutable version", () => 
   const items = seedEntities();
   const guard = items[0]!;
   const policy = items.find((p) => p.id === guard.policies[0]!.policyId)!;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, items }));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, items }));
   render(<App />);
   fireEvent.click(
     screen.getByRole("button", { name: new RegExp(`^${policy.name}v1`) }),
@@ -242,7 +265,7 @@ it("paginates and resets the page after searching", () => {
   localStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({
-      version: 1,
+      version: 3,
       items: Array.from({ length: 18 }, (_, i) => ({
         ...example,
         id: `p${i}`,
@@ -374,7 +397,7 @@ it("sorts policies by updated time in both directions before pagination", () => 
     name: `Sort policy ${i}`,
     updatedAt: 1000 + i,
   }));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, items }));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, items }));
   render(<App />);
   const rows = () => screen.getAllByRole("row").slice(1);
   expect(rows()[0]!.textContent).toContain("Sort policy 9");
@@ -403,7 +426,7 @@ it("shows linked guardrails on the latest policy even when they use an older ver
   const policy = items.find((item) => item.id === guard.policies[0]!.policyId)!;
   policy.revisions = [{ version: 1, name: policy.name, text: policy.text }];
   policy.version = 2;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, items }));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, items }));
   render(<BusinessDemoProvider config={{ mode: "mock", sourceId: "mock", policyAuthoring: true }}>
     <EntityDetail item={policy} selectedVersion={2} onEdit={() => {}} />
   </BusinessDemoProvider>);
@@ -412,4 +435,19 @@ it("shows linked guardrails on the latest policy even when they use an older ver
   expect(screen.queryByText("No linked guardrail profiles")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "v1" }));
   expect(screen.getByText("Uses v1 · Viewing this version")).toBeTruthy();
+});
+
+it("shows workflow states with stage bars, and hides the bar when ready", () => {
+  const policy = seedEntities().find((item) => item.kind === "policies")!;
+  const { rerender } = render(<PolicyWorkflowStatus item={{ ...policy, workflow: { businessId: policy.id, configs: {}, stage: "Draft" } }} />);
+  for (const stage of ["Draft", "Awaiting Agent Wizard", "Configuring", "Needs input"] as const) {
+    rerender(<PolicyWorkflowStatus item={{ ...policy, workflow: { businessId: policy.id, configs: {}, stage } }} />);
+    const label = stage === "Awaiting Agent Wizard" || stage === "Configuring" || stage === "Needs input" ? "Pending implement" : stage;
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuetext")).toBe(label);
+    expect(screen.queryByText(/of 2/)).toBeNull();
+  }
+  rerender(<PolicyWorkflowStatus item={{ ...policy, workflow: { businessId: policy.id, configs: {}, stage: "Ready" } }} />);
+  expect(screen.getByText("Ready")).toBeTruthy();
+  expect(screen.queryByRole("progressbar")).toBeNull();
 });

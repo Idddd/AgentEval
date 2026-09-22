@@ -54,7 +54,10 @@ export function runtimeResponse(env = process.env) {
       {
         mode: config.mode,
         sourceId: config.sourceId,
-        policyAuthoring: !!config.authoring,
+        policyAuthoring: !!config.authoring || env.MARKETPLACE_CRUD_ONLY === "true",
+        crudOnly: env.MARKETPLACE_CRUD_ONLY === "true",
+        f5Mock: env.MARKETPLACE_F5_MOCK === "true",
+        marketplaceDb: !!env.MARKETPLACE_DB_FILE,
         autoConnect: !!config.demoToken,
       },
       { headers: { "Cache-Control": "no-store" } },
@@ -114,7 +117,7 @@ export async function guardProxy(
   if (
     authoring
       ? request.method !== "POST"
-      : !allowedGuardRoute(path, request.method)
+      : !allowedGuardRoute(path, request.method) && !(env.MARKETPLACE_CRUD_ONLY === "true" && request.method === "DELETE" && /^\/(policies|guardrails)\/[A-Za-z0-9_.~-]+$/.test(path))
   )
     return failure(404, "not_found", "API operation is not available.");
   if (url.search)
@@ -130,6 +133,8 @@ export async function guardProxy(
       "origin_mismatch",
       "Cross-origin requests are not allowed.",
     );
+  if (env.MARKETPLACE_CRUD_ONLY === "true" && request.method === "POST" && /\/(publish|validation-runs)$/.test(path))
+    return failure(409, "crud_only", "Evaluation and publishing are disabled in CRUD mode.");
   const authorization = request.headers.get("authorization") ??
     (config.demoToken ? `Bearer ${config.demoToken}` : null);
   if (!authorization?.match(/^Bearer [^\s]+$/))
@@ -172,6 +177,7 @@ export async function guardProxy(
         "upstream_redirect",
         "Backend returned an unexpected redirect.",
       );
+    if (response.status === 204) return Response.json({ deleted: true }, { headers: { "Cache-Control": "no-store" } });
     if (!response.headers.get("content-type")?.includes("application/json"))
       return failure(502, "invalid_response", "Backend did not return JSON.");
     return new Response(await response.text(), {

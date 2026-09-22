@@ -52,9 +52,82 @@ import {
   type PolicyReference,
 } from "./model";
 import { useBusinessDemo } from "./provider";
-import { SavedDraftError } from "./guard-api";
+import { SavedDraftError, BatchSaveError } from "./guard-api";
+import { workflowStage, policyStatus, type DemoRole } from "./policy-workflow";
+
+import { TechnicalConfigForm, defaultTechnicalConfig, technicalConfigError } from "./technical-config";
 
 const PAGE_SIZE = 8;
+const workflowAppearance = {
+  Draft: { value: 10, badge: "bg-zinc-100 text-zinc-600", bar: "bg-zinc-400" },
+  "Awaiting Agent Wizard": { value: 40, badge: "bg-amber-50 text-amber-800", bar: "bg-amber-400" },
+  Configuring: { value: 75, badge: "bg-blue-50 text-blue-700", bar: "bg-blue-500" },
+  "Needs input": { value: 25, badge: "bg-orange-50 text-orange-800", bar: "bg-orange-400" },
+  Ready: { value: 100, badge: "bg-emerald-50 text-emerald-700", bar: "bg-emerald-500" },
+};
+export function PolicyWorkflowStatus({ item, role = "User" }: { item: Entity; role?: DemoRole | undefined }) {
+  const stage = workflowStage(item);
+  const label = policyStatus(item, role);
+  const appearance = workflowAppearance[stage];
+  return <div className="space-y-2 text-xs">
+    <span className={`inline-flex items-center gap-1.5 rounded px-2 py-1 ${appearance.badge}`}><span aria-hidden="true" className="size-1.5 rounded-full bg-current" />{label}</span>
+    {stage !== "Ready" && <div role="progressbar" aria-label={`${item.name} workflow progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={appearance.value} aria-valuetext={label} className="h-1 w-28 overflow-hidden rounded-full bg-zinc-100">
+      <div className={`h-full rounded-full transition-[width] motion-reduce:transition-none ${appearance.bar}`} style={{ width: `${appearance.value}%` }} />
+    </div>}
+  </div>;
+}
+
+function MockPolicyWorkflow({ item, readOnly, onDirty, onDeleted, onVersionSelect }: { item: Entity; readOnly: boolean; onDirty: (dirty: boolean) => void; onDeleted?: (() => void) | undefined; onVersionSelect: (version: string | number) => void }) {
+  const { role = "User", currentOwner, configure, save, items } = useBusinessDemo();
+  const stage = workflowStage(item);
+  const [configs, setConfigs] = useState<Record<string, string>>(item.workflow?.configs ?? (item.source ? { [item.source]: "" } : {}));
+  const comment = "";
+  const [error, setError] = useState("");
+  const editing = role === "User" && ["Draft", "Ready"].includes(stage) && !readOnly;
+  function action(next: "start" | "save" | "return" | "complete") {
+    try { if (next === "complete") { for (const [source, value] of Object.entries(configs)) { const problem = technicalConfigError(source, value); if (problem) throw new Error(problem); } } configure?.(item.id, next, configs, comment); setError(""); onDirty(false); }
+    catch (e) { setError(e instanceof Error ? e.message : "Unable to update status."); }
+  }
+  return <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-6">
+    <div className="space-y-3"><PolicyWorkflowStatus item={item} role={role} /><h2 className="font-heading text-2xl">{item.name}</h2><p className="text-xs text-muted-foreground">{item.owner} · v{item.version}</p></div>
+    {role === "Agent Wizard" && item.workflow?.comment && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">{item.workflow.comment}</p>}
+    {editing ? <EntityEditor kind="policies" initial={item} inline onDirty={onDirty} onSave={(draft, submit) => { save("policies", draft, submit, item); onDirty(false); }} /> : <section className="space-y-2"><h3 className="text-sm font-medium">Rule text</h3><p className="whitespace-pre-wrap text-sm leading-6">{item.text}</p></section>}
+    {(stage === "Awaiting Agent Wizard" || stage === "Needs input") && <section className="rounded-md border bg-amber-50/40 p-4 space-y-3"><p className="text-sm">Waiting for Agent Wizard to configure this policy.</p>{role === "Agent Wizard" && !readOnly && <Button onClick={() => action("start")}>Start configuration</Button>}</section>}
+    {stage === "Configuring" && role !== "Agent Wizard" && <p className="text-sm text-muted-foreground">Agent Wizard is configuring this policy.</p>}
+    {stage === "Configuring" && role === "Agent Wizard" && !readOnly && <section className="space-y-5 border-t pt-5">
+      <h3 className="font-medium">Technical configuration</h3>
+      <fieldset className="flex flex-wrap items-center gap-5 text-sm" disabled={item.workflow?.assignedTo !== currentOwner}>
+        <legend className="mb-2 text-sm font-medium">Source</legend>
+        {(["Guard", "F5"] as const).filter((source) => !item.source || item.source === source).map((source) => <label key={source} className="flex items-center gap-2"><input type="checkbox" className="size-4 accent-primary" checked={source in configs} onChange={(e) => { const next = { ...configs }; if (e.target.checked) next[source] = defaultTechnicalConfig(source); else delete next[source]; setConfigs(next); onDirty(true); }} />{source === "Guard" ? "Nemo" : "F5"}</label>)}
+      </fieldset>
+      {Object.keys(configs).map((source) => <TechnicalConfigForm key={source} source={source} value={configs[source]!} disabled={item.workflow?.assignedTo !== currentOwner} onChange={(value) => { setConfigs({ ...configs, [source]: value }); onDirty(true); }} />)}
+
+      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => action("save")}>Save draft</Button><Button onClick={() => action("complete")}>Complete configuration</Button></div>
+    </section>}
+    {stage === "Ready" && <section className="space-y-3 border-t pt-4"><h3 className="text-sm font-medium">Technical configuration</h3>{item.source && <SourceBadge source={item.source} />}{Object.entries(item.workflow?.configs ?? {}).map(([source, value]) => <TechnicalConfigForm key={source} source={source} value={value} disabled onChange={() => {}} />)}<p className="text-xs text-muted-foreground">Mock configuration · No backend synchronization or evaluation.</p></section>}
+    <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">Used by Guardrail Profiles</h3>{items.filter((g) => g.kind === "guardrails" && g.policies.some((p) => p.policyId === item.id)).map((g) => <a className="block text-sm hover:text-primary" key={g.id} href={`/guardrails/${g.id}`}>{g.name}</a>)}</section>
+    <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">Versions</h3><div className="flex flex-wrap gap-2"><span className="rounded border border-primary px-3 py-1 text-xs text-primary">v{item.version} · Latest</span>{item.revisions.filter((r) => String(r.version) !== String(item.version)).map((r) => <button type="button" key={r.version} className="rounded border px-3 py-1 text-xs" onClick={() => onVersionSelect(r.version)}>v{r.version}</button>)}</div></section>
+    {!readOnly && role === "User" && <DeleteEntityAction item={item} onDeleted={onDeleted} />}
+    {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+  </div>;
+}
+export function SyncStatus({ item }: { item: Entity }) {
+  const { retrySync } = useBusinessDemo();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  if (!item.sync) return null;
+  const needsSync = item.sync.state !== "synced";
+  return <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-normal">
+    <span className={needsSync ? "text-amber-700" : "text-muted-foreground"} title={item.sync.error}>
+      {item.sync.deleting && needsSync ? "Deletion pending" : ({ synced: "Synced", pending: "Sync pending", failed: "Sync failed", uncertain: "Check sync result" })[item.sync.state]}
+    </span>
+    {needsSync && retrySync && <button type="button" className="text-primary underline disabled:opacity-50" disabled={pending} onClick={async (event) => {
+      event.stopPropagation(); setPending(true); setError("");
+      try { await retrySync(item); } catch (e) { setError(e instanceof Error ? e.message : "Sync failed."); } finally { setPending(false); }
+    }}>{pending ? "Checking…" : "Retry sync"}</button>}
+    {(error || (needsSync && item.sync.error)) && <span role="status" className="w-full text-amber-700">{error || item.sync.error}</span>}
+  </div>;
+}
 const selectClass =
   "h-10 w-full min-w-0 rounded-md border border-input bg-white px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 const statusStyles: Record<Status, string> = {
@@ -134,7 +207,7 @@ export function DeleteEntityAction({
   dirty?: boolean;
   editorControls?: RefObject<EditorControls | null>;
 }) {
-  const { items, remove, setActivation } = useBusinessDemo();
+  const { items, remove, setActivation, crudOnly } = useBusinessDemo();
   const [action, setAction] = useState<
     "Delete" | "Deactivate" | "Active" | null
   >(null);
@@ -150,6 +223,7 @@ export function DeleteEntityAction({
   const profile = item.kind === "guardrails";
   const active = profile && item.status === "Active";
   const inactive = profile && item.status === "Ready";
+  if (crudOnly && active) return <p className="text-xs text-muted-foreground">Active profiles are read-only in CRUD mode.</p>;
   const blocked =
     action === "Delete" ? deletionBlocker(items, item) : undefined;
   const begin = (next: "Delete" | "Deactivate" | "Active") => {
@@ -177,7 +251,7 @@ export function DeleteEntityAction({
             </Button>
           ) : (
             <>
-              {inactive && (
+              {inactive && setActivation && (
                 <Button
                   type="button"
                   variant="outline"
@@ -331,6 +405,10 @@ export function DeleteEntityAction({
   );
 }
 
+export function SourceBadge({ source = "Guard" }: { source?: Entity["source"] }) {
+  return <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2 py-1 text-xs font-medium ${source === "F5" ? "border-indigo-100 bg-indigo-50 text-indigo-700" : "border-sky-100 bg-sky-50 text-sky-700"}`}><span className="size-1.5 rounded-full bg-current" />{source === "F5" ? "F5" : "Nemo"}</span>;
+}
+
 export function StatusBadge({ status }: { status: Status }) {
   return (
     <span
@@ -359,14 +437,16 @@ export function BusinessCatalog({
   onSelect: (id?: string) => void;
   onVersionChange?: (version: string | number) => void;
 }) {
-  const { items, save, sessionOnly, mode, busy } = useBusinessDemo();
+  const { items, save, sessionOnly, mode, busy, dualSource, role } = useBusinessDemo();
   const policy = kind === "policies";
   const title = policy ? "Policies" : "Guardrail Profile";
   const singular = policy ? "Policy" : "Guardrail Profile";
   const Icon = policy ? FileText : ShieldCheck;
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string[]>([]);
+  useEffect(() => { setStatus([]); setPage(1); }, [role]);
   const [selectedOwners, setSelectedOwners] = useState<string[]>([]);
+  const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const ownerOptions = [
     ...new Set(
       items
@@ -388,9 +468,11 @@ export function BusinessCatalog({
   const selected = items.find(
     (item) => item.kind === kind && item.id === selectedId,
   );
-  const filtered = filterEntities(items, kind, query, status, scope).filter(
+  const filtered = filterEntities(items, kind, query, policy && mode === "mock" ? [] : status, scope).filter(
     (item) =>
-      !policy || !selectedOwners.length || selectedOwners.includes(item.owner),
+      (!policy || mode !== "mock" || !status.length || status.includes(policyStatus(item, role))) &&
+      (!policy || !selectedOwners.length || selectedOwners.includes(item.owner)) &&
+      (!selectedSources.length || ((!item.workflow || !!item.source) && selectedSources.includes(item.source === "F5" ? "F5" : "Nemo"))),
   );
   if (policy)
     filtered.sort((a, b) =>
@@ -404,7 +486,7 @@ export function BusinessCatalog({
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
-  const availableStatuses: Status[] = policy
+  const availableStatuses: string[] = policy && mode === "mock" ? (role === "Agent Wizard" ? ["Draft", "Needs input", "Ready"] : ["Draft", "Pending implement", "Ready"]) : policy
     ? [
         "Draft",
         "Processing",
@@ -417,7 +499,7 @@ export function BusinessCatalog({
           "Draft",
           "Processing",
           "Active",
-          "Deprecated",
+          "Ready",
           "Validated",
           "Needs input",
         ]
@@ -441,13 +523,39 @@ export function BusinessCatalog({
     onSelect();
   }
   function resetFilters() {
+    setSelectedSources([]);
     setQuery("");
     setStatus([]);
     setSelectedOwners([]);
     setScope({});
     setPage(1);
   }
-  function persist(draft: Draft, submit: boolean) {
+  function persist(draft: Draft, submit: boolean, sources?: Array<"Guard" | "F5">) {
+    if (creating && policy && dualSource && sources && sources.length > 1) {
+      return (async () => {
+        const completed: Array<"Guard" | "F5"> = [];
+        for (const source of sources) {
+          try { await save(kind, { ...draft, source }, false); completed.push(source); }
+          catch (e) {
+            if (e instanceof SavedDraftError) completed.push(source);
+            throw new BatchSaveError(`${completed.length ? `Saved: ${completed.map((s) => s === "Guard" ? "Nemo" : s).join(", ")}. ` : ""}${source === "Guard" ? "Nemo" : source}: ${e instanceof Error ? e.message : "Save failed"}. Successful sources will not be recreated.`, completed);
+          }
+        }
+        close(); resetFilters(); setNotice("2 policies created · F5 and Nemo");
+      })();
+    }
+    if (creating && policy && mode === "mock" && sources && sources.length > 1) {
+      // Mock saves are synchronous; each functional state update preserves the other record.
+      for (const source of sources) save(kind, { ...draft, source }, submit);
+      setDirty(false);
+      setCreating(false);
+      setEditing(false);
+      setConfirmClose(false);
+      resetFilters();
+      setNotice(`2 policies ${submit ? "submitted" : "created"} · F5 and Nemo. Each policy is managed independently.`);
+      onSelect();
+      return;
+    }
     const result = save(kind, draft, submit, creating ? undefined : selected);
     const finish = (result: Entity) => {
       setDirty(false);
@@ -470,6 +578,8 @@ export function BusinessCatalog({
           </h1>
         </div>
         <Button
+          disabled={policy && mode === "mock" && role === "Agent Wizard"}
+          title={policy && role === "Agent Wizard" ? "Switch to User to create business requirements" : undefined}
           onClick={() => {
             onSelect();
             setCreating(true);
@@ -503,6 +613,7 @@ export function BusinessCatalog({
           </div>
         </div>
         <div className="space-y-4 border-b bg-zinc-50/40 px-5 py-4">
+          {(mode === "mock" || dualSource) && <CheckboxFilter label="Source" options={["F5", "Nemo"]} selected={selectedSources} onChange={(values) => { setSelectedSources(values); setPage(1); }} />}
           <CheckboxFilter
             label="Status"
             options={availableStatuses}
@@ -524,7 +635,6 @@ export function BusinessCatalog({
             />
           )}
           {!policy &&
-            mode !== "live" &&
             scopeKeys.map((key) => (
               <CheckboxFilter
                 key={key}
@@ -537,7 +647,7 @@ export function BusinessCatalog({
                 }}
               />
             ))}
-          {(status.length > 0 ||
+          {(selectedSources.length > 0 || status.length > 0 ||
             selectedOwners.length > 0 ||
             Object.values(scope).some((v) => v?.length)) && (
             <Button
@@ -545,6 +655,7 @@ export function BusinessCatalog({
               size="sm"
               onClick={() => {
                 setStatus([]);
+                setSelectedSources([]);
                 setSelectedOwners([]);
                 setScope({});
                 setPage(1);
@@ -566,6 +677,7 @@ export function BusinessCatalog({
                     Use case
                   </th>
                 )}
+                {(mode === "mock" || dualSource) && <th className="px-5 py-3 font-medium">Source</th>}
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="hidden px-5 py-3 font-medium md:table-cell">
                   Owner
@@ -623,6 +735,7 @@ export function BusinessCatalog({
                         </span>
                       </span>
                     </button>
+                    <SyncStatus item={item} />
                   </td>
                   {!policy && (
                     <td className="hidden px-5 py-5 text-muted-foreground md:table-cell">
@@ -632,10 +745,13 @@ export function BusinessCatalog({
                     </td>
                   )}
                   <td className="px-5 py-5">
-                    <StatusBadge status={item.status} />
+                    {(mode === "mock" || dualSource) ? item.workflow && !item.source ? <span className="text-xs text-muted-foreground">Not selected</span> : <SourceBadge source={item.source} /> : <StatusBadge status={item.status} />}
                   </td>
+                  {(mode === "mock" || dualSource) && <td className="px-5 py-5">
+                    {policy && mode === "mock" ? <PolicyWorkflowStatus item={item} role={role} /> : <StatusBadge status={item.status} />}
+                  </td>}
                   <td className="hidden px-5 py-5 text-muted-foreground md:table-cell">
-                    {item.owner || "—"}
+                    {item.owner?.trim() || "Not assigned"}
                   </td>
                   {policy && (
                     <td className="hidden whitespace-nowrap px-5 py-5 text-muted-foreground md:table-cell">
@@ -645,7 +761,7 @@ export function BusinessCatalog({
                             month: "short",
                             year: "numeric",
                           })
-                        : "—"}
+                        : "Not provided"}
                     </td>
                   )}
                   <td className="hidden pr-4 md:table-cell">
@@ -719,7 +835,7 @@ export function BusinessCatalog({
         open={creating || !!selectedId}
         onOpenChange={(open) => {
           if (busy) return;
-          if (!open) dirty ? setConfirmClose(true) : close();
+          if (!open) dirty && !(creating && policy) ? setConfirmClose(true) : close();
         }}
       >
         <SheetContent
@@ -878,12 +994,15 @@ export function EntityEditor({
   kind: Kind;
   initial?: Entity | undefined;
   onDirty: (dirty: boolean) => void;
-  onSave: (draft: Draft, submit: boolean) => void | Promise<void>;
+  onSave: (draft: Draft, submit: boolean, sources?: Array<"Guard" | "F5">) => void | Promise<void>;
 }) {
-  const { items, mode, policyAuthoring } = useBusinessDemo();
+  const { items, mode, policyAuthoring, dualSource, crudOnly } = useBusinessDemo();
   const live = mode === "live";
+  const businessStep = !live && kind === "policies";
+  const multiSource = !businessStep && dualSource && kind === "policies" && !initial;
+  const [policySources, setPolicySources] = useState<Array<"Guard" | "F5">>(["Guard"]);
   const readOnly =
-    initial?.kind === "guardrails" && initial.status === "Active";
+    (initial?.kind === "guardrails" && initial.status === "Active") || !!initial?.sync?.deleting || initial?.sync?.state === "uncertain";
   const [editingField, setEditingField] = useState<keyof Draft | null>(null);
   const [pending, setPending] = useState(false);
   const [requestError, setRequestError] = useState("");
@@ -894,7 +1013,7 @@ export function EntityEditor({
     {},
   );
   const id = useId();
-  const changed =
+  const changed = (multiSource && (policySources.length !== 1 || policySources[0] !== "Guard")) ||
     JSON.stringify(
       Object.fromEntries(
         Object.keys(blankDraft).map((k) => [k, draft[k as keyof Draft]]),
@@ -921,13 +1040,14 @@ export function EntityEditor({
     return () => window.removeEventListener("beforeunload", warn);
   }, [changed]);
   function update(key: keyof Draft, value: string) {
-    setDraft({ ...draft, [key]: value });
+    setDraft({ ...draft, [key]: value, ...(key === "source" ? { policies: [] } : {}) });
     setErrors({ ...errors, [key]: undefined });
     onDirty(true);
   }
   function persist(submit: boolean) {
     if (saving.current || readOnly) return false;
     const next = validateDraft(kind, draft, live ? false : submit, items);
+    if (multiSource && !policySources.length) next.source = "Select at least one source.";
     if (live && kind === "policies" && !draft.text.trim())
       next.text = "Enter the rule text.";
     if (live && kind === "guardrails" && !draft.policies.length)
@@ -941,13 +1061,14 @@ export function EntityEditor({
     setRequestError("");
     setSavedLink("");
     try {
-      const result = onSave(draft, submit);
+      const result = onSave(multiSource ? { ...draft, source: policySources[0] ?? "Guard" } : draft, submit, multiSource ? policySources : undefined);
       if (result instanceof Promise) {
         saving.current = true;
         setPending(true);
         return result
           .then(() => true)
           .catch((error) => {
+            if (error instanceof BatchSaveError) setPolicySources((current) => current.filter((source) => !error.completed.includes(source)));
             setRequestError(
               error instanceof Error ? error.message : "Unable to save.",
             );
@@ -1051,6 +1172,7 @@ export function EntityEditor({
             : "min-h-0 flex-1 space-y-6 overflow-y-auto p-6"
         }
       >
+
         <label
           className="grid gap-2 text-sm font-medium"
           htmlFor={`${id}-name`}
@@ -1092,6 +1214,26 @@ export function EntityEditor({
             {error("text")}
           </label>
         )}
+        {(!live || dualSource) && !businessStep && !inline && <fieldset id={`${id}-source`} tabIndex={-1} className="min-w-0">
+          <legend className="sr-only">Source</legend>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            <span className="font-medium" aria-hidden="true">Source</span>
+            {initial ? <SourceBadge source={initial.source} /> : (["Guard", "F5"] as const).map((source) => (
+              <label key={source} className="flex cursor-pointer items-center gap-2 py-1">
+                <input type="checkbox" className="size-4 accent-primary"
+                  checked={multiSource ? policySources.includes(source) : (draft.source ?? "Guard") === source}
+                  onChange={() => {
+                    if (multiSource) {
+                      setPolicySources((current) => current.includes(source) ? current.filter((value) => value !== source) : [...current, source]);
+                      setErrors((current) => ({ ...current, source: "" })); onDirty(true);
+                    } else if (draft.source !== source) update("source", source);
+                  }} />
+                {source === "Guard" ? "Nemo" : "F5"}
+              </label>
+            ))}
+          </div>
+          {errors.source && <p role="alert" className="mt-2 text-xs text-red-700">{errors.source}</p>}
+        </fieldset>}
         {inline &&
           initial?.kind === "policies" &&
           initial.status === "Ready" &&
@@ -1126,7 +1268,7 @@ export function EntityEditor({
                 "Policies",
                 draft.policies.map((policy) => policy.name).join("\n"),
                 <PolicyPicker
-                  items={items}
+                  items={items.filter((item) => (item.source ?? "Guard") === (draft.source ?? "Guard"))}
                   selected={draft.policies}
                   onChange={(policies) => {
                     setDraft({ ...draft, policies });
@@ -1137,7 +1279,7 @@ export function EntityEditor({
               )}
               {error("policies")}
             </fieldset>
-            {!live && (
+            {(
               <>
                 <label
                   className="grid gap-2 text-sm font-medium"
@@ -1191,6 +1333,7 @@ export function EntityEditor({
             )}
           </>
         )}
+
       </fieldset>
       {live && kind === "policies" && !policyAuthoring && (
         <p role="status" className="px-6 py-3 text-sm text-amber-800">
@@ -1244,7 +1387,7 @@ export function EntityEditor({
                 </Button>
               </>
             )}
-            {!changed && (
+            {!changed && !crudOnly && (
               <Button
                 type="button"
                 disabled={
@@ -1259,7 +1402,7 @@ export function EntityEditor({
         )
       ) : (
         <footer className="flex shrink-0 justify-end gap-3 border-t bg-white px-6 py-4">
-          <Button
+          {!crudOnly && <Button
             disabled={
               pending || (live && kind === "policies" && !policyAuthoring)
             }
@@ -1268,14 +1411,14 @@ export function EntityEditor({
             onClick={() => persist(false)}
           >
             Save draft
-          </Button>
+          </Button>}
           <Button
             disabled={
               pending || (live && kind === "policies" && !policyAuthoring)
             }
             type="submit"
           >
-            {pending ? "Saving…" : "Submit"}
+            {pending ? "Saving…" : crudOnly ? "Create" : "Submit"}
             <ArrowRight className="size-4" />
           </Button>
         </footer>
@@ -1319,7 +1462,7 @@ function PolicyPicker({
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      <div className="max-h-72 overflow-y-auto divide-y">
+      <div className="h-60 min-h-0 overflow-y-auto overscroll-contain divide-y" aria-label="Available policies">
         {visible.map((ref) => {
           const policy = items.find((item) => item.id === ref.policyId)!;
           const ready = availableRevisions(policy);
@@ -1469,7 +1612,7 @@ export function EntityDetail({
   onVersionChange?: ((version: string | number) => void) | undefined;
   onEdit: () => void;
 }) {
-  const { items, save } = useBusinessDemo();
+  const { items, save, mode, dualSource, crudOnly, role } = useBusinessDemo();
   const [detailDirty, setDetailDirty] = useState(false);
   const controlsRef = useRef<EditorControls | null>(null);
   const [localVersion, setLocalVersion] = useState(selectedVersion);
@@ -1496,6 +1639,7 @@ export function EntityDetail({
       )
     : undefined;
   const editable =
+    !(mode === "mock" && role === "Agent Wizard") &&
     !readOnly &&
     !historical &&
     !item.remote?.readOnly &&
@@ -1512,6 +1656,8 @@ export function EntityDetail({
   );
   if (historical && !revision)
     return <p className="p-6 text-sm">Policy version not found</p>;
+  if (mode === "mock" && item.kind === "policies" && item.workflow && !historical)
+    return <MockPolicyWorkflow key={`${item.id}-${item.updatedAt}`} item={item} readOnly={readOnly} onDirty={onDirty ?? (() => {})} onDeleted={onDeleted} onVersionSelect={switchVersion} />;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Dialog
@@ -1552,6 +1698,9 @@ export function EntityDetail({
             {viewed.name}
           </h2>
           <p className="text-xs text-muted-foreground">{item.owner}</p>
+          <SyncStatus item={item} />
+          {(!item.remote || dualSource) && <div className="flex items-center gap-2"><SourceBadge source={item.source} /><span className="text-xs text-muted-foreground">{item.source === "F5" ? "F5 · Mock API" : mode === "live" ? "Nemo · Live backend" : "Nemo · Mock"}</span></div>}
+          {crudOnly && item.source !== "F5" && item.status === "Draft" && <p className="text-xs text-muted-foreground">Draft only · Not evaluated or published. Executable rules must be configured before use.</p>}
         </div>
         {!historical && item.status === "Processing" && (
           <div

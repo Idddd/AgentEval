@@ -35,6 +35,16 @@ const revisionSchema = z.object({
 const referenceSchema = revisionSchema.extend({ policyId: z.string() });
 export type PolicyReference = z.infer<typeof referenceSchema>;
 export const entitySchema = z.object({
+  workflow: z.object({
+    stage: z.enum(["Draft", "Awaiting Agent Wizard", "Configuring", "Needs input", "Ready"]),
+    businessId: z.string(),
+    submittedBy: z.string().optional(), submittedAt: z.number().optional(),
+    assignedTo: z.string().optional(), configuredAt: z.number().optional(),
+    comment: z.string().optional(),
+    configs: z.record(z.string(), z.string()).default({}),
+  }).optional(),
+  source: z.enum(["Guard", "F5"]).optional(),
+  scanDirection: z.enum(["Request", "Response", "Both"]).optional(),
   id: z.string(),
   kind: z.enum(["guardrails", "policies"]),
   name: z.string(),
@@ -61,13 +71,21 @@ export const entitySchema = z.object({
     .optional(),
   revisions: z.array(revisionSchema).default([]),
   policies: z.array(referenceSchema).default([]),
+  sync: z.object({
+    state: z.enum(["synced", "pending", "failed", "uncertain"]),
+    revision: z.number(),
+    error: z.string().optional(),
+    deleting: z.boolean().optional(),
+  }).optional(),
 });
 export type Entity = z.infer<typeof entitySchema>;
 export type Draft = Pick<
   Entity,
-  "name" | "text" | "useCase" | "policies" | ScopeKey
+  "name" | "text" | "useCase" | "policies" | "source" | "scanDirection" | ScopeKey
 >;
 export const blankDraft: Draft = {
+  source: "Guard",
+  scanDirection: "Both",
   name: "",
   text: "",
   useCase: "",
@@ -137,6 +155,10 @@ export function validateDraft(
     draft.policies.length
   )
     errors.policies = "Select only one version of each Policy.";
+  if (kind === "guardrails" && items && draft.policies.some((ref) => {
+    const policy = items.find((item) => item.id === ref.policyId);
+    return policy && (policy.source ?? "Guard") !== (draft.source ?? "Guard");
+  })) errors.policies = "Select policies from the same source as this profile.";
   return errors;
 }
 
@@ -150,12 +172,16 @@ export function saveEntity(
   items?: Entity[],
   currentOwner = "Admin",
 ): Entity {
+  if (existing && (existing.source ?? "Guard") !== (draft.source ?? "Guard"))
+    throw new Error("Source cannot be changed after creation.");
   if (existing?.kind === "guardrails" && existing.status === "Active")
     throw new Error("Deactivate this profile before editing.");
   if (Object.keys(validateDraft(kind, draft, submit, items)).length)
     throw new Error("Invalid draft");
   return {
     ...blankDraft,
+    source: draft.source ?? "Guard",
+    scanDirection: draft.scanDirection ?? "Both",
     useCase: draft.useCase,
     busu: draft.busu,
     location: draft.location,
@@ -197,6 +223,7 @@ export function advanceProcessing(items: Entity[], now: number): Entity[] {
   let changed = false;
   const next = items.map((item) => {
     if (
+      item.workflow ||
       item.status !== "Processing" ||
       item.submittedAt === undefined ||
       now < item.submittedAt + PROCESSING_MS
@@ -365,7 +392,7 @@ export function restoreEntities(
   try {
     const parsed = z
       .object({
-        version: z.union([z.literal(1), z.literal(2)]),
+        version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
         items: z.array(entitySchema),
       })
       .parse(JSON.parse(raw));
@@ -373,6 +400,29 @@ export function restoreEntities(
   } catch {
     return seedEntities(now);
   }
+}
+
+// Add the integration examples once; version 3 remembers user deletions.
+export function restoreIntegratedEntities(raw: string | null, now = Date.now()): Entity[] {
+  const items = restoreEntities(raw, now);
+  try { if (raw && JSON.parse(raw).version === 3) return items; } catch { /* Seed below. */ }
+  const policy = (id: string, name: string, text: string): Entity => ({
+    ...blankDraft, id, kind: "policies", source: "F5", name, text,
+    status: "Ready", owner: "Security", version: 1, revisions: [],
+    createdAt: now - 86400000, updatedAt: now,
+  });
+  const injection = policy("f5-prompt-injection", "Prompt injection protection", "Detect attempts to override instructions, reveal system prompts, or bypass safety controls.");
+  const privacy = policy("f5-sensitive-data", "Sensitive data detection", "Flag personal information, credentials, and confidential customer data.");
+  const profile = (id: string, name: string, status: Status, policies: Entity[]): Entity => ({
+    ...blankDraft, id, kind: "guardrails", source: "F5", name, status,
+    owner: "Security", version: 1, revisions: [], createdAt: now - 86400000,
+    updatedAt: now, useCase: "Protect customer-facing AI conversations",
+    busu: "CBG", location: "All", agentType: "Customer", dataType: "Personal data",
+    policies: policies.flatMap(availableRevisions),
+  });
+  const samples = [profile("f5-customer-assistant", "Customer Assistant", "Ready", [injection, privacy]),
+    profile("f5-employee-copilot", "Employee Copilot", "Active", [injection]), injection, privacy];
+  return [...samples.filter((sample) => !items.some((item) => item.id === sample.id)), ...items];
 }
 
 export function filterEntities(

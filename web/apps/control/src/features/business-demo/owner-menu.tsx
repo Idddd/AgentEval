@@ -11,7 +11,7 @@ import {
 import { useBusinessDemo } from "./provider";
 
 export function OwnerMenu({ compact = false }: { compact?: boolean }) {
-  const { mode, currentOwner, owners, switchOwner, disconnect, busy } =
+  const { mode, currentOwner, owners, switchOwner, disconnect, busy, role, switchRole } =
     useBusinessDemo();
   const name = mode === "mock" ? (currentOwner ?? "Admin") : "Guard connection";
   const initials =
@@ -37,7 +37,7 @@ export function OwnerMenu({ compact = false }: { compact?: boolean }) {
               <span className="min-w-0 flex-1 text-left text-xs">
                 <strong className="block truncate font-medium">{name}</strong>
                 <span className="block text-[10px] text-muted-foreground">
-                  {mode === "live" ? (disconnect ? "Personal access token" : "Local demo") : "Local account"}
+                  {mode === "live" ? (disconnect ? "Personal access token" : "Local demo") : role ?? "User"}
                 </span>
               </span>
               <ChevronDown className="size-3.5 text-muted-foreground" />
@@ -52,6 +52,11 @@ export function OwnerMenu({ compact = false }: { compact?: boolean }) {
       >
         {mode === "mock" ? (
           <>
+            <DropdownMenuLabel>Role</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={role ?? "User"} onValueChange={(value) => switchRole?.(value as "User" | "Agent Wizard")}>
+              <DropdownMenuRadioItem value="User">User</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="Agent Wizard">Agent Wizard</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
             <DropdownMenuLabel>Switch user</DropdownMenuLabel>
             <DropdownMenuRadioGroup
               value={currentOwner ?? "Admin"}

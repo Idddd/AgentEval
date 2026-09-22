@@ -8,10 +8,13 @@ import {
 } from "./model";
 
 export const runtimeSchema = z.object({
+  marketplaceDb: z.boolean().optional(),
   mode: z.enum(["mock", "live", "auto"]),
   sourceId: z.string(),
   policyAuthoring: z.boolean(),
   autoConnect: z.boolean().optional(),
+  crudOnly: z.boolean().optional(),
+  f5Mock: z.boolean().optional(),
 });
 export type RuntimeConfig = z.infer<typeof runtimeSchema>;
 export class GuardApiError extends Error {
@@ -189,6 +192,9 @@ function validationFailure(run?: Run | null, policies: Entity[] = []): string {
     ].join("\n");
   });
   return [summary, ...(reason ? [reason] : []), ...details].join("\n\n");
+}
+export class BatchSaveError extends Error {
+  constructor(message: string, public completed: Array<"Guard" | "F5">) { super(message); }
 }
 export type TrackedJob = {
   kind: Kind;
@@ -403,7 +409,7 @@ export class GuardAdapter {
     const entities = await Promise.all(
       policies.map(async (p) => {
         let run: Run | null = null;
-        if (p.implementation_detail) {
+        if (p.implementation_detail && !this.config.crudOnly) {
           const job = this.jobs.find(
             (j) =>
               j.kind === "policies" &&
@@ -424,7 +430,7 @@ export class GuardAdapter {
             j.id === g.id &&
             j.revision === g.draftRevision,
         );
-        const run = job
+        const run = job && !this.config.crudOnly
           ? runSchema.parse(
               await this.request(
                 `/validation-runs/${encodeURIComponent(job.runId)}`,
@@ -445,6 +451,21 @@ export class GuardAdapter {
     existing?: Entity,
   ): Promise<string> {
     let id: string;
+    if (this.config.crudOnly && kind === "policies") {
+      if (existing?.remote?.readOnly) throw new Error("Built-in policies are read-only.");
+      const record = z.object({ id: z.string() }).parse(await this.request(
+        existing ? `/policies/${encodeURIComponent(existing.id)}` : "/policies",
+        existing ? "PATCH" : "POST",
+        { name: draft.name.trim(), description: draft.text.trim(),
+          ...(!existing ? { owner: "Marketplace", draft: {
+            guardrail_category: "content_safety", colang_version: "2.x",
+            sources: [{ path: "unimplemented.co", content: "# CRUD-only draft. Rule text is metadata. No executable flow is implemented.\n" }],
+            rail_bindings: [{ rail_type: "input", flow_name: "unimplemented", execution_mode: "detect", on_unsafe: "reject" }],
+          } } : {}),
+        },
+      ));
+      return record.id;
+    }
     if (kind === "policies") {
       if (!this.config.policyAuthoring)
         throw new Error(
@@ -552,7 +573,7 @@ export class GuardAdapter {
           ),
         ).id;
     }
-    if (submit) {
+    if (submit && !this.config.crudOnly) {
       try {
         const run = runSchema.parse(
           await this.request(
@@ -584,6 +605,11 @@ export class GuardAdapter {
       "POST",
       { expectedDraftRevision: item.remote.draftRevision },
     );
+  }
+  async remove(item: Entity) {
+    if (!this.config.crudOnly) throw new Error("Deletion is not enabled.");
+    if (item.remote?.readOnly || item.status === "Active") throw new Error("This record cannot be deleted in CRUD mode.");
+    await this.request(`/${item.kind}/${encodeURIComponent(item.id)}`, "DELETE", { reason: "Deleted from Marketplace CRUD UI" });
   }
   async validate(item: Entity) {
     if (item.remote?.readOnly) throw new Error("This Policy is read-only.");

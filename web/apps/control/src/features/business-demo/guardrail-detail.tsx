@@ -20,6 +20,8 @@ import {
   EntityDetail,
   EntityEditor,
   StatusBadge,
+  SourceBadge,
+  SyncStatus,
 } from "./catalog";
 import {
   availableRevisions,
@@ -31,7 +33,7 @@ import {
 import { useBusinessDemo } from "./provider";
 
 export function GuardrailDetails({ id }: { id: string }) {
-  const { items, save, busy } = useBusinessDemo();
+  const { items, save, busy, dualSource } = useBusinessDemo();
   const guard = items.find(
     (item) => item.id === id && item.kind === "guardrails",
   );
@@ -165,12 +167,14 @@ export function GuardrailDetails({ id }: { id: string }) {
                   {guard.name}
                 </h1>
                 <StatusBadge status={guard.status} />
+                {(!guard.remote || dualSource) && <SourceBadge source={guard.source} />}
               </div>
               {guard.owner && (
                 <p className="text-xs text-muted-foreground">
                   Owner · {guard.owner}
                 </p>
               )}
+              {!guard.remote && <p className="text-xs text-muted-foreground">{guard.source === "F5" ? "F5 Project" : "Nemo Profile"} · Internal · Mock preview</p>}
               {guard.remote && (
                 <p className="text-xs text-muted-foreground">
                   Draft revision {guard.remote.draftRevision}
@@ -187,6 +191,7 @@ export function GuardrailDetails({ id }: { id: string }) {
               }}
             />
           </header>
+          <SyncStatus item={guard} />
           <div className="overflow-hidden rounded-lg border bg-white">
             {guard.status === "Active" && (
               <p className="border-b bg-zinc-50 px-6 py-3 text-sm text-muted-foreground">
