@@ -83,18 +83,18 @@ function MockPolicyWorkflow({ item, readOnly, onDirty, onDeleted, onVersionSelec
   const [configs, setConfigs] = useState<Record<string, string>>(item.workflow?.configs ?? (item.source ? { [item.source]: "" } : {}));
   const comment = "";
   const [error, setError] = useState("");
-  const editing = role === "User" && ["Draft", "Ready"].includes(stage) && !readOnly;
+  const editing = ["Draft", "Ready"].includes(stage) && !readOnly;
   function action(next: "start" | "save" | "return" | "complete") {
     try { if (next === "complete") { for (const [source, value] of Object.entries(configs)) { const problem = technicalConfigError(source, value); if (problem) throw new Error(problem); } } configure?.(item.id, next, configs, comment); setError(""); onDirty(false); }
     catch (e) { setError(e instanceof Error ? e.message : "Unable to update status."); }
   }
   return <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-6">
     <div className="space-y-3"><PolicyWorkflowStatus item={item} role={role} /><h2 className="font-heading text-2xl">{item.name}</h2><p className="text-xs text-muted-foreground">{item.owner} · v{item.version}</p></div>
-    {role === "Agent Wizard" && item.workflow?.comment && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">{item.workflow.comment}</p>}
-    {editing ? <EntityEditor kind="policies" initial={item} inline onDirty={onDirty} onSave={(draft, submit) => { save("policies", draft, submit, item); onDirty(false); }} /> : <section className="space-y-2"><h3 className="text-sm font-medium">Rule text</h3><p className="whitespace-pre-wrap text-sm leading-6">{item.text}</p></section>}
-    {(stage === "Awaiting Agent Wizard" || stage === "Needs input") && <section className="rounded-md border bg-amber-50/40 p-4 space-y-3"><p className="text-sm">Waiting for Agent Wizard to configure this policy.</p>{role === "Agent Wizard" && !readOnly && <Button onClick={() => action("start")}>Start configuration</Button>}</section>}
-    {stage === "Configuring" && role !== "Agent Wizard" && <p className="text-sm text-muted-foreground">Agent Wizard is configuring this policy.</p>}
-    {stage === "Configuring" && role === "Agent Wizard" && !readOnly && <section className="space-y-5 border-t pt-5">
+    {role !== "User" && item.workflow?.comment && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">{item.workflow.comment}</p>}
+    {editing ? <EntityEditor kind="policies" initial={item} inline onDirty={onDirty} onSave={(draft, submit) => { save("policies", draft, submit, item); onDirty(false); }} /> : <section className="space-y-2"><h3 className="text-sm font-medium">Requirement</h3><p className="whitespace-pre-wrap text-sm leading-6">{item.text}</p></section>}
+    {(stage === "Awaiting Agent Wizard" || stage === "Needs input") && <section className="rounded-md border bg-amber-50/40 p-4 space-y-3"><p className="text-sm">Waiting for IT Admin to configure this guardrail.</p>{role !== "User" && !readOnly && <Button onClick={() => action("start")}>Start configuration</Button>}</section>}
+    {stage === "Configuring" && role === "User" && <p className="text-sm text-muted-foreground">IT Admin is configuring this guardrail.</p>}
+    {stage === "Configuring" && role !== "User" && !readOnly && <section className="space-y-5 border-t pt-5">
       <h3 className="font-medium">Technical configuration</h3>
       <fieldset className="flex flex-wrap items-center gap-5 text-sm" disabled={item.workflow?.assignedTo !== currentOwner}>
         <legend className="mb-2 text-sm font-medium">Source</legend>
@@ -105,9 +105,9 @@ function MockPolicyWorkflow({ item, readOnly, onDirty, onDeleted, onVersionSelec
       <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => action("save")}>Save draft</Button><Button onClick={() => action("complete")}>Complete configuration</Button></div>
     </section>}
     {stage === "Ready" && <section className="space-y-3 border-t pt-4"><h3 className="text-sm font-medium">Technical configuration</h3>{item.source && <SourceBadge source={item.source} />}{Object.entries(item.workflow?.configs ?? {}).map(([source, value]) => <TechnicalConfigForm key={source} source={source} value={value} disabled onChange={() => {}} />)}<p className="text-xs text-muted-foreground">Mock configuration · No backend synchronization or evaluation.</p></section>}
-    <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">Used by Guardrail Profiles</h3>{items.filter((g) => g.kind === "guardrails" && g.policies.some((p) => p.policyId === item.id)).map((g) => <a className="block text-sm hover:text-primary" key={g.id} href={`/guardrails/${g.id}`}>{g.name}</a>)}</section>
-    <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">Versions</h3><div className="flex flex-wrap gap-2"><span className="rounded border border-primary px-3 py-1 text-xs text-primary">v{item.version} · Latest</span>{item.revisions.filter((r) => String(r.version) !== String(item.version)).map((r) => <button type="button" key={r.version} className="rounded border px-3 py-1 text-xs" onClick={() => onVersionSelect(r.version)}>v{r.version}</button>)}</div></section>
-    {!readOnly && role === "User" && <DeleteEntityAction item={item} onDeleted={onDeleted} />}
+    <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">Used by Profiles</h3>{items.filter((g) => g.kind === "guardrails" && g.policies.some((p) => p.policyId === item.id)).map((g) => <a className="block text-sm hover:text-primary" key={g.id} href={`/guardrails/${g.id}`}>{g.name}</a>)}</section>
+    <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">Versions</h3><div className="flex flex-wrap gap-2"><span className="rounded border border-primary px-3 py-1 text-xs text-primary">v{item.version} ✦</span>{item.revisions.filter((r) => String(r.version) !== String(item.version)).map((r) => <button type="button" key={r.version} className="rounded border px-3 py-1 text-xs" onClick={() => onVersionSelect(r.version)}>v{r.version}</button>)}</div></section>
+    {!readOnly && role !== "Agent Wizard" && <DeleteEntityAction item={item} onDeleted={onDeleted} />}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
   </div>;
 }
@@ -266,7 +266,7 @@ export function DeleteEntityAction({
                 className="text-red-700 hover:bg-red-50"
                 onClick={() => begin("Delete")}
               >
-                {profile ? "Delete" : "Delete Policy"}
+                {profile ? "Delete" : "Delete Guardrail"}
               </Button>
             </>
           )}
@@ -300,12 +300,12 @@ export function DeleteEntityAction({
                 ? "This profile has unsaved changes. Save or discard them before continuing."
                 : (blocked ??
                   (action === "Deactivate"
-                    ? "This Guardrail Profile will stop applying its policies. Its configuration and linked policies will be kept. You can activate it later."
+                    ? "This Profile will stop applying its policies. Its configuration and linked policies will be kept. You can activate it later."
                     : action === "Active"
-                      ? "This Guardrail Profile will apply its policies using its saved configuration."
+                      ? "This Profile will apply its policies using its saved configuration."
                       : profile
                         ? "This will permanently delete this profile. Linked policies will not be deleted. This action cannot be undone."
-                        : "This will permanently delete this Policy. This action cannot be undone."))}
+                        : "This will permanently delete this Guardrail. This action cannot be undone."))}
             </DialogDescription>
             {error && (
               <p role="alert" className="text-red-700">
@@ -439,8 +439,8 @@ export function BusinessCatalog({
 }) {
   const { items, save, sessionOnly, mode, busy, dualSource, role } = useBusinessDemo();
   const policy = kind === "policies";
-  const title = policy ? "Policies" : "Guardrail Profile";
-  const singular = policy ? "Policy" : "Guardrail Profile";
+  const title = policy ? "Guardrails" : "Profile";
+  const singular = policy ? "Guardrail" : "Profile";
   const Icon = policy ? FileText : ShieldCheck;
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string[]>([]);
@@ -486,7 +486,7 @@ export function BusinessCatalog({
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
-  const availableStatuses: string[] = policy && mode === "mock" ? (role === "Agent Wizard" ? ["Draft", "Needs input", "Ready"] : ["Draft", "Pending implement", "Ready"]) : policy
+  const availableStatuses: string[] = policy && mode === "mock" ? (role !== "User" ? ["Draft", "Needs input", "Ready"] : ["Draft", "Pending implement", "Ready"]) : policy
     ? [
         "Draft",
         "Processing",
@@ -503,7 +503,7 @@ export function BusinessCatalog({
           "Validated",
           "Needs input",
         ]
-      : ["Draft", "Processing", "Review", "Active", "Ready"];
+      : ["Draft", "Active", "Ready"];
   useEffect(() => {
     setEditing(false);
     setDirty(false);
@@ -578,8 +578,6 @@ export function BusinessCatalog({
           </h1>
         </div>
         <Button
-          disabled={policy && mode === "mock" && role === "Agent Wizard"}
-          title={policy && role === "Agent Wizard" ? "Switch to User to create business requirements" : undefined}
           onClick={() => {
             onSelect();
             setCreating(true);
@@ -731,7 +729,7 @@ export function BusinessCatalog({
                         <span className="mt-1 block text-xs font-normal text-muted-foreground">
                           {item.kind === "guardrails"
                             ? `${item.policies.length} policies`
-                            : `v${item.version} · ${items.filter((g) => g.kind === "guardrails" && g.policies.some((r) => r.policyId === item.id)).length} guardrail profiles`}
+                            : `v${item.version} · ${items.filter((g) => g.kind === "guardrails" && g.policies.some((r) => r.policyId === item.id)).length} profiles`}
                         </span>
                       </span>
                     </button>
@@ -849,8 +847,8 @@ export function BusinessCatalog({
                 : editing
                   ? selected?.kind === "policies" && selected.status === "Ready"
                     ? selected.remote
-                      ? "Create Policy version"
-                      : `Create Policy v${Number(selected.version) + 1}`
+                      ? "Create Guardrail version"
+                      : `Create Guardrail v${Number(selected.version) + 1}`
                     : `Edit ${singular}`
                   : singular}
             </SheetTitle>
@@ -1049,9 +1047,9 @@ export function EntityEditor({
     const next = validateDraft(kind, draft, live ? false : submit, items);
     if (multiSource && !policySources.length) next.source = "Select at least one source.";
     if (live && kind === "policies" && !draft.text.trim())
-      next.text = "Enter the rule text.";
+      next.text = "Enter the requirement.";
     if (live && kind === "guardrails" && !draft.policies.length)
-      next.policies = "Select at least one published Policy.";
+      next.policies = "Select at least one published Guardrail.";
     setErrors(next);
     const invalid = Object.keys(next)[0];
     if (invalid) {
@@ -1138,7 +1136,7 @@ export function EntityEditor({
       key === "name"
         ? "Name"
         : key === "text"
-          ? "Rule text"
+          ? "Requirement"
           : key === "useCase"
             ? "Use case"
             : scopeLabels[key as ScopeKey],
@@ -1197,15 +1195,15 @@ export function EntityEditor({
             className="grid gap-2 text-sm font-medium"
             htmlFor={`${id}-text`}
           >
-            Rule text
+            Requirement
             {editable(
               "text",
-              "Rule text",
+              "Requirement",
               draft.text,
               <Textarea
                 {...fieldProps("text")}
                 className="min-h-60 resize-y bg-white p-3 font-normal leading-7 [field-sizing:fixed] sm:min-h-72"
-                placeholder="Enter your rules…"
+                placeholder="Enter your requirement…"
                 maxLength={live ? 2000 : undefined}
                 value={draft.text}
                 onChange={(event) => update("text", event.target.value)}
@@ -1258,14 +1256,14 @@ export function EntityEditor({
               }
             >
               <legend className="mb-3 text-sm font-medium">
-                Policies{" "}
+                Guardrails{" "}
                 <span className="ml-2 text-xs text-muted-foreground">
                   {draft.policies.length} selected
                 </span>
               </legend>
               {editable(
                 "policies",
-                "Policies",
+                "Guardrails",
                 draft.policies.map((policy) => policy.name).join("\n"),
                 <PolicyPicker
                   items={items.filter((item) => (item.source ?? "Guard") === (draft.source ?? "Guard"))}
@@ -1457,7 +1455,7 @@ function PolicyPicker({
       <div className="border-b p-3">
         <Input
           aria-label="Search ready policies"
-          placeholder="Search policies…"
+          placeholder="Search guardrails…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -1509,7 +1507,8 @@ function PolicyPicker({
               </label>
               <select
                 aria-label={`Version for ${policy.name}`}
-                className="h-8 max-w-36 rounded border bg-white px-2 text-xs"
+                title="✦ Latest version"
+                className="h-8 min-w-40 rounded border bg-white px-2 text-xs"
                 value={String(ref.version)}
                 onChange={(event) => {
                   const next = ready.find(
@@ -1548,7 +1547,7 @@ function PolicyPicker({
                     >
                       v{revision.version}
                       {String(revision.version) === String(policy.version)
-                        ? " · Latest"
+                        ? " ✦"
                         : ""}{" "}
                       ·{" "}
                       {ready.some(
@@ -1566,7 +1565,7 @@ function PolicyPicker({
                       String(revision.version) === String(policy.version),
                   ) && (
                     <option disabled value={String(policy.version)}>
-                      v{policy.version} · Latest · {policy.status} (not ready)
+                      v{policy.version} ✦ · {policy.status} (not ready)
                     </option>
                   )}
               </select>
@@ -1577,7 +1576,7 @@ function PolicyPicker({
                   </p>
                 )}
               <details className="col-span-2 mt-2 pl-7 text-xs text-muted-foreground">
-                <summary className="cursor-pointer">Rule text</summary>
+                <summary className="cursor-pointer">Requirement</summary>
                 <p className="mt-2 whitespace-pre-wrap break-words leading-6">
                   {ref.text}
                 </p>
@@ -1639,7 +1638,6 @@ export function EntityDetail({
       )
     : undefined;
   const editable =
-    !(mode === "mock" && role === "Agent Wizard") &&
     !readOnly &&
     !historical &&
     !item.remote?.readOnly &&
@@ -1655,7 +1653,7 @@ export function EntityDetail({
       ),
   );
   if (historical && !revision)
-    return <p className="p-6 text-sm">Policy version not found</p>;
+    return <p className="p-6 text-sm">Guardrail version not found</p>;
   if (mode === "mock" && item.kind === "policies" && item.workflow && !historical)
     return <MockPolicyWorkflow key={`${item.id}-${item.updatedAt}`} item={item} readOnly={readOnly} onDirty={onDirty ?? (() => {})} onDeleted={onDeleted} onVersionSelect={switchVersion} />;
   return (
@@ -1743,7 +1741,7 @@ export function EntityDetail({
         {!editable &&
           (item.kind === "policies" ? (
             <section className="space-y-2">
-              <h3 className="text-sm font-medium">Rule text</h3>
+              <h3 className="text-sm font-medium">Requirement</h3>
               <p className="whitespace-pre-wrap break-words rounded-md border bg-zinc-50/60 p-4 text-sm leading-7">
                 {viewed.text || "—"}
               </p>
@@ -1751,7 +1749,7 @@ export function EntityDetail({
           ) : (
             <section className="space-y-3">
               <h3 className="text-sm font-medium">
-                Policies{" "}
+                Guardrails{" "}
                 <span className="text-muted-foreground">
                   ({item.policies.length})
                 </span>
@@ -1770,7 +1768,7 @@ export function EntityDetail({
                       </span>
                     </a>
                     <details className="mt-2 text-xs text-muted-foreground">
-                      <summary className="cursor-pointer">Rule text</summary>
+                      <summary className="cursor-pointer">Requirement</summary>
                       <p className="mt-2 whitespace-pre-wrap break-words leading-6">
                         {ref.text}
                       </p>
@@ -1779,7 +1777,7 @@ export function EntityDetail({
                 ))}
                 {!item.policies.length && (
                   <p className="p-4 text-sm text-muted-foreground">
-                    No policies selected
+                    No guardrails selected
                   </p>
                 )}
               </div>
@@ -1802,7 +1800,7 @@ export function EntityDetail({
           <>
             <section className="space-y-3">
               <h3 className="text-sm font-medium">
-                Used by Guardrail Profiles{" "}
+                Used by Profiles{" "}
                 <span className="text-muted-foreground">({usedBy.length})</span>
               </h3>
               <div className="divide-y rounded-md border">
@@ -1824,7 +1822,7 @@ export function EntityDetail({
                 ))}
                 {!usedBy.length && (
                   <p className="p-4 text-sm text-muted-foreground">
-                    No linked guardrail profiles
+                    No linked profiles
                   </p>
                 )}
               </div>
@@ -1858,7 +1856,7 @@ export function EntityDetail({
                       }}
                     >
                       v{v}
-                      {v === item.version ? " · Latest" : ""}
+                      {v === item.version ? " ✦" : ""}
                     </button>
                   ))}
               </div>

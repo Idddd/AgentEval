@@ -123,10 +123,10 @@ export function validateDraft(
   const errors: Partial<Record<keyof Draft, string>> = {};
   if (!draft.name.trim()) errors.name = "Enter a name.";
   if (submit && kind === "policies" && !draft.text.trim())
-    errors.text = "Enter the rule text.";
+    errors.text = "Enter the requirement.";
   if (submit && kind === "guardrails") {
     if (!draft.policies.length)
-      errors.policies = "Select at least one ready Policy.";
+      errors.policies = "Select at least one ready Guardrail.";
     if (!draft.useCase.trim()) errors.useCase = "Enter a use case.";
     for (const key of scopeKeys)
       if (!draft[key])
@@ -149,12 +149,12 @@ export function validateDraft(
     )
   )
     errors.policies =
-      "A selected Policy is unavailable. Select a ready version.";
+      "A selected Guardrail is unavailable. Select a ready version.";
   if (
     new Set(draft.policies.map((ref) => ref.policyId)).size !==
     draft.policies.length
   )
-    errors.policies = "Select only one version of each Policy.";
+    errors.policies = "Select only one version of each Guardrail.";
   if (kind === "guardrails" && items && draft.policies.some((ref) => {
     const policy = items.find((item) => item.id === ref.policyId);
     return policy && (policy.source ?? "Guard") !== (draft.source ?? "Guard");
@@ -208,9 +208,8 @@ export function saveEntity(
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     status:
-      kind === "guardrails" &&
-      (existing?.status === "Active" || existing?.status === "Ready")
-        ? existing.status
+      kind === "guardrails"
+        ? existing?.status === "Active" ? "Active" : "Ready"
         : submit
           ? "Processing"
           : "Draft",
@@ -234,7 +233,7 @@ export function advanceProcessing(items: Entity[], now: number): Entity[] {
     return {
       ...item,
       status:
-        item.kind === "policies" ? ("Ready" as const) : ("Review" as const),
+        item.kind === "policies" ? ("Ready" as const) : ("Ready" as const),
       completedAt,
       updatedAt: completedAt,
     };
@@ -303,7 +302,7 @@ export function seedEntities(now = Date.now()): Entity[] {
       "user-behavior",
       "guardrails",
       "User Behavior",
-      "Review",
+      "Ready",
       "ISS",
       "Decline abusive requests and actions outside the user's permissions.",
       2,
@@ -474,7 +473,7 @@ export function deletionBlocker(
         g.policies.some((p) => p.policyId === item.id),
     );
     if (linked.length)
-      return `Remove this Policy from these Guardrail Profiles first: ${linked.map((g) => g.name).join(", ")}.`;
+      return `Remove this Guardrail from these Profiles first: ${linked.map((g) => g.name).join(", ")}.`;
   }
   return undefined;
 }

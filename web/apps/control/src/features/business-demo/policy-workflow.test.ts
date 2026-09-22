@@ -23,7 +23,7 @@ it("requires technical fields and supports a return and resubmit cycle", () => {
   expect(returned.workflow?.stage).toBe("Needs input");
   const resubmitted = saveBusinessPolicy({ ...draft, text: "Protect names and email addresses" }, true, "ISS", "User", [returned], returned);
   expect(resubmitted.workflow.stage).toBe("Awaiting Agent Wizard");
-  expect(() => saveBusinessPolicy(draft, true, "Admin", "Agent Wizard", [])).toThrow("Switch to User");
+  expect(saveBusinessPolicy(draft, true, "IT Admin", "Agent Wizard", []).workflow.stage).toBe("Awaiting Agent Wizard");
 });
 
 it("presents pending implementation to User and actionable input to Tech until ready", () => {
@@ -38,4 +38,12 @@ it("presents pending implementation to User and actionable input to Tech until r
   const done = configurePolicy(started, submitted.id, "complete", "Agent Wizard", "Admin", { Guard: "Block PII" })[0]!;
   expect(policyStatus(done, "User")).toBe("Ready");
   expect(policyStatus(done, "Agent Wizard")).toBe("Ready");
+});
+
+it("allows Admin to create and configure without switching roles", () => {
+ const item = saveBusinessPolicy(draft, true, "Admin", "Admin", []);
+ const started = configurePolicy([item], item.id, "start", "Admin", "Admin", {});
+ expect(started[0]?.workflow?.stage).toBe("Configuring");
+ expect(policyStatus(item, "Admin")).toBe("Needs input");
+ expect(saveBusinessPolicy(draft, false, "IT Admin", "Agent Wizard", []).workflow.stage).toBe("Draft");
 });

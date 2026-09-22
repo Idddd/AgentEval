@@ -90,15 +90,15 @@ it("isolates live records from existing mock storage and keeps tokens out of sto
   localStorage.setItem(STORAGE_KEY, stored);
   vi.stubGlobal("fetch", responding());
   app();
-  expect(screen.queryByText("Policies")).toBeNull();
+  expect(screen.queryByText("Guardrails")).toBeNull();
   connect();
   expect(
     await screen.findByRole("button", { name: /^Remote Privacy/ }),
   ).toBeTruthy();
-  expect(screen.queryByText("Customer Interaction Guardrail Profile")).toBeNull();
+  expect(screen.queryByText("Customer Interaction Profile")).toBeNull();
   expect(localStorage.getItem(STORAGE_KEY)).toBe(stored);
   expect(JSON.stringify(sessionStorage)).not.toContain("personal-secret");
-  fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create Guardrail" }));
   expect(screen.getByText(/Rule authoring is not configured/)).toBeTruthy();
   expect(
     screen.getByRole("button", { name: "Submit" }).hasAttribute("disabled"),
@@ -114,7 +114,7 @@ it("auto mode falls back only on initial connection failure", async () => {
   app("auto");
   connect();
   expect(await screen.findByText("Offline · Local data")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Create Policy" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Create Guardrail" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Reconnect" })).toBeTruthy();
 });
 it("does not hide a permission failure behind mock data", async () => {

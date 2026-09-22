@@ -92,7 +92,7 @@ export function GuardrailDetails({ id }: { id: string }) {
                 <button
                   type="button"
                   aria-label={`Edit ${ref.name}`}
-                  title="Edit Policy"
+                  title="Edit Guardrail"
                   className="rounded p-1 text-zinc-400 hover:text-zinc-800"
                   disabled={!policy || !canEdit(policy)}
                   onClick={() => policy && open(policy, true)}
@@ -152,11 +152,11 @@ export function GuardrailDetails({ id }: { id: string }) {
         className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary"
       >
         <ArrowLeft className="size-4" />
-        Guardrail Profiles
+        Profiles
       </a>
       {!guard ? (
         <div className="rounded-lg border bg-white p-8">
-          <h1 className="font-heading text-2xl">Guardrail Profile not found</h1>
+          <h1 className="font-heading text-2xl">Profile not found</h1>
         </div>
       ) : (
         <>
@@ -195,7 +195,7 @@ export function GuardrailDetails({ id }: { id: string }) {
           <div className="overflow-hidden rounded-lg border bg-white">
             {guard.status === "Active" && (
               <p className="border-b bg-zinc-50 px-6 py-3 text-sm text-muted-foreground">
-                Deactivate this profile to edit its fields or policies.
+                Deactivate this profile to edit its fields or guardrails.
               </p>
             )}
             {canEdit(guard) && (
@@ -224,15 +224,15 @@ export function GuardrailDetails({ id }: { id: string }) {
             )}
             <section>
               <div className="flex items-center gap-2 border-b px-5 py-4">
-                <h2 className="font-heading text-lg">Policies</h2>
+                <h2 className="font-heading text-lg">Guardrails</h2>
                 <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                   {guard.policies.length}
                 </span>
                 {canEdit(guard) && guard.status !== "Active" && (
                   <button
                     type="button"
-                    aria-label="Add Policy"
-                    title="Add Policy"
+                    aria-label="Add Guardrail"
+                    title="Add Guardrail"
                     disabled={busy}
                     onClick={() => editorControls.current?.editPolicies?.()}
                     className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-zinc-100 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
@@ -245,10 +245,10 @@ export function GuardrailDetails({ id }: { id: string }) {
                 <table className="w-full min-w-[640px] text-left text-sm">
                   <thead className="border-b bg-zinc-50 text-xs text-muted-foreground">
                     <tr>
-                      <th className="w-[35%] px-5 py-3 font-medium">Policy</th>
+                      <th className="w-[35%] px-5 py-3 font-medium">Guardrail</th>
                       <th className="px-5 py-3 font-medium">Used version</th>
                       <th className="px-5 py-3 font-medium">Version status</th>
-                      <th className="px-5 py-3 font-medium">Latest Policy</th>
+                      <th className="px-5 py-3 font-medium">Latest Guardrail</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -258,7 +258,7 @@ export function GuardrailDetails({ id }: { id: string }) {
               </div>
               {!guard.policies.length && (
                 <p className="p-8 text-center text-sm text-muted-foreground">
-                  No policies selected
+                  No guardrails selected
                 </p>
               )}
             </section>
@@ -286,9 +286,9 @@ export function GuardrailDetails({ id }: { id: string }) {
         }}
       >
         <DialogContent>
-          <DialogTitle>Remove Policy from profile?</DialogTitle>
+          <DialogTitle>Remove Guardrail from profile?</DialogTitle>
           <DialogDescription>
-            Remove “{removing?.name}” from this Guardrail Profile? The Policy itself and
+            Remove “{removing?.name}” from this Profile? The Guardrail itself and
             its other profile links will be kept.
           </DialogDescription>
           {removeError && (
@@ -322,12 +322,12 @@ export function GuardrailDetails({ id }: { id: string }) {
                     guard,
                   );
                   setRemoving(null);
-                  setNotice("Policy removed from profile.");
+                  setNotice("Guardrail removed from profile.");
                 } catch (error) {
                   setRemoveError(
                     error instanceof Error
                       ? error.message
-                      : "Unable to remove Policy.",
+                      : "Unable to remove Guardrail.",
                   );
                 } finally {
                   setRemovingBusy(false);
@@ -353,14 +353,14 @@ export function GuardrailDetails({ id }: { id: string }) {
           <SheetHeader className="border-b px-6 py-5 pr-14">
             <SheetTitle className="text-xl">
               {selected?.kind === "guardrails"
-                ? "Edit Guardrail Profile"
+                ? "Edit Profile"
                 : panel?.edit
                   ? selected?.status === "Ready"
                     ? selected.remote
-                      ? "Create Policy version"
-                      : `Create Policy v${Number(selected.version) + 1}`
-                    : "Edit Policy"
-                  : "Policy"}
+                      ? "Create Guardrail version"
+                      : `Create Guardrail v${Number(selected.version) + 1}`
+                    : "Edit Guardrail"
+                  : "Guardrail"}
             </SheetTitle>
           </SheetHeader>
           {confirmClose && (
@@ -418,7 +418,7 @@ export function GuardrailDetails({ id }: { id: string }) {
               />
             )
           ) : (
-            <p className="p-6">Policy not found</p>
+            <p className="p-6">Guardrail not found</p>
           )}
         </SheetContent>
       </Sheet>

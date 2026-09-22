@@ -195,7 +195,7 @@ describe("business demo", () => {
     ).toEqual({});
     expect(
       validateDraft("policies", { ...blankDraft, name: "A" }, true),
-    ).toEqual({ text: "Enter the rule text." });
+    ).toEqual({ text: "Enter the requirement." });
     expect(validateDraft("policies", policy, true)).toEqual({});
     expect(
       validateDraft("policies", { ...policy, name: "   " }, true),
@@ -241,7 +241,7 @@ describe("business demo", () => {
       advanceProcessing(items, 100 + PROCESSING_MS).map(
         (entry) => entry.status,
       ),
-    ).toEqual(["Ready", "Review"]);
+    ).toEqual(["Ready", "Ready"]);
   });
   it("resumes a processing submission after refresh", () => {
     const item = saveEntity("policies", policy, true, 100, "id");

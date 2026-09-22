@@ -130,6 +130,12 @@ export function BusinessDemoProvider({
   );
 }
 
+function withPendingExample(items: Entity[]): Entity[] {
+  items = items.map((item) => item.kind === "guardrails" && item.status === "Review" ? { ...item, status: "Ready" as const } : item);
+  const id = "demo-pending-implementation";
+  if (items.some((item) => item.id === id)) return items;
+  return [{ ...items.find((item) => item.kind === "policies")!, id, name: "Customer data protection · Pending implementation", text: "Prevent customer personal information from being disclosed in responses.", owner: "ISS", source: undefined, status: "Draft", version: 1, revisions: [], policies: [], createdAt: Date.now(), updatedAt: Date.now(), workflow: { stage: "Awaiting Agent Wizard", businessId: id, configs: {}, submittedBy: "ISS", submittedAt: Date.now() } }, ...items];
+}
 function MockProvider({
   children,
   connection,
@@ -137,20 +143,16 @@ function MockProvider({
   children: ReactNode;
   connection?: ReactNode;
 }) {
-  const [role, setRole] = useState<DemoRole>(() => {
-    try { return localStorage.getItem("marketplace.demo.role") === "Agent Wizard" ? "Agent Wizard" : "User"; } catch { return "User"; }
-  });
-  function switchRole(next: DemoRole) { setRole(next); try { localStorage.setItem("marketplace.demo.role", next); } catch { /* Session still works. */ } }
   const [items, setItems] = useState(() => {
     try {
-      return restoreIntegratedEntities(localStorage.getItem(STORAGE_KEY));
+      return withPendingExample(restoreIntegratedEntities(localStorage.getItem(STORAGE_KEY)));
     } catch {
-      return restoreIntegratedEntities(null);
+      return withPendingExample(restoreIntegratedEntities(null));
     }
   });
   const [sessionOnly, setSessionOnly] = useState(false);
   const owners = [
-    ...new Set(["Admin", ...items.map((item) => item.owner).filter(Boolean)]),
+    ...new Set(["Admin", "IT Admin", ...items.map((item) => item.owner).filter(Boolean)]),
   ];
   const [currentOwner, setCurrentOwner] = useState(() => {
     try {
@@ -167,6 +169,7 @@ function MockProvider({
       /* Switching still works for this session. */
     }
   }, [currentOwner]);
+  const role: DemoRole = currentOwner === "Admin" ? "Admin" : currentOwner === "IT Admin" ? "Agent Wizard" : "User";
   function switchOwner(owner: string) {
     if (owners.includes(owner)) setCurrentOwner(owner);
   }
@@ -236,7 +239,7 @@ function MockProvider({
           );
         },
         mode: "mock",
-        role, switchRole,
+        role,
         configure: (id, action, configs, comment) => setItems(configurePolicy(items, id, action, role, currentOwner, configs, comment)),
         currentOwner,
         owners,

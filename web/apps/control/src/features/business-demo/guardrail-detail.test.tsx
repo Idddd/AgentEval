@@ -84,7 +84,7 @@ it("opens a full detail page with policy versions, status and actions", () => {
   ).toBeNull();
 });
 
-it("views pinned text and edits a Policy without replacing the Guardrail Profile reference", () => {
+it("views pinned text and edits a Guardrail without replacing the Profile reference", () => {
   localStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({
@@ -106,12 +106,12 @@ it("views pinned text and edits a Policy without replacing the Guardrail Profile
   ).toBeTruthy();
   fireEvent.click(
     within(screen.getByRole("dialog")).getByRole("button", {
-      name: "Edit Rule text",
+      name: "Edit Requirement",
     }),
   );
   fireEvent.change(
     within(screen.getByRole("dialog")).getByRole("textbox", {
-      name: "Rule text",
+      name: "Requirement",
     }),
     {
       target: { value: "Changed rule" },
@@ -157,7 +157,7 @@ it("shows ready pinned version alongside processing latest and disables modifica
   expect(within(screen.getByRole("dialog")).queryByRole("textbox")).toBeNull();
 });
 
-it("can edit a Guardrail Profile draft and protects unsaved changes", () => {
+it("can edit a Profile draft and protects unsaved changes", () => {
   show("sensitive-information");
   if (screen.queryByRole("button", { name: "Edit Name" }))
     fireEvent.click(screen.getByRole("button", { name: "Edit Name" }));
@@ -183,9 +183,9 @@ it("can edit a Guardrail Profile draft and protects unsaved changes", () => {
 
 it("provides a return link for a missing guardrail", () => {
   show("missing");
-  expect(screen.getByText("Guardrail Profile not found")).toBeTruthy();
+  expect(screen.getByText("Profile not found")).toBeTruthy();
   expect(
-    screen.getByRole("link", { name: "Guardrail Profiles" }).getAttribute("href"),
+    screen.getByRole("link", { name: "Profiles" }).getAttribute("href"),
   ).toBe("/guardrails");
 });
 
@@ -245,7 +245,7 @@ it("shows persistent edit icons and only opens a field through its icon", () => 
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(screen.queryByText("Icon edit draft")).toBeNull();
   expect(screen.getByRole("button", { name: "Edit Name" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Edit Policies" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit Guardrails" }));
   expect(
     screen.getByRole("textbox", { name: "Search ready policies" }),
   ).toBeTruthy();
@@ -298,7 +298,7 @@ it("adds a policy through the section plus button and saves the selection", () =
     }),
   );
   show();
-  fireEvent.click(screen.getByRole("button", { name: "Add Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add Guardrail" }));
   expect(document.activeElement).toBe(
     screen.getByRole("textbox", { name: "Search ready policies" }),
   );
@@ -320,7 +320,7 @@ it("opens policy details from its name without a View action or inline rule text
   show();
   expect(screen.queryByRole("button", { name: /^View / })).toBeNull();
   expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
-  expect(screen.queryByText("Rule text")).toBeNull();
+  expect(screen.queryByText("Requirement")).toBeNull();
   const rule = seedEntities()[0]!.policies[0]!.text;
   expect(screen.queryByText(rule)).toBeNull();
   fireEvent.click(
@@ -342,7 +342,7 @@ it("keeps the policy picker open inside and toggles selection from row padding",
     }),
   );
   show();
-  fireEvent.click(screen.getByRole("button", { name: "Add Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add Guardrail" }));
   const search = screen.getByRole("textbox", { name: "Search ready policies" });
   fireEvent.blur(search, { relatedTarget: null });
   expect(screen.getByRole("textbox", { name: "Search ready policies" })).toBe(
@@ -382,7 +382,7 @@ it("keeps the pinned version until a ready upgrade is selected and saved", () =>
   policy.status = "Ready";
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, items }));
   show();
-  fireEvent.click(screen.getByRole("button", { name: "Add Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add Guardrail" }));
   const versions = screen.getByRole("combobox", {
     name: `Version for ${policy.name}`,
   }) as HTMLSelectElement;
@@ -421,8 +421,8 @@ it("shows an unfinished latest version but prevents selecting it", () => {
   policy.status = "Processing";
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, items }));
   show();
-  fireEvent.click(screen.getByRole("button", { name: "Add Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add Guardrail" }));
   const versions = screen.getByRole("combobox", { name: `Version for ${policy.name}` }) as HTMLSelectElement;
   expect(versions.value).toBe("1");
-  expect((within(versions).getByRole("option", { name: "v2 · Latest · Processing (not ready)" }) as HTMLOptionElement).disabled).toBe(true);
+  expect((within(versions).getByRole("option", { name: "v2 ✦ · Processing (not ready)" }) as HTMLOptionElement).disabled).toBe(true);
 });

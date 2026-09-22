@@ -1,5 +1,5 @@
 import { saveEntity, type Draft, type Entity } from "./model";
-export type DemoRole = "User" | "Agent Wizard";
+export type DemoRole = "User" | "Agent Wizard" | "Admin";
 export type WorkflowAction = "start" | "save" | "return" | "complete";
 export function workflowStage(item: Entity) { return item.workflow?.stage ?? (item.status === "Ready" ? "Ready" : item.status === "Needs input" ? "Needs input" : "Draft"); }
 // Keep transitions independent of the role-specific presentation.
@@ -11,7 +11,6 @@ export function policyStatus(item: Entity, role: DemoRole = "User") {
   return stage;
 }
 export function saveBusinessPolicy(draft: Draft, submit: boolean, owner: string, role: DemoRole, items: Entity[], existing?: Entity) {
-  if (role !== "User") throw new Error("Switch to User to submit business requirements.");
   if (existing && !["Draft", "Needs input", "Ready"].includes(workflowStage(existing))) throw new Error("This policy is waiting for technical configuration.");
   const now = Date.now(), id = existing?.id ?? crypto.randomUUID();
   const item = saveEntity("policies", draft, submit, now, id, existing, items, owner);
@@ -21,7 +20,7 @@ export function saveBusinessPolicy(draft: Draft, submit: boolean, owner: string,
     } };
 }
 export function configurePolicy(items: Entity[], id: string, action: WorkflowAction, role: DemoRole, owner: string, configs: Record<string, string>, comment = "") {
-  if (role !== "Agent Wizard") throw new Error("Agent Wizard role is required.");
+  if (role !== "Agent Wizard" && role !== "Admin") throw new Error("Agent Wizard role is required.");
   const item = items.find((p) => p.id === id && p.kind === "policies");
   if (!item) throw new Error("Policy not found.");
   const stage = workflowStage(item), now = Date.now();

@@ -68,7 +68,7 @@ it("switches among the existing owners and uses the current owner on new records
   );
   expect(
     screen.getAllByRole("menuitemradio").map((item) => item.textContent),
-  ).toEqual(["User", "Agent Wizard", "Admin", "Security", "ISS", "Compliance", "RMG"]);
+  ).toEqual(["Admin", "IT Admin", "ISS", "Security", "Compliance", "RMG"]);
   await userEvent.click(screen.getByRole("menuitemradio", { name: "ISS" }));
   expect(
     screen.getByRole("button", { name: "Open account menu for ISS" }),

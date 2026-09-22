@@ -55,7 +55,7 @@ function ShellContent() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
-  const section = pathname === "/policies" ? "Policies" : "Guardrail Profiles";
+  const section = pathname === "/policies" ? "Guardrails" : "Profiles";
   return (
     <>
       <a
@@ -91,8 +91,8 @@ function MarketplaceSidebar({ section }: { section: string }) {
   const { isMobile, state, setOpenMobile } = useSidebar();
   const compact = !isMobile && state === "collapsed";
   const sections = [
-    { to: "/guardrails" as const, label: "Guardrail Profiles", icon: ShieldCheck },
-    { to: "/policies" as const, label: "Policies", icon: FileText },
+    { to: "/guardrails" as const, label: "Profiles", icon: ShieldCheck },
+    { to: "/policies" as const, label: "Guardrails", icon: FileText },
   ];
   return (
     <Sidebar collapsible="icon">

@@ -87,7 +87,7 @@ describe("Business creation workflow", () => {
     expect(
       (
         dialog.getByRole("textbox", {
-          name: "Guardrail Profile name *",
+          name: "Profile name *",
         }) as HTMLInputElement
       ).value,
     ).toBe("Customer care guardrail");
@@ -112,7 +112,7 @@ describe("Business creation workflow", () => {
       api: { ...api, create },
     });
     await user.type(
-      dialog.getByRole("textbox", { name: "Guardrail Profile name *" }),
+      dialog.getByRole("textbox", { name: "Profile name *" }),
       "My guardrail",
     );
     await user.type(
@@ -138,7 +138,7 @@ describe("Business creation workflow", () => {
     expect(
       (
         dialog.getByRole("textbox", {
-          name: "Guardrail Profile name *",
+          name: "Profile name *",
         }) as HTMLInputElement
       ).value,
     ).toBe("My guardrail");

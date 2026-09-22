@@ -30,11 +30,11 @@ beforeEach(() => {
 
 it("creates business requirements without asking User to choose a source", () => {
   render(<App />);
-  fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create Guardrail" }));
   const dialog = within(screen.getByRole("dialog"));
   expect(dialog.queryByRole("checkbox", { name: "F5" })).toBeNull();
   fireEvent.change(dialog.getByRole("textbox", { name: "Name" }), { target: { value: "Shared policy" } });
-  fireEvent.change(dialog.getByRole("textbox", { name: "Rule text" }), { target: { value: "Protect customer data" } });
+  fireEvent.change(dialog.getByRole("textbox", { name: "Requirement" }), { target: { value: "Protect customer data" } });
   fireEvent.click(dialog.getByRole("button", { name: "Save draft" }));
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.filter((p: { name: string }) => p.name === "Shared policy");
   expect(saved).toHaveLength(1);
@@ -46,7 +46,7 @@ it("creates business requirements without asking User to choose a source", () =>
 
 it("allows User to save a draft before technical source selection", () => {
   render(<App />);
-  fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create Guardrail" }));
   const dialog = within(screen.getByRole("dialog"));
   expect(dialog.queryByRole("checkbox", { name: "Nemo" })).toBeNull();
   fireEvent.change(dialog.getByRole("textbox", { name: "Name" }), { target: { value: "No source" } });
@@ -82,10 +82,10 @@ it("combines owner checkboxes with status and resets both filters", () => {
     screen.getByRole("button", { name: /^Payment authorizationv/ }),
   ).toBeTruthy();
 });
-it("exposes filters directly as checkboxes and names the homepage Guardrail Profile", () => {
+it("exposes filters directly as checkboxes and names the homepage Profile", () => {
   render(<App kind="guardrails" />);
   expect(
-    screen.getByRole("heading", { name: "Guardrail Profile" }),
+    screen.getByRole("heading", { name: "Profile" }),
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Filters/ })).toBeNull();
   expect(screen.getByRole("checkbox", { name: "SG" })).toBeTruthy();
@@ -130,19 +130,19 @@ afterEach(() => {
 it("shows a two-field policy editor without technical configuration", () => {
   render(<App />);
   expect(screen.queryByText(/demo/i)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create Guardrail" }));
   const dialog = within(screen.getByRole("dialog"));
   expect(dialog.getAllByRole("textbox")).toHaveLength(2);
   expect(dialog.queryByText("BUSU")).toBeNull();
   fireEvent.click(dialog.getByRole("button", { name: "Submit" }));
   expect(dialog.getByText("Enter a name.")).toBeTruthy();
-  expect(dialog.getByText("Enter the rule text.")).toBeTruthy();
+  expect(dialog.getByText("Enter the requirement.")).toBeTruthy();
 });
 
 it("saves a draft, submits and stays waiting for Agent Wizard", () => {
   vi.useFakeTimers();
   render(<App />);
-  fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create Guardrail" }));
   if (screen.queryByRole("button", { name: "Edit Name" }))
     fireEvent.click(screen.getByRole("button", { name: "Edit Name" }));
   fireEvent.change(screen.getByLabelText("Name", { exact: true }), {
@@ -154,19 +154,19 @@ it("saves a draft, submits and stays waiting for Agent Wizard", () => {
       name: "UI test policy",
     }),
   ).toBeTruthy();
-  if (screen.queryByRole("button", { name: "Edit Rule text" }))
-    fireEvent.click(screen.getByRole("button", { name: "Edit Rule text" }));
-  fireEvent.change(screen.getByLabelText("Rule text", { exact: true }), {
+  if (screen.queryByRole("button", { name: "Edit Requirement" }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Requirement" }));
+  fireEvent.change(screen.getByLabelText("Requirement", { exact: true }), {
     target: { value: "Keep customer records private." },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   fireEvent.click(screen.getByRole("button", { name: "Submit" }));
-  expect(screen.getByText("Waiting for Agent Wizard to configure this policy.")).toBeTruthy();
+  expect(screen.getByText("Waiting for IT Admin to configure this guardrail.")).toBeTruthy();
   expect(screen.queryByText(/demo/i)).toBeNull();
   act(() => {
     vi.advanceTimersByTime(PROCESSING_MS);
   });
-  expect(within(screen.getByRole("dialog")).getByText("Pending implement")).toBeTruthy();
+  expect(within(screen.getByRole("dialog")).getByText("Needs input")).toBeTruthy();
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items[0];
   expect(saved).toMatchObject({
     name: "UI test policy",
@@ -178,7 +178,7 @@ it("saves a draft, submits and stays waiting for Agent Wizard", () => {
 
 it("closes policy creation directly and discards unsaved input", () => {
   render(<App />);
-  fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create Guardrail" }));
   if (screen.queryByRole("button", { name: "Edit Name" }))
     fireEvent.click(screen.getByRole("button", { name: "Edit Name" }));
   fireEvent.change(screen.getByLabelText("Name", { exact: true }), {
@@ -186,14 +186,14 @@ it("closes policy creation directly and discards unsaved input", () => {
   });
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   expect(screen.queryByRole("dialog")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create Guardrail" }));
   expect((screen.getByLabelText("Name", { exact: true }) as HTMLInputElement).value).toBe("");
 });
 
 it("exposes guardrail business scope and prevents incomplete submission", () => {
   render(<App kind="guardrails" />);
   expect(screen.queryByText(/demo/i)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Create Guardrail Profile" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create Profile" }));
   expect(
     within(screen.getByRole("dialog")).getAllByRole("combobox", {
       name: /^(BUSU|Location|Agent type|Data type)$/,
@@ -201,13 +201,13 @@ it("exposes guardrail business scope and prevents incomplete submission", () => 
   ).toHaveLength(4);
   fireEvent.click(screen.getByRole("button", { name: "Submit" }));
   expect(screen.getByText("Select location.")).toBeTruthy();
-  expect(screen.getByText("Select at least one ready Policy.")).toBeTruthy();
-  expect(screen.queryByRole("textbox", { name: "Rule text" })).toBeNull();
+  expect(screen.getByText("Select at least one ready Guardrail.")).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Requirement" })).toBeNull();
 });
 
 it("creates a guardrail from ready policies and exposes version links", () => {
   render(<App kind="guardrails" />);
-  fireEvent.click(screen.getByRole("button", { name: "Create Guardrail Profile" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create Profile" }));
   expect(
     screen.queryByRole("checkbox", { name: /Employee confidentiality/ }),
   ).toBeNull();
@@ -247,9 +247,9 @@ it("shows reverse links on a policy and creates a new immutable version", () => 
       .getByRole("link", { name: /Customer Interaction/ })
       .getAttribute("href"),
   ).toBe(`/guardrails?item=${guard.id}`);
-  if (screen.queryByRole("button", { name: "Edit Rule text" }))
-    fireEvent.click(screen.getByRole("button", { name: "Edit Rule text" }));
-  fireEvent.change(screen.getByLabelText("Rule text", { exact: true }), {
+  if (screen.queryByRole("button", { name: "Edit Requirement" }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Requirement" }));
+  fireEvent.change(screen.getByLabelText("Requirement", { exact: true }), {
     target: { value: "Updated rule" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -269,30 +269,30 @@ it("paginates and resets the page after searching", () => {
       items: Array.from({ length: 18 }, (_, i) => ({
         ...example,
         id: `p${i}`,
-        name: `Policy ${i}`,
+        name: `Guardrail ${i}`,
       })),
     }),
   );
   render(<App />);
-  expect(screen.getByText("1–8 of 18")).toBeTruthy();
+  expect(screen.getByText("1–8 of 19")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  expect(screen.getByText("9–16 of 18")).toBeTruthy();
-  fireEvent.change(screen.getByRole("textbox", { name: "Search policies" }), {
-    target: { value: "Policy 17" },
+  expect(screen.getByText("9–16 of 19")).toBeTruthy();
+  fireEvent.change(screen.getByRole("textbox", { name: "Search guardrails" }), {
+    target: { value: "Guardrail 17" },
   });
   expect(screen.getByText("1–1 of 1")).toBeTruthy();
 });
 
 it("deletes an unlinked policy after confirmation and persists removal", () => {
   render(<App />);
-  fireEvent.click(screen.getByRole("button", { name: "Create Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create Guardrail" }));
   if (screen.queryByRole("button", { name: "Edit Name" }))
     fireEvent.click(screen.getByRole("button", { name: "Edit Name" }));
   fireEvent.change(screen.getByLabelText("Name", { exact: true }), {
     target: { value: "Disposable policy" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-  fireEvent.click(screen.getByRole("button", { name: "Delete Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete Guardrail" }));
   const confirmation = within(screen.getByRole("alertdialog"));
   fireEvent.click(confirmation.getByRole("button", { name: "Delete" }));
   expect(
@@ -307,11 +307,11 @@ it("blocks deletion of a referenced policy with the affected profiles", () => {
   fireEvent.click(
     screen.getByRole("button", { name: /^Customer Interaction rulesv1/ }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Delete Policy" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete Guardrail" }));
   const confirmation = within(screen.getByRole("alertdialog"));
   expect(
     confirmation.getByText(
-      /Remove this Policy from these Guardrail Profiles first/,
+      /Remove this Guardrail from these Profiles first/,
     ),
   ).toBeTruthy();
   expect(
@@ -375,9 +375,9 @@ it("switches versions inside the same detail panel and protects unsaved edits", 
   expect(screen.getByText("Previous rule")).toBeTruthy();
   expect(screen.getByRole("button", { name: "v1" })).toBe(oldVersion);
   expect(change).toHaveBeenLastCalledWith(1);
-  fireEvent.click(screen.getByRole("button", { name: "v2 · Latest" }));
-  fireEvent.click(screen.getByRole("button", { name: "Edit Rule text" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Rule text" }), {
+  fireEvent.click(screen.getByRole("button", { name: "v2 ✦" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit Requirement" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Requirement" }), {
     target: { value: "Unsaved rule" },
   });
   fireEvent.click(screen.getByRole("button", { name: "v1" }));
@@ -400,7 +400,7 @@ it("sorts policies by updated time in both directions before pagination", () => 
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, items }));
   render(<App />);
   const rows = () => screen.getAllByRole("row").slice(1);
-  expect(rows()[0]!.textContent).toContain("Sort policy 9");
+  expect(rows()[0]!.textContent).toContain("Customer data protection · Pending implementation");
   fireEvent.click(
     screen.getByRole("button", {
       name: "Updated: newest first; sort oldest first",
@@ -417,7 +417,7 @@ it("sorts policies by updated time in both directions before pagination", () => 
       name: "Updated: oldest first; sort newest first",
     }),
   );
-  expect(rows()[0]!.textContent).toContain("Sort policy 9");
+  expect(rows()[0]!.textContent).toContain("Customer data protection · Pending implementation");
 });
 
 it("shows linked guardrails on the latest policy even when they use an older version", () => {
@@ -432,7 +432,7 @@ it("shows linked guardrails on the latest policy even when they use an older ver
   </BusinessDemoProvider>);
   expect(screen.getByRole("link", { name: /Customer Interaction/ })).toBeTruthy();
   expect(screen.getByText("Uses v1 · Different version")).toBeTruthy();
-  expect(screen.queryByText("No linked guardrail profiles")).toBeNull();
+  expect(screen.queryByText("No linked profiles")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "v1" }));
   expect(screen.getByText("Uses v1 · Viewing this version")).toBeTruthy();
 });
