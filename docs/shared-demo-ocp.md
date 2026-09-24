@@ -1,7 +1,9 @@
-# Shared SQLite demo (opt-in, unreleased)
+# Shared SQLite demo (enabled by default since 0.2.9)
 
-The existing 0.2.7 deployment is not modified. Do not retag or overwrite its image.
-This code must be built into a new image/chart before enabling these settings.
+Existing deployments are not modified automatically. Do not retag or overwrite released images.
+The 0.2.9 chart enables sharedDemo by default. The original v0.2.8 tag still
+requires sharedDemo.enabled=true. Container-only deployments must set
+MARKETPLACE_DEMO_DB_FILE to a writable SQLite path.
 
 The demo uses one SQLite table to store the catalog and its revision. One replica
 and Recreate upgrades avoid concurrent writers and volume attachment conflicts.
@@ -22,7 +24,7 @@ persistence:
   size: 1Gi
   storageClass: "" # Uses cluster default; choose an OCP-supported filesystem class
 sharedDemo:
-  enabled: true
+  enabled: true # Default; no extra switch needed with the updated chart
 openshift:
   enabled: true
   route:

@@ -38,7 +38,7 @@ jobs:
           set -euo pipefail
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           image_tag="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
-          chart_version="0.2.8-dev.${GITHUB_RUN_NUMBER}"
+          chart_version="0.2.9-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${image_tag}")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tags+=("${image}:pr-${{ github.event.pull_request.number }}")
@@ -52,7 +52,7 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.2.8-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.9-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
@@ -110,6 +110,13 @@ jobs:
             docker rm -f "$container"
             container=""
           done
+          container=$(docker run -d --read-only --tmpfs /tmp -p 127.0.0.1:18082:8080 \
+            -e MARKETPLACE_DATA_MODE=mock -e MARKETPLACE_DEMO_DB_FILE=/tmp/demo.sqlite "$IMAGE")
+          curl --fail --retry 30 --retry-all-errors --retry-delay 2 --retry-max-time 90 --max-time 5 http://127.0.0.1:18082/api/health
+          curl --fail http://127.0.0.1:18082/api/marketplace-config | jq -e '.sharedDemo == true'
+          curl --fail http://127.0.0.1:18082/api/demo-state | jq -e '.revision == 0 and .items == []'
+          docker rm -f "$container"
+          container=""
           chart="artifacts/tali-ui-demo-${CHART_VERSION}.tgz"
           helm lint "$chart"
           helm template tali-ui-demo "$chart" > artifacts/mock.yaml

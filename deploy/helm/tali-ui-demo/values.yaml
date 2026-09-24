@@ -1,8 +1,8 @@
 replicaCount: 1
 
-# Opt-in: existing deployments retain browser-local data until explicitly enabled.
+# Shared SQLite storage is enabled by default; no PVC is required.
 sharedDemo:
-  enabled: false
+  enabled: true
 
 persistence:
   enabled: false
