@@ -53,6 +53,7 @@ export function runtimeResponse(env = process.env) {
     return Response.json(
       {
         mode: config.mode,
+        sharedDemo: config.mode === 'mock' && !!env.MARKETPLACE_DEMO_DB_FILE,
         sourceId: config.sourceId,
         policyAuthoring: !!config.authoring || env.MARKETPLACE_CRUD_ONLY === "true",
         crudOnly: env.MARKETPLACE_CRUD_ONLY === "true",

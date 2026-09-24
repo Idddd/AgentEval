@@ -18,11 +18,11 @@ it('preserves a long unified draft with at least one source', () => {
   const policy = saveBusinessPolicy({...blankDraft,name:'Long draft',text:'Requirement'},true,'ISS','User',[]);
   const started = configurePolicy([policy],policy.id,'start','Agent Wizard','IT Admin',{});
   const config = {...emptyConfig(),content:'Paragraph\n'.repeat(5000)};
-  expect(() => configurePolicy(started,policy.id,'save','Agent Wizard','IT Admin',{},'',config)).toThrow('Select at least one source');
+  expect(configurePolicy(started,policy.id,'save','Agent Wizard','IT Admin',{},'',config)[0]?.workflow?.config).toEqual(config);
   const saved = configurePolicy(started,policy.id,'save','Agent Wizard','IT Admin',{Guard: JSON.stringify(config)},'',config);
   expect(saved[0]?.workflow?.config?.content).toBe(config.content);
   expect(saved[0]?.workflow?.sources).toEqual(['Guard']);
-  expect(() => configurePolicy(saved,policy.id,'complete','Agent Wizard','IT Admin',{},'',config)).toThrow('Select at least one source');
+  expect(configurePolicy(saved,policy.id,'complete','Agent Wizard','IT Admin',{},'',config)[0]?.workflow?.evaluation?.results).toHaveLength(1);
 });
 it('requires return reason and invalidates results when configuration resumes', () => {
   const policy = saveBusinessPolicy({...blankDraft,name:'Test',text:'Protect data'},true,'ISS','User',[]);

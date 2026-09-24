@@ -56,6 +56,7 @@ import { SavedDraftError, BatchSaveError } from "./guard-api";
 import { workflowStage, policyStatus, type DemoRole } from "./policy-workflow";
 
 import { UnifiedConfigForm } from './unified-config-form';
+import { unifiedEvaluation } from './unified-demo';
 import { readUnified, configError, type Source } from './evaluation';
 import type { WorkflowAction } from './policy-workflow';
 
@@ -67,6 +68,7 @@ const workflowAppearance = {
   Evaluating: { value: 85, badge: "bg-blue-50 text-blue-700", bar: "bg-blue-500" },
   'Pending approve': { value: 95, badge: "bg-amber-50 text-amber-800", bar: "bg-amber-400" },
   "Needs input": { value: 25, badge: "bg-orange-50 text-orange-800", bar: "bg-orange-400" },
+  Submitted: { value: 25, badge: "bg-orange-50 text-orange-800", bar: "bg-orange-400" },
   Ready: { value: 100, badge: "bg-emerald-50 text-emerald-700", bar: "bg-emerald-500" },
 };
 export function PolicyWorkflowStatus({ item, role = "User" }: { item: Entity; role?: DemoRole | undefined }) {
@@ -88,44 +90,60 @@ function MockPolicyWorkflow({ item, readOnly, onDirty, onDeleted, onVersionSelec
   const [sources, setSources] = useState<Source[]>(item.workflow?.sources ?? (Object.keys(item.workflow?.configs ?? {}).filter(s => s === 'Guard' || s === 'F5') as Source[]));
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
-  const editing = ["Draft", "Ready"].includes(stage) && !readOnly;
-  const run = item.workflow?.evaluation;
-  function action(next: WorkflowAction) {
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const [saving, setSaving] = useState(false);
+  const [editingConfig, setEditingConfig] = useState(false);
+  const [business, setBusiness] = useState({name:item.name,text:item.text});
+  const canEditBusiness = role !== 'Agent Wizard' && !readOnly;
+  const canEditTechnical = role !== 'User' && !readOnly;
+  const unifiedEditing = stage === 'Ready' && !readOnly;
+  const editing = ["Draft", "Ready"].includes(stage) && !readOnly && !editingConfig && !unifiedEditing && canEditBusiness;
+  const run = unifiedEvaluation(item.workflow?.evaluation);
+  const usedBy = items.filter(g => g.kind === 'guardrails' && g.policies.some(p => p.policyId === item.id));
+  async function action(next: WorkflowAction) {
+    if (next === 'return' && !comment.trim()) {
+      setError('Enter a reason for returning this guardrail.');
+      reasonRef.current?.focus();
+      return;
+    }
+    setSaving(true);
     try {
       if (next === "complete") { const problem = configError(config); if (problem) throw new Error(problem); }
-      configure?.(item.id, next, Object.fromEntries(sources.map(source => [source, JSON.stringify(config)])), comment, config);
+      await configure?.(item.id, next, {Guard: JSON.stringify(config)}, comment, config, next === 'revise' && canEditBusiness ? business : undefined);
       setError(""); onDirty(false);
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to update status."); }
+    finally { setSaving(false); }
   }
   return <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-6">
-    <div className="space-y-3"><PolicyWorkflowStatus item={item} role={role} /><h2 className="font-heading text-2xl">{item.name}</h2><p className="text-xs text-muted-foreground">{item.owner} · v{item.version}</p></div>
+    <div className="space-y-3"><div className="flex items-start justify-between gap-3"><PolicyWorkflowStatus item={item} role={role} />{unifiedEditing && (editingConfig ? <div className="flex flex-wrap justify-end gap-2"><Button disabled={saving} onClick={()=>action('revise')}>Save as new version</Button><Button disabled={saving} variant="outline" onClick={()=>{setBusiness({name:item.name,text:item.text});setConfig(item.workflow!.config ?? readUnified(item.workflow!.configs,item.text));setEditingConfig(false);setError('');onDirty(false);}}>Cancel</Button></div> : <Button className="h-10 px-5 font-semibold shadow-sm" onClick={()=>{setConfig(canEditTechnical ? {...config,versionName:`v${Number(item.version)+1}`} : config);setEditingConfig(true);onDirty(true);}}><Pencil aria-hidden="true" className="size-4" />Edit</Button>)}</div>{editingConfig && canEditBusiness ? <label className="grid gap-2 text-sm font-medium">Name<Input disabled={saving} value={business.name} onChange={e=>{setBusiness({...business,name:e.target.value});onDirty(true);}} /></label> : <h2 className="font-heading text-2xl">{item.name}</h2>}<p className="text-xs text-muted-foreground">Control unit · {item.owner} · v{item.version}</p></div>
     {item.workflow?.comment && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">{item.workflow.comment}</p>}
-    {editing ? <EntityEditor kind="policies" initial={item} inline onDirty={onDirty} onSave={(draft, submit) => { save("policies", draft, submit, item); onDirty(false); }} /> : <section className="space-y-2"><h3 className="text-sm font-medium">Requirement</h3><p className="whitespace-pre-wrap break-words text-sm leading-6">{item.text}</p></section>}
-    {(stage === "Awaiting Agent Wizard" || stage === "Needs input") && <section className="rounded-md border p-4 space-y-3"><p className="text-sm">Waiting for IT Admin to configure this guardrail.</p>{role !== "User" && !readOnly && <Button onClick={() => action("start")}>Start configuration</Button>}</section>}
+    {editing ? <EntityEditor kind="policies" initial={item} inline onDirty={onDirty} onSave={(draft, submit) => { const result = save("policies", draft, submit, item); if (result instanceof Promise) return result.then(() => { onDirty(false); }); onDirty(false); }} /> : <section className="space-y-2"><h3 className="text-sm font-medium">Requirement</h3>{editingConfig && canEditBusiness ? <Textarea aria-label="Requirement" disabled={saving} className="min-h-28" value={business.text} onChange={e=>{setBusiness({...business,text:e.target.value});onDirty(true);}} /> : <p className="whitespace-pre-wrap break-words text-sm leading-6">{item.text}</p>}</section>}
+    {stage !== 'Configuring' && config.scannerType === 'custom' && (editingConfig || item.workflow?.config?.content.trim()) && <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">LLM description</h3>{editingConfig && canEditTechnical ? <Textarea aria-label="LLM description" className="min-h-72 resize-y" maxLength={100000} value={config.content} onChange={e=>{setConfig({...config,content:e.target.value});onDirty(true);}} /> : <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm leading-6">{config.content}</p>}</section>}
+    {stage === "Ready" && (editingConfig || item.workflow?.config?.content.trim()) && <details open={editingConfig || undefined} className="space-y-3 border-t pt-4"><summary className="cursor-pointer text-sm font-medium">Technical configuration</summary><UnifiedConfigForm config={config} sources={sources} disabled={!editingConfig || !canEditTechnical || saving} hideDescription onChange={value=>{setConfig(value);onDirty(true);}} onSources={() => {}} />
+      {editingConfig && <p className="text-xs text-muted-foreground">Saving creates a new version. Previous evaluation results and approval will not carry over.</p>}
+    </details>}
+    {(stage === "Awaiting Agent Wizard" || stage === "Needs input" || stage === 'Submitted') && <section className="rounded-md border p-4 space-y-3"><p className="text-sm">Waiting for IT Admin to configure this guardrail.</p>{role !== "User" && !readOnly && <Button onClick={() => action("start")}>Start configuration</Button>}</section>}
     {stage === "Configuring" && role === "User" && <p className="text-sm text-muted-foreground">IT Admin is configuring this guardrail.</p>}
     {stage === "Configuring" && role !== "User" && !readOnly && <section className="space-y-5 border-t pt-5">
       <h3 className="font-medium">Technical configuration</h3>
-      <UnifiedConfigForm config={config} sources={sources} disabled={item.workflow?.assignedTo !== currentOwner} onChange={value => {setConfig(value); onDirty(true);}} onSources={value => {setSources(value); onDirty(true);}} />
-      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={item.workflow?.assignedTo !== currentOwner} onClick={() => action("save")}>Save draft</Button><Button disabled={item.workflow?.assignedTo !== currentOwner} onClick={() => action("complete")}>Evaluate</Button></div>
+      <UnifiedConfigForm config={config} sources={sources} disabled={role !== 'Admin' && item.workflow?.assignedTo !== currentOwner} onChange={value => {setConfig(value); onDirty(true);}} onSources={value => {setSources(value); onDirty(true);}} />
+      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={role !== 'Admin' && item.workflow?.assignedTo !== currentOwner} onClick={() => action("save")}>Save draft</Button><Button disabled={role !== 'Admin' && item.workflow?.assignedTo !== currentOwner} onClick={() => action("complete")}>Evaluate</Button></div>
     </section>}
-    {run && <section className="space-y-4 border-t pt-5" aria-label="Evaluation results">
+    {run && run.results.length > 0 && <section className="space-y-4 border-t pt-5" aria-label="Evaluation results">
       <div className="flex items-center justify-between"><h3 className="font-medium">Evaluation</h3>{stage === 'Evaluating' && <span className="flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Evaluating</span>}</div>
-      <p className="text-xs text-muted-foreground">Simulated evaluation results</p>
       {stage !== 'Evaluating' && <div className="grid grid-cols-3 gap-2 rounded-md border p-3 text-sm"><span><strong className="block text-emerald-700">{run.results.reduce((n,r)=>n+r.success,0)}</strong>Success</span><span><strong className="block text-red-600">{run.results.reduce((n,r)=>n+r.fail,0)}</strong>Fail</span><span><strong className="block">{Math.max(0,...run.results.map(r=>r.responseTimeMs))} ms</strong>Response time</span></div>}
-      {run.results.map(result => <div key={result.source} className="space-y-2 rounded-md border p-3 text-sm">
-        <div className="flex justify-between font-medium"><span>{result.source === 'Guard' ? 'Nemo' : 'F5'}</span><span className="text-xs text-muted-foreground">{result.status === 'running' ? 'Running…' : result.status === 'error' ? 'Execution error' : 'Complete'}</span></div>
-        {result.status === 'completed' && <p className="text-xs"><span className="text-emerald-700">{result.success} Success</span> · <span className="text-red-600">{result.fail} Fail</span> · {result.responseTimeMs} ms</p>}
+      {run.results.map(result => <div key={result.source}>
+        {result.status === 'error' && <p role="alert" className="text-sm text-red-700">Execution error</p>}
         {result.status !== 'running' && result.fail > 0 && <FailedCases source={result.source} count={result.fail} />}
       </div>)}
-      {stage === 'Pending approve' && role === 'Admin' && !readOnly && <div className="space-y-3 border-t pt-4"><Textarea aria-label="Return reason" placeholder="Reason for returning changes…" value={comment} onChange={e=>setComment(e.target.value)} /><div className="flex justify-end gap-2"><Button variant="outline" onClick={()=>action('return')}>Return for changes</Button><Button onClick={()=>action('approve')}>Approve</Button></div></div>}
+      {stage === 'Pending approve' && role === 'Admin' && !readOnly && <div className="space-y-3 border-t pt-4"><Textarea ref={reasonRef} aria-label="Return reason" placeholder="Reason for returning changes (required)…" value={comment} onChange={e=>{setComment(e.target.value);setError('');}} />{error && <p role="alert" className="text-sm text-red-700">{error}</p>}<div className="flex justify-end gap-2"><Button disabled={saving} variant="outline" onClick={()=>action('return')}>Return for changes</Button><Button disabled={saving} onClick={()=>action('approve')}>Approve</Button></div></div>}
       {stage === 'Pending approve' && role !== 'Admin' && <p className="text-sm text-muted-foreground">Waiting for Admin approval.</p>}
       {item.workflow?.approval && <p className="text-xs text-muted-foreground">Approved by {item.workflow.approval.by} · {new Date(item.workflow.approval.at).toLocaleString()}</p>}
     </section>}
-    {stage === "Ready" && <details className="space-y-3 border-t pt-4"><summary className="cursor-pointer text-sm font-medium">Technical configuration</summary><UnifiedConfigForm config={config} sources={sources} disabled onChange={() => {}} onSources={() => {}} /></details>}
-    <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">Used by Profiles</h3>{items.filter(g => g.kind === "guardrails" && g.policies.some(p => p.policyId === item.id)).map(g => <a className="block text-sm hover:text-primary" key={g.id} href={`/guardrails/${g.id}`}>{g.name}</a>)}</section>
-    <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">Versions</h3>{item.revisions.map(r=><button className="mr-2 rounded border px-3 py-1 text-xs" key={r.version} onClick={()=>onVersionSelect(r.version)}>v{r.version}</button>)}</section>
+    {usedBy.length > 0 && <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">Used by Profiles</h3>{usedBy.map(g => <a className="block text-sm hover:text-primary" key={g.id} href={`/guardrails/${g.id}`}>{g.name}</a>)}</section>}
+    {item.revisions.length > 0 && <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">Versions</h3>{item.revisions.map(r=><button className="mr-2 rounded border px-3 py-1 text-xs" key={r.version} onClick={()=>onVersionSelect(r.version)}>v{r.version}</button>)}</section>}
     {!readOnly && role !== "Agent Wizard" && stage !== 'Evaluating' && stage !== 'Pending approve' && <DeleteEntityAction item={item} onDeleted={onDeleted} />}
-    {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+    {error && stage !== 'Pending approve' && <p role="alert" className="text-sm text-red-700">{error}</p>}
   </div>;
 }
 export function SyncStatus({ item }: { item: Entity }) {
@@ -155,6 +173,7 @@ const statusStyles: Record<Status, string> = {
   Ready: "bg-emerald-50 text-emerald-700",
   Active: "bg-violet-50 text-violet-700",
   "Needs input": "bg-amber-50 text-amber-800",
+  Submitted: "bg-amber-50 text-amber-800",
   Review: "bg-amber-50 text-amber-800",
   Deactivated: "bg-zinc-100 text-zinc-600",
   Deprecated: "bg-zinc-100 text-zinc-500",
@@ -438,7 +457,7 @@ export function StatusBadge({ status }: { status: Status }) {
       ) : (
         <span className="size-1.5 rounded-full bg-current" />
       )}
-      {status}
+      {status === 'Needs input' ? 'Submitted' : status}
     </span>
   );
 }
@@ -490,8 +509,7 @@ export function BusinessCatalog({
   const filtered = filterEntities(items, kind, query, policy && mode === "mock" ? [] : status, scope).filter(
     (item) =>
       (!policy || mode !== "mock" || !status.length || status.includes(policyStatus(item, role))) &&
-      (!policy || !selectedOwners.length || selectedOwners.includes(item.owner)) &&
-      (!selectedSources.length || (item.workflow?.sources ?? (item.source ? [item.source] : [])).some(source => selectedSources.includes(source === "F5" ? "F5" : "Nemo"))),
+      (!policy || !selectedOwners.length || selectedOwners.includes(item.owner)),
   );
   if (policy)
     filtered.sort((a, b) =>
@@ -505,7 +523,7 @@ export function BusinessCatalog({
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
-  const availableStatuses: string[] = policy && mode === "mock" ? (role !== "User" ? ["Draft", "Needs input", "Evaluating", "Pending approve", "Ready"] : ["Draft", "Pending implement", "Evaluating", "Pending approve", "Ready"]) : policy
+  const availableStatuses: string[] = policy && mode === "mock" ? ["Draft", "Submitted", "Evaluating", "Pending approve", "Ready"] : policy
     ? [
         "Draft",
         "Processing",
@@ -630,7 +648,6 @@ export function BusinessCatalog({
           </div>
         </div>
         <div className="space-y-4 border-b bg-zinc-50/40 px-5 py-4">
-          {(mode === "mock" || dualSource) && <CheckboxFilter label="Source" options={["F5", "Nemo"]} selected={selectedSources} onChange={(values) => { setSelectedSources(values); setPage(1); }} />}
           <CheckboxFilter
             label="Status"
             options={availableStatuses}
@@ -642,7 +659,7 @@ export function BusinessCatalog({
           />
           {policy && (
             <CheckboxFilter
-              label="Owner"
+              label="Control unit"
               options={ownerOptions}
               selected={selectedOwners}
               onChange={(values) => {
@@ -694,10 +711,9 @@ export function BusinessCatalog({
                     Use case
                   </th>
                 )}
-                {(mode === "mock" || dualSource) && <th className="px-5 py-3 font-medium">Source</th>}
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="hidden px-5 py-3 font-medium md:table-cell">
-                  Owner
+                  Control unit
                 </th>
                 {policy && (
                   <th
@@ -762,11 +778,8 @@ export function BusinessCatalog({
                     </td>
                   )}
                   <td className="px-5 py-5">
-                    {(mode === "mock" || dualSource) ? item.workflow?.sources?.length ? <div className="flex flex-wrap gap-1">{item.workflow.sources.map(source => <SourceBadge key={source} source={source} />)}</div> : item.workflow && !item.source ? <span className="text-xs text-muted-foreground">Not selected</span> : <SourceBadge source={item.source} /> : <StatusBadge status={item.status} />}
-                  </td>
-                  {(mode === "mock" || dualSource) && <td className="px-5 py-5">
                     {policy && mode === "mock" ? <PolicyWorkflowStatus item={item} role={role} /> : <StatusBadge status={item.status} />}
-                  </td>}
+                  </td>
                   <td className="hidden px-5 py-5 text-muted-foreground md:table-cell">
                     {item.owner?.trim() || "Not assigned"}
                   </td>
@@ -1016,7 +1029,7 @@ export function EntityEditor({
   const { items, mode, policyAuthoring, dualSource, crudOnly } = useBusinessDemo();
   const live = mode === "live";
   const businessStep = !live && kind === "policies";
-  const multiSource = !businessStep && dualSource && kind === "policies" && !initial;
+  const multiSource = false;
   const [policySources, setPolicySources] = useState<Array<"Guard" | "F5">>(["Guard"]);
   const readOnly =
     (initial?.kind === "guardrails" && initial.status === "Active") || !!initial?.sync?.deleting || initial?.sync?.state === "uncertain";
@@ -1266,7 +1279,7 @@ export function EntityEditor({
                 "Guardrails",
                 draft.policies.map((policy) => policy.name).join("\n"),
                 <PolicyPicker
-                  items={items.filter((item) => (item.workflow?.sources ?? [item.source ?? 'Guard']).includes(draft.source ?? 'Guard'))}
+                  items={items}
                   selected={draft.policies}
                   onChange={(policies) => {
                     setDraft({ ...draft, policies });
@@ -1332,26 +1345,6 @@ export function EntityEditor({
           </>
         )}
 
-        {(!live || dualSource) && !businessStep && !inline && <fieldset id={`${id}-source`} tabIndex={-1} className="min-w-0">
-          <legend className="sr-only">Source</legend>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-            <span className="font-medium" aria-hidden="true">Source</span>
-            {initial ? <SourceBadge source={initial.source} /> : (["Guard", "F5"] as const).map((source) => (
-              <label key={source} className="flex cursor-pointer items-center gap-2 py-1">
-                <input type="checkbox" className="size-4 accent-primary"
-                  checked={multiSource ? policySources.includes(source) : (draft.source ?? "Guard") === source}
-                  onChange={() => {
-                    if (multiSource) {
-                      setPolicySources((current) => current.includes(source) ? current.filter((value) => value !== source) : [...current, source]);
-                      setErrors((current) => ({ ...current, source: "" })); onDirty(true);
-                    } else if (draft.source !== source) update("source", source);
-                  }} />
-                {source === "Guard" ? "Nemo" : "F5"}
-              </label>
-            ))}
-          </div>
-          {errors.source && <p role="alert" className="mt-2 text-xs text-red-700">{errors.source}</p>}
-        </fieldset>}
       </fieldset>
       {live && kind === "policies" && !policyAuthoring && (
         <p role="status" className="px-6 py-3 text-sm text-amber-800">
@@ -1717,7 +1710,6 @@ export function EntityDetail({
           </h2>
           <p className="text-xs text-muted-foreground">{item.owner}</p>
           <SyncStatus item={item} />
-          {(!item.remote || dualSource) && <div className="flex items-center gap-2"><SourceBadge source={item.source} /><span className="text-xs text-muted-foreground">{item.source === "F5" ? "F5 · Mock API" : mode === "live" ? "Nemo · Live backend" : "Nemo · Mock"}</span></div>}
           {crudOnly && item.source !== "F5" && item.status === "Draft" && <p className="text-xs text-muted-foreground">Draft only · Not evaluated or published. Executable rules must be configured before use.</p>}
         </div>
         {!historical && item.status === "Processing" && (
@@ -1818,7 +1810,7 @@ export function EntityDetail({
         )}
         {item.kind === "policies" && (
           <>
-            <section className="space-y-3">
+            {usedBy.length > 0 && <section className="space-y-3">
               <h3 className="text-sm font-medium">
                 Used by Profiles{" "}
                 <span className="text-muted-foreground">({usedBy.length})</span>
@@ -1840,13 +1832,8 @@ export function EntityDetail({
                     <StatusBadge status={guard.status} />
                   </a>
                 ))}
-                {!usedBy.length && (
-                  <p className="p-4 text-sm text-muted-foreground">
-                    No linked profiles
-                  </p>
-                )}
               </div>
-            </section>
+            </section>}
             <section className="space-y-2">
               <h3 className="text-sm font-medium">Versions</h3>
               <div className="flex flex-wrap gap-2">

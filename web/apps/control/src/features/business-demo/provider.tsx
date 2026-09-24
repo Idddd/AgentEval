@@ -32,6 +32,8 @@ import { MultiSourceAdapter } from "./multi-source-api";
 import { saveBusinessPolicy, configurePolicy, type DemoRole, type WorkflowAction } from "./policy-workflow";
 import { MarketplaceAdapter } from "./marketplace-adapter";
 import type { UnifiedConfig } from './evaluation';
+import { normalizeDemo } from './unified-demo';
+import { useSharedState } from './shared-state';
 import { addStatusDemos, addFailureDemo, ensurePolicySources, balanceStatusDemos } from './status-demos';
 
 const DemoContext = createContext<{
@@ -43,7 +45,7 @@ const DemoContext = createContext<{
   crudOnly?: boolean;
   role?: DemoRole;
   switchRole?: (role: DemoRole) => void;
-  configure?: (id: string, action: WorkflowAction, configs: Record<string, string>, comment?: string, config?: UnifiedConfig) => void;
+  configure?: (id: string, action: WorkflowAction, configs: Record<string, string>, comment?: string, config?: UnifiedConfig, business?: Pick<Entity, 'name' | 'text'>) => void | Promise<void>;
   retrySync?: (item: Entity) => Promise<void>;
   connection?: ReactNode;
   busy?: boolean;
@@ -104,6 +106,7 @@ export function BusinessDemoProvider({
   if (config.mode === "mock" || fallback)
     return (
       <MockProvider
+        shared={config.sharedDemo === true}
         connection={
           fallback && (
             <div
@@ -141,16 +144,18 @@ function withPendingExample(items: Entity[]): Entity[] {
 function MockProvider({
   children,
   connection,
+  shared = false,
 }: {
   children: ReactNode;
   connection?: ReactNode;
+  shared?: boolean;
 }) {
-  const [items, setItems] = useState(() => {
+  const { items, commit: setItems, ready, busy, error: storageError, retry } = useSharedState(shared, () => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      return balanceStatusDemos(ensurePolicySources(addFailureDemo(addStatusDemos(withPendingExample(restoreIntegratedEntities(stored)), stored), stored)), stored);
+      return normalizeDemo(balanceStatusDemos(ensurePolicySources(addFailureDemo(addStatusDemos(withPendingExample(restoreIntegratedEntities(stored)), stored), stored)), stored));
     } catch {
-      return balanceStatusDemos(ensurePolicySources(addFailureDemo(addStatusDemos(withPendingExample(restoreIntegratedEntities(null)), null), null)), null);
+      return normalizeDemo(balanceStatusDemos(ensurePolicySources(addFailureDemo(addStatusDemos(withPendingExample(restoreIntegratedEntities(null)), null), null)), null));
     }
   });
   const [sessionOnly, setSessionOnly] = useState(false);
@@ -159,7 +164,8 @@ function MockProvider({
   ];
   const [currentOwner, setCurrentOwner] = useState(() => {
     try {
-      const saved = localStorage.getItem(OWNER_STORAGE_KEY);
+      const previous = localStorage.getItem(OWNER_STORAGE_KEY);
+      const saved = previous === 'Compliance' ? 'LCS' : previous === 'Security' ? 'Admin' : previous;
       return saved && owners.includes(saved) ? saved : "Admin";
     } catch {
       return "Admin";
@@ -178,13 +184,14 @@ function MockProvider({
   }
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 4, statusDemosVersion: 1, failureDemoVersion: 1, balancedStatusesVersion: 1, items }));
+      if (!shared) localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 4, statusDemosVersion: 1, failureDemoVersion: 1, balancedStatusesVersion: 1, items }));
       setSessionOnly(false);
     } catch {
       setSessionOnly(true);
     }
   }, [items]);
   useEffect(() => {
+    if (shared) return;
     const timer = window.setInterval(
       () => setItems((current) => advanceProcessing(current, Date.now())),
       500,
@@ -202,22 +209,23 @@ function MockProvider({
       items,
       currentOwner,
     );
-    setItems((current) => [
+    const result = setItems((current) => [
       item,
       ...current.filter((entry) => entry.id !== item.id),
     ]);
-    return item;
+    return result instanceof Promise ? result.then(() => item) : item;
   }
   return (
     <DemoContext.Provider
       value={{
         items,
         sessionOnly,
+        busy,
         save,
         remove: (item) => {
           const reason = deletionBlocker(items, item);
           if (reason) throw new Error(reason);
-          setItems((current) =>
+          return setItems((current) =>
             current.filter((entry) => entry.id !== item.id),
           );
         },
@@ -229,7 +237,7 @@ function MockProvider({
             throw new Error(
               "This profile's status has changed. Refresh and try again.",
             );
-          setItems((current) =>
+          return setItems((current) =>
             current.map((entry) =>
               entry.id === item.id
                 ? {
@@ -243,15 +251,16 @@ function MockProvider({
         },
         mode: "mock",
         role,
-        configure: (id, action, configs, comment, config) => setItems(configurePolicy(items, id, action, role, currentOwner, configs, comment, config)),
+        configure: (id, action, configs, comment, config, business) => setItems(current => configurePolicy(current, id, action, role, currentOwner, configs, comment, config, business)),
         currentOwner,
         owners,
         switchOwner,
         policyAuthoring: true,
-        connection: connection || <div className="flex flex-wrap items-center gap-2 border-b bg-slate-50 px-6 py-2 text-xs text-slate-600"><span className="rounded border bg-white px-2 py-0.5 font-medium">Mock demo</span> F5 + Nemo · Changes are saved in this browser. No backend requests.</div>,
+        connection: connection || <div className="border-b px-6 py-2 text-xs text-muted-foreground">{shared ? 'Shared demo · Changes are saved on the server' : 'Local demo · Changes are saved in this browser'}</div>,
       }}
     >
-      {children}
+      {storageError && <div role="alert" className="border-b bg-red-50 p-3 text-sm text-red-800">{storageError} <Button variant="outline" size="sm" onClick={retry}>Retry</Button></div>}
+      {ready ? children : <p className="p-6 text-sm">Loading shared demo…</p>}
     </DemoContext.Provider>
   );
 }

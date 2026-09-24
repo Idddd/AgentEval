@@ -68,7 +68,7 @@ it("switches among the existing owners and uses the current owner on new records
   );
   expect(
     screen.getAllByRole("menuitemradio").map((item) => item.textContent),
-  ).toEqual(["Admin", "IT Admin", "ISS", "Security", "Compliance", "RMG"]);
+  ).toEqual(["Admin", "IT Admin", "ISS", "LCS", "RMG"]);
   await userEvent.click(screen.getByRole("menuitemradio", { name: "ISS" }));
   expect(
     screen.getByRole("button", { name: "Open account menu for ISS" }),
@@ -80,7 +80,7 @@ it("switches among the existing owners and uses the current owner on new records
     screen.getByRole("button", { name: "Open account menu for ISS" }),
   );
   await userEvent.click(
-    screen.getByRole("menuitemradio", { name: "Compliance" }),
+    screen.getByRole("menuitemradio", { name: "LCS" }),
   );
   await userEvent.click(screen.getByRole("button", { name: "Edit record" }));
   expect(screen.getByLabelText("Record owner").textContent).toBe("ISS");
@@ -125,10 +125,10 @@ it("still switches when browser storage is unavailable", async () => {
     screen.getByRole("button", { name: "Open account menu for Admin" }),
   );
   await userEvent.click(
-    screen.getByRole("menuitemradio", { name: "Compliance" }),
+    screen.getByRole("menuitemradio", { name: "LCS" }),
   );
   await userEvent.click(screen.getByRole("button", { name: "Create record" }));
-  expect(screen.getByLabelText("Record owner").textContent).toBe("Compliance");
+  expect(screen.getByLabelText("Record owner").textContent).toBe("LCS");
 });
 
 it("switches real accounts through authentication rather than impersonating a local owner", async () => {

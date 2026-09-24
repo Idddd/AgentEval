@@ -12,6 +12,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BusinessCatalog, EntityDetail, PolicyWorkflowStatus } from "./catalog";
 import { BusinessDemoProvider } from "./provider";
 import { PROCESSING_MS, seedEntities, STORAGE_KEY, type Kind } from "./model";
+import { emptyConfig, createEvaluation } from './evaluation';
 
 function App({ kind = "policies" }: { kind?: Kind }) {
   const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
@@ -58,7 +59,7 @@ it("allows User to save a draft before technical source selection", () => {
 
 it("combines owner checkboxes with status and resets both filters", () => {
   render(<App />);
-  const owners = within(screen.getByRole("group", { name: "Owner" }));
+  const owners = within(screen.getByRole("group", { name: "Control unit" }));
   fireEvent.click(owners.getByRole("checkbox", { name: "ISS" }));
   expect(
     screen.queryByRole("button", { name: /^Payment authorizationv/ }),
@@ -168,7 +169,7 @@ it("saves a draft, submits and stays waiting for Agent Wizard", () => {
   act(() => {
     vi.advanceTimersByTime(PROCESSING_MS);
   });
-  expect(within(screen.getByRole("dialog")).getByText("Needs input")).toBeTruthy();
+  expect(within(screen.getByRole("dialog")).getByText("Submitted")).toBeTruthy();
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items[0];
   expect(saved).toMatchObject({
     name: "UI test policy",
@@ -439,12 +440,79 @@ it("shows linked guardrails on the latest policy even when they use an older ver
   expect(screen.getByText("Uses v1 · Viewing this version")).toBeTruthy();
 });
 
+it('hides empty workflow detail headings', () => {
+  const policy = {...seedEntities().find(item => item.kind === 'policies')!, id:'empty-details', revisions:[], workflow:{businessId:'empty-details',configs:{},stage:'Draft' as const}};
+  render(<BusinessDemoProvider config={{mode:'mock',sourceId:'mock',policyAuthoring:true}}><EntityDetail item={policy} onEdit={() => {}} /></BusinessDemoProvider>);
+  for (const name of ['Versions','Used by Profiles','LLM description','Evaluation','Technical configuration']) {
+    expect(screen.queryByRole('heading',{name})).toBeNull();
+  }
+});
+
+it('shows one evaluation summary and places collapsed configuration below the description', () => {
+  const config = {...emptyConfig(), content:'Unique LLM instructions'};
+  const evaluation = createEvaluation('compact',1,config,['Guard'],0);
+  const policy = {...seedEntities().find(item=>item.kind==='policies')!, workflow:{businessId:'compact',configs:{},stage:'Ready' as const,config,evaluation:{...evaluation,results:evaluation.results.map(r=>({...r,status:'completed' as const}))}}};
+  render(<BusinessDemoProvider config={{mode:'mock',sourceId:'mock',policyAuthoring:true}}><EntityDetail item={policy} onEdit={()=>{}} /></BusinessDemoProvider>);
+  expect(screen.queryByText('Test results')).toBeNull();
+  expect(screen.getAllByText('Unique LLM instructions')).toHaveLength(1);
+  expect(screen.queryByRole('textbox',{name:/LLM description/})).toBeNull();
+  const details = screen.getByText('Technical configuration').closest('details')!;
+  expect(details.open).toBe(false);
+  expect(details.compareDocumentPosition(screen.getByRole('region',{name:'Evaluation results'})) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it('focuses the return reason and shows validation beside the approval buttons', () => {
+  const config = {...emptyConfig(),content:'Detect sensitive data'};
+  const evaluation = createEvaluation('pending',1,config,['Guard'],0);
+  const policy = {...seedEntities().find(item=>item.kind==='policies')!,workflow:{businessId:'pending',configs:{},stage:'Pending approve' as const,config,evaluation:{...evaluation,results:evaluation.results.map(r=>({...r,status:'completed' as const}))}}};
+  render(<BusinessDemoProvider config={{mode:'mock',sourceId:'mock',policyAuthoring:true}}><EntityDetail item={policy} onEdit={()=>{}} /></BusinessDemoProvider>);
+  fireEvent.click(screen.getByRole('button',{name:'Return for changes'}));
+  const reason = screen.getByRole('textbox',{name:'Return reason'});
+  expect(document.activeElement).toBe(reason);
+  expect(within(reason.parentElement!).getByRole('alert').textContent).toBe('Enter a reason for returning this guardrail.');
+  fireEvent.change(reason,{target:{value:'Please revise the rule'}});
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it.each([['ISS',true,false],['IT Admin',false,true],['Admin',true,true]] as const)('limits editable sections for %s', (owner,businessAllowed,technicalAllowed) => {
+  localStorage.setItem('ai-marketplace.active-owner.v1',owner);
+  const policy = {...seedEntities().find(item=>item.kind==='policies')!,owner:'ISS',workflow:{businessId:'access',configs:{},stage:'Ready' as const,config:{...emptyConfig(),content:'Private config'}}};
+  localStorage.setItem(STORAGE_KEY,JSON.stringify({version:3,items:[policy]}));
+  render(<BusinessDemoProvider config={{mode:'mock',sourceId:'mock',policyAuthoring:true}}><EntityDetail item={policy} onEdit={()=>{}} /></BusinessDemoProvider>);
+  fireEvent.click(screen.getByRole('button',{name:'Edit'}));
+  expect(!!screen.queryByRole('textbox',{name:'Requirement'})).toBe(businessAllowed);
+  expect(!!screen.queryByRole('textbox',{name:'Name'})).toBe(businessAllowed);
+  expect(!!screen.queryByRole('textbox',{name:'LLM description'})).toBe(technicalAllowed);
+  expect(screen.getByRole('combobox',{name:'Scanner type'}).closest('fieldset')!.disabled).toBe(!technicalAllowed);
+});
+
+it('saves edited technical configuration as a fresh version without old results', async () => {
+  const config = {...emptyConfig(),content:'Original config'};
+  const evaluation = createEvaluation('config-edit',1,config,['Guard'],0);
+  const policy = {...seedEntities().find(item=>item.kind==='policies')!,id:'config-edit',version:1,status:'Ready' as const,workflow:{businessId:'config-edit',configs:{},stage:'Ready' as const,config,revision:1,approval:{by:'Admin',at:1},evaluation:{...evaluation,results:evaluation.results.map(r=>({...r,status:'completed' as const}))}}};
+  localStorage.setItem(STORAGE_KEY,JSON.stringify({version:3,items:[policy]}));
+  render(<BusinessDemoProvider config={{mode:'mock',sourceId:'mock',policyAuthoring:true}}><BusinessCatalog kind="policies" selectedId="config-edit" onSelect={()=>{}} /></BusinessDemoProvider>);
+  fireEvent.click(screen.getByRole('button',{name:'Edit'}));
+  fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'Revised guardrail'}});
+  fireEvent.change(screen.getByRole('textbox',{name:'Requirement'}),{target:{value:'Revised requirement'}});
+  fireEvent.change(screen.getByRole('textbox',{name:'LLM description'}),{target:{value:'Updated config'}});
+  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Save as new version'}));});
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find((item:{id:string})=>item.id==='config-edit');
+  expect(saved.version).toBe(2);
+  expect(saved.name).toBe('Revised guardrail');
+  expect(saved.text).toBe('Revised requirement');
+  expect(saved.workflow.config.content).toBe('Updated config');
+  expect(saved.workflow.evaluation).toBeUndefined();
+  expect(screen.queryByRole('region',{name:'Evaluation results'})).toBeNull();
+  expect(screen.getByRole('button',{name:'Evaluate'})).toBeTruthy();
+});
+
 it("shows workflow states with stage bars, and hides the bar when ready", () => {
   const policy = seedEntities().find((item) => item.kind === "policies")!;
   const { rerender } = render(<PolicyWorkflowStatus item={{ ...policy, workflow: { businessId: policy.id, configs: {}, stage: "Draft" } }} />);
   for (const stage of ["Draft", "Awaiting Agent Wizard", "Configuring", "Needs input"] as const) {
     rerender(<PolicyWorkflowStatus item={{ ...policy, workflow: { businessId: policy.id, configs: {}, stage } }} />);
-    const label = stage === "Awaiting Agent Wizard" || stage === "Configuring" || stage === "Needs input" ? "Pending implement" : stage;
+    const label = stage === "Awaiting Agent Wizard" || stage === "Configuring" || stage === "Needs input" ? "Submitted" : stage;
     expect(screen.getByText(label)).toBeTruthy();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuetext")).toBe(label);
     expect(screen.queryByText(/of 2/)).toBeNull();

@@ -8,6 +8,7 @@ export const statuses = [
   "Pending approve",
   "Ready",
   "Needs input",
+  "Submitted",
   "Review",
   "Active",
   "Deactivated",
@@ -30,16 +31,8 @@ export const scopeLabels = {
 };
 export type ScopeKey = keyof typeof scopeOptions;
 export const scopeKeys = Object.keys(scopeOptions) as ScopeKey[];
-const revisionSchema = z.object({
-  version: z.union([z.number().int().positive(), z.string().min(1)]),
-  name: z.string(),
-  text: z.string(),
-});
-const referenceSchema = revisionSchema.extend({ policyId: z.string() });
-export type PolicyReference = z.infer<typeof referenceSchema>;
-export const entitySchema = z.object({
-  workflow: z.object({
-    stage: z.enum(["Draft", "Awaiting Agent Wizard", "Configuring", "Evaluating", "Pending approve", "Needs input", "Ready"]),
+const workflowSchema = z.object({
+    stage: z.enum(["Draft", "Awaiting Agent Wizard", "Configuring", "Evaluating", "Pending approve", "Needs input", "Submitted", "Ready"]),
     config: unifiedConfigSchema.optional(),
     sources: z.array(sourceSchema).optional(),
     revision: z.number().optional(),
@@ -51,7 +44,17 @@ export const entitySchema = z.object({
     assignedTo: z.string().optional(), configuredAt: z.number().optional(),
     comment: z.string().optional(),
     configs: z.record(z.string(), z.string()).default({}),
-  }).optional(),
+  });
+const revisionSchema = z.object({
+  version: z.union([z.number().int().positive(), z.string().min(1)]),
+  name: z.string(),
+  text: z.string(),
+  workflow: workflowSchema.optional(),
+});
+const referenceSchema = revisionSchema.extend({ policyId: z.string() });
+export type PolicyReference = z.infer<typeof referenceSchema>;
+export const entitySchema = z.object({
+  workflow: workflowSchema.optional(),
   source: z.enum(["Guard", "F5"]).optional(),
   scanDirection: z.enum(["Request", "Response", "Both"]).optional(),
   id: z.string(),
@@ -164,10 +167,6 @@ export function validateDraft(
     draft.policies.length
   )
     errors.policies = "Select only one version of each Guardrail.";
-  if (kind === "guardrails" && items && draft.policies.some((ref) => {
-    const policy = items.find((item) => item.id === ref.policyId);
-    return policy && !(policy.workflow?.sources ?? [policy.source ?? "Guard"]).includes(draft.source ?? "Guard");
-  })) errors.policies = "Select policies from the same source as this profile.";
   return errors;
 }
 
@@ -181,8 +180,6 @@ export function saveEntity(
   items?: Entity[],
   currentOwner = "Admin",
 ): Entity {
-  if (existing && (existing.source ?? "Guard") !== (draft.source ?? "Guard"))
-    throw new Error("Source cannot be changed after creation.");
   if (existing?.kind === "guardrails" && existing.status === "Active")
     throw new Error("Deactivate this profile before editing.");
   if (Object.keys(validateDraft(kind, draft, submit, items)).length)

@@ -9,12 +9,12 @@ it("upgrades existing mock data once without reviving deleted F5 samples", () =>
   expect(restoreIntegratedEntities(JSON.stringify({ version: 3, items: retained }))).toEqual(retained);
 });
 
-it("rejects cross-source bindings and preserves source on save", () => {
+it("allows profiles to reference any legacy source", () => {
   const items = restoreIntegratedEntities(null);
   const policy = items.find((x) => x.kind === "policies" && x.source === "F5")!;
   const draft = { ...blankDraft, name: "Test", source: "Guard" as const, policies: availableRevisions(policy) };
-  expect(validateDraft("guardrails", draft, false, items).policies).toMatch(/source/i);
+  expect(validateDraft("guardrails", draft, false, items).policies).toBeUndefined();
   const saved = saveEntity("guardrails", { ...draft, source: "F5" }, false, 1, "new", undefined, items);
   expect(saved.source).toBe("F5");
-  expect(() => saveEntity("guardrails", { ...saved, source: "Guard" }, false, 2, saved.id, saved, items)).toThrow();
+  expect(() => saveEntity("guardrails", { ...saved, source: "Guard" }, false, 2, saved.id, saved, items)).not.toThrow();
 });

@@ -167,14 +167,12 @@ export function GuardrailDetails({ id }: { id: string }) {
                   {guard.name}
                 </h1>
                 <StatusBadge status={guard.status} />
-                {(!guard.remote || dualSource) && <SourceBadge source={guard.source} />}
               </div>
               {guard.owner && (
                 <p className="text-xs text-muted-foreground">
-                  Owner · {guard.owner}
+                  Control unit · {guard.owner}
                 </p>
               )}
-              {!guard.remote && <p className="text-xs text-muted-foreground">{guard.source === "F5" ? "F5 Project" : "Nemo Profile"} · Internal · Mock preview</p>}
               {guard.remote && (
                 <p className="text-xs text-muted-foreground">
                   Draft revision {guard.remote.draftRevision}

@@ -1,5 +1,21 @@
 replicaCount: 1
 
+# Opt-in: existing deployments retain browser-local data until explicitly enabled.
+sharedDemo:
+  enabled: false
+
+persistence:
+  enabled: false
+  existingClaim: ""
+  storageClass: ""
+  size: 1Gi
+
+openshift:
+  enabled: false
+  route:
+    enabled: false
+    host: ""
+
 image:
   repository: ghcr.io/idddd/tali-ui-demo
   tag: dev
