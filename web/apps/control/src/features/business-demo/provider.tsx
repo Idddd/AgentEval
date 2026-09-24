@@ -31,6 +31,8 @@ import { Input } from "@/components/ui/input";
 import { MultiSourceAdapter } from "./multi-source-api";
 import { saveBusinessPolicy, configurePolicy, type DemoRole, type WorkflowAction } from "./policy-workflow";
 import { MarketplaceAdapter } from "./marketplace-adapter";
+import type { UnifiedConfig } from './evaluation';
+import { addStatusDemos, addFailureDemo, ensurePolicySources, balanceStatusDemos } from './status-demos';
 
 const DemoContext = createContext<{
   items: Entity[];
@@ -41,7 +43,7 @@ const DemoContext = createContext<{
   crudOnly?: boolean;
   role?: DemoRole;
   switchRole?: (role: DemoRole) => void;
-  configure?: (id: string, action: WorkflowAction, configs: Record<string, string>, comment?: string) => void;
+  configure?: (id: string, action: WorkflowAction, configs: Record<string, string>, comment?: string, config?: UnifiedConfig) => void;
   retrySync?: (item: Entity) => Promise<void>;
   connection?: ReactNode;
   busy?: boolean;
@@ -145,9 +147,10 @@ function MockProvider({
 }) {
   const [items, setItems] = useState(() => {
     try {
-      return withPendingExample(restoreIntegratedEntities(localStorage.getItem(STORAGE_KEY)));
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return balanceStatusDemos(ensurePolicySources(addFailureDemo(addStatusDemos(withPendingExample(restoreIntegratedEntities(stored)), stored), stored)), stored);
     } catch {
-      return withPendingExample(restoreIntegratedEntities(null));
+      return balanceStatusDemos(ensurePolicySources(addFailureDemo(addStatusDemos(withPendingExample(restoreIntegratedEntities(null)), null), null)), null);
     }
   });
   const [sessionOnly, setSessionOnly] = useState(false);
@@ -175,7 +178,7 @@ function MockProvider({
   }
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, items }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 4, statusDemosVersion: 1, failureDemoVersion: 1, balancedStatusesVersion: 1, items }));
       setSessionOnly(false);
     } catch {
       setSessionOnly(true);
@@ -240,7 +243,7 @@ function MockProvider({
         },
         mode: "mock",
         role,
-        configure: (id, action, configs, comment) => setItems(configurePolicy(items, id, action, role, currentOwner, configs, comment)),
+        configure: (id, action, configs, comment, config) => setItems(configurePolicy(items, id, action, role, currentOwner, configs, comment, config)),
         currentOwner,
         owners,
         switchOwner,

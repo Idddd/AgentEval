@@ -14,6 +14,8 @@ import { BusinessDemoProvider } from "./provider";
 import { PROCESSING_MS, seedEntities, STORAGE_KEY, type Kind } from "./model";
 
 function App({ kind = "policies" }: { kind?: Kind }) {
+  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...stored, statusDemosVersion: 1, failureDemoVersion: 1, balancedStatusesVersion: 1 }));
   const [id, setId] = useState<string>();
   return (
     <BusinessDemoProvider
@@ -38,7 +40,7 @@ it("creates business requirements without asking User to choose a source", () =>
   fireEvent.click(dialog.getByRole("button", { name: "Save draft" }));
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.filter((p: { name: string }) => p.name === "Shared policy");
   expect(saved).toHaveLength(1);
-  expect(saved[0].source).toBeUndefined();
+  expect(saved[0].source).toBe('Guard');
   expect(saved[0].workflow.stage).toBe("Draft");
   expect(saved.every((p: { text: string }) => p.text === "Protect customer data")).toBe(true);
   expect(screen.getByRole("dialog")).toBeTruthy();

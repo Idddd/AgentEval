@@ -14,14 +14,17 @@ import { saveEntity, seedEntities, STORAGE_KEY } from "./model";
 
 beforeEach(() => localStorage.clear());
 afterEach(cleanup);
-const show = (id = "customer-interaction") =>
-  render(
+const show = (id = "customer-interaction") => {
+  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? JSON.stringify({version: 3, items: seedEntities()}));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...stored, statusDemosVersion: 1, failureDemoVersion: 1, balancedStatusesVersion: 1 }));
+  return render(
     <BusinessDemoProvider
       config={{ mode: "mock", sourceId: "mock", policyAuthoring: true }}
     >
       <GuardrailDetails id={id} />
     </BusinessDemoProvider>,
   );
+};
 
 it("deactivates before exposing delete and supports reactivation", async () => {
   show();

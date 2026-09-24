@@ -1,6 +1,6 @@
 # AI Marketplace release deployment
 
-The v0.2.6 delivery format matches v0.2.1: the `tali-ui-demo` image includes
+The v0.2.7 delivery format matches v0.2.1: the `tali-ui-demo` image includes
 `/opt/tali/helm/tali-UI-demo.tgz`, and the chart is also published to GHCR as OCI.
 The application now runs a Node server on port 8080, supporting both mock and
 live Guard API connections. The default is mock; no database is required.
@@ -8,15 +8,15 @@ live Guard API connections. The default is mock; no database is required.
 ## Docker
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.6
-docker run --rm -p 8080:8080 ghcr.io/idddd/tali-ui-demo:0.2.6
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.7
+docker run --rm -p 8080:8080 ghcr.io/idddd/tali-ui-demo:0.2.7
 ```
 
 ## Kubernetes
 
 ```sh
 helm upgrade --install tali-ui-demo oci://ghcr.io/idddd/charts/tali-ui-demo \
-  --version 0.2.6 --namespace ai-marketplace --create-namespace
+  --version 0.2.7 --namespace ai-marketplace --create-namespace
 kubectl -n ai-marketplace port-forward svc/tali-ui-demo 8080:80
 ```
 
@@ -43,9 +43,9 @@ overrides. The chart defaults to a non-root, read-only container.
 On a connected machine:
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.6
-docker save -o ai-marketplace-0.2.6.tar ghcr.io/idddd/tali-ui-demo:0.2.6
-container=$(docker create ghcr.io/idddd/tali-ui-demo:0.2.6)
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.7
+docker save -o ai-marketplace-0.2.7.tar ghcr.io/idddd/tali-ui-demo:0.2.7
+container=$(docker create ghcr.io/idddd/tali-ui-demo:0.2.7)
 docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" ./tali-UI-demo.tgz
 docker rm "$container"
 ```
@@ -54,7 +54,7 @@ Transfer both files. Load the image into your internal registry or every cluster
 node's container runtime, then install the local chart with `image.repository`
 and `image.tag` set to that imported image. `docker load` alone does not populate
 a Kubernetes containerd image store. The embedded chart normally pins the exact
-CI image tag; override it when importing under `0.2.6` or an internal name.
+CI image tag; override it when importing under `0.2.7` or an internal name.
 
 ## Branding
 
@@ -85,3 +85,11 @@ publishes packages, not a GitHub Release page, matching v0.2.1.
 - Add a pending implementation example at the top of the initial guardrail list.
 - Profiles become Ready immediately after creation; migrate mock Review profiles to Ready.
 - Compact latest-version marker and wider version selector to keep Ready visible.
+
+## v0.2.7 changes
+
+- Unified F5/Nemo configuration, large plain-text GenAI input, and at least one required source.
+- Mock evaluation runs selected sources only, followed by Admin approval before Ready.
+- New evaluations pass; a dedicated failure fixture shows a collapsible, horizontally scrollable case table.
+- Status examples are balanced once per browser, preserving records and future workflow changes.
+- Always-visible edit icons and distinct Ready (green) / Active (purple) badges.

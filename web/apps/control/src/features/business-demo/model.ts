@@ -1,8 +1,11 @@
 import { z } from "zod";
+import { unifiedConfigSchema, sourceSchema, evaluationSchema } from './evaluation';
 
 export const statuses = [
   "Draft",
   "Processing",
+  "Evaluating",
+  "Pending approve",
   "Ready",
   "Needs input",
   "Review",
@@ -36,7 +39,13 @@ const referenceSchema = revisionSchema.extend({ policyId: z.string() });
 export type PolicyReference = z.infer<typeof referenceSchema>;
 export const entitySchema = z.object({
   workflow: z.object({
-    stage: z.enum(["Draft", "Awaiting Agent Wizard", "Configuring", "Needs input", "Ready"]),
+    stage: z.enum(["Draft", "Awaiting Agent Wizard", "Configuring", "Evaluating", "Pending approve", "Needs input", "Ready"]),
+    config: unifiedConfigSchema.optional(),
+    sources: z.array(sourceSchema).optional(),
+    revision: z.number().optional(),
+    evaluation: evaluationSchema.optional(),
+    statusPreview: z.boolean().optional(),
+    approval: z.object({ by: z.string(), at: z.number() }).optional(),
     businessId: z.string(),
     submittedBy: z.string().optional(), submittedAt: z.number().optional(),
     assignedTo: z.string().optional(), configuredAt: z.number().optional(),
@@ -157,7 +166,7 @@ export function validateDraft(
     errors.policies = "Select only one version of each Guardrail.";
   if (kind === "guardrails" && items && draft.policies.some((ref) => {
     const policy = items.find((item) => item.id === ref.policyId);
-    return policy && (policy.source ?? "Guard") !== (draft.source ?? "Guard");
+    return policy && !(policy.workflow?.sources ?? [policy.source ?? "Guard"]).includes(draft.source ?? "Guard");
   })) errors.policies = "Select policies from the same source as this profile.";
   return errors;
 }
@@ -221,6 +230,14 @@ export function saveEntity(
 export function advanceProcessing(items: Entity[], now: number): Entity[] {
   let changed = false;
   const next = items.map((item) => {
+    if (item.workflow?.stage === 'Evaluating' && item.workflow.evaluation && !item.workflow.statusPreview) {
+      const run = item.workflow.evaluation;
+      const results = run.results.map(result => result.status === 'running' && now >= result.finishedAt ? { ...result, status: 'completed' as const } : result);
+      if (results.every((result, index) => result === run.results[index])) return item;
+      changed = true;
+      const stage = results.some(result => result.status === 'running') ? 'Evaluating' as const : results.some(result => result.status === 'error') ? 'Needs input' as const : 'Pending approve' as const;
+      return { ...item, status: stage, updatedAt: now, workflow: { ...item.workflow, stage, evaluation: { ...run, results } } };
+    }
     if (
       item.workflow ||
       item.status !== "Processing" ||
@@ -391,7 +408,7 @@ export function restoreEntities(
   try {
     const parsed = z
       .object({
-        version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+        version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
         items: z.array(entitySchema),
       })
       .parse(JSON.parse(raw));
@@ -404,7 +421,7 @@ export function restoreEntities(
 // Add the integration examples once; version 3 remembers user deletions.
 export function restoreIntegratedEntities(raw: string | null, now = Date.now()): Entity[] {
   const items = restoreEntities(raw, now);
-  try { if (raw && JSON.parse(raw).version === 3) return items; } catch { /* Seed below. */ }
+  try { if (raw && JSON.parse(raw).version >= 3) return items; } catch { /* Seed below. */ }
   const policy = (id: string, name: string, text: string): Entity => ({
     ...blankDraft, id, kind: "policies", source: "F5", name, text,
     status: "Ready", owner: "Security", version: 1, revisions: [],
