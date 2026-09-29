@@ -37,7 +37,7 @@ export function OwnerMenu({ compact = false }: { compact?: boolean }) {
               <span className="min-w-0 flex-1 text-left text-xs">
                 <strong className="block truncate font-medium">{name}</strong>
                 <span className="block text-[10px] text-muted-foreground">
-                  {mode === "live" ? (disconnect ? "Personal access token" : "Local demo") : "Local account"}
+                  {mode === "live" ? (disconnect ? "Personal access token" : "Connected") : "Local account"}
                 </span>
               </span>
               <ChevronDown className="size-3.5 text-muted-foreground" />

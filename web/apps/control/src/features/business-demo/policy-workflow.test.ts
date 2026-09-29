@@ -4,7 +4,7 @@ import { saveBusinessPolicy, configurePolicy, policyStatus } from "./policy-work
 import { emptyConfig } from './evaluation';
 const draft = { ...blankDraft, name: "PII requirements", text: "Protect customer data" };
 it('creates a configuration version without reusing approval or evaluation and preserves linked versions', () => {
-  const submitted = saveBusinessPolicy(draft, true, 'Admin', 'Admin', []);
+  const submitted = saveBusinessPolicy(draft, true, 'ISS', 'User', []);
   const started = configurePolicy([submitted],submitted.id,'start','Admin','Admin',{});
   const evaluated = advanceProcessing(configurePolicy(started,submitted.id,'complete','Admin','Admin',{Guard:'Original rule'}),Date.now()+10000);
   const ready = configurePolicy(evaluated,submitted.id,'approve','Admin','Admin',{});
@@ -74,8 +74,9 @@ it("presents pending implementation to User and actionable input to Tech until r
   expect(policyStatus(done, "Agent Wizard")).toBe("Evaluating");
 });
 
-it("allows Admin to create and configure without switching roles", () => {
- const item = saveBusinessPolicy(draft, true, "Admin", "Admin", []);
+it("blocks Admin creation while retaining configuration permission", () => {
+ expect(() => saveBusinessPolicy(draft, true, "Admin", "Admin", [])).toThrow("Admin cannot create");
+ const item = saveBusinessPolicy(draft, true, "ISS", "User", []);
  const started = configurePolicy([item], item.id, "start", "Admin", "Admin", {});
  expect(started[0]?.workflow?.stage).toBe("Configuring");
  expect(policyStatus(item, "Admin")).toBe("Submitted");

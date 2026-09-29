@@ -291,7 +291,7 @@ export function MarketplaceCatalog({
             setSort("updated");
             setPage(1);
             setNotice(
-              `${result.source === "mock" ? "Saved in your sample workspace" : "Created"}: ${result.data.name}.`,
+              `Created: ${result.data.name}.`,
             );
             void navigate({ to: route, search: { item: result.data.id } });
           }}

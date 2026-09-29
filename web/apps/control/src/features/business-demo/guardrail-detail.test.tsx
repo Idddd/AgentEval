@@ -17,57 +17,33 @@ afterEach(cleanup);
 const show = (id = "customer-interaction") => {
   const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? JSON.stringify({version: 3, items: seedEntities()}));
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...stored, statusDemosVersion: 1, failureDemoVersion: 1, balancedStatusesVersion: 1 }));
-  return render(
+  const result = render(
     <BusinessDemoProvider
       config={{ mode: "mock", sourceId: "mock", policyAuthoring: true }}
     >
       <GuardrailDetails id={id} />
     </BusinessDemoProvider>,
   );
+  const config = screen.queryByRole("button", { name: "Configuration" });
+  if(config) fireEvent.click(config);
+  return result;
 };
 
-it("deactivates before exposing delete and supports reactivation", async () => {
-  show();
-  expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
-  await act(async () => {
-    fireEvent.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", {
-        name: "Deactivate",
-      }),
-    );
-  });
-  expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
-  expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Active" }));
-  await act(async () => {
-    fireEvent.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", {
-        name: "Active",
-      }),
-    );
-  });
-  expect(screen.getByText("Active")).toBeTruthy();
+it("deactivates and requires an approval request to reactivate", async () => {
+ show();
+ fireEvent.click(screen.getByRole("button",{name:"Overview & activity"}));
+ await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Deactivate"}));});
+ expect(screen.getByRole("button",{name:"Delete"})).toBeTruthy();
+ await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Request Active"}));});
+ const stored=JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find((x:{id:string})=>x.id==="customer-interaction");
+ expect(stored.runtime.approval).toBe("pending");expect(stored.status).toBe("Ready");
 });
-
-it("locks active fields and policy editing until deactivated", async () => {
-  show();
-  expect(screen.queryByRole("button", { name: "Edit Name" })).toBeNull();
-  expect(
-    screen.queryByRole("button", { name: "Edit Customer Interaction rules" }),
-  ).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
-  await act(async () => {
-    fireEvent.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", {
-        name: "Deactivate",
-      }),
-    );
-  });
-  expect(screen.getByRole("button", { name: "Edit Name" })).toBeTruthy();
-  expect(
-    screen.getByRole("button", { name: "Edit Customer Interaction rules" }),
-  ).toBeTruthy();
+it("locks active configuration until deactivated", async()=>{
+ show();expect(screen.queryByRole("button",{name:"Edit Name"})).toBeNull();
+ fireEvent.click(screen.getByRole("button",{name:"Overview & activity"}));
+ await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Deactivate"}));});
+ fireEvent.click(screen.getByRole("button",{name:"Configuration"}));
+ expect(screen.getByRole("button",{name:"Edit Name"})).toBeTruthy();
 });
 
 it("opens a full detail page with policy versions, status and actions", () => {
@@ -87,50 +63,11 @@ it("opens a full detail page with policy versions, status and actions", () => {
   ).toBeNull();
 });
 
-it("views pinned text and edits a Guardrail without replacing the Profile reference", () => {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      version: 2,
-      items: seedEntities().map((item) =>
-        item.id === "customer-interaction"
-          ? { ...item, status: "Ready" }
-          : item,
-      ),
-    }),
-  );
-  show();
-  const original = seedEntities()[0]!.policies[0]!;
-  fireEvent.click(
-    screen.getByRole("button", { name: "Customer Interaction rules" }),
-  );
-  expect(
-    within(screen.getByRole("dialog")).getByText(original.text),
-  ).toBeTruthy();
-  fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", {
-      name: "Edit Requirement",
-    }),
-  );
-  fireEvent.change(
-    within(screen.getByRole("dialog")).getByRole("textbox", {
-      name: "Requirement",
-    }),
-    {
-      target: { value: "Changed rule" },
-    },
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Save" }));
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
-  expect(screen.queryByText("Edit latest")).toBeNull();
-  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items;
-  expect(
-    stored.find((x: { id: string }) => x.id === "customer-interaction")
-      .policies[0],
-  ).toEqual(original);
-  expect(
-    stored.find((x: { id: string }) => x.id === original.policyId).version,
-  ).toBe(2);
+it("opens the Guardrail picker from the row edit action",()=>{
+ localStorage.setItem(STORAGE_KEY,JSON.stringify({version:2,items:seedEntities().map(x=>x.id==="customer-interaction"?{...x,status:"Ready"}:x)}));
+ show();fireEvent.click(screen.getByRole("button",{name:"Edit Customer Interaction rules"}));
+ expect(screen.getByRole("combobox",{name:"Version for Customer Interaction rules"})).toBeTruthy();
+ expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 it("shows ready pinned version alongside processing latest and disables modification", () => {
@@ -152,7 +89,7 @@ it("shows ready pinned version alongside processing latest and disables modifica
     }),
   );
   show();
-  expect(screen.getByText("Ready")).toBeTruthy();
+  expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
   expect(screen.getByText("Processing")).toBeTruthy();
   fireEvent.click(
     screen.getByRole("button", { name: "Customer Interaction rules" }),

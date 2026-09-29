@@ -12,7 +12,7 @@ export const Route = createFileRoute("/policies")({
         ? { version: Number(search.version) }
         : {}),
   }),
-  head: () => ({ meta: [{ title: "Policies · AI Marketplace" }] }),
+  head: () => ({ meta: [{ title: "Guardrails" }] }),
   component: PoliciesRoute,
 });
 

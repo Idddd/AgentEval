@@ -38,7 +38,7 @@ jobs:
           set -euo pipefail
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           image_tag="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
-          chart_version="0.2.9-dev.${GITHUB_RUN_NUMBER}"
+          chart_version="0.2.10-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${image_tag}")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tags+=("${image}:pr-${{ github.event.pull_request.number }}")
@@ -52,7 +52,7 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.2.9-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.10-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
@@ -107,6 +107,11 @@ jobs:
             curl --fail http://127.0.0.1:18082/api/marketplace-config | jq -e --arg mode "$mode" '.mode == $mode'
             curl --fail http://127.0.0.1:18082/guardrails > /dev/null
             docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" "artifacts/tali-ui-demo-${CHART_VERSION}.tgz"
+            docker cp "$container:/opt/tali/source/project-source.zip" artifacts/project-source.zip
+            docker cp "$container:/opt/tali/source/project-source.zip.sha256" artifacts/project-source.zip.sha256
+            (cd artifacts && sha256sum -c project-source.zip.sha256)
+            unzip -t artifacts/project-source.zip >/dev/null
+            unzip -l artifacts/project-source.zip | grep 'project/web/apps/control/src/features/business-demo/profile-operations.tsx'
             docker rm -f "$container"
             container=""
           done

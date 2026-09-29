@@ -46,7 +46,7 @@ export function addFailureDemo(items: Entity[], stored: string | null, now = Dat
     source: undefined, owner: 'Admin', status: 'Pending approve', version: 1, revisions: [], createdAt: now, updatedAt: now,
     workflow: { stage: 'Pending approve', businessId: id, config, sources, revision: 1, evaluation,
       configs: Object.fromEntries(sources.map(source => [source, JSON.stringify(config)])),
-      comment: 'Prewritten failure demo. New evaluations pass all checks; these failures are simulated examples.' },
+      comment: '' },
   }, ...items];
 }
 

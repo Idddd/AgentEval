@@ -1,3 +1,4 @@
+import { transitionProfile, trafficEvents, initializeProfileRuntime, type ProfileAction } from './profile-runtime';
 import {
   createContext,
   useContext,
@@ -57,6 +58,8 @@ const DemoContext = createContext<{
   validate?: (item: Entity) => Promise<void>;
   remove?: (item: Entity) => void | Promise<void>;
   setActivation?: (item: Entity, active: boolean) => void | Promise<void>;
+  profileAction?: (id: string, action: ProfileAction) => void | Promise<void>;
+  runTraffic?: (id: string, scenario: 'safe' | 'risk' | 'error') => void | Promise<void>;
   save: (
     kind: Kind,
     draft: Draft,
@@ -159,6 +162,10 @@ function MockProvider({
     }
   });
   const [sessionOnly, setSessionOnly] = useState(false);
+  useEffect(() => {
+    if (!ready || busy || !items.some(item => item.kind === 'guardrails' && !item.runtime)) return;
+    Promise.resolve(setItems(current => current.map(item => initializeProfileRuntime(item, Date.now())))).catch(() => { /* Shared storage reports its own error. */ });
+  }, [ready, busy, items]);
   const owners = [
     ...new Set(["Admin", "IT Admin", ...items.map((item) => item.owner).filter(Boolean)]),
   ];
@@ -222,6 +229,8 @@ function MockProvider({
         sessionOnly,
         busy,
         save,
+        profileAction: (id, action) => setItems(current => current.map(entry => entry.id === id ? transitionProfile(entry, action, currentOwner, Date.now()) : entry)),
+        runTraffic: (id, scenario) => setItems(current => current.map(entry => entry.id === id ? { ...entry, runtime: { ...(entry.runtime ?? { approval: 'off' as const }), events: [...trafficEvents(entry, Date.now(), scenario, crypto.randomUUID()), ...(entry.runtime?.events ?? [])] } } : entry)),
         remove: (item) => {
           const reason = deletionBlocker(items, item);
           if (reason) throw new Error(reason);
@@ -237,17 +246,7 @@ function MockProvider({
             throw new Error(
               "This profile's status has changed. Refresh and try again.",
             );
-          return setItems((current) =>
-            current.map((entry) =>
-              entry.id === item.id
-                ? {
-                    ...entry,
-                    status: active ? "Active" : "Ready",
-                    updatedAt: Date.now(),
-                  }
-                : entry,
-            ),
-          );
+          return setItems(current => current.map(entry => entry.id === item.id ? transitionProfile(entry, active ? 'request' : 'deactivate', currentOwner, Date.now()) : entry));
         },
         mode: "mock",
         role,
@@ -256,11 +255,11 @@ function MockProvider({
         owners,
         switchOwner,
         policyAuthoring: true,
-        connection: connection || <div className="border-b px-6 py-2 text-xs text-muted-foreground">{shared ? 'Shared demo · Changes are saved on the server' : 'Local demo · Changes are saved in this browser'}</div>,
+        connection: connection ?? null,
       }}
     >
       {storageError && <div role="alert" className="border-b bg-red-50 p-3 text-sm text-red-800">{storageError} <Button variant="outline" size="sm" onClick={retry}>Retry</Button></div>}
-      {ready ? children : <p className="p-6 text-sm">Loading shared demo…</p>}
+      {ready ? children : <p className="p-6 text-sm">Loading…</p>}
     </DemoContext.Provider>
   );
 }
@@ -429,7 +428,7 @@ function LiveProvider({
     return (
       <section className="mx-auto mt-16 max-w-md space-y-4 rounded-lg border bg-white p-6">
         <h1 className="text-xl font-medium">
-          {error ? "Demo connection unavailable" : "Opening demo…"}
+          {error ? "Connection unavailable" : "Connecting…"}
         </h1>
         {error ? (
           <>
@@ -488,7 +487,7 @@ function LiveProvider({
   }
   const connection = (
     <div className="flex flex-wrap items-center gap-3 border-b px-6 py-2 text-xs">
-      <span>{config.marketplaceDb ? "Marketplace DB · Nemo backend / F5 Mock API · CRUD only" : config.f5Mock ? "Nemo · Live backend / F5 · Mock API · CRUD only" : "Connected to Nemo"}</span>
+
       {adapter instanceof MarketplaceAdapter && adapter.warnings.map((warning) => <span key={warning} role="alert" className="text-amber-700">{warning}</span>)}
       <Button
         variant="ghost"

@@ -173,11 +173,6 @@ export function ResourceDetail({
                 </div>
               </section>
               <ResourceMetadata item={item} />
-              <p className="mp-detail-note">
-                {data?.source === "mock"
-                  ? "This is a sample workspace. These settings describe the intended protection; no live traffic is checked."
-                  : "This describes the requested protection. Runtime configuration and deployment are managed by your technical team."}
-              </p>
             </div>
             <footer className="mp-detail-footer">
               {kind === "templates" ? (

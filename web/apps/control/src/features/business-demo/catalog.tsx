@@ -115,8 +115,8 @@ function MockPolicyWorkflow({ item, readOnly, onDirty, onDeleted, onVersionSelec
     finally { setSaving(false); }
   }
   return <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-6">
-    <div className="space-y-3"><div className="flex items-start justify-between gap-3"><PolicyWorkflowStatus item={item} role={role} />{unifiedEditing && (editingConfig ? <div className="flex flex-wrap justify-end gap-2"><Button disabled={saving} onClick={()=>action('revise')}>Save as new version</Button><Button disabled={saving} variant="outline" onClick={()=>{setBusiness({name:item.name,text:item.text});setConfig(item.workflow!.config ?? readUnified(item.workflow!.configs,item.text));setEditingConfig(false);setError('');onDirty(false);}}>Cancel</Button></div> : <Button className="h-10 px-5 font-semibold shadow-sm" onClick={()=>{setConfig(canEditTechnical ? {...config,versionName:`v${Number(item.version)+1}`} : config);setEditingConfig(true);onDirty(true);}}><Pencil aria-hidden="true" className="size-4" />Edit</Button>)}</div>{editingConfig && canEditBusiness ? <label className="grid gap-2 text-sm font-medium">Name<Input disabled={saving} value={business.name} onChange={e=>{setBusiness({...business,name:e.target.value});onDirty(true);}} /></label> : <h2 className="font-heading text-2xl">{item.name}</h2>}<p className="text-xs text-muted-foreground">Control unit · {item.owner} · v{item.version}</p></div>
-    {item.workflow?.comment && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">{item.workflow.comment}</p>}
+    <div className="space-y-3"><div className="flex items-start justify-between gap-3"><PolicyWorkflowStatus item={item} role={role} />{unifiedEditing && (editingConfig ? <div className="flex flex-wrap justify-end gap-2"><Button disabled={saving} onClick={()=>action('revise')}>Save as new version</Button><Button disabled={saving} variant="outline" onClick={()=>{setBusiness({name:item.name,text:item.text});setConfig(item.workflow!.config ?? readUnified(item.workflow!.configs,item.text));setEditingConfig(false);setError('');onDirty(false);}}>Cancel</Button></div> : <Button className="h-10 px-5 font-semibold shadow-sm" onClick={()=>{setConfig(canEditTechnical ? {...config,versionName:`v${Number(item.version)+1}`} : config);setEditingConfig(true);onDirty(true);}}><Pencil aria-hidden="true" className="size-4" />Edit</Button>)}</div>{editingConfig && canEditBusiness ? <label className="grid gap-2 text-sm font-medium">Name<Input disabled={saving} value={business.name} onChange={e=>{setBusiness({...business,name:e.target.value});onDirty(true);}} /></label> : <h2 className="font-heading text-2xl">{item.name}</h2>}<p className="text-xs text-muted-foreground">Control unit · {item.owner?.toLowerCase() === "admin" ? "Not assigned" : item.owner} · v{item.version}</p></div>
+    {item.workflow?.comment && !item.workflow.comment.startsWith("Prewritten failure demo.") && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">{item.workflow.comment}</p>}
     {editing ? <EntityEditor kind="policies" initial={item} inline onDirty={onDirty} onSave={(draft, submit) => { const result = save("policies", draft, submit, item); if (result instanceof Promise) return result.then(() => { onDirty(false); }); onDirty(false); }} /> : <section className="space-y-2"><h3 className="text-sm font-medium">Requirement</h3>{editingConfig && canEditBusiness ? <Textarea aria-label="Requirement" disabled={saving} className="min-h-28" value={business.text} onChange={e=>{setBusiness({...business,text:e.target.value});onDirty(true);}} /> : <p className="whitespace-pre-wrap break-words text-sm leading-6">{item.text}</p>}</section>}
     {stage !== 'Configuring' && config.scannerType === 'custom' && (editingConfig || item.workflow?.config?.content.trim()) && <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">LLM description</h3>{editingConfig && canEditTechnical ? <Textarea aria-label="LLM description" className="min-h-72 resize-y" maxLength={100000} value={config.content} onChange={e=>{setConfig({...config,content:e.target.value});onDirty(true);}} /> : <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm leading-6">{config.content}</p>}</section>}
     {stage === "Ready" && (editingConfig || item.workflow?.config?.content.trim()) && <details open={editingConfig || undefined} className="space-y-3 border-t pt-4"><summary className="cursor-pointer text-sm font-medium">Technical configuration</summary><UnifiedConfigForm config={config} sources={sources} disabled={!editingConfig || !canEditTechnical || saving} hideDescription onChange={value=>{setConfig(value);onDirty(true);}} onSources={() => {}} />
@@ -239,11 +239,13 @@ export function DeleteEntityAction({
   onDeleted,
   dirty = false,
   editorControls,
+  hideActivation = false,
 }: {
   item: Entity;
   onDeleted?: (() => void) | undefined;
   dirty?: boolean;
   editorControls?: RefObject<EditorControls | null>;
+  hideActivation?: boolean;
 }) {
   const { items, remove, setActivation, crudOnly } = useBusinessDemo();
   const [action, setAction] = useState<
@@ -279,7 +281,7 @@ export function DeleteEntityAction({
     <div className="space-y-3">
       {!action ? (
         <div className="flex gap-2">
-          {active ? (
+          {active ? (!hideActivation && (
             <Button
               type="button"
               variant="outline"
@@ -287,15 +289,15 @@ export function DeleteEntityAction({
             >
               Deactivate
             </Button>
-          ) : (
+          )) : (
             <>
-              {inactive && setActivation && (
+              {inactive && setActivation && !hideActivation && (
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => begin("Active")}
                 >
-                  Active
+                  Request Active
                 </Button>
               )}
               <Button
@@ -490,7 +492,7 @@ export function BusinessCatalog({
       items
         .filter((item) => item.kind === kind)
         .map((item) => item.owner)
-        .filter(Boolean),
+        .filter((owner) => !!owner && owner.toLowerCase() !== "admin"),
     ),
   ].sort();
   const [scope, setScope] = useState<Partial<Record<ScopeKey, string[]>>>({});
@@ -614,7 +616,7 @@ export function BusinessCatalog({
             {title}
           </h1>
         </div>
-        <Button
+        {!(policy && role === "Admin") && <Button
           onClick={() => {
             onSelect();
             setCreating(true);
@@ -624,7 +626,7 @@ export function BusinessCatalog({
         >
           <Plus className="size-4" />
           Create {singular}
-        </Button>
+        </Button>}
       </div>
       {sessionOnly && (
         <p role="status" className="text-sm text-amber-800">
@@ -778,10 +780,10 @@ export function BusinessCatalog({
                     </td>
                   )}
                   <td className="px-5 py-5">
-                    {policy && mode === "mock" ? <PolicyWorkflowStatus item={item} role={role} /> : <StatusBadge status={item.status} />}
+                    {policy && mode === "mock" ? <PolicyWorkflowStatus item={item} role={role} /> : <StatusBadge status={!policy && mode === 'mock' && item.status === 'Active' ? 'Ready' : item.status} />}
                   </td>
                   <td className="hidden px-5 py-5 text-muted-foreground md:table-cell">
-                    {item.owner?.trim() || "Not assigned"}
+                    {item.owner?.toLowerCase() === "admin" ? "Not assigned" : item.owner?.trim() || "Not assigned"}
                   </td>
                   {policy && (
                     <td className="hidden whitespace-nowrap px-5 py-5 text-muted-foreground md:table-cell">
@@ -1708,7 +1710,7 @@ export function EntityDetail({
           <h2 className="break-words font-heading text-2xl leading-normal">
             {viewed.name}
           </h2>
-          <p className="text-xs text-muted-foreground">{item.owner}</p>
+          <p className="text-xs text-muted-foreground">{item.owner?.toLowerCase() === "admin" ? "Not assigned" : item.owner}</p>
           <SyncStatus item={item} />
           {crudOnly && item.source !== "F5" && item.status === "Draft" && <p className="text-xs text-muted-foreground">Draft only · Not evaluated or published. Executable rules must be configured before use.</p>}
         </div>

@@ -18,3 +18,22 @@ web/apps/*/.tanstack
 web/.env
 
 .artifacts
+
+# Keep local credentials and generated data out of every build stage.
+**/.env*
+**/.npmrc
+**/.netrc
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.sqlite*
+**/*.db
+**/node_modules
+**/__pycache__
+**/.git
+.idea
+.claude
+.codex-output
+.pnpm-store

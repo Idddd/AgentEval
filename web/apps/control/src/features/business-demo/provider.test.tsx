@@ -114,7 +114,7 @@ it("auto mode falls back only on initial connection failure", async () => {
   app("auto");
   connect();
   expect(await screen.findByText("Offline · Local data")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Create Guardrail" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Create Guardrail" })).toBeNull();
   expect(screen.getByRole("button", { name: "Reconnect" })).toBeTruthy();
 });
 it("does not hide a permission failure behind mock data", async () => {

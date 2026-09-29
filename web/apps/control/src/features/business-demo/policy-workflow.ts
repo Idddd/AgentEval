@@ -12,6 +12,7 @@ export function policyStatus(item: Entity, role: DemoRole = "User") {
   return stage;
 }
 export function saveBusinessPolicy(draft: Draft, submit: boolean, owner: string, role: DemoRole, items: Entity[], existing?: Entity) {
+  if (!existing && role === 'Admin') throw new Error('Admin cannot create guardrails.');
   if (existing && role === 'Agent Wizard') throw new Error('Only User or Admin can edit business requirements.');
   if (existing && !["Draft", "Needs input", "Submitted", "Ready"].includes(workflowStage(existing))) throw new Error("This policy is waiting for technical configuration.");
   const now = Date.now(), id = existing?.id ?? crypto.randomUUID();

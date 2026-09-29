@@ -26,9 +26,8 @@ export function FailedCases({ source, count }: { source: 'Guard' | 'F5'; count: 
   const test = failureCase(source, 0);
   return <details className="min-w-0 max-w-full rounded-md border text-xs">
     <summary className="cursor-pointer px-3 py-2 font-medium text-red-700">Failed checks ({count})</summary>
-    <div className="max-w-full overflow-x-auto border-t" tabIndex={0} role="region" aria-label="Failed demo case, scroll horizontally">
+    <div className="max-w-full overflow-x-auto border-t" tabIndex={0} role="region" aria-label="Failed case, scroll horizontally">
       <table className="w-max min-w-full whitespace-nowrap text-left">
-        <caption className="caption-bottom px-3 py-1 text-left text-muted-foreground">Recorded demo case · representative example</caption>
         <thead className="bg-muted/50 text-muted-foreground"><tr>{['Case ID', 'Case', 'Status', 'Input', 'Expected', 'Actual', 'Response', 'Error'].map(label => <th key={label} className="px-3 py-2 font-medium">{label}</th>)}</tr></thead>
         <tbody><tr className="border-t">
           <td className="px-3 py-2 font-mono">{test.id}</td><td className="px-3 py-2">{test.name}</td>

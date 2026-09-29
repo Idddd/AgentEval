@@ -93,3 +93,54 @@ publishes packages, not a GitHub Release page, matching v0.2.1.
 - New evaluations pass; a dedicated failure fixture shows a collapsible, horizontally scrollable case table.
 - Status examples are balanced once per browser, preserving records and future workflow changes.
 - Always-visible edit icons and distinct Ready (green) / Active (purple) badges.
+
+## Embedded project source
+
+New images built with `deploy/Dockerfile.marketplace` include:
+
+- `/opt/tali/source/project-source.zip`
+- `/opt/tali/source/project-source.zip.sha256`
+
+This release is a Node container image, not a Java JAR. Importing/copying the
+image into a JFrog Docker repository preserves these files. Existing images
+must be rebuilt to include the source archive.
+
+Export from the internal image (replace repository and tag):
+
+```sh
+IMAGE=jfrog.example.com/docker-local/tali-ui:YOUR_TAG
+docker pull "$IMAGE"
+container=$(docker create "$IMAGE")
+docker cp "$container:/opt/tali/source/project-source.zip" ./project-source.zip
+docker cp "$container:/opt/tali/source/project-source.zip.sha256" ./project-source.zip.sha256
+docker rm "$container"
+sha256sum -c project-source.zip.sha256
+unzip project-source.zip -d ./exported-source
+```
+
+No container start or application credentials are needed for `docker create`
+and `docker cp`. Registry access still requires your normal Docker login.
+The ZIP is also compatible with `jar xf project-source.zip` if only Java's
+archive tools are available; it is not an executable JAR.
+
+The archive contains the application `web`, Python `src`/`tests`, deployment,
+configuration, branding, docs, CI and root build manifests from the build
+context. It excludes local environment files, credential files, databases,
+logs, dependency directories and generated outputs. It does not include
+Git history or unrelated design/temporary artifacts. Dependencies can be
+restored using the included lockfiles through your internal package registry.
+
+Local source-only packaging:
+
+```sh
+python deploy/package-source.py --output .artifacts/source-package/project-source.zip
+```
+
+
+## v0.2.10 changes
+
+- Profile-level Monitoring/Active approval and persistent statistics stages.
+- Historical period filter, sortable Guardrail columns and fixed five-row Trace list.
+- Clear success/error/block metrics and test-request progress feedback.
+- Guardrail picker edit action and redesigned removal confirmation.
+- Embedded source archive at `/opt/tali/source/project-source.zip` with SHA-256 verification.

@@ -28,6 +28,7 @@ function App({ kind = "policies" }: { kind?: Kind }) {
 }
 beforeEach(() => {
   localStorage.clear();
+  localStorage.setItem("ai-marketplace.active-owner.v1", "ISS");
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, items: seedEntities() }));
 });
 
@@ -462,6 +463,7 @@ it('shows one evaluation summary and places collapsed configuration below the de
 });
 
 it('focuses the return reason and shows validation beside the approval buttons', () => {
+ localStorage.setItem("ai-marketplace.active-owner.v1", "Admin");
   const config = {...emptyConfig(),content:'Detect sensitive data'};
   const evaluation = createEvaluation('pending',1,config,['Guard'],0);
   const policy = {...seedEntities().find(item=>item.kind==='policies')!,workflow:{businessId:'pending',configs:{},stage:'Pending approve' as const,config,evaluation:{...evaluation,results:evaluation.results.map(r=>({...r,status:'completed' as const}))}}};
@@ -487,6 +489,7 @@ it.each([['ISS',true,false],['IT Admin',false,true],['Admin',true,true]] as cons
 });
 
 it('saves edited technical configuration as a fresh version without old results', async () => {
+ localStorage.setItem("ai-marketplace.active-owner.v1", "Admin");
   const config = {...emptyConfig(),content:'Original config'};
   const evaluation = createEvaluation('config-edit',1,config,['Guard'],0);
   const policy = {...seedEntities().find(item=>item.kind==='policies')!,id:'config-edit',version:1,status:'Ready' as const,workflow:{businessId:'config-edit',configs:{},stage:'Ready' as const,config,revision:1,approval:{by:'Admin',at:1},evaluation:{...evaluation,results:evaluation.results.map(r=>({...r,status:'completed' as const}))}}};
@@ -520,4 +523,11 @@ it("shows workflow states with stage bars, and hides the bar when ready", () => 
   rerender(<PolicyWorkflowStatus item={{ ...policy, workflow: { businessId: policy.id, configs: {}, stage: "Ready" } }} />);
   expect(screen.getByText("Ready")).toBeTruthy();
   expect(screen.queryByRole("progressbar")).toBeNull();
+});
+
+it("hides Admin creation and excludes Admin from Control unit", () => {
+ localStorage.setItem("ai-marketplace.active-owner.v1", "Admin");
+ render(<App />);
+ expect(screen.queryByRole("button", {name:"Create Guardrail"})).toBeNull();
+ expect(within(screen.getByRole("group",{name:"Control unit"})).queryByRole("checkbox",{name:"Admin"})).toBeNull();
 });

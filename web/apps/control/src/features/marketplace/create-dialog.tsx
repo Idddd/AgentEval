@@ -342,9 +342,7 @@ export function CreateResourceDialog({
           <footer className="mp-dialog-footer">
             <span>
               <Check size={14} />
-              {source === "mock"
-                ? "Saved locally in this sample workspace"
-                : isTemplate
+              {isTemplate
                   ? "Saved as a reusable template"
                   : "Created as a draft"}
             </span>

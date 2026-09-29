@@ -36,7 +36,7 @@ export function MarketplaceShell() {
     <ClientOnly
       fallback={
         <div className="p-8 text-sm text-muted-foreground" role="status">
-          Loading AI Marketplace…
+          Loading…
         </div>
       }
     >
@@ -99,16 +99,12 @@ function MarketplaceSidebar({ section }: { section: string }) {
       <SidebarHeader className="gap-1.5 border-b border-sidebar-border p-2">
         <Link
           to="/guardrails"
-          aria-label="AI Marketplace home"
+          aria-label="Home"
           onClick={() => setOpenMobile(false)}
           className="flex min-h-11 min-w-0 items-center gap-3 px-2 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
         >
           <BrandMark className="size-8 shrink-0" />
-          {!compact && (
-            <strong className="truncate font-sans text-[15px] font-medium tracking-wide">
-              AI Marketplace
-            </strong>
-          )}
+
         </Link>
         <div
           className="flex h-11 items-center gap-3 rounded-md border border-sidebar-border px-3 text-[13px] group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"

@@ -31,9 +31,11 @@ import {
   type PolicyReference,
 } from "./model";
 import { useBusinessDemo } from "./provider";
+import { ProfileOperations } from './profile-operations';
 
 export function GuardrailDetails({ id }: { id: string }) {
-  const { items, save, busy, dualSource } = useBusinessDemo();
+  const { items, save, busy, dualSource, profileAction } = useBusinessDemo();
+  const [tab, setTab] = useState<'operations' | 'configuration'>('operations');
   const guard = items.find(
     (item) => item.id === id && item.kind === "guardrails",
   );
@@ -92,10 +94,10 @@ export function GuardrailDetails({ id }: { id: string }) {
                 <button
                   type="button"
                   aria-label={`Edit ${ref.name}`}
-                  title="Edit Guardrail"
+                  title="Select Guardrail version"
                   className="rounded p-1 text-zinc-400 hover:text-zinc-800"
-                  disabled={!policy || !canEdit(policy)}
-                  onClick={() => policy && open(policy, true)}
+                  disabled={busy || !guard || !canEdit(guard)}
+                  onClick={() => editorControls.current?.editPolicies?.()}
                 >
                   <Pencil className="size-3.5" />
                 </button>
@@ -166,11 +168,11 @@ export function GuardrailDetails({ id }: { id: string }) {
                 <h1 className="break-words font-heading text-3xl">
                   {guard.name}
                 </h1>
-                <StatusBadge status={guard.status} />
+                <StatusBadge status={profileAction && guard.status === 'Active' ? 'Ready' : guard.status} />
               </div>
               {guard.owner && (
                 <p className="text-xs text-muted-foreground">
-                  Control unit · {guard.owner}
+                  Control unit · {guard.owner?.toLowerCase() === "admin" ? "Not assigned" : guard.owner}
                 </p>
               )}
               {guard.remote && (
@@ -181,6 +183,7 @@ export function GuardrailDetails({ id }: { id: string }) {
             </div>
             <DeleteEntityAction
               item={guard}
+              hideActivation={!!profileAction}
               dirty={guardDirty}
               editorControls={editorControls}
               onDeleted={() => {
@@ -190,7 +193,12 @@ export function GuardrailDetails({ id }: { id: string }) {
             />
           </header>
           <SyncStatus item={guard} />
-          <div className="overflow-hidden rounded-lg border bg-white">
+          {profileAction && <div className="flex gap-2 border-b pb-3" aria-label="Profile sections">{(['operations', 'configuration'] as const).map(value => <Button key={value} variant={tab === value ? 'default' : 'ghost'} aria-pressed={tab === value} onClick={() => setTab(value)}>{value === 'operations' ? 'Overview & activity' : 'Configuration'}</Button>)}</div>}
+          {profileAction && tab === 'operations' && <ProfileOperations profile={guard} dirty={guardDirty} onOpenGuardrail={(id, version) => {
+            const policy = items.find(item => item.kind === 'policies' && item.id === id);
+            if (policy) open(policy, false, version);
+          }} />}
+          <div hidden={!!profileAction && tab !== 'configuration'} className="overflow-hidden rounded-lg border bg-white">
             {guard.status === "Active" && (
               <p className="border-b bg-zinc-50 px-6 py-3 text-sm text-muted-foreground">
                 Deactivate this profile to edit its fields or guardrails.
@@ -283,18 +291,22 @@ export function GuardrailDetails({ id }: { id: string }) {
           if (!open && !removingBusy) setRemoving(null);
         }}
       >
-        <DialogContent>
-          <DialogTitle>Remove Guardrail from profile?</DialogTitle>
-          <DialogDescription>
-            Remove “{removing?.name}” from this Profile? The Guardrail itself and
-            its other profile links will be kept.
-          </DialogDescription>
+        <DialogContent className="w-[min(calc(100%-2rem),28rem)] rounded-xl" showCloseButton={false}>
+          <div className="space-y-4 px-6 pb-6 pt-6">
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-700"><Trash2 className="size-5" aria-hidden="true" /></span>
+              <DialogTitle className="font-sans text-lg font-semibold">Remove Guardrail?</DialogTitle>
+            </div>
+            <DialogDescription className="text-sm leading-6">
+              Remove <span className="font-medium text-foreground break-words">“{removing?.name}”</span> from this Profile. The Guardrail will remain available.
+            </DialogDescription>
+          </div>
           {removeError && (
-            <p role="alert" className="text-sm text-red-700">
+            <p role="alert" className="px-6 pb-4 text-sm text-red-700">
               {removeError}
             </p>
           )}
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2 border-t bg-zinc-50/70 px-6 py-4">
             <Button
               variant="outline"
               disabled={removingBusy}

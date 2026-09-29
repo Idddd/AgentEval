@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { profileRuntimeSchema } from './profile-runtime';
 import { unifiedConfigSchema, sourceSchema, evaluationSchema } from './evaluation';
 
 export const statuses = [
@@ -54,6 +55,7 @@ const revisionSchema = z.object({
 const referenceSchema = revisionSchema.extend({ policyId: z.string() });
 export type PolicyReference = z.infer<typeof referenceSchema>;
 export const entitySchema = z.object({
+  runtime: profileRuntimeSchema.optional(),
   workflow: workflowSchema.optional(),
   source: z.enum(["Guard", "F5"]).optional(),
   scanDirection: z.enum(["Request", "Response", "Both"]).optional(),
@@ -186,6 +188,7 @@ export function saveEntity(
     throw new Error("Invalid draft");
   return {
     ...blankDraft,
+    ...(kind === 'guardrails' ? { runtime: { ...(existing?.runtime ?? { events: [] }), approval: 'off' as const, snapshot: undefined } } : {}),
     source: draft.source ?? "Guard",
     scanDirection: draft.scanDirection ?? "Both",
     useCase: draft.useCase,

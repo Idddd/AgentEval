@@ -38,10 +38,10 @@ export const Route = createRootRouteWithContext<{
         name: "viewport",
         content: "width=device-width, initial-scale=1",
       },
-      { title: "AI Marketplace" },
+      { title: "Profiles" },
       {
         name: "description",
-        content: "AI Marketplace · Guardrails and Policies",
+        content: "Profiles and Guardrails",
       },
     ],
     links: [
