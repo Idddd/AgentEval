@@ -8,7 +8,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  advanceProcessing,
   restoreIntegratedEntities,
   saveEntity,
   deletionBlocker,
@@ -35,7 +34,6 @@ import { MarketplaceAdapter } from "./marketplace-adapter";
 import type { UnifiedConfig } from './evaluation';
 import { normalizeDemo } from './unified-demo';
 import { useSharedState } from './shared-state';
-import { StorageCapacityError } from './trace-retention';
 import { addStatusDemos, addFailureDemo, ensurePolicySources, balanceStatusDemos } from './status-demos';
 
 const DemoContext = createContext<{
@@ -111,14 +109,13 @@ export function BusinessDemoProvider({
   if (config.mode === "mock" || fallback)
     return (
       <MockProvider
-        shared={config.sharedDemo === true}
         connection={
           fallback && (
             <div
               role="status"
               className="flex items-center gap-3 border-b bg-amber-50 px-6 py-2 text-sm"
             >
-              Offline · Local data
+              Using shared database
               <Button
                 variant="outline"
                 size="sm"
@@ -149,13 +146,11 @@ function withPendingExample(items: Entity[]): Entity[] {
 function MockProvider({
   children,
   connection,
-  shared = false,
 }: {
   children: ReactNode;
   connection?: ReactNode;
-  shared?: boolean;
 }) {
-  const { items, commit: setItems, ready, busy, error: storageError, retry } = useSharedState(shared, () => {
+  const { items, commit: setItems, ready, busy, error: storageError, retry } = useSharedState(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       return normalizeDemo(balanceStatusDemos(ensurePolicySources(addFailureDemo(addStatusDemos(withPendingExample(restoreIntegratedEntities(stored)), stored), stored)), stored));
@@ -163,7 +158,6 @@ function MockProvider({
       return normalizeDemo(balanceStatusDemos(ensurePolicySources(addFailureDemo(addStatusDemos(withPendingExample(restoreIntegratedEntities(null)), null), null)), null));
     }
   });
-  const [sessionOnly, setSessionOnly] = useState(false);
   useEffect(() => {
     if (!ready || busy || !items.some(item => item.kind === 'guardrails' && !item.runtime)) return;
     Promise.resolve(setItems(current => current.map(item => initializeProfileRuntime(item, Date.now())))).catch(() => { /* Shared storage reports its own error. */ });
@@ -175,7 +169,7 @@ function MockProvider({
     try {
       const previous = localStorage.getItem(OWNER_STORAGE_KEY);
       const saved = previous === 'Compliance' ? 'LCS' : previous === 'Security' ? 'Admin' : previous;
-      return saved && owners.includes(saved) ? saved : "Admin";
+      return saved || "Admin";
     } catch {
       return "Admin";
     }
@@ -187,26 +181,11 @@ function MockProvider({
       /* Switching still works for this session. */
     }
   }, [currentOwner]);
+  useEffect(()=>{if(ready&&!owners.includes(currentOwner))setCurrentOwner("Admin")},[ready,items,currentOwner]);
   const role: DemoRole = currentOwner === "Admin" ? "Admin" : currentOwner === "IT Admin" ? "Agent Wizard" : "User";
   function switchOwner(owner: string) {
     if (owners.includes(owner)) setCurrentOwner(owner);
   }
-  useEffect(() => {
-    try {
-      if (!shared) localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 4, statusDemosVersion: 1, failureDemoVersion: 1, balancedStatusesVersion: 1, items }));
-      setSessionOnly(false);
-    } catch {
-      setSessionOnly(true);
-    }
-  }, [items]);
-  useEffect(() => {
-    if (shared) return;
-    const timer = window.setInterval(
-      () => setItems((current) => advanceProcessing(current, Date.now())),
-      500,
-    );
-    return () => window.clearInterval(timer);
-  }, []);
   function save(kind: Kind, draft: Draft, submit: boolean, existing?: Entity) {
     const item = kind === "policies" ? saveBusinessPolicy(draft, submit, currentOwner, role, items, existing) : saveEntity(
       kind,
@@ -228,12 +207,12 @@ function MockProvider({
     <DemoContext.Provider
       value={{
         items,
-        sessionOnly,
+        sessionOnly: false,
         busy,
         save,
         setProfileMode: (id, guardrailId, mode) => setItems(current => current.map(entry => entry.id === id ? setGuardrailMode(entry,guardrailId,mode) : entry)),
         profileAction: (id, action) => setItems(current => current.map(entry => entry.id === id ? transitionProfile(entry, action, currentOwner, Date.now()) : entry)),
-        runTraffic: (id, scenario) => { if(sessionOnly) throw new StorageCapacityError(); return setItems(current => current.map(entry => entry.id === id ? { ...entry, runtime: { ...(entry.runtime ?? { approval: 'off' as const }), events: [...trafficEvents(entry, Date.now(), scenario, crypto.randomUUID()), ...(entry.runtime?.events ?? [])] } } : entry)); },
+        runTraffic: (id, scenario) => { return setItems(current => current.map(entry => entry.id === id ? { ...entry, runtime: { ...(entry.runtime ?? { approval: 'off' as const }), events: [...trafficEvents(entry, Date.now(), scenario, crypto.randomUUID()), ...(entry.runtime?.events ?? [])] } } : entry)); },
         remove: (item) => {
           const reason = deletionBlocker(items, item);
           if (reason) throw new Error(reason);

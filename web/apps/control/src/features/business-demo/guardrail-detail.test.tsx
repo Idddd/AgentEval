@@ -435,3 +435,5 @@ it("pauses automatic scans for the whole bypassed profile and resumes them",asyn
   expect(events()).toBeGreaterThan(before);
  }finally{vi.useRealTimers()}
 });
+
+vi.mock("./shared-state",()=>import("./shared-state.test-support"));

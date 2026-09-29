@@ -531,3 +531,5 @@ it("hides Admin creation and excludes Admin from Control unit", () => {
  expect(screen.queryByRole("button", {name:"Create Guardrail"})).toBeNull();
  expect(within(screen.getByRole("group",{name:"Control unit"})).queryByRole("checkbox",{name:"Admin"})).toBeNull();
 });
+
+vi.mock("./shared-state",()=>import("./shared-state.test-support"));

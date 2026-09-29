@@ -24,8 +24,8 @@ it('persists across restart, migrates labels, and rejects stale overwrites', () 
   expect(() => reopened.write(0, [item])).toThrow('changed');
   reopened.close();
 });
-it('keeps the API opt-in and rejects cross-origin writes', async () => {
-  expect((await sharedDemoApi(new Request('http://demo/api/demo-state'), {})).status).toBe(404);
+it('uses the database in mock mode and rejects cross-origin writes', async () => {
+  expect((await sharedDemoApi(new Request('http://demo/api/demo-state'), {MARKETPLACE_DATA_MODE:'live'})).status).toBe(404);
   const env = {MARKETPLACE_DATA_MODE:'mock', MARKETPLACE_DEMO_DB_FILE:':memory:', MARKETPLACE_PUBLIC_ORIGIN:'https://demo.example'};
   expect((await sharedDemoApi(new Request('http://demo/api/demo-state', {method:'PUT',headers:{origin:'https://other.example','content-type':'application/json'},body:'{}'}), env)).status).toBe(403);
   const send = (revision: number, items: Entity[]) => sharedDemoApi(new Request('http://demo/api/demo-state', {method:'PUT',headers:{origin:'https://demo.example','content-type':'application/json'},body:JSON.stringify({revision,items})}), env);
@@ -47,4 +47,9 @@ it('compacts trace details before SQLite persistence and preserves counters',()=
  expect(()=>store.write(saved.revision,[{...p,text:'x'.repeat(2100000)}])).toThrow(/capacity/i);
  expect(store.read().revision).toBe(saved.revision);
  }finally{store.close()}
+});
+
+it('enables database sharing without an opt-in flag',async()=>{
+ const response=await sharedDemoApi(new Request('http://demo/api/demo-state'),{MARKETPLACE_DATA_MODE:'mock',MARKETPLACE_DEMO_DB_FILE:':memory:'});
+ expect(response.status).toBe(200);
 });

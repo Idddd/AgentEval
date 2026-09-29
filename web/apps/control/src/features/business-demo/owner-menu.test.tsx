@@ -154,3 +154,5 @@ it("switches real accounts through authentication rather than impersonating a lo
   );
   expect(screen.getByLabelText("Access token")).toBeTruthy();
 });
+
+vi.mock("./shared-state",()=>import("./shared-state.test-support"));

@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
 import { entitySchema, advanceProcessing, type Entity } from '../src/features/business-demo/model';
 import { compactTraces, assertStorageCapacity, StorageCapacityError } from '../src/features/business-demo/trace-retention';
@@ -43,7 +43,7 @@ export class SharedDemoStore {
 const stores = new Map<string, SharedDemoStore>();
 export async function sharedDemoApi(request: Request, env = process.env) {
   const headers = { 'Cache-Control': 'no-store' };
-  if ((env.MARKETPLACE_DATA_MODE ?? 'mock') !== 'mock' || !env.MARKETPLACE_DEMO_DB_FILE) return Response.json({error: 'Shared demo is not enabled.'}, {status: 404, headers});
+  if ((env.MARKETPLACE_DATA_MODE ?? 'mock') === 'live') return Response.json({error: 'This service uses the live backend.'}, {status: 404, headers});
   try {
     if (request.method !== 'GET' && request.method !== 'PUT') return Response.json({error: 'Method not allowed'}, {status: 405, headers});
     if (request.method === 'PUT') {
@@ -52,8 +52,9 @@ export async function sharedDemoApi(request: Request, env = process.env) {
       if (!origin || origin !== allowed || request.headers.get('sec-fetch-site') === 'cross-site') return Response.json({error: 'Origin not allowed'}, {status: 403, headers});
       if (!request.headers.get('content-type')?.startsWith('application/json')) return Response.json({error: 'JSON required'}, {status: 415, headers});
     }
-    let store = stores.get(env.MARKETPLACE_DEMO_DB_FILE);
-    if (!store) { store = new SharedDemoStore(env.MARKETPLACE_DEMO_DB_FILE); stores.set(env.MARKETPLACE_DEMO_DB_FILE, store); }
+    const databasePath=env.MARKETPLACE_DEMO_DB_FILE || resolve(process.cwd(), "data", "demo.sqlite");
+    let store = stores.get(databasePath);
+    if (!store) { store = new SharedDemoStore(databasePath); stores.set(databasePath, store); }
     if (request.method === 'GET') return Response.json(store.tick(), {headers});
     const body = await request.text();
     if (body.length > 8_000_000) return Response.json({error: 'Demo data exceeds 8 MB.'}, {status: 413, headers});

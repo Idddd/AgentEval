@@ -11,13 +11,11 @@ metadata:
   labels:
     {{- include "tali-ui-demo.labels" . | nindent 4 }}
 spec:
-  {{- if or .Values.sharedDemo.enabled .Values.persistence.enabled }}
   {{- if ne (int .Values.replicaCount) 1 }}
   {{- fail "SQLite demo persistence requires replicaCount=1" }}
   {{- end }}
   strategy:
     type: Recreate
-  {{- end }}
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
@@ -55,10 +53,8 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
-            {{- if or .Values.sharedDemo.enabled .Values.persistence.enabled }}
             - name: MARKETPLACE_DEMO_DB_FILE
               value: /data/demo.sqlite
-            {{- end }}
             - name: MARKETPLACE_DATA_MODE
               value: {{ .Values.marketplace.dataMode | quote }}
             - name: GUARD_API_URL
@@ -92,10 +88,8 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            {{- if or .Values.sharedDemo.enabled .Values.persistence.enabled }}
             - name: demo-data
               mountPath: /data
-            {{- end }}
             - name: runtime-tmp
               mountPath: /tmp
             {{- if .Values.branding.existingConfigMap }}
@@ -104,7 +98,6 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
-        {{- if or .Values.sharedDemo.enabled .Values.persistence.enabled }}
         - name: demo-data
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
@@ -112,7 +105,6 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
-        {{- end }}
         - name: runtime-tmp
           emptyDir: {}
         {{- if .Values.branding.existingConfigMap }}

@@ -4,12 +4,12 @@ import { z } from 'zod';
 import { compactTraces, assertStorageCapacity } from './trace-retention';
 const schema = z.object({revision: z.number().int(), items: z.array(entitySchema)});
 
-export function useSharedState(enabled: boolean, initial: () => Entity[]) {
-  const [items, setItems] = useState(()=>compactTraces(initial()));
+export function useSharedState(initial: () => Entity[]) {
+  const [items, setItems] = useState<Entity[]>([]);
   const current = useRef(items);
   const revision = useRef(0);
   const writing = useRef(false);
-  const [ready, setReady] = useState(!enabled);
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -23,14 +23,13 @@ export function useSharedState(enabled: boolean, initial: () => Entity[]) {
     return schema.parse(data);
   }
   useEffect(() => {
-    if (!enabled) return;
     let active = true;
     async function load() {
       if (writing.current) return;
       try {
         let snapshot = await request();
         if (!snapshot.revision) {
-          try { snapshot = await request('PUT', {revision: 0, items: current.current}); }
+          try { snapshot = await request('PUT', {revision: 0, items: compactTraces(initial())}); }
           catch { snapshot = await request(); if (!snapshot.revision) throw new Error('Cannot initialize shared storage.'); }
         }
         if (!active || writing.current) return;
@@ -41,9 +40,8 @@ export function useSharedState(enabled: boolean, initial: () => Entity[]) {
     void load();
     const timer = window.setInterval(() => void load(), 3000);
     return () => { active = false; clearInterval(timer); };
-  }, [enabled, attempt]);
+  }, [attempt]);
   function commit(update: (items: Entity[]) => Entity[]): void | Promise<void> {
-    if (!enabled) { const candidate=update(current.current); if(candidate===current.current)return; const next = compactTraces(candidate); assertStorageCapacity(next); current.current = next; setItems(next); return; }
     if (!ready || writing.current) throw new Error('Shared data is loading or saving. Please try again.');
     const candidate=update(current.current); if(candidate===current.current)return; const next = compactTraces(candidate); assertStorageCapacity(next);
     writing.current = true; setBusy(true);

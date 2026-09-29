@@ -208,3 +208,7 @@ it("supports an explicitly configured TLS reverse proxy origin without trusting 
     ).status,
   ).toBe(403);
 });
+
+it("enables shared database by default in mock mode",async()=>{
+ expect(await runtimeResponse({MARKETPLACE_DATA_MODE:"mock"}).json()).toMatchObject({mode:"mock",sharedDemo:true});
+});

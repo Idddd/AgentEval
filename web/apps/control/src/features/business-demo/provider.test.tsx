@@ -113,9 +113,9 @@ it("auto mode falls back only on initial connection failure", async () => {
   );
   app("auto");
   connect();
-  expect(await screen.findByText("Offline · Local data")).toBeTruthy();
+  expect((await screen.findByRole("alert")).textContent).toContain("offline");
   expect(screen.queryByRole("button", { name: "Create Guardrail" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Reconnect" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
 });
 it("does not hide a permission failure behind mock data", async () => {
   vi.stubGlobal(
@@ -130,7 +130,7 @@ it("does not hide a permission failure behind mock data", async () => {
   app("auto");
   connect();
   expect(await screen.findByText("Insufficient permissions")).toBeTruthy();
-  expect(screen.queryByText("Offline · Local data")).toBeNull();
+  expect(screen.queryByText("Using shared database")).toBeNull();
   expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
 });
 it("keeps last live data on subsequent failures without switching sources", async () => {
@@ -148,7 +148,7 @@ it("keeps last live data on subsequent failures without switching sources", asyn
       "Showing last retrieved data",
     ),
   );
-  expect(screen.queryByText("Offline · Local data")).toBeNull();
+  expect(screen.queryByText("Using shared database")).toBeNull();
   expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
 });
 it("fails closed when runtime settings cannot load", async () => {

@@ -1,9 +1,6 @@
 replicaCount: 1
 
-# Shared SQLite storage is enabled by default; no PVC is required.
-sharedDemo:
-  enabled: true
-
+# SQLite is always used. Enable persistence to retain data across pod replacement.
 persistence:
   enabled: false
   existingClaim: ""
