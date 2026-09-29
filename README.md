@@ -1,193 +1,88 @@
 # AI Marketplace
 
-The current AgentEval frontend is **AI Marketplace**, with **Guardrails** and
-**Policies** in the sidebar. It supports a local mock workspace and an authenticated
-connection to Guard Controller using runtime configuration.
+AI Marketplace manages **Guardrails** and **Profiles**. Current release:
+**v0.2.12**, image `ghcr.io/idddd/tali-ui-demo:0.2.12`.
 
-## Run the Marketplace UI
+## Current UI
 
-Versioned container and Helm installation: [release deployment](docs/marketplace-release.md).
+- **Guardrails**: create requirements, implement and evaluate versions, and review readiness.
+- **Profiles**: select Guardrails and versions, view statistics, and expand each Guardrail to inspect traces and errors.
+- Each Guardrail in a Profile has its own **Monitoring** or **Preventing** mode. Submit the Profile's final mode configuration for approval as a whole. Pending changes do not replace approved modes.
+- Monitoring records detections without blocking. Preventing records detections and actual blocks.
+- Profile **Bypass** requires confirmation and skips all Guardrail checks. In mock mode, this simulates forwarding to the original upstream without creating traces. Exiting Bypass returns all Guardrails to Monitoring.
+- Mock traffic is generated approximately every five seconds while the Profile overview is open and visible, including success, error, detection and, in Preventing mode, block.
+- Local accounts include Admin, IT Admin, Line 1.5 and Line 2.
 
-Docker icon replacement: [runtime branding](docs/runtime-branding.md).
-Use `docker-compose.marketplace.yml` for the standalone frontend with a read-only
-branding directory mount; logo/favicon changes do not require rebuilding.
+## Start the published image
 
-Requires Node.js 22+ and npm. No database, Guard service, or Python API is needed.
+Requires Docker. SQLite is included; no separate database service is needed.
 
-```powershell
+```sh
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.12
+docker volume create ai-marketplace-data
+docker run -d --name ai-marketplace -p 18082:8080 \
+  -v ai-marketplace-data:/data \
+  ghcr.io/idddd/tali-ui-demo:0.2.12
+```
+
+Open [Profiles](http://127.0.0.1:18082/guardrails).
+Guardrails are at `/policies`; Profiles are at `/guardrails`.
+
+See [deployment and source export](docs/marketplace-release.md) for Helm,
+JFrog and the embedded project source, or [runtime branding](docs/runtime-branding.md)
+for logo and favicon replacement.
+
+## Shared database and initial data
+
+Mock mode uses server-side SQLite automatically. No enable switch is needed,
+and database failures do not fall back to browser-only storage.
+
+- Users of the same service share records; the UI polls about every three seconds.
+- A new database is initialized on the first page visit. Existing records from that browser are migrated when available; otherwise default examples are created.
+- A revision check allows only the first successful initializer to write. Concurrent visitors read that result instead of appending duplicate examples.
+- Once initialized, the database is authoritative. Later visitors do not import browser records. Account selection remains a browser preference.
+- The image stores data at `/data/demo.sqlite`. Keep the named volume across container replacements. Separate databases do not synchronize.
+- Completed trace details are limited to 200 per Profile, 1,000 overall and 24 hours, with an additional size budget. Older details are folded into aggregate statistics. A total state size limit prevents oversized writes.
+
+## Local development
+
+Requires Node.js 22+ and npm.
+
+```sh
 cd web
 npm ci
 npm run dev:control -- --host 127.0.0.1 --port 18082
 ```
 
-Open [AI Marketplace](http://127.0.0.1:18082/guardrails). Mock mode is the default;
-its records persist in browser storage. Guardrail details use `/guardrails/<id>`
-and display their pinned Policy versions. Existing local records are preserved.
+The server defaults to `data/demo.sqlite` relative to its working directory.
+`MARKETPLACE_DEMO_DB_FILE` optionally changes the file location.
 
-To build: `npm run build:control` from `web/`. For live deployment set
-`MARKETPLACE_DATA_MODE=live` and `GUARD_API_URL=https://guard.internal/api/v1`.
-`auto` allows initial connection failure to fall back to a separate local dataset;
-writes never fall back. Connect with a personal Guard access token in the UI.
+Build and run from `web/`:
 
-See [Guard OpenAPI connection](docs/guard-openapi-connection.md) for Docker setup,
-permissions, supported operations, and the optional backend extension required
-for text-only Policy creation. Without that extension, live users can query and
-validate existing policies and create Guardrails from published Policy versions.
-
-## Legacy evaluation platform reference
-
-The sections below describe the earlier evaluation platform, whose source is
-retained for reference. Its database/runtime services and old console navigation
-are not part of the current Marketplace UI. Use the quick start above for this
-branch.
-
-AgentEval is a local workbench for evaluating Agents against versioned test
-cases. The TALI control console is the project's only Web UI; the Python code
-provides the evaluation API, CLI, adapters, and SQLite persistence.
-
-## Runtime architecture
-
-| Service | Default address | Storage | Purpose |
-| --- | --- | --- | --- |
-| TALI Web | `http://127.0.0.1:18082` | PostgreSQL | Authentication, projects, and the control-console shell |
-| AgentEval API | `http://127.0.0.1:8000` | `data/web-workbench.db` | Targets, datasets, runs, reports, and demo fixtures |
-| AgentEval CLI | local process | `data/workbench.db` | Scripted evaluation and report workflows |
-
-The TALI server reverse-proxies `/api/v1/evaluations/*` to the Python API.
-PostgreSQL and the AgentEval SQLite databases have separate responsibilities
-and should not be pointed at the same file or volume.
-
-## Quick start with Docker
-
-Prerequisites: Docker Desktop.
-
-```powershell
-Copy-Item .env.example .env
-docker compose up --build
+```sh
+npm run build:control
+npm run start:control
 ```
 
-Open `http://127.0.0.1:18082` and sign in with `admin` / `admin`. The API is
-available at `http://127.0.0.1:8000/docs`.
+## Live Guard connection
 
-Docker Compose starts PostgreSQL, the AgentEval FastAPI service, and the TALI
-Web service. The Web container applies Prisma migrations before it starts.
+Mock is the default. To use a real Guard service, set `MARKETPLACE_DATA_MODE=live`
+and `GUARD_API_URL` to its API endpoint. Users connect with personal access
+tokens in the UI. Live mode uses the Guard backend instead of mock SQLite.
 
-## Published container images
-
-GitHub Actions builds the API and Web services as separate OCI images and
-publishes them to GitHub Container Registry:
-
-- `ghcr.io/idddd/agenteval-api`
-- `ghcr.io/idddd/agenteval-web`
-
-Every pushed build receives an immutable `sha-<12-character-commit>` tag.
-Branches under `codex/**` also receive a normalized branch tag, `main` receives
-`latest`, and release tags such as `v1.2.3` publish both `1.2.3` and `v1.2.3`.
-Pull requests build both images for validation but do not publish them.
-
-To run the published images instead of building locally, first copy the local
-environment template as usual. If the GHCR packages are private, authenticate
-Docker with a GitHub token that has `read:packages`, then start the image
-override:
-
-```powershell
-Copy-Item .env.example .env
-$env:CR_PAT | docker login ghcr.io -u <github-user> --password-stdin
-docker compose -f docker-compose.yml -f docker-compose.images.yml up -d
-```
-
-Set `AGENTEVAL_IMAGE_TAG` to deploy a branch, release, or immutable SHA tag.
-Forks and alternative registries can override `AGENTEVAL_API_IMAGE` and
-`AGENTEVAL_WEB_IMAGE` with complete image names before running Compose.
-
-## Local development
-
-Prerequisites: Python 3.12+, Node.js 22+, npm, Docker Desktop, and a project
-virtual environment.
-
-Install dependencies once:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Set-Location web
-npm ci
-Set-Location ..
-```
-
-Start PostgreSQL, the API, and the TALI development server:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
-```
-
-The script resolves paths from its own location, creates or reuses the local
-`tasklattice-dev-postgres` container, applies database migrations, starts the
-API on port `8000`, and runs TALI on port `18082`.
-
-## TALI evaluation demo
-
-The sidebar exposes the fixture-backed Evaluation demo through the unified
-`Eval` entry at `/individual/evaluation/catalog`, with `Overview` available at
-`/individual/evaluation/overview`. The catalog and its in-app links provide
-access to the supporting Agent, Test Case, Evaluation, and Settings pages.
-Opening a catalog target presents its revision, Dataset, Evaluation, and Result
-in one continuous workspace with a single context-aware primary action. An
-Admin approves all-passing evaluations or rejects evaluations with findings;
-rejected Target revisions are returned to a Developer for changes and rerun.
-
-This demo uses an in-memory store and deterministic simulation. Edits reset
-when the page reloads. The API-backed evaluation store remains available for
-the ongoing persistence integration, including the real SQLite API and demo
-fallback behavior.
-
-## CLI
-
-IDs printed by each command are passed to the next command:
-
-```powershell
-.\.venv\Scripts\python.exe main.py agents list
-.\.venv\Scripts\python.exe main.py agents import-legacy
-.\.venv\Scripts\python.exe main.py datasets publish --dataset-id <dataset-id>
-.\.venv\Scripts\python.exe main.py runs start --agent-revision-id <agent-revision-id> --dataset-revision-id <dataset-revision-id>
-.\.venv\Scripts\python.exe main.py reports create --run-id <run-id>
-.\.venv\Scripts\python.exe main.py reports compare --baseline <report-id> --current <report-id>
-```
-
-`main.py --step ...` remains temporarily for the original demo automation. It
-prints a deprecation message and routes the work through the stable records.
-
-## Optional Langfuse stack
-
-```powershell
-Copy-Item langfuse\.env.example langfuse\.env
-docker compose -f langfuse\docker-compose.yml up -d
-```
-
-Langfuse is available at `http://localhost:3000`. Configure
-`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and `LANGFUSE_HOST` in `.env` when
-trace links should open in Langfuse.
+See [Guard API connection](docs/guard-openapi-connection.md) for supported
+operations and optional authoring configuration.
 
 ## Verification
 
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q --basetemp=.pytest_tmp_modular
+From `web/`:
 
-Set-Location web
-npm.cmd run build --workspace "@tasklattice/contracts"
-node node_modules\typescript\bin\tsc -p apps\control\tsconfig.json --noEmit
-npm.cmd test --workspace "@tasklattice/control"
-npm.cmd run build:control
-Set-Location ..
-
-docker compose config
+```sh
+node node_modules/typescript/bin/tsc -p apps/control/tsconfig.json --noEmit
+cd apps/control
+node ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts src/features/business-demo marketplace-server/shared-demo.test.ts marketplace-server/guard-api.test.ts
 ```
 
-## Stopping services
-
-```powershell
-docker compose down
-docker compose -f langfuse\docker-compose.yml down
-```
-
-Volumes are retained across `docker compose down`. Do not add `-v` unless you
-intend to delete the local PostgreSQL and AgentEval data.
+The [release workflow](.github/workflows/container-images.yml) checks image
+startup, default database reads and writes, embedded source integrity and
+the Helm chart before completing publication.

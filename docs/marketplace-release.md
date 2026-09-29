@@ -1,26 +1,39 @@
-# AI Marketplace release deployment
+# AI Marketplace deployment — v0.2.12
 
-The v0.2.7 delivery format matches v0.2.1: the `tali-ui-demo` image includes
-`/opt/tali/helm/tali-UI-demo.tgz`, and the chart is also published to GHCR as OCI.
-The application now runs a Node server on port 8080, supporting both mock and
-live Guard API connections. The default is mock; no database is required.
+Image: `ghcr.io/idddd/tali-ui-demo:0.2.12` (linux/amd64).
+The Node server listens on port 8080. Mock mode uses shared SQLite automatically;
+there is no database enable flag.
 
 ## Docker
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.7
-docker run --rm -p 8080:8080 ghcr.io/idddd/tali-ui-demo:0.2.7
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.12
+docker volume create ai-marketplace-data
+docker run -d --name ai-marketplace -p 18082:8080 \
+  -v ai-marketplace-data:/data \
+  ghcr.io/idddd/tali-ui-demo:0.2.12
 ```
+
+Open [Profiles](http://127.0.0.1:18082/guardrails). Database:
+`/data/demo.sqlite`. Reuse the named volume when replacing the container.
+See [initial data and sharing](../README.md#shared-database-and-initial-data).
 
 ## Kubernetes
 
 ```sh
 helm upgrade --install tali-ui-demo oci://ghcr.io/idddd/charts/tali-ui-demo \
-  --version 0.2.7 --namespace ai-marketplace --create-namespace
-kubectl -n ai-marketplace port-forward svc/tali-ui-demo 8080:80
+  --version 0.2.12 --namespace ai-marketplace --create-namespace \
+  --set persistence.enabled=true
+kubectl -n ai-marketplace port-forward svc/tali-ui-demo 18082:80
 ```
 
-For a live backend, add:
+This command enables a PVC so the database survives pod replacement. A suitable
+StorageClass is required; use `persistence.storageClass` or
+`persistence.existingClaim` when necessary. Chart defaults use `emptyDir` if
+persistence is disabled: the database still works, but replacing the pod loses
+its data. SQLite deployment requires `replicaCount=1`.
+
+For a live Guard backend, add:
 
 ```sh
 --set marketplace.dataMode=live \
@@ -28,119 +41,81 @@ For a live backend, add:
 --set marketplace.publicOrigin=https://marketplace.internal
 ```
 
-Use your actual public UI origin and Guard URL. Users connect with personal
-access tokens in the UI; do not put a shared administrator token in Helm values.
-Text-only Policy creation additionally needs `marketplace.policyAuthoringUrl`;
-see [Guard API configuration](guard-openapi-connection.md).
+Use your actual URLs. Users connect with personal access tokens in the UI.
+See [Guard API connection](guard-openapi-connection.md) for optional authoring
+configuration and supported operations.
 
-When upgrading from v0.2.1, keep your release name and namespace. Do not use
-`--reuse-values`: the new Node runtime uses UID/GID 1000 instead of nginx's 101.
-Reapply only your intended image pull secrets, service, resources and placement
-overrides. The chart defaults to a non-root, read-only container.
+## Internal registry / JFrog
 
-## Offline transfer and embedded chart
-
-On a connected machine:
+Copy the published image to your Docker repository:
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.7
-docker save -o ai-marketplace-0.2.7.tar ghcr.io/idddd/tali-ui-demo:0.2.7
-container=$(docker create ghcr.io/idddd/tali-ui-demo:0.2.7)
-docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" ./tali-UI-demo.tgz
-docker rm "$container"
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.12
+docker tag ghcr.io/idddd/tali-ui-demo:0.2.12 jfrog.example.com/docker-local/tali-ui:0.2.12
+docker push jfrog.example.com/docker-local/tali-ui:0.2.12
 ```
 
-Transfer both files. Load the image into your internal registry or every cluster
-node's container runtime, then install the local chart with `image.repository`
-and `image.tag` set to that imported image. `docker load` alone does not populate
-a Kubernetes containerd image store. The embedded chart normally pins the exact
-CI image tag; override it when importing under `0.2.7` or an internal name.
+Replace the example registry with yours and authenticate using your normal
+registry login. For offline transfer:
 
-## Branding
+```sh
+docker save -o ai-marketplace-0.2.12.tar ghcr.io/idddd/tali-ui-demo:0.2.12
+docker load -i ai-marketplace-0.2.12.tar
+```
 
-Create a ConfigMap containing `logo.svg` and `favicon.svg`, then set
-`branding.existingConfigMap` to its name. Files are mounted read-only; restart
-pods after replacement. See [runtime branding](runtime-branding.md).
+Loading into Docker does not populate a Kubernetes containerd image store.
+Publish to a registry reachable by the cluster or import into its runtime.
 
-## Publishing
+## Embedded Helm chart and project source
 
-The workflow builds `deploy/Dockerfile.marketplace` for linux/amd64. Branch
-pushes publish preview images and verify mock/live startup plus the embedded
-chart. A `vMAJOR.MINOR.PATCH` tag additionally publishes versioned image tags
-and the OCI chart. Existing release tags are not overwritten. This workflow
-publishes packages, not a GitHub Release page, matching v0.2.1.
+The image contains:
 
-## v0.2.5 changes
-
-- F5 and Nemo source-aware policies and profiles.
-- User and Agent Wizard workflow with role-specific statuses and stage progress bars.
-- Structured provider configuration forms and required-field validation.
-- Mock is the default; browser data stays local and no evaluation or backend synchronization runs in mock mode.
-- Optional live-mode marketplace persistence and provider adapters are included but require explicit runtime configuration.
-
-## v0.2.6 changes
-
-- Rename Guardrail Profiles to Profiles, Policies to Guardrails, and Rule text to Requirement throughout the demo UI.
-- Remove role selection. Admin and IT Admin can both create and implement guardrails; other accounts can create requirements.
-- Add a pending implementation example at the top of the initial guardrail list.
-- Profiles become Ready immediately after creation; migrate mock Review profiles to Ready.
-- Compact latest-version marker and wider version selector to keep Ready visible.
-
-## v0.2.7 changes
-
-- Unified F5/Nemo configuration, large plain-text GenAI input, and at least one required source.
-- Mock evaluation runs selected sources only, followed by Admin approval before Ready.
-- New evaluations pass; a dedicated failure fixture shows a collapsible, horizontally scrollable case table.
-- Status examples are balanced once per browser, preserving records and future workflow changes.
-- Always-visible edit icons and distinct Ready (green) / Active (purple) badges.
-
-## Embedded project source
-
-New images built with `deploy/Dockerfile.marketplace` include:
-
+- `/opt/tali/helm/tali-UI-demo.tgz`
 - `/opt/tali/source/project-source.zip`
 - `/opt/tali/source/project-source.zip.sha256`
 
-This release is a Node container image, not a Java JAR. Importing/copying the
-image into a JFrog Docker repository preserves these files. Existing images
-must be rebuilt to include the source archive.
-
-Export from the internal image (replace repository and tag):
+Export without starting the application (POSIX shell):
 
 ```sh
-IMAGE=jfrog.example.com/docker-local/tali-ui:YOUR_TAG
-docker pull "$IMAGE"
+IMAGE=ghcr.io/idddd/tali-ui-demo:0.2.12
 container=$(docker create "$IMAGE")
+docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" ./tali-UI-demo.tgz
 docker cp "$container:/opt/tali/source/project-source.zip" ./project-source.zip
 docker cp "$container:/opt/tali/source/project-source.zip.sha256" ./project-source.zip.sha256
-docker rm "$container"
+docker rm -v "$container"
 sha256sum -c project-source.zip.sha256
 unzip project-source.zip -d ./exported-source
 ```
 
-No container start or application credentials are needed for `docker create`
-and `docker cp`. Registry access still requires your normal Docker login.
-The ZIP is also compatible with `jar xf project-source.zip` if only Java's
-archive tools are available; it is not an executable JAR.
+For a JFrog copy, set `IMAGE` to the internal repository and tag.
+The delivery is a Node container image, not an executable Java JAR.
+Java's `jar xf project-source.zip` can also extract the ZIP.
 
-The archive contains the application `web`, Python `src`/`tests`, deployment,
-configuration, branding, docs, CI and root build manifests from the build
-context. It excludes local environment files, credential files, databases,
-logs, dependency directories and generated outputs. It does not include
-Git history or unrelated design/temporary artifacts. Dependencies can be
-restored using the included lockfiles through your internal package registry.
+The archive includes project sources, deployment files, documentation and
+build manifests. It excludes credentials, local environment files, databases,
+logs, installed dependencies and generated outputs. It does not contain Git
+history. Restore dependencies using the included lockfiles.
 
-Local source-only packaging:
+Install the extracted chart with your internal image:
 
 ```sh
-python deploy/package-source.py --output .artifacts/source-package/project-source.zip
+helm upgrade --install tali-ui-demo ./tali-UI-demo.tgz \
+  --namespace ai-marketplace --create-namespace \
+  --set image.repository=jfrog.example.com/docker-local/tali-ui \
+  --set image.tag=0.2.12 --set persistence.enabled=true
 ```
 
+## Branding
 
-## v0.2.10 changes
+Use `branding.existingConfigMap` for a ConfigMap containing `logo.svg` and
+`favicon.svg`. See [runtime branding](runtime-branding.md).
 
-- Profile-level Monitoring/Active approval and persistent statistics stages.
-- Historical period filter, sortable Guardrail columns and fixed five-row Trace list.
-- Clear success/error/block metrics and test-request progress feedback.
-- Guardrail picker edit action and redesigned removal confirmation.
-- Embedded source archive at `/opt/tali/source/project-source.zip` with SHA-256 verification.
+## Publishing
+
+The [release workflow](../.github/workflows/container-images.yml) builds
+`deploy/Dockerfile.marketplace`. Version tags publish image aliases such as
+`0.2.12` and `v0.2.12`, and the OCI chart at
+`oci://ghcr.io/idddd/charts/tali-ui-demo`.
+
+Validation covers mock/live startup, default database reads and writes,
+embedded source checksum and extraction, and Helm rendering.
