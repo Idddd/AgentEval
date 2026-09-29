@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import { entitySchema, advanceProcessing, type Entity } from '../src/features/business-demo/model';
+import { compactTraces, assertStorageCapacity, StorageCapacityError } from '../src/features/business-demo/trace-retention';
 import { normalizeDemo } from '../src/features/business-demo/unified-demo';
 
 export class DemoConflict extends Error {}
@@ -19,7 +20,8 @@ export class SharedDemoStore {
     return {revision: row.revision, items: z.array(entitySchema).parse(JSON.parse(row.payload))};
   }
   write(revision: number, items: Entity[]) {
-    const parsed = normalizeDemo(z.array(entitySchema).max(10000).parse(items));
+    const parsed = compactTraces(normalizeDemo(z.array(entitySchema).max(10000).parse(items)));
+    assertStorageCapacity(parsed);
     if (new Set(parsed.map(item => item.id)).size !== parsed.length) throw new Error('Duplicate record IDs.');
     this.db.exec('BEGIN IMMEDIATE');
     try {
@@ -32,7 +34,7 @@ export class SharedDemoStore {
   }
   tick() {
     const current = this.read();
-    const next = advanceProcessing(current.items, Date.now());
+    const next = compactTraces(advanceProcessing(current.items, Date.now()));
     return next === current.items ? current : this.write(current.revision, next);
   }
   close() { this.db.close(); }
@@ -58,7 +60,7 @@ export async function sharedDemoApi(request: Request, env = process.env) {
     const input = z.object({revision: z.number().int().nonnegative(), items: z.array(entitySchema).max(10000)}).parse(JSON.parse(body));
     return Response.json(store.write(input.revision, input.items), {headers});
   } catch (error) {
-    const status = error instanceof DemoConflict ? 409 : error instanceof z.ZodError || error instanceof SyntaxError ? 400 : 503;
-    return Response.json({error: status === 409 ? (error as Error).message : status === 400 ? 'Invalid demo data.' : 'Shared storage unavailable. Changes were not saved.'}, {status, headers});
+    const status = error instanceof StorageCapacityError ? 413 : error instanceof DemoConflict ? 409 : error instanceof z.ZodError || error instanceof SyntaxError ? 400 : 503;
+    return Response.json({error: status === 413 || status === 409 ? (error as Error).message : status === 400 ? 'Invalid demo data.' : 'Shared storage unavailable. Changes were not saved.'}, {status, headers});
   }
 }

@@ -1,4 +1,4 @@
-import { transitionProfile, trafficEvents, initializeProfileRuntime, type ProfileAction } from './profile-runtime';
+import { setGuardrailMode, type GuardrailMode, transitionProfile, trafficEvents, initializeProfileRuntime, type ProfileAction } from './profile-runtime';
 import {
   createContext,
   useContext,
@@ -35,6 +35,7 @@ import { MarketplaceAdapter } from "./marketplace-adapter";
 import type { UnifiedConfig } from './evaluation';
 import { normalizeDemo } from './unified-demo';
 import { useSharedState } from './shared-state';
+import { StorageCapacityError } from './trace-retention';
 import { addStatusDemos, addFailureDemo, ensurePolicySources, balanceStatusDemos } from './status-demos';
 
 const DemoContext = createContext<{
@@ -59,6 +60,7 @@ const DemoContext = createContext<{
   remove?: (item: Entity) => void | Promise<void>;
   setActivation?: (item: Entity, active: boolean) => void | Promise<void>;
   profileAction?: (id: string, action: ProfileAction) => void | Promise<void>;
+  setProfileMode?: (id:string, guardrailId:string, mode:GuardrailMode)=>void|Promise<void>;
   runTraffic?: (id: string, scenario: 'safe' | 'risk' | 'error') => void | Promise<void>;
   save: (
     kind: Kind,
@@ -167,7 +169,7 @@ function MockProvider({
     Promise.resolve(setItems(current => current.map(item => initializeProfileRuntime(item, Date.now())))).catch(() => { /* Shared storage reports its own error. */ });
   }, [ready, busy, items]);
   const owners = [
-    ...new Set(["Admin", "IT Admin", ...items.map((item) => item.owner).filter(Boolean)]),
+    ...new Set(["Admin", "IT Admin", "Line 1.5", "Line 2", ...items.map((item) => item.owner).filter(Boolean)]),
   ];
   const [currentOwner, setCurrentOwner] = useState(() => {
     try {
@@ -229,8 +231,9 @@ function MockProvider({
         sessionOnly,
         busy,
         save,
+        setProfileMode: (id, guardrailId, mode) => setItems(current => current.map(entry => entry.id === id ? setGuardrailMode(entry,guardrailId,mode) : entry)),
         profileAction: (id, action) => setItems(current => current.map(entry => entry.id === id ? transitionProfile(entry, action, currentOwner, Date.now()) : entry)),
-        runTraffic: (id, scenario) => setItems(current => current.map(entry => entry.id === id ? { ...entry, runtime: { ...(entry.runtime ?? { approval: 'off' as const }), events: [...trafficEvents(entry, Date.now(), scenario, crypto.randomUUID()), ...(entry.runtime?.events ?? [])] } } : entry)),
+        runTraffic: (id, scenario) => { if(sessionOnly) throw new StorageCapacityError(); return setItems(current => current.map(entry => entry.id === id ? { ...entry, runtime: { ...(entry.runtime ?? { approval: 'off' as const }), events: [...trafficEvents(entry, Date.now(), scenario, crypto.randomUUID()), ...(entry.runtime?.events ?? [])] } } : entry)); },
         remove: (item) => {
           const reason = deletionBlocker(items, item);
           if (reason) throw new Error(reason);

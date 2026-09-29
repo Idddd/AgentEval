@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { entitySchema, type Entity } from './model';
 import { z } from 'zod';
+import { compactTraces, assertStorageCapacity } from './trace-retention';
 const schema = z.object({revision: z.number().int(), items: z.array(entitySchema)});
 
 export function useSharedState(enabled: boolean, initial: () => Entity[]) {
-  const [items, setItems] = useState(initial);
+  const [items, setItems] = useState(()=>compactTraces(initial()));
   const current = useRef(items);
   const revision = useRef(0);
   const writing = useRef(false);
@@ -42,9 +43,9 @@ export function useSharedState(enabled: boolean, initial: () => Entity[]) {
     return () => { active = false; clearInterval(timer); };
   }, [enabled, attempt]);
   function commit(update: (items: Entity[]) => Entity[]): void | Promise<void> {
-    if (!enabled) { const next = update(current.current); current.current = next; setItems(next); return; }
+    if (!enabled) { const candidate=update(current.current); if(candidate===current.current)return; const next = compactTraces(candidate); assertStorageCapacity(next); current.current = next; setItems(next); return; }
     if (!ready || writing.current) throw new Error('Shared data is loading or saving. Please try again.');
-    const next = update(current.current);
+    const candidate=update(current.current); if(candidate===current.current)return; const next = compactTraces(candidate); assertStorageCapacity(next);
     writing.current = true; setBusy(true);
     return request('PUT', {revision: revision.current, items: next}).then(snapshot => {
       accept(snapshot); setError('');

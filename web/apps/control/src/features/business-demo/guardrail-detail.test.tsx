@@ -7,7 +7,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GuardrailDetails } from "./guardrail-detail";
 import { BusinessDemoProvider } from "./provider";
 import { saveEntity, seedEntities, STORAGE_KEY } from "./model";
@@ -29,19 +29,29 @@ const show = (id = "customer-interaction") => {
   return result;
 };
 
-it("deactivates and requires an approval request to reactivate", async () => {
+it("approves the whole profile after the final mode selection", async()=>{
  show();
  fireEvent.click(screen.getByRole("button",{name:"Overview & activity"}));
- await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Deactivate"}));});
- expect(screen.getByRole("button",{name:"Delete"})).toBeTruthy();
- await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Request Active"}));});
- const stored=JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find((x:{id:string})=>x.id==="customer-interaction");
- expect(stored.runtime.approval).toBe("pending");expect(stored.status).toBe("Ready");
+ const select=screen.getByRole("combobox",{name:/Mode for/});
+ await act(async()=>{fireEvent.change(select,{target:{value:"monitoring"}})});
+ await act(async()=>{fireEvent.change(select,{target:{value:"active"}})});
+ expect((screen.getByRole("button",{name:"Submit for approval"}) as HTMLButtonElement).disabled).toBe(true);
+ await act(async()=>{fireEvent.change(select,{target:{value:"monitoring"}})});
+ await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Submit for approval"}))});
+ const read=()=>JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find((x:{id:string})=>x.id==="customer-interaction");
+ expect(read().status).toBe("Active");
+ expect(read().runtime.approval).toBe("pending");
+ expect(screen.getByLabelText("Profile approval configuration")).toBeTruthy();
+ await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Approve Profile"}))});
+ expect(read().status).toBe("Ready");
+ expect(read().runtime.approval).toBe("approved");
 });
-it("locks active configuration until deactivated", async()=>{
+it("unlocks configuration after the entire Monitoring configuration is approved",async()=>{
  show();expect(screen.queryByRole("button",{name:"Edit Name"})).toBeNull();
  fireEvent.click(screen.getByRole("button",{name:"Overview & activity"}));
- await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Deactivate"}));});
+ await act(async()=>{fireEvent.change(screen.getByRole("combobox",{name:/Mode for/}),{target:{value:"monitoring"}})});
+ await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Submit for approval"}))});
+ await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Approve Profile"}))});
  fireEvent.click(screen.getByRole("button",{name:"Configuration"}));
  expect(screen.getByRole("button",{name:"Edit Name"})).toBeTruthy();
 });
@@ -365,4 +375,63 @@ it("shows an unfinished latest version but prevents selecting it", () => {
   const versions = screen.getByRole("combobox", { name: `Version for ${policy.name}` }) as HTMLSelectElement;
   expect(versions.value).toBe("1");
   expect((within(versions).getByRole("option", { name: "v2 ✦ · Processing (not ready)" }) as HTMLOptionElement).disabled).toBe(true);
+});
+
+it("generates traffic automatically while mounted and stops after leaving", async () => {
+ vi.useFakeTimers();
+ try {
+  const view=show();
+  fireEvent.click(screen.getByRole("button",{name:"Overview & activity"}));
+  expect(screen.queryByRole("button",{name:"Send test request"})).toBeNull();
+  const events=()=>JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find((x:{id:string})=>x.id==="customer-interaction").runtime.events;
+  const before=events().length;
+  await act(async()=>{await vi.advanceTimersByTimeAsync(15000)});
+  const generated=events().slice(0,events().length-before);
+  expect(generated.some((e:{decision:string})=>e.decision==="allow")).toBe(true);
+  expect(generated.some((e:{decision:string})=>e.decision==="error")).toBe(true);
+  expect(generated.some((e:{decision:string,enforced:boolean})=>e.decision==="block"&&e.enforced)).toBe(true);
+  view.unmount();
+  const after=events().length;
+  await act(async()=>{await vi.advanceTimersByTimeAsync(10000)});
+  expect(events().length).toBe(after);
+ } finally { vi.useRealTimers(); }
+});
+
+it("shows traces beneath the clicked guardrail and removes the period picker",()=>{
+ show();fireEvent.click(screen.getByRole("button",{name:"Overview & activity"}));
+ expect(screen.queryByRole("combobox",{name:"Statistics period"})).toBeNull();
+ expect(screen.queryByRole("region",{name:"Trace list"})).toBeNull();
+ const mode=screen.getByRole("combobox",{name:/Mode for/});
+ const row=mode.closest("tr")!;
+ fireEvent.click(row);
+ expect(screen.getByRole("region",{name:"Trace list"})).toBeTruthy();
+ expect(row.nextElementSibling?.contains(screen.getByRole("region",{name:"Trace list"}))).toBe(true);
+ fireEvent.click(mode);
+ expect(screen.getByRole("region",{name:"Trace list"})).toBeTruthy();
+ fireEvent.click(row);
+ expect(screen.queryByRole("region",{name:"Trace list"})).toBeNull();
+});
+
+it("pauses automatic scans for the whole bypassed profile and resumes them",async()=>{
+ vi.useFakeTimers();
+ try{
+  show();fireEvent.click(screen.getByRole("button",{name:"Overview & activity"}));
+  const events=()=>JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find((x:{id:string})=>x.id==="customer-interaction").runtime.events.length;
+  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Bypass"}))});
+  expect(screen.getByRole("dialog",{name:"Bypass this profile?"})).toBeTruthy();
+  expect(screen.queryByText("Current: Bypass")).toBeNull();
+  fireEvent.click(screen.getByRole("button",{name:"Cancel"}));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByText("Current: Bypass")).toBeNull();
+  fireEvent.click(screen.getByRole("button",{name:"Bypass"}));
+  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Confirm bypass"}))});
+  const before=events();
+  expect(screen.getByText("Current: Bypass")).toBeTruthy();
+  expect((screen.getByRole("combobox",{name:/Mode for/}) as HTMLSelectElement).disabled).toBe(true);
+  await act(async()=>{await vi.advanceTimersByTimeAsync(15000)});
+  expect(events()).toBe(before);
+  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Resume monitoring"}))});
+  await act(async()=>{await vi.advanceTimersByTimeAsync(5000)});
+  expect(events()).toBeGreaterThan(before);
+ }finally{vi.useRealTimers()}
 });

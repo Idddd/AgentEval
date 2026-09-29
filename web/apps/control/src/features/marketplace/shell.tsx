@@ -91,8 +91,8 @@ function MarketplaceSidebar({ section }: { section: string }) {
   const { isMobile, state, setOpenMobile } = useSidebar();
   const compact = !isMobile && state === "collapsed";
   const sections = [
-    { to: "/guardrails" as const, label: "Profiles", icon: ShieldCheck },
     { to: "/policies" as const, label: "Guardrails", icon: FileText },
+    { to: "/guardrails" as const, label: "Profiles", icon: ShieldCheck },
   ];
   return (
     <Sidebar collapsible="icon">

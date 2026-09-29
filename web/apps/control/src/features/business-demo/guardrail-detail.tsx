@@ -31,7 +31,7 @@ import {
   type PolicyReference,
 } from "./model";
 import { useBusinessDemo } from "./provider";
-import { ProfileOperations } from './profile-operations';
+import { ProfileOperations, ProfileApprovalActions } from './profile-operations';
 
 export function GuardrailDetails({ id }: { id: string }) {
   const { items, save, busy, dualSource, profileAction } = useBusinessDemo();
@@ -168,7 +168,7 @@ export function GuardrailDetails({ id }: { id: string }) {
                 <h1 className="break-words font-heading text-3xl">
                   {guard.name}
                 </h1>
-                <StatusBadge status={profileAction && guard.status === 'Active' ? 'Ready' : guard.status} />
+                <StatusBadge status={guard.runtime?.bypass ? 'Bypass' : profileAction && guard.status === 'Active' ? 'Ready' : guard.status} />
               </div>
               {guard.owner && (
                 <p className="text-xs text-muted-foreground">
@@ -181,6 +181,8 @@ export function GuardrailDetails({ id }: { id: string }) {
                 </p>
               )}
             </div>
+            <div aria-label="Profile actions" className="flex flex-wrap items-start justify-end gap-2">
+            {profileAction && <ProfileApprovalActions profile={guard} dirty={guardDirty} />}
             <DeleteEntityAction
               item={guard}
               hideActivation={!!profileAction}
@@ -191,6 +193,7 @@ export function GuardrailDetails({ id }: { id: string }) {
                 setDeleted(true);
               }}
             />
+            </div>
           </header>
           <SyncStatus item={guard} />
           {profileAction && <div className="flex gap-2 border-b pb-3" aria-label="Profile sections">{(['operations', 'configuration'] as const).map(value => <Button key={value} variant={tab === value ? 'default' : 'ghost'} aria-pressed={tab === value} onClick={() => setTab(value)}>{value === 'operations' ? 'Overview & activity' : 'Configuration'}</Button>)}</div>}

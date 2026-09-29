@@ -220,7 +220,7 @@ function CheckboxFilter({
                 )
               }
             />
-            {value}
+            {value === "Active" ? "Preventing" : value}
           </label>
         ))}
       </div>
@@ -263,7 +263,7 @@ export function DeleteEntityAction({
   const profile = item.kind === "guardrails";
   const active = profile && item.status === "Active";
   const inactive = profile && item.status === "Ready";
-  if (crudOnly && active) return <p className="text-xs text-muted-foreground">Active profiles are read-only in CRUD mode.</p>;
+  if (crudOnly && active) return <p className="text-xs text-muted-foreground">Profiles in Preventing mode are read-only in CRUD mode.</p>;
   const blocked =
     action === "Delete" ? deletionBlocker(items, item) : undefined;
   const begin = (next: "Delete" | "Deactivate" | "Active") => {
@@ -297,7 +297,7 @@ export function DeleteEntityAction({
                   variant="outline"
                   onClick={() => begin("Active")}
                 >
-                  Request Active
+                  Request Preventing
                 </Button>
               )}
               <Button
@@ -330,7 +330,7 @@ export function DeleteEntityAction({
             <DialogTitle className="font-medium">
               {resolveChanges
                 ? "Save changes before continuing?"
-                : `${action} “${item.name}”?`}
+                : `${action === "Active" ? "Enable Preventing for" : action} “${item.name}”?`}
             </DialogTitle>
             <DialogDescription
               id={`action-${item.id}`}
@@ -429,7 +429,7 @@ export function DeleteEntityAction({
                     ? "Please wait…"
                     : action === "Delete" && profile
                       ? "Delete profile"
-                      : action}
+                      : action === "Active" ? "Enable Preventing" : action}
                 </Button>
               )}
             </div>
@@ -449,17 +449,17 @@ export function SourceBadge({ source = "Guard" }: { source?: Entity["source"] })
   return <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2 py-1 text-xs font-medium ${source === "F5" ? "border-indigo-100 bg-indigo-50 text-indigo-700" : "border-sky-100 bg-sky-50 text-sky-700"}`}><span className="size-1.5 rounded-full bg-current" />{source === "F5" ? "F5" : "Nemo"}</span>;
 }
 
-export function StatusBadge({ status }: { status: Status }) {
+export function StatusBadge({ status }: { status: Status | "Bypass" }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs font-medium ${statusStyles[status]}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs font-medium ${status === "Bypass" ? "border border-amber-300 bg-amber-50 text-amber-800" : statusStyles[status]}`}
     >
       {status === "Processing" ? (
         <LoaderCircle className="size-3 animate-spin motion-reduce:animate-none" />
       ) : (
         <span className="size-1.5 rounded-full bg-current" />
       )}
-      {status === 'Needs input' ? 'Submitted' : status}
+      {status === 'Needs input' ? 'Submitted' : status === 'Active' ? 'Preventing' : status}
     </span>
   );
 }
@@ -489,10 +489,10 @@ export function BusinessCatalog({
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const ownerOptions = [
     ...new Set(
-      items
+      [...(mode === "mock" ? ["Line 1.5", "Line 2"] : []), ...items
         .filter((item) => item.kind === kind)
         .map((item) => item.owner)
-        .filter((owner) => !!owner && owner.toLowerCase() !== "admin"),
+        .filter((owner) => !!owner && owner.toLowerCase() !== "admin")],
     ),
   ].sort();
   const [scope, setScope] = useState<Partial<Record<ScopeKey, string[]>>>({});
@@ -713,6 +713,7 @@ export function BusinessCatalog({
                     Use case
                   </th>
                 )}
+                {!policy && <th className="px-5 py-3 font-medium">Version</th>}
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="hidden px-5 py-3 font-medium md:table-cell">
                   Control unit
@@ -779,8 +780,9 @@ export function BusinessCatalog({
                       </span>
                     </td>
                   )}
+                  {!policy && <td className="px-5 py-5">v{item.version}</td>}
                   <td className="px-5 py-5">
-                    {policy && mode === "mock" ? <PolicyWorkflowStatus item={item} role={role} /> : <StatusBadge status={!policy && mode === 'mock' && item.status === 'Active' ? 'Ready' : item.status} />}
+                    {policy && mode === "mock" ? <PolicyWorkflowStatus item={item} role={role} /> : <StatusBadge status={!policy && item.runtime?.bypass ? 'Bypass' : !policy && mode === 'mock' && item.status === 'Active' ? 'Ready' : item.status} />}
                   </td>
                   <td className="hidden px-5 py-5 text-muted-foreground md:table-cell">
                     {item.owner?.toLowerCase() === "admin" ? "Not assigned" : item.owner?.trim() || "Not assigned"}
