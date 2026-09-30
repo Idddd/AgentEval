@@ -14,7 +14,8 @@ export function UnifiedConfigForm({ config, onChange, disabled = false, hideDesc
       </select>
     </label>
     {!(hideDescription && config.scannerType === 'custom') && <label className="grid gap-2 text-sm font-medium">{config.scannerType === 'custom' ? 'LLM description' : config.scannerType === 'regex' ? 'Regex pattern' : 'Keywords (one per line or comma separated)'}
-      <Textarea className={config.scannerType === 'custom' ? 'min-h-72 resize-y p-3 font-normal leading-7 [field-sizing:fixed]' : 'min-h-24 resize-y'} value={config.content} maxLength={100000} onChange={e => patch({ content: e.target.value })} placeholder="Describe what should be detected…" />
+      <Textarea className={config.scannerType === 'custom' ? 'min-h-72 resize-y p-3 font-normal leading-7 [field-sizing:fixed]' : 'min-h-24 resize-y'} value={config.content} maxLength={100000} onChange={e => patch({ content: e.target.value })} placeholder={config.scannerType === 'custom' ? 'Enter the final detection prompt applied to scanned content…' : 'Enter detection content…'} />
+      {config.scannerType === 'custom' && <span className="text-xs font-normal text-muted-foreground">Final applied prompt. Used directly for detection, not to generate another prompt.</span>}
       <span className="text-right text-xs font-normal text-muted-foreground">{config.content.length.toLocaleString()} / 100,000 characters</span>
     </label>}
     <label className="grid gap-2 text-sm font-medium">Direction<select className="h-10 rounded-md border bg-background px-3" value={config.direction} onChange={e => patch({ direction: e.target.value as UnifiedConfig['direction'] })}><option value="both">Both</option><option value="request">Request</option><option value="response">Response</option></select></label>

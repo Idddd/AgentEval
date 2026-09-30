@@ -25,7 +25,7 @@ export function readUnified(configs: Record<string, string>, fallback = ''): Uni
     const value = JSON.parse(raw);
     const unified = unifiedConfigSchema.safeParse(value);
     if (unified.success) return unified.data;
-    if (value.config) return { ...emptyConfig(), scannerType: value.config.type, content: value.config.input ?? value.config.pattern ?? value.config.words?.join('\n') ?? '', versionName: value.version?.name || 'v1', versionDescription: value.version?.description || '' };
+    if (value.config) return { ...emptyConfig(), direction: ['request','response','both'].includes(value.direction) ? value.direction : 'both', scannerType: value.config.type, content: value.config.input ?? value.config.pattern ?? value.config.words?.join('\n') ?? '', versionName: value.version?.name || 'v1', versionDescription: value.version?.description || '' };
     // Preserve source text as migration notes, not a second editable configuration.
     return { ...emptyConfig(), content: fallback || value.sources?.map((s: {content: string}) => s.content).join('\n\n') || raw };
   } catch { return { ...emptyConfig(), content: raw || fallback }; }

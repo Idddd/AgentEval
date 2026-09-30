@@ -23,7 +23,7 @@ export function saveBusinessPolicy(draft: Draft, submit: boolean, owner: string,
       configs: {}, sources, ...(submit ? { submittedAt: now, submittedBy: owner } : {}),
     } };
 }
-export function configurePolicy(items: Entity[], id: string, action: WorkflowAction, role: DemoRole, owner: string, configs: Record<string, string>, comment = "", suppliedConfig?: UnifiedConfig, business?: Pick<Entity, 'name' | 'text'>) {
+export function configurePolicy(items: Entity[], id: string, action: WorkflowAction, role: DemoRole, owner: string, configs: Record<string, string>, comment = "", suppliedConfig?: UnifiedConfig, business?: Pick<Entity, 'name' | 'text' | 'mandatory' | 'mandatoryLocations'>) {
   if (role !== "Agent Wizard" && role !== "Admin" && action !== 'revise') throw new Error("Agent Wizard role is required.");
   const item = items.find((p) => p.id === id && p.kind === "policies");
   if (!item) throw new Error("Policy not found.");
@@ -33,13 +33,14 @@ export function configurePolicy(items: Entity[], id: string, action: WorkflowAct
     const originalConfig = item.workflow?.config ?? readUnified(item.workflow?.configs ?? {},item.text);
     const config = suppliedConfig ?? originalConfig;
     if (role === 'User' && JSON.stringify(config) !== JSON.stringify(originalConfig)) throw new Error('Only Tech or Admin can edit technical configuration.');
-    if (role === 'Agent Wizard' && business && (business.name !== item.name || business.text !== item.text)) throw new Error('Only User or Admin can edit business requirements.');
+    if (role === 'Agent Wizard' && business && (business.name !== item.name || business.text !== item.text || business.mandatory !== item.mandatory || JSON.stringify(business.mandatoryLocations) !== JSON.stringify(item.mandatoryLocations))) throw new Error('Only User or Admin can edit business requirements.');
     const problem = role === 'User' ? null : configError(config);
     if (problem) throw new Error(problem);
     if (business && !business.name.trim()) throw new Error('Enter a name.');
     if (business && !business.text.trim()) throw new Error('Enter a requirement.');
+    if (business?.mandatory && !business.mandatoryLocations?.length) throw new Error('Select at least one target region.');
     const version = Math.max(0,...[item.version,...item.revisions.map(r=>r.version)].map(v=>Number(String(v).replace(/^v/,'')) || 0)) + 1;
-    const saved: Entity = {...item,...(business ? {name:business.name.trim(),text:business.text.trim()} : {}),version,updatedAt:now,status:'Draft',
+    const saved: Entity = {...item,...(business ? {name:business.name.trim(),text:business.text.trim(),mandatory:business.mandatory ?? item.mandatory,mandatoryLocations:business.mandatoryLocations ?? item.mandatoryLocations} : {}),version,updatedAt:now,status:'Draft',
       revisions:[...item.revisions.filter(r=>String(r.version)!==String(item.version)),{version:item.version,name:item.name,text:item.text,workflow:item.workflow}],
       workflow:{businessId:item.workflow?.businessId ?? id,stage:role === 'User' ? 'Awaiting Agent Wizard' : 'Configuring',assignedTo:role === 'User' ? undefined : owner,configs:{},config,sources:['Guard'],revision:(item.workflow?.revision ?? 0)+1}};
     return items.map(p=>p.id===id?saved:p);

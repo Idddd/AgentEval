@@ -1,7 +1,7 @@
 # AI Marketplace
 
 AI Marketplace manages **Guardrails** and **Profiles**. Current release:
-**v0.2.13**, image `ghcr.io/idddd/tali-ui-demo:0.2.13`.
+**v0.2.14**, image `ghcr.io/idddd/tali-ui-demo:0.2.14`.
 
 ## Current UI
 
@@ -18,11 +18,11 @@ AI Marketplace manages **Guardrails** and **Profiles**. Current release:
 Requires Docker. SQLite is included; no separate database service is needed.
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.13
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.14
 docker volume create ai-marketplace-data
 docker run -d --name ai-marketplace -p 18082:8080 \
   -v ai-marketplace-data:/data \
-  ghcr.io/idddd/tali-ui-demo:0.2.13
+  ghcr.io/idddd/tali-ui-demo:0.2.14
 ```
 
 Open [Profiles](http://127.0.0.1:18082/guardrails).

@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
-import { entitySchema, advanceProcessing, type Entity } from '../src/features/business-demo/model';
+import { entitySchema, advanceProcessing, enforceMandatory, type Entity } from '../src/features/business-demo/model';
 import { compactTraces, assertStorageCapacity, StorageCapacityError } from '../src/features/business-demo/trace-retention';
 import { normalizeDemo } from '../src/features/business-demo/unified-demo';
 
@@ -20,7 +20,7 @@ export class SharedDemoStore {
     return {revision: row.revision, items: z.array(entitySchema).parse(JSON.parse(row.payload))};
   }
   write(revision: number, items: Entity[]) {
-    const parsed = compactTraces(normalizeDemo(z.array(entitySchema).max(10000).parse(items)));
+    const parsed = compactTraces(enforceMandatory(normalizeDemo(z.array(entitySchema).max(10000).parse(items))));
     assertStorageCapacity(parsed);
     if (new Set(parsed.map(item => item.id)).size !== parsed.length) throw new Error('Duplicate record IDs.');
     this.db.exec('BEGIN IMMEDIATE');
@@ -34,7 +34,7 @@ export class SharedDemoStore {
   }
   tick() {
     const current = this.read();
-    const next = compactTraces(advanceProcessing(current.items, Date.now()));
+    const next = compactTraces(enforceMandatory(advanceProcessing(current.items, Date.now())));
     return next === current.items ? current : this.write(current.revision, next);
   }
   close() { this.db.close(); }

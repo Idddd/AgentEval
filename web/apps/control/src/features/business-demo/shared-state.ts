@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { entitySchema, type Entity } from './model';
+import { entitySchema, enforceMandatory, type Entity } from './model';
 import { z } from 'zod';
 import { compactTraces, assertStorageCapacity } from './trace-retention';
 const schema = z.object({revision: z.number().int(), items: z.array(entitySchema)});
@@ -43,7 +43,7 @@ export function useSharedState(initial: () => Entity[]) {
   }, [attempt]);
   function commit(update: (items: Entity[]) => Entity[]): void | Promise<void> {
     if (!ready || writing.current) throw new Error('Shared data is loading or saving. Please try again.');
-    const candidate=update(current.current); if(candidate===current.current)return; const next = compactTraces(candidate); assertStorageCapacity(next);
+    const candidate=update(current.current); if(candidate===current.current)return; const next = compactTraces(enforceMandatory(candidate)); assertStorageCapacity(next);
     writing.current = true; setBusy(true);
     return request('PUT', {revision: revision.current, items: next}).then(snapshot => {
       accept(snapshot); setError('');

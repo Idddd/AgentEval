@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { Entity } from "./model";
 
 export const scanEventSchema = z.object({
+  direction: z.enum(['request','response']).optional(),
+  scannedContent: z.string().optional(),
   stageId: z.string().optional(),
   id: z.string(),
   traceId: z.string(),

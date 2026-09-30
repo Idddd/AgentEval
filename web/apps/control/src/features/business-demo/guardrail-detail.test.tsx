@@ -8,12 +8,19 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import userEvent from '@testing-library/user-event';
 import { GuardrailDetails } from "./guardrail-detail";
 import { BusinessDemoProvider } from "./provider";
 import { saveEntity, seedEntities, STORAGE_KEY } from "./model";
 
 beforeEach(() => localStorage.clear());
 afterEach(cleanup);
+async function selectMode(value:'monitoring'|'active') {
+ await userEvent.click(screen.getByRole('button',{name:/Actions for/}));
+ const menu = screen.getByRole('menu');
+ expect(within(menu).getByText('Current')).toBeTruthy();
+ await userEvent.click(within(menu).getByRole('menuitem',{name:value==='active'?'Switch to Preventing':'Switch to Monitoring'}));
+}
 const show = (id = "customer-interaction") => {
   const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? JSON.stringify({version: 3, items: seedEntities()}));
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...stored, statusDemosVersion: 1, failureDemoVersion: 1, balancedStatusesVersion: 1 }));
@@ -29,14 +36,26 @@ const show = (id = "customer-interaction") => {
   return result;
 };
 
+it('locks mandatory guardrail removal and deselection',()=>{
+ const items=seedEntities();
+ const profile=items.find(p=>p.id==='customer-interaction')!;
+ const policyId=profile.policies[0]!.policyId;
+ localStorage.setItem(STORAGE_KEY,JSON.stringify({version:3,items:items.map(p=>p.id===profile.id?{...p,status:'Ready',location:'SG'}:p.id===policyId?{...p,mandatory:true,mandatoryLocations:['SG']}:p)}));
+ show();
+ const ref=profile.policies[0]!;
+ expect((screen.getByRole('button',{name:`Remove ${ref.name}`}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole('button',{name:`Edit ${ref.name}`}));
+ const required=screen.getByRole('checkbox',{name:new RegExp(ref.name)}) as HTMLInputElement;
+ expect(required.checked).toBe(true);expect(required.disabled).toBe(true);
+});
+
 it("approves the whole profile after the final mode selection", async()=>{
  show();
  fireEvent.click(screen.getByRole("button",{name:"Overview & activity"}));
- const select=screen.getByRole("combobox",{name:/Mode for/});
- await act(async()=>{fireEvent.change(select,{target:{value:"monitoring"}})});
- await act(async()=>{fireEvent.change(select,{target:{value:"active"}})});
+ await selectMode('monitoring');
+ await selectMode('active');
  expect((screen.getByRole("button",{name:"Submit for approval"}) as HTMLButtonElement).disabled).toBe(true);
- await act(async()=>{fireEvent.change(select,{target:{value:"monitoring"}})});
+ await selectMode('monitoring');
  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Submit for approval"}))});
  const read=()=>JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find((x:{id:string})=>x.id==="customer-interaction");
  expect(read().status).toBe("Active");
@@ -49,7 +68,7 @@ it("approves the whole profile after the final mode selection", async()=>{
 it("unlocks configuration after the entire Monitoring configuration is approved",async()=>{
  show();expect(screen.queryByRole("button",{name:"Edit Name"})).toBeNull();
  fireEvent.click(screen.getByRole("button",{name:"Overview & activity"}));
- await act(async()=>{fireEvent.change(screen.getByRole("combobox",{name:/Mode for/}),{target:{value:"monitoring"}})});
+ await selectMode('monitoring');
  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Submit for approval"}))});
  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Approve Profile"}))});
  fireEvent.click(screen.getByRole("button",{name:"Configuration"}));
@@ -58,6 +77,7 @@ it("unlocks configuration after the entire Monitoring configuration is approved"
 
 it("opens a full detail page with policy versions, status and actions", () => {
   show();
+  expect(screen.getByRole('region',{name:'Profile use case'}).textContent).toContain('Customer-facing conversations');
   expect(
     screen.getByRole("heading", { name: "Customer Interaction", level: 1 }),
   ).toBeTruthy();
@@ -401,7 +421,7 @@ it("shows traces beneath the clicked guardrail and removes the period picker",()
  show();fireEvent.click(screen.getByRole("button",{name:"Overview & activity"}));
  expect(screen.queryByRole("combobox",{name:"Statistics period"})).toBeNull();
  expect(screen.queryByRole("region",{name:"Trace list"})).toBeNull();
- const mode=screen.getByRole("combobox",{name:/Mode for/});
+ const mode=screen.getByRole("button",{name:/Actions for/});
  const row=mode.closest("tr")!;
  fireEvent.click(row);
  expect(screen.getByRole("region",{name:"Trace list"})).toBeTruthy();
@@ -427,7 +447,7 @@ it("pauses automatic scans for the whole bypassed profile and resumes them",asyn
   await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Confirm bypass"}))});
   const before=events();
   expect(screen.getByText("Current: Bypass")).toBeTruthy();
-  expect((screen.getByRole("combobox",{name:/Mode for/}) as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByRole("button",{name:/Actions for/}) as HTMLButtonElement).disabled).toBe(true);
   await act(async()=>{await vi.advanceTimersByTimeAsync(15000)});
   expect(events()).toBe(before);
   await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Resume monitoring"}))});

@@ -7,6 +7,18 @@ import { blankDraft, seedEntities, type Entity } from '../src/features/business-
 const directories: string[] = [];
 afterEach(() => directories.splice(0).forEach(dir => rmSync(dir, {recursive: true, force: true})));
 const item: Entity = { ...blankDraft, id: 'one', kind: 'policies', name: 'Shared', owner: 'Compliance', text: 'Protect data', status: 'Needs input', version: 1, revisions: [], createdAt: 1, updatedAt: 1 };
+it('persists mandatory bindings and restores attempted removals',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'mandatory-demo-'));directories.push(dir);
+ const path=join(dir,'demo.sqlite');const store=new SharedDemoStore(path);
+ const required={...item,status:'Ready' as const,mandatory:true,mandatoryLocations:['SG' as const]};
+ const profile={...seedEntities().find(p=>p.kind==='guardrails')!,location:'SG',policies:[]};
+ const first=store.write(0,[required,profile]);
+ expect(first.items.find(p=>p.id===profile.id)!.policies[0]!.policyId).toBe(required.id);
+ const next=store.write(first.revision,first.items.map(p=>p.id===profile.id?{...p,policies:[]}:p));
+ expect(next.items.find(p=>p.id===profile.id)!.policies).toHaveLength(1);
+ store.close();const reopened=new SharedDemoStore(path);
+ expect(reopened.read().items.find(p=>p.id===profile.id)!.policies).toHaveLength(1);reopened.close();
+});
 it('persists across restart, migrates labels, and rejects stale overwrites', () => {
   const dir = mkdtempSync(join(tmpdir(), 'shared-demo-')); directories.push(dir);
   const path = join(dir, 'demo.sqlite');

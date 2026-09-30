@@ -8,10 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import {
-  restoreIntegratedEntities,
   saveEntity,
   deletionBlocker,
-  STORAGE_KEY,
   OWNER_STORAGE_KEY,
   type Draft,
   type Entity,
@@ -32,9 +30,8 @@ import { MultiSourceAdapter } from "./multi-source-api";
 import { saveBusinessPolicy, configurePolicy, type DemoRole, type WorkflowAction } from "./policy-workflow";
 import { MarketplaceAdapter } from "./marketplace-adapter";
 import type { UnifiedConfig } from './evaluation';
-import { normalizeDemo } from './unified-demo';
 import { useSharedState } from './shared-state';
-import { addStatusDemos, addFailureDemo, ensurePolicySources, balanceStatusDemos } from './status-demos';
+import { defaultDemo } from './default-demo';
 
 const DemoContext = createContext<{
   items: Entity[];
@@ -45,7 +42,7 @@ const DemoContext = createContext<{
   crudOnly?: boolean;
   role?: DemoRole;
   switchRole?: (role: DemoRole) => void;
-  configure?: (id: string, action: WorkflowAction, configs: Record<string, string>, comment?: string, config?: UnifiedConfig, business?: Pick<Entity, 'name' | 'text'>) => void | Promise<void>;
+  configure?: (id: string, action: WorkflowAction, configs: Record<string, string>, comment?: string, config?: UnifiedConfig, business?: Pick<Entity, 'name' | 'text' | 'mandatory' | 'mandatoryLocations'>) => void | Promise<void>;
   retrySync?: (item: Entity) => Promise<void>;
   connection?: ReactNode;
   busy?: boolean;
@@ -137,12 +134,6 @@ export function BusinessDemoProvider({
   );
 }
 
-function withPendingExample(items: Entity[]): Entity[] {
-  items = items.map((item) => item.kind === "guardrails" && item.status === "Review" ? { ...item, status: "Ready" as const } : item);
-  const id = "demo-pending-implementation";
-  if (items.some((item) => item.id === id)) return items;
-  return [{ ...items.find((item) => item.kind === "policies")!, id, name: "Customer data protection · Pending implementation", text: "Prevent customer personal information from being disclosed in responses.", owner: "ISS", source: undefined, status: "Draft", version: 1, revisions: [], policies: [], createdAt: Date.now(), updatedAt: Date.now(), workflow: { stage: "Awaiting Agent Wizard", businessId: id, configs: {}, submittedBy: "ISS", submittedAt: Date.now() } }, ...items];
-}
 function MockProvider({
   children,
   connection,
@@ -150,14 +141,7 @@ function MockProvider({
   children: ReactNode;
   connection?: ReactNode;
 }) {
-  const { items, commit: setItems, ready, busy, error: storageError, retry } = useSharedState(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return normalizeDemo(balanceStatusDemos(ensurePolicySources(addFailureDemo(addStatusDemos(withPendingExample(restoreIntegratedEntities(stored)), stored), stored)), stored));
-    } catch {
-      return normalizeDemo(balanceStatusDemos(ensurePolicySources(addFailureDemo(addStatusDemos(withPendingExample(restoreIntegratedEntities(null)), null), null)), null));
-    }
-  });
+  const { items, commit: setItems, ready, busy, error: storageError, retry } = useSharedState(defaultDemo);
   useEffect(() => {
     if (!ready || busy || !items.some(item => item.kind === 'guardrails' && !item.runtime)) return;
     Promise.resolve(setItems(current => current.map(item => initializeProfileRuntime(item, Date.now())))).catch(() => { /* Shared storage reports its own error. */ });

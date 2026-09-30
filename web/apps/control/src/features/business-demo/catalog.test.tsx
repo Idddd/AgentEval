@@ -278,9 +278,9 @@ it("paginates and resets the page after searching", () => {
     }),
   );
   render(<App />);
-  expect(screen.getByText("1–8 of 19")).toBeTruthy();
+  expect(screen.getByText("1–8 of 18")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  expect(screen.getByText("9–16 of 19")).toBeTruthy();
+  expect(screen.getByText("9–16 of 18")).toBeTruthy();
   fireEvent.change(screen.getByRole("textbox", { name: "Search guardrails" }), {
     target: { value: "Guardrail 17" },
   });
@@ -404,7 +404,7 @@ it("sorts policies by updated time in both directions before pagination", () => 
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, items }));
   render(<App />);
   const rows = () => screen.getAllByRole("row").slice(1);
-  expect(rows()[0]!.textContent).toContain("Customer data protection · Pending implementation");
+  expect(rows()[0]!.textContent).toContain("Sort policy 9");
   fireEvent.click(
     screen.getByRole("button", {
       name: "Updated: newest first; sort oldest first",
@@ -421,7 +421,7 @@ it("sorts policies by updated time in both directions before pagination", () => 
       name: "Updated: oldest first; sort newest first",
     }),
   );
-  expect(rows()[0]!.textContent).toContain("Customer data protection · Pending implementation");
+  expect(rows()[0]!.textContent).toContain("Sort policy 9");
 });
 
 it("shows linked guardrails on the latest policy even when they use an older version", () => {
@@ -449,7 +449,7 @@ it('hides empty workflow detail headings', () => {
   }
 });
 
-it('shows one evaluation summary and places collapsed configuration below the description', () => {
+it('shows compact configuration directly below the description without a dropdown', () => {
   const config = {...emptyConfig(), content:'Unique LLM instructions'};
   const evaluation = createEvaluation('compact',1,config,['Guard'],0);
   const policy = {...seedEntities().find(item=>item.kind==='policies')!, workflow:{businessId:'compact',configs:{},stage:'Ready' as const,config,evaluation:{...evaluation,results:evaluation.results.map(r=>({...r,status:'completed' as const}))}}};
@@ -457,9 +457,12 @@ it('shows one evaluation summary and places collapsed configuration below the de
   expect(screen.queryByText('Test results')).toBeNull();
   expect(screen.getAllByText('Unique LLM instructions')).toHaveLength(1);
   expect(screen.queryByRole('textbox',{name:/LLM description/})).toBeNull();
-  const details = screen.getByText('Technical configuration').closest('details')!;
-  expect(details.open).toBe(false);
-  expect(details.compareDocumentPosition(screen.getByRole('region',{name:'Evaluation results'})) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const configuration = screen.getByRole('region',{name:'Technical configuration'});
+  expect(configuration.closest('details')).toBeNull();
+  expect(within(configuration).getByText('GenAI')).toBeTruthy();
+  expect(within(configuration).getByText('Both')).toBeTruthy();
+  expect(within(configuration).queryByRole('combobox')).toBeNull();
+  expect(configuration.compareDocumentPosition(screen.getByRole('region',{name:'Evaluation results'})) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it('focuses the return reason and shows validation beside the approval buttons', () => {
@@ -485,7 +488,10 @@ it.each([['ISS',true,false],['IT Admin',false,true],['Admin',true,true]] as cons
   expect(!!screen.queryByRole('textbox',{name:'Requirement'})).toBe(businessAllowed);
   expect(!!screen.queryByRole('textbox',{name:'Name'})).toBe(businessAllowed);
   expect(!!screen.queryByRole('textbox',{name:'LLM description'})).toBe(technicalAllowed);
-  expect(screen.getByRole('combobox',{name:'Scanner type'}).closest('fieldset')!.disabled).toBe(!technicalAllowed);
+  const scanner=screen.queryByRole('combobox',{name:'Scanner type'});
+  expect(!!scanner).toBe(technicalAllowed);
+  if(scanner) expect(scanner.closest('fieldset')!.disabled).toBe(false);
+  else expect(within(screen.getByRole('region',{name:'Technical configuration'})).getByText('GenAI')).toBeTruthy();
 });
 
 it('saves edited technical configuration as a fresh version without old results', async () => {

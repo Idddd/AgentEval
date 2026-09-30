@@ -25,6 +25,7 @@ import {
 } from "./catalog";
 import {
   availableRevisions,
+  isMandatoryFor,
   scopeKeys,
   scopeLabels,
   type Entity,
@@ -89,6 +90,7 @@ export function GuardrailDetails({ id }: { id: string }) {
             >
               {ref.name}
             </button>
+            {guard && policy && isMandatoryFor(policy,guard.location) && <span className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">Mandatory</span>}
             {guard?.status !== "Active" && (
               <span className="inline-flex shrink-0 gap-1 opacity-0 transition-opacity group-hover/policy:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
                 <button
@@ -105,12 +107,14 @@ export function GuardrailDetails({ id }: { id: string }) {
                   type="button"
                   aria-label={`Remove ${ref.name}`}
                   title={
-                    guardDirty
+                    guard && policy && isMandatoryFor(policy,guard.location)
+                      ? "Mandatory Guardrail cannot be removed"
+                      : guardDirty
                       ? "Save or cancel profile changes first"
                       : "Remove from profile"
                   }
                   className="rounded p-1 text-zinc-400 hover:text-red-700 disabled:opacity-40"
-                  disabled={guardDirty || busy}
+                  disabled={guardDirty || busy || !!(guard && policy && isMandatoryFor(policy,guard.location))}
                   onClick={() => {
                     setRemoving(ref);
                     setRemoveError("");
@@ -175,6 +179,7 @@ export function GuardrailDetails({ id }: { id: string }) {
                   Control unit · {guard.owner?.toLowerCase() === "admin" ? "Not assigned" : guard.owner}
                 </p>
               )}
+              {guard.useCase.trim() && <section aria-label="Profile use case" className="max-w-3xl space-y-1"><p className="text-xs font-medium text-muted-foreground">Use case</p><p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground/75">{guard.useCase}</p></section>}
               {guard.remote && (
                 <p className="text-xs text-muted-foreground">
                   Draft revision {guard.remote.draftRevision}

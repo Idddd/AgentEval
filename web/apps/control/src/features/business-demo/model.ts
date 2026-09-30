@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { profileRuntimeSchema } from './profile-runtime';
+import { profileRuntimeSchema, guardrailMode } from './profile-runtime';
 import { unifiedConfigSchema, sourceSchema, evaluationSchema } from './evaluation';
 
 export const statuses = [
@@ -55,6 +55,8 @@ const revisionSchema = z.object({
 const referenceSchema = revisionSchema.extend({ policyId: z.string() });
 export type PolicyReference = z.infer<typeof referenceSchema>;
 export const entitySchema = z.object({
+  mandatory: z.boolean().optional(),
+  mandatoryLocations: z.array(z.enum(['All','SG','CN','IN','ID','HK','TW'])).optional(),
   runtime: profileRuntimeSchema.optional(),
   workflow: workflowSchema.optional(),
   source: z.enum(["Guard", "F5"]).optional(),
@@ -95,7 +97,7 @@ export const entitySchema = z.object({
 export type Entity = z.infer<typeof entitySchema>;
 export type Draft = Pick<
   Entity,
-  "name" | "text" | "useCase" | "policies" | "source" | "scanDirection" | ScopeKey
+  "name" | "text" | "useCase" | "policies" | "source" | "scanDirection" | "mandatory" | "mandatoryLocations" | ScopeKey
 >;
 export const blankDraft: Draft = {
   source: "Guard",
@@ -108,6 +110,8 @@ export const blankDraft: Draft = {
   agentType: "",
   dataType: "",
   policies: [],
+  mandatory: false,
+  mandatoryLocations: [],
 };
 export const STORAGE_KEY = "ai-marketplace.business-demo.v1";
 export const OWNER_STORAGE_KEY = "ai-marketplace.active-owner.v1";
@@ -128,6 +132,34 @@ export function availableRevisions(policy: Entity): PolicyReference[] {
   return revisions.map((r) => ({ ...r, policyId: policy.id }));
 }
 
+export function isMandatoryFor(policy: Entity, location: string): boolean {
+  if (policy.kind !== 'policies' || !policy.mandatory) return false;
+  const regions: readonly string[] = policy.mandatoryLocations?.length ? policy.mandatoryLocations : ['All'];
+  return regions.includes('All') || location === 'All' || regions.includes(location);
+}
+export function mandatoryReferences(items: Entity[], location: string): PolicyReference[] {
+  return items.filter(p=>isMandatoryFor(p,location)).flatMap(p=>{
+    const latest = availableRevisions(p).at(-1);
+    return latest ? [latest] : [];
+  });
+}
+export function includeMandatory(selected: PolicyReference[], items: Entity[], location: string): PolicyReference[] {
+  const missing = mandatoryReferences(items,location).filter(r=>!selected.some(s=>s.policyId===r.policyId));
+  return missing.length ? [...selected,...missing] : selected;
+}
+export function enforceMandatory(items: Entity[], now = Date.now()): Entity[] {
+  let changed = false;
+  const next = items.map(profile=>{
+    if (profile.kind !== 'guardrails') return profile;
+    const policies = includeMandatory(profile.policies,items,profile.location);
+    if (policies === profile.policies) return profile;
+    changed = true;
+    const modes = Object.fromEntries(policies.map(ref=>[ref.policyId, profile.policies.some(r=>r.policyId===ref.policyId) ? guardrailMode(profile,ref.policyId) : 'monitoring' as const]));
+    return {...profile,policies,updatedAt:now,...(profile.runtime ? {runtime:{...profile.runtime,modes,approval:'off' as const,snapshot:undefined,draftModes:undefined}} : {})};
+  });
+  return changed ? next : items;
+}
+
 export function validateDraft(
   kind: Kind,
   draft: Draft,
@@ -135,6 +167,7 @@ export function validateDraft(
   items?: Entity[],
 ) {
   const errors: Partial<Record<keyof Draft, string>> = {};
+  if (kind === 'policies' && draft.mandatory && !draft.mandatoryLocations?.length) errors.mandatoryLocations = 'Select at least one target region.';
   if (!draft.name.trim()) errors.name = "Enter a name.";
   if (submit && kind === "policies" && !draft.text.trim())
     errors.text = "Enter the requirement.";
@@ -182,12 +215,18 @@ export function saveEntity(
   items?: Entity[],
   currentOwner = "Admin",
 ): Entity {
+  if (kind === 'guardrails' && items) {
+    if (existing && mandatoryReferences(items,draft.location).some(ref=>existing.policies.some(p=>p.policyId===ref.policyId) && !draft.policies.some(p=>p.policyId===ref.policyId))) throw new Error('Mandatory Guardrails cannot be removed from this profile.');
+    draft = {...draft,policies:includeMandatory(draft.policies,items,draft.location)};
+  }
   if (existing?.kind === "guardrails" && existing.status === "Active")
     throw new Error("Deactivate this profile before editing.");
   if (Object.keys(validateDraft(kind, draft, submit, items)).length)
     throw new Error("Invalid draft");
   return {
     ...blankDraft,
+    mandatory: kind === 'policies' ? draft.mandatory ?? false : false,
+    mandatoryLocations: kind === 'policies' ? draft.mandatoryLocations ?? [] : [],
     ...(kind === 'guardrails' ? { runtime: { ...(existing?.runtime ?? { events: [] }), approval: 'off' as const, snapshot: undefined } } : {}),
     source: draft.source ?? "Guard",
     scanDirection: draft.scanDirection ?? "Both",

@@ -39,6 +39,8 @@ import {
   blankDraft,
   deletionBlocker,
   availableRevisions,
+  includeMandatory,
+  isMandatoryFor,
   filterEntities,
   scopeKeys,
   scopeLabels,
@@ -56,6 +58,7 @@ import { SavedDraftError, BatchSaveError } from "./guard-api";
 import { workflowStage, policyStatus, type DemoRole } from "./policy-workflow";
 
 import { UnifiedConfigForm } from './unified-config-form';
+import { MandatoryFields } from './mandatory-fields';
 import { unifiedEvaluation } from './unified-demo';
 import { readUnified, configError, type Source } from './evaluation';
 import type { WorkflowAction } from './policy-workflow';
@@ -93,7 +96,7 @@ function MockPolicyWorkflow({ item, readOnly, onDirty, onDeleted, onVersionSelec
   const reasonRef = useRef<HTMLTextAreaElement>(null);
   const [saving, setSaving] = useState(false);
   const [editingConfig, setEditingConfig] = useState(false);
-  const [business, setBusiness] = useState({name:item.name,text:item.text});
+  const [business, setBusiness] = useState({name:item.name,text:item.text,mandatory:item.mandatory,mandatoryLocations:item.mandatoryLocations});
   const canEditBusiness = role !== 'Agent Wizard' && !readOnly;
   const canEditTechnical = role !== 'User' && !readOnly;
   const unifiedEditing = stage === 'Ready' && !readOnly;
@@ -115,13 +118,21 @@ function MockPolicyWorkflow({ item, readOnly, onDirty, onDeleted, onVersionSelec
     finally { setSaving(false); }
   }
   return <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-6">
-    <div className="space-y-3"><div className="flex items-start justify-between gap-3"><PolicyWorkflowStatus item={item} role={role} />{unifiedEditing && (editingConfig ? <div className="flex flex-wrap justify-end gap-2"><Button disabled={saving} onClick={()=>action('revise')}>Save as new version</Button><Button disabled={saving} variant="outline" onClick={()=>{setBusiness({name:item.name,text:item.text});setConfig(item.workflow!.config ?? readUnified(item.workflow!.configs,item.text));setEditingConfig(false);setError('');onDirty(false);}}>Cancel</Button></div> : <Button className="h-10 px-5 font-semibold shadow-sm" onClick={()=>{setConfig(canEditTechnical ? {...config,versionName:`v${Number(item.version)+1}`} : config);setEditingConfig(true);onDirty(true);}}><Pencil aria-hidden="true" className="size-4" />Edit</Button>)}</div>{editingConfig && canEditBusiness ? <label className="grid gap-2 text-sm font-medium">Name<Input disabled={saving} value={business.name} onChange={e=>{setBusiness({...business,name:e.target.value});onDirty(true);}} /></label> : <h2 className="font-heading text-2xl">{item.name}</h2>}<p className="text-xs text-muted-foreground">Control unit · {item.owner?.toLowerCase() === "admin" ? "Not assigned" : item.owner} · v{item.version}</p></div>
+    <div className="space-y-3"><div className="flex items-start justify-between gap-3"><PolicyWorkflowStatus item={item} role={role} />{unifiedEditing && (editingConfig ? <div className="flex flex-wrap justify-end gap-2"><Button disabled={saving} onClick={()=>action('revise')}>Save as new version</Button><Button disabled={saving} variant="outline" onClick={()=>{setBusiness({name:item.name,text:item.text,mandatory:item.mandatory,mandatoryLocations:item.mandatoryLocations});setConfig(item.workflow!.config ?? readUnified(item.workflow!.configs,item.text));setEditingConfig(false);setError('');onDirty(false);}}>Cancel</Button></div> : <Button className="h-10 px-5 font-semibold shadow-sm" onClick={()=>{setConfig(canEditTechnical ? {...config,versionName:`v${Number(item.version)+1}`} : config);setEditingConfig(true);onDirty(true);}}><Pencil aria-hidden="true" className="size-4" />Edit</Button>)}</div>{editingConfig && canEditBusiness ? <label className="grid gap-2 text-sm font-medium">Name<Input disabled={saving} value={business.name} onChange={e=>{setBusiness({...business,name:e.target.value});onDirty(true);}} /></label> : <h2 className="font-heading text-2xl">{item.name}</h2>}<p className="text-xs text-muted-foreground">Control unit · {item.owner?.toLowerCase() === "admin" ? "Not assigned" : item.owner} · v{item.version}</p></div>
     {item.workflow?.comment && !item.workflow.comment.startsWith("Prewritten failure demo.") && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">{item.workflow.comment}</p>}
     {editing ? <EntityEditor kind="policies" initial={item} inline onDirty={onDirty} onSave={(draft, submit) => { const result = save("policies", draft, submit, item); if (result instanceof Promise) return result.then(() => { onDirty(false); }); onDirty(false); }} /> : <section className="space-y-2"><h3 className="text-sm font-medium">Requirement</h3>{editingConfig && canEditBusiness ? <Textarea aria-label="Requirement" disabled={saving} className="min-h-28" value={business.text} onChange={e=>{setBusiness({...business,text:e.target.value});onDirty(true);}} /> : <p className="whitespace-pre-wrap break-words text-sm leading-6">{item.text}</p>}</section>}
+    {!editing && <MandatoryFields value={business} disabled={saving} {...(editingConfig && canEditBusiness ? {onChange:(settings:Pick<Draft,'mandatory'|'mandatoryLocations'>)=>{setBusiness({...business,...settings});onDirty(true);}} : {})} />}
     {stage !== 'Configuring' && config.scannerType === 'custom' && (editingConfig || item.workflow?.config?.content.trim()) && <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">LLM description</h3>{editingConfig && canEditTechnical ? <Textarea aria-label="LLM description" className="min-h-72 resize-y" maxLength={100000} value={config.content} onChange={e=>{setConfig({...config,content:e.target.value});onDirty(true);}} /> : <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm leading-6">{config.content}</p>}</section>}
-    {stage === "Ready" && (editingConfig || item.workflow?.config?.content.trim()) && <details open={editingConfig || undefined} className="space-y-3 border-t pt-4"><summary className="cursor-pointer text-sm font-medium">Technical configuration</summary><UnifiedConfigForm config={config} sources={sources} disabled={!editingConfig || !canEditTechnical || saving} hideDescription onChange={value=>{setConfig(value);onDirty(true);}} onSources={() => {}} />
+    {stage === "Ready" && (editingConfig || item.workflow?.config?.content.trim()) && <section aria-label="Technical configuration" className="space-y-3 border-t pt-4">
+      {editingConfig && canEditTechnical ? <UnifiedConfigForm config={config} sources={sources} disabled={saving} hideDescription onChange={value=>{setConfig(value);onDirty(true);}} onSources={() => {}} /> : <dl className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2"><dt>Scanner</dt><dd className="text-foreground/70">{config.scannerType==='custom'?'GenAI':config.scannerType==='regex'?'Regex':'Keywords'}</dd></div>
+        <div className="flex items-center gap-2"><dt>Direction</dt><dd className={`inline-flex items-center rounded-md border px-2.5 py-1 font-semibold ${config.direction==='request'?'border-blue-200 bg-blue-50 text-blue-700':config.direction==='response'?'border-violet-200 bg-violet-50 text-violet-700':'border-cyan-200 bg-cyan-50 text-cyan-700'}`}>{config.direction==='request'?'Request':config.direction==='response'?'Response':'Both'}</dd></div>
+        <div className="flex items-center gap-2"><dt>Version</dt><dd className="text-foreground/70">{config.versionName}</dd></div>
+        {config.versionDescription.trim() && <div className="w-full"><dt className="sr-only">Version description</dt><dd className="whitespace-pre-wrap break-words leading-5">{config.versionDescription}</dd></div>}
+        {config.scannerType!=='custom' && config.content.trim() && <div className="w-full space-y-1"><dt>{config.scannerType==='regex'?'Regex pattern':'Keywords'}</dt><dd className="whitespace-pre-wrap break-words font-mono text-foreground/70">{config.content}</dd></div>}
+      </dl>}
       {editingConfig && <p className="text-xs text-muted-foreground">Saving creates a new version. Previous evaluation results and approval will not carry over.</p>}
-    </details>}
+    </section>}
     {(stage === "Awaiting Agent Wizard" || stage === "Needs input" || stage === 'Submitted') && <section className="rounded-md border p-4 space-y-3"><p className="text-sm">Waiting for IT Admin to configure this guardrail.</p>{role !== "User" && !readOnly && <Button onClick={() => action("start")}>Start configuration</Button>}</section>}
     {stage === "Configuring" && role === "User" && <p className="text-sm text-muted-foreground">IT Admin is configuring this guardrail.</p>}
     {stage === "Configuring" && role !== "User" && !readOnly && <section className="space-y-5 border-t pt-5">
@@ -1043,6 +1054,10 @@ export function EntityEditor({
   const [savedLink, setSavedLink] = useState("");
   const saving = useRef(false);
   const [draft, setDraft] = useState<Draft>(initial ?? { ...blankDraft });
+  useEffect(()=>{
+    if (kind !== 'guardrails' || live) return;
+    setDraft(current=>{const policies=includeMandatory(current.policies,items,current.location);return policies===current.policies ? current : {...current,policies};});
+  },[items,kind,live,draft.location]);
   const [errors, setErrors] = useState<Partial<Record<keyof Draft, string>>>(
     {},
   );
@@ -1249,6 +1264,8 @@ export function EntityEditor({
           </label>
         )}
 
+        {businessStep && <><MandatoryFields value={draft} disabled={readOnly} onChange={settings=>{setDraft({...draft,...settings});setErrors({...errors,mandatoryLocations:''});onDirty(true);}} />{error('mandatoryLocations')}</>}
+
         {inline &&
           initial?.kind === "policies" &&
           initial.status === "Ready" &&
@@ -1284,6 +1301,7 @@ export function EntityEditor({
                 draft.policies.map((policy) => policy.name).join("\n"),
                 <PolicyPicker
                   items={items}
+                  location={draft.location}
                   selected={draft.policies}
                   onChange={(policies) => {
                     setDraft({ ...draft, policies });
@@ -1446,10 +1464,12 @@ function PolicyPicker({
   items,
   selected,
   onChange,
+  location,
 }: {
   items: Entity[];
   selected: PolicyReference[];
   onChange: (refs: PolicyReference[]) => void;
+  location: string;
 }) {
   const [query, setQuery] = useState("");
   const [preferred, setPreferred] = useState<Record<string, string>>({});
@@ -1480,6 +1500,7 @@ function PolicyPicker({
       <div className="h-60 min-h-0 overflow-y-auto overscroll-contain divide-y" aria-label="Available policies">
         {visible.map((ref) => {
           const policy = items.find((item) => item.id === ref.policyId)!;
+          const mandatory = isMandatoryFor(policy,location);
           const ready = availableRevisions(policy);
           const versions = [...ready];
           if (
@@ -1511,6 +1532,7 @@ function PolicyPicker({
                 <input
                   type="checkbox"
                   className="size-4 accent-primary"
+                  disabled={mandatory}
                   checked={selected.some((r) => r.policyId === ref.policyId)}
                   onChange={(e) =>
                     onChange(
@@ -1520,7 +1542,7 @@ function PolicyPicker({
                     )
                   }
                 />
-                <span className="min-w-0 flex-1 break-words">{ref.name}</span>
+                <span className="min-w-0 flex-1 break-words">{ref.name}{mandatory && <span className="ml-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">Mandatory</span>}</span>
               </label>
               <select
                 aria-label={`Version for ${policy.name}`}
