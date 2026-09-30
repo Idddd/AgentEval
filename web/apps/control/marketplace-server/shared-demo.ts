@@ -99,6 +99,7 @@ function permitsWrite(request: Request, configured?: string): boolean {
 }
 export async function sharedDemoApi(request: Request, env = process.env) {
   const headers = { 'Cache-Control': 'no-store' };
+  if (env.MARKETPLACE_DEMO_STORAGE === 'browser') return Response.json({error:'Browser-only demo; server storage is disabled.'},{status:404,headers});
   if ((env.MARKETPLACE_DATA_MODE ?? 'mock') === 'live') return Response.json({error: 'This service uses the live backend.'}, {status: 404, headers});
   try {
     if (request.method !== 'GET' && request.method !== 'PUT') return Response.json({error: 'Method not allowed'}, {status: 405, headers});

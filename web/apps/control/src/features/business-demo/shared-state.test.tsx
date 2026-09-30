@@ -3,8 +3,19 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { useSharedState } from './shared-state';
 import { blankDraft, type Entity } from './model';
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
 const item: Entity = {...blankDraft,id:'demo',kind:'policies',name:'Saved record',text:'Private data',status:'Draft',owner:'Admin',version:1,revisions:[],createdAt:1,updatedAt:1};
+it('browser-only mode survives remounts without any storage API requests',async()=>{
+ const fetch=vi.fn(()=>{throw new Error('No server storage allowed')});vi.stubGlobal('fetch',fetch);
+ const first=renderHook(()=>useSharedState(()=>[item],true));
+ await waitFor(()=>expect(first.result.current.ready).toBe(true));
+ await act(async()=>{await first.result.current.commit(items=>items.map(x=>({...x,name:'Browser edit'})))});
+ first.unmount();
+ const second=renderHook(()=>useSharedState(()=>[],true));
+ await waitFor(()=>expect(second.result.current.ready).toBe(true));
+ expect(second.result.current.items[0]?.name).toBe('Browser edit');
+ expect(fetch).not.toHaveBeenCalled();
+});
 it('initializes once and loads server data instead of stale browser data after refresh', async () => {
   let state = {revision:0, items:[] as Entity[]};
   vi.stubGlobal('fetch', vi.fn(async (_url, init) => {

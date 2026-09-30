@@ -444,7 +444,7 @@ it("shows linked guardrails on the latest policy even when they use an older ver
 it('hides empty workflow detail headings', () => {
   const policy = {...seedEntities().find(item => item.kind === 'policies')!, id:'empty-details', revisions:[], workflow:{businessId:'empty-details',configs:{},stage:'Draft' as const}};
   render(<BusinessDemoProvider config={{mode:'mock',sourceId:'mock',policyAuthoring:true}}><EntityDetail item={policy} onEdit={() => {}} /></BusinessDemoProvider>);
-  for (const name of ['Versions','Used by Profiles','LLM description','Evaluation','Technical configuration']) {
+  for (const name of ['Versions','Used by Profiles','LLM prompt','Evaluation','Technical configuration']) {
     expect(screen.queryByRole('heading',{name})).toBeNull();
   }
 });
@@ -456,7 +456,7 @@ it('shows compact configuration directly below the description without a dropdow
   render(<BusinessDemoProvider config={{mode:'mock',sourceId:'mock',policyAuthoring:true}}><EntityDetail item={policy} onEdit={()=>{}} /></BusinessDemoProvider>);
   expect(screen.queryByText('Test results')).toBeNull();
   expect(screen.getAllByText('Unique LLM instructions')).toHaveLength(1);
-  expect(screen.queryByRole('textbox',{name:/LLM description/})).toBeNull();
+  expect(screen.queryByRole('textbox',{name:/LLM prompt/})).toBeNull();
   const configuration = screen.getByRole('region',{name:'Technical configuration'});
   expect(configuration.closest('details')).toBeNull();
   expect(within(configuration).getByText('GenAI')).toBeTruthy();
@@ -487,7 +487,7 @@ it.each([['ISS',true,false],['IT Admin',false,true],['Admin',true,true]] as cons
   fireEvent.click(screen.getByRole('button',{name:'Edit'}));
   expect(!!screen.queryByRole('textbox',{name:'Requirement'})).toBe(businessAllowed);
   expect(!!screen.queryByRole('textbox',{name:'Name'})).toBe(businessAllowed);
-  expect(!!screen.queryByRole('textbox',{name:'LLM description'})).toBe(technicalAllowed);
+  expect(!!screen.queryByRole('textbox',{name:'LLM prompt'})).toBe(technicalAllowed);
   const scanner=screen.queryByRole('combobox',{name:'Scanner type'});
   expect(!!scanner).toBe(technicalAllowed);
   if(scanner) expect(scanner.closest('fieldset')!.disabled).toBe(false);
@@ -504,7 +504,7 @@ it('saves edited technical configuration as a fresh version without old results'
   fireEvent.click(screen.getByRole('button',{name:'Edit'}));
   fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'Revised guardrail'}});
   fireEvent.change(screen.getByRole('textbox',{name:'Requirement'}),{target:{value:'Revised requirement'}});
-  fireEvent.change(screen.getByRole('textbox',{name:'LLM description'}),{target:{value:'Updated config'}});
+  fireEvent.change(screen.getByRole('textbox',{name:'LLM prompt'}),{target:{value:'Updated config'}});
   await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Save as new version'}));});
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!).items.find((item:{id:string})=>item.id==='config-edit');
   expect(saved.version).toBe(2);

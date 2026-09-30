@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { entitySchema, enforceMandatory, type Entity } from './model';
+import { entitySchema, enforceMandatory, advanceProcessing, type Entity } from './model';
 import { z } from 'zod';
 import { compactTraces, assertStorageCapacity } from './trace-retention';
 const schema = z.object({revision: z.number().int(), items: z.array(entitySchema)});
 
-export function useSharedState(initial: () => Entity[]) {
+export const BROWSER_DEMO_KEY = 'tali-browser-demo-v1';
+export function useSharedState(initial: () => Entity[], browserOnly = false) {
   const [items, setItems] = useState<Entity[]>([]);
   const current = useRef(items);
   const revision = useRef(0);
   const writing = useRef(false);
+  const local = useRef<z.infer<typeof schema>>({revision:0,items:[]});
+  const localAvailable = useRef(true);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -17,6 +20,25 @@ export function useSharedState(initial: () => Entity[]) {
     revision.current = snapshot.revision; current.current = snapshot.items; setItems(snapshot.items);
   };
   async function request(method = 'GET', value?: unknown) {
+    if (browserOnly) {
+      if (localAvailable.current) {
+        try { const saved = localStorage.getItem(BROWSER_DEMO_KEY); if (saved) local.current = schema.parse(JSON.parse(saved)); }
+        catch { localAvailable.current = false; }
+      }
+      if (method === 'PUT') {
+        const candidate = schema.parse(value);
+        if (candidate.revision !== local.current.revision) throw new Error('Cases changed in another tab. Reload and try again.');
+        local.current = {revision:candidate.revision+1,items:candidate.items};
+      } else {
+        const next = compactTraces(enforceMandatory(advanceProcessing(local.current.items,Date.now())));
+        if (next !== local.current.items) local.current = {revision:local.current.revision+1,items:next};
+      }
+      if (localAvailable.current) {
+        try { localStorage.setItem(BROWSER_DEMO_KEY,JSON.stringify(local.current)); }
+        catch { localAvailable.current = false; }
+      }
+      return local.current;
+    }
     const response = await fetch('/api/demo-state', {method, cache: 'no-store', ...(value ? {headers: {'Content-Type': 'application/json'}, body: JSON.stringify(value)} : {})});
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Shared storage unavailable. Changes were not saved.');
@@ -40,7 +62,7 @@ export function useSharedState(initial: () => Entity[]) {
     void load();
     const timer = window.setInterval(() => void load(), 3000);
     return () => { active = false; clearInterval(timer); };
-  }, [attempt]);
+  }, [attempt, browserOnly]);
   function commit(update: (items: Entity[]) => Entity[]): void | Promise<void> {
     if (!ready || writing.current) throw new Error('Shared data is loading or saving. Please try again.');
     const candidate=update(current.current); if(candidate===current.current)return; const next = compactTraces(enforceMandatory(candidate)); assertStorageCapacity(next);

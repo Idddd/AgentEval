@@ -38,7 +38,8 @@ jobs:
           set -euo pipefail
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           image_tag="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
-          chart_version="0.2.16-dev.${GITHUB_RUN_NUMBER}"
+          storage=browser
+          chart_version="0.2.17-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${image_tag}")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tags+=("${image}:pr-${{ github.event.pull_request.number }}")
@@ -52,12 +53,13 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.2.16-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.17-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
           {
             echo "name=${image}"
+            echo "storage=${storage}"
             echo "image_tag=${image_tag}"
             echo "chart_version=${chart_version}"
             echo "chart_registry=oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"
@@ -79,6 +81,7 @@ jobs:
             TALI_UI_DEMO_CHART_VERSION=${{ steps.image.outputs.chart_version }}
             TALI_UI_DEMO_IMAGE_REPOSITORY=${{ steps.image.outputs.name }}
             TALI_UI_DEMO_IMAGE_TAG=${{ steps.image.outputs.image_tag }}
+            TALI_UI_DEMO_STORAGE=${{ steps.image.outputs.storage }}
           labels: |
             org.opencontainers.image.title=AI Marketplace
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -102,7 +105,7 @@ jobs:
           mkdir -p artifacts
           for mode in mock live; do
             container=$(docker run -d --read-only --tmpfs /tmp -p 127.0.0.1:18082:8080 \
-              -e MARKETPLACE_DATA_MODE="$mode" -e GUARD_API_URL=http://guard.internal/api/v1 "$IMAGE")
+              -e MARKETPLACE_DATA_MODE="$mode" -e MARKETPLACE_DEMO_STORAGE=memory -e GUARD_API_URL=http://guard.internal/api/v1 "$IMAGE")
             curl --fail --retry 30 --retry-all-errors --retry-delay 2 --retry-max-time 90 --max-time 5 http://127.0.0.1:18082/api/health
             curl --fail http://127.0.0.1:18082/api/marketplace-config | jq -e --arg mode "$mode" '.mode == $mode'
             if [[ "$mode" == "mock" ]]; then
@@ -124,7 +127,7 @@ jobs:
             container=""
           done
           container=$(docker run -d --user 1001230000:0 --read-only --tmpfs /tmp -p 127.0.0.1:18082:8080 \
-            -e MARKETPLACE_DATA_MODE=mock -e MARKETPLACE_DEMO_DB_FILE=/unwritable/demo.sqlite "$IMAGE")
+            -e MARKETPLACE_DATA_MODE=mock -e MARKETPLACE_DEMO_STORAGE=memory -e MARKETPLACE_DEMO_DB_FILE=/unwritable/demo.sqlite "$IMAGE")
           curl --fail --retry 30 --retry-all-errors --retry-delay 2 --retry-max-time 90 --max-time 5 http://127.0.0.1:18082/api/health
           curl --fail http://127.0.0.1:18082/api/marketplace-config | jq -e '.sharedDemo == true'
           curl --fail http://127.0.0.1:18082/api/demo-state | jq -e '.revision == 0 and .items == []'
@@ -138,6 +141,13 @@ jobs:
           docker rm -f "$container"
           container=""
           chart="artifacts/tali-ui-demo-${CHART_VERSION}.tgz"
+          container=$(docker run -d --user 1001230000:0 --read-only --tmpfs /tmp -p 127.0.0.1:18082:8080 -e MARKETPLACE_DEMO_STORAGE=browser "$IMAGE")
+          curl --fail --retry 30 --retry-all-errors --retry-delay 2 --max-time 5 http://127.0.0.1:18082/api/health
+          curl --fail http://127.0.0.1:18082/api/marketplace-config | jq -e '.browserDemo == true and .sharedDemo == false'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18082/api/demo-state)" = 404
+          curl --fail http://127.0.0.1:18082/api/demo-backup | grep 'Cases are stored only in this browser'
+          docker rm -f "$container"
+          container=""
           helm lint "$chart"
           helm template tali-ui-demo "$chart" > artifacts/mock.yaml
           helm template tali-ui-demo "$chart" --set openshift.enabled=true > artifacts/ocp.yaml

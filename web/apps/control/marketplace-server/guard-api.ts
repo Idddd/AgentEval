@@ -53,7 +53,8 @@ export function runtimeResponse(env = process.env) {
     return Response.json(
       {
         mode: config.mode,
-        sharedDemo: config.mode !== 'live',
+        sharedDemo: config.mode !== 'live' && env.MARKETPLACE_DEMO_STORAGE !== 'browser',
+        browserDemo: config.mode !== 'live' && env.MARKETPLACE_DEMO_STORAGE === 'browser',
         sourceId: config.sourceId,
         policyAuthoring: !!config.authoring || env.MARKETPLACE_CRUD_ONLY === "true",
         crudOnly: env.MARKETPLACE_CRUD_ONLY === "true",

@@ -22,15 +22,17 @@ RUN npm prune --omit=dev
 
 FROM alpine/helm:3.18.4 AS chart
 ENTRYPOINT []
-ARG TALI_UI_DEMO_CHART_VERSION=0.2.16
+ARG TALI_UI_DEMO_CHART_VERSION=0.2.17
 ARG TALI_UI_DEMO_IMAGE_REPOSITORY=ghcr.io/idddd/tali-ui-demo
 ARG TALI_UI_DEMO_IMAGE_TAG=dev
+ARG TALI_UI_DEMO_STORAGE=browser
 WORKDIR /work
 COPY deploy/helm/tali-ui-demo ./tali-ui-demo
 RUN sed -i "s|^version:.*|version: ${TALI_UI_DEMO_CHART_VERSION}|" tali-ui-demo/Chart.yaml \
     && sed -i "s|^appVersion:.*|appVersion: ${TALI_UI_DEMO_IMAGE_TAG}|" tali-ui-demo/Chart.yaml \
     && sed -i "s|repository: ghcr.io/idddd/tali-ui-demo|repository: ${TALI_UI_DEMO_IMAGE_REPOSITORY}|" tali-ui-demo/values.yaml \
     && sed -i "s|tag: dev|tag: ${TALI_UI_DEMO_IMAGE_TAG}|" tali-ui-demo/values.yaml \
+    && sed -i "s|demoStorage: browser|demoStorage: ${TALI_UI_DEMO_STORAGE}|" tali-ui-demo/values.yaml \
     && helm lint tali-ui-demo \
     && helm template tali-ui-demo tali-ui-demo >/dev/null \
     && mkdir -p /packages /embedded \
@@ -51,7 +53,8 @@ COPY README.md requirements.txt main.py pytest.ini Dockerfile .dockerignore .git
 RUN python deploy/package-source.py --root /source --output /packages/project-source.zip
 
 FROM node:22-bookworm-slim AS runtime
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 MARKETPLACE_DATA_MODE=mock MARKETPLACE_DEMO_STORAGE=memory
+ARG TALI_UI_DEMO_STORAGE=browser
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 MARKETPLACE_DATA_MODE=mock MARKETPLACE_DEMO_STORAGE=${TALI_UI_DEMO_STORAGE}
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates openssl \

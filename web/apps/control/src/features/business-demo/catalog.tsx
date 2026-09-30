@@ -122,7 +122,7 @@ function MockPolicyWorkflow({ item, readOnly, onDirty, onDeleted, onVersionSelec
     {item.workflow?.comment && !item.workflow.comment.startsWith("Prewritten failure demo.") && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">{item.workflow.comment}</p>}
     {editing ? <EntityEditor kind="policies" initial={item} inline onDirty={onDirty} onSave={(draft, submit) => { const result = save("policies", draft, submit, item); if (result instanceof Promise) return result.then(() => { onDirty(false); }); onDirty(false); }} /> : <section className="space-y-2"><h3 className="text-sm font-medium">Requirement</h3>{editingConfig && canEditBusiness ? <Textarea aria-label="Requirement" disabled={saving} className="min-h-28" value={business.text} onChange={e=>{setBusiness({...business,text:e.target.value});onDirty(true);}} /> : <p className="whitespace-pre-wrap break-words text-sm leading-6">{item.text}</p>}</section>}
     {!editing && <MandatoryFields value={business} disabled={saving} {...(editingConfig && canEditBusiness ? {onChange:(settings:Pick<Draft,'mandatory'|'mandatoryLocations'>)=>{setBusiness({...business,...settings});onDirty(true);}} : {})} />}
-    {stage !== 'Configuring' && config.scannerType === 'custom' && (editingConfig || item.workflow?.config?.content.trim()) && <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">LLM description</h3>{editingConfig && canEditTechnical ? <Textarea aria-label="LLM description" className="min-h-72 resize-y" maxLength={100000} value={config.content} onChange={e=>{setConfig({...config,content:e.target.value});onDirty(true);}} /> : <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm leading-6">{config.content}</p>}</section>}
+    {stage !== 'Configuring' && config.scannerType === 'custom' && (editingConfig || item.workflow?.config?.content.trim()) && <section className="space-y-2 border-t pt-4"><h3 className="text-sm font-medium">LLM prompt</h3>{editingConfig && canEditTechnical ? <Textarea aria-label="LLM prompt" className="min-h-72 resize-y" maxLength={100000} value={config.content} onChange={e=>{setConfig({...config,content:e.target.value});onDirty(true);}} /> : <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm leading-6">{config.content}</p>}</section>}
     {stage === "Ready" && (editingConfig || item.workflow?.config?.content.trim()) && <section aria-label="Technical configuration" className="space-y-3 border-t pt-4">
       {editingConfig && canEditTechnical ? <UnifiedConfigForm config={config} sources={sources} disabled={saving} hideDescription onChange={value=>{setConfig(value);onDirty(true);}} onSources={() => {}} /> : <dl className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
         <div className="flex items-center gap-2"><dt>Scanner</dt><dd className="text-foreground/70">{config.scannerType==='custom'?'GenAI':config.scannerType==='regex'?'Regex':'Keywords'}</dd></div>
@@ -500,7 +500,7 @@ export function BusinessCatalog({
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const ownerOptions = [
     ...new Set(
-      [...(mode === "mock" ? ["Line 1.5", "Line 2"] : []), ...items
+      [...(mode === "mock" ? ["Line 1.5", "Line 2", "ISS", "LCS", "RMG"] : []), ...items
         .filter((item) => item.kind === kind)
         .map((item) => item.owner)
         .filter((owner) => !!owner && owner.toLowerCase() !== "admin")],

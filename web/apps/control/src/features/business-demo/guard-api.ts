@@ -8,6 +8,7 @@ import {
 } from "./model";
 
 export const runtimeSchema = z.object({
+  browserDemo: z.boolean().optional(),
   sharedDemo: z.boolean().optional(),
   marketplaceDb: z.boolean().optional(),
   mode: z.enum(["mock", "live", "auto"]),

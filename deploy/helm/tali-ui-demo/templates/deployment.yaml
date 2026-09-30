@@ -54,7 +54,7 @@ spec:
               protocol: TCP
           env:
             - name: MARKETPLACE_DEMO_STORAGE
-              value: memory
+              value: {{ .Values.marketplace.demoStorage | quote }}
             - name: MARKETPLACE_DATA_MODE
               value: {{ .Values.marketplace.dataMode | quote }}
             - name: GUARD_API_URL

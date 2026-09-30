@@ -27,6 +27,7 @@ service:
   port: 80
 
 marketplace:
+  demoStorage: browser
   dataMode: mock
   guardApiUrl: ""
   policyAuthoringUrl: ""

@@ -1,7 +1,7 @@
 # AI Marketplace
 
 AI Marketplace manages **Guardrails** and **Profiles**. Current release:
-**v0.2.16**, image `ghcr.io/idddd/tali-ui-demo:0.2.16`.
+**v0.2.17**, image `ghcr.io/idddd/tali-ui-demo:0.2.17`.
 
 ## Current UI
 
@@ -15,12 +15,12 @@ AI Marketplace manages **Guardrails** and **Profiles**. Current release:
 
 ## Start the published image
 
-Requires Docker. SQLite is included; no separate database service is needed.
+Requires Docker. Default demo data is stored in browser localStorage; no database is used.
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.16
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.17
 docker run -d --name ai-marketplace -p 18082:8080 \
-  ghcr.io/idddd/tali-ui-demo:0.2.16
+  ghcr.io/idddd/tali-ui-demo:0.2.17
 ```
 
 Open [Profiles](http://127.0.0.1:18082/guardrails).
@@ -32,14 +32,13 @@ for logo and favicon replacement.
 
 ## Shared database and initial data
 
-Mock mode uses server-side SQLite automatically. No enable switch is needed,
-and database failures do not fall back to browser-only storage.
+Version 0.2.17 defaults to browser localStorage (`MARKETPLACE_DEMO_STORAGE=browser`).
+Different browsers do not share cases. Server-side storage APIs are disabled.
 
-- Users of the same service share records; the UI polls about every three seconds.
-- A new database is initialized with default examples on the first page visit.
-- A revision check allows only the first successful initializer to write. Concurrent visitors read that result instead of appending duplicate examples.
-- Once initialized, the database is authoritative. Later visitors do not import browser records. Account selection remains a browser preference.
-- The image uses SQLite in memory, with one Pod and one server process. No PVC is required. Server restart clears the cases. Use the unlinked `/api/demo-backup` maintenance page to export and restore cases. See [backup instructions](docs/demo-memory-backup.md).
+- Default cases initialize on the first visit in each browser. Refresh retains edits.
+- Other tabs on the same origin pick up changes. Different browsers and domains are independent.
+- Pod restart does not clear browser data; clearing browser site data does.
+- No PVC is required. Use the unlinked `/api/demo-backup` page to export and restore cases. Import validation is stateless and does not store data on the server.
 - Completed trace details are limited to 200 per Profile, 1,000 overall and 24 hours, with an additional size budget. Older details are folded into aggregate statistics. A total state size limit prevents oversized writes.
 
 ## Local development

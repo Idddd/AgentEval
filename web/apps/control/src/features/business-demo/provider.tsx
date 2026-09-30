@@ -106,6 +106,7 @@ export function BusinessDemoProvider({
   if (config.mode === "mock" || fallback)
     return (
       <MockProvider
+        browserOnly={config.browserDemo === true}
         connection={
           fallback && (
             <div
@@ -137,17 +138,19 @@ export function BusinessDemoProvider({
 function MockProvider({
   children,
   connection,
+  browserOnly = false,
 }: {
   children: ReactNode;
   connection?: ReactNode;
+  browserOnly?: boolean;
 }) {
-  const { items, commit: setItems, ready, busy, error: storageError, retry } = useSharedState(defaultDemo);
+  const { items, commit: setItems, ready, busy, error: storageError, retry } = useSharedState(defaultDemo, browserOnly);
   useEffect(() => {
     if (!ready || busy || !items.some(item => item.kind === 'guardrails' && !item.runtime)) return;
     Promise.resolve(setItems(current => current.map(item => initializeProfileRuntime(item, Date.now())))).catch(() => { /* Shared storage reports its own error. */ });
   }, [ready, busy, items]);
   const owners = [
-    ...new Set(["Admin", "IT Admin", "Line 1.5", "Line 2", ...items.map((item) => item.owner).filter(Boolean)]),
+    ...new Set(["Admin", "IT Admin", "Line 1.5", "Line 2", "ISS", "LCS", "RMG", ...items.map((item) => item.owner).filter(Boolean)]),
   ];
   const [currentOwner, setCurrentOwner] = useState(() => {
     try {
