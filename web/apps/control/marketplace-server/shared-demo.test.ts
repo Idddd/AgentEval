@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +7,41 @@ import { blankDraft, seedEntities, type Entity } from '../src/features/business-
 const directories: string[] = [];
 afterEach(() => directories.splice(0).forEach(dir => rmSync(dir, {recursive: true, force: true})));
 const item: Entity = { ...blankDraft, id: 'one', kind: 'policies', name: 'Shared', owner: 'Compliance', text: 'Protect data', status: 'Needs input', version: 1, revisions: [], createdAt: 1, updatedAt: 1 };
+it('serves shared memory when the database path cannot open',async()=>{
+ const env={MARKETPLACE_DATA_MODE:'mock',MARKETPLACE_DEMO_DB_FILE:'\u0000invalid-database'};
+ const response=await sharedDemoApi(new Request('http://demo/api/demo-state'),env);
+ expect(response.status).toBe(200);
+ const {revision}=await response.json();
+ const saved=await sharedDemoApi(new Request('http://demo/api/demo-state',{method:'PUT',headers:{origin:'http://demo','content-type':'application/json'},body:JSON.stringify({revision,items:[item]})}),env);
+ expect(saved.status).toBe(200);
+ const next=await (await sharedDemoApi(new Request('http://demo/api/demo-state'),env)).json();
+ expect(next.items[0].name).toBe('Shared');
+});
+it('continues sharing and saving in memory when SQLite fails',async()=>{
+ const env={MARKETPLACE_DATA_MODE:'mock',MARKETPLACE_DEMO_DB_FILE:join(mkdtempSync(join(tmpdir(),'fallback-')),'demo.sqlite')};
+ directories.push(join(env.MARKETPLACE_DEMO_DB_FILE,'..'));
+ const read=async()=> (await sharedDemoApi(new Request('http://demo/api/demo-state'),env)).json();
+ const save=(revision:number,name:string)=>sharedDemoApi(new Request('http://demo/api/demo-state',{method:'PUT',headers:{origin:'http://demo','content-type':'application/json'},body:JSON.stringify({revision,items:[{...item,name}]})}),env);
+ expect((await save(0,'Before failure')).status).toBe(200);
+ const failure=vi.spyOn(SharedDemoStore.prototype,'write').mockImplementation(()=>{throw new Error('SQLITE_READONLY')});
+ try{
+  expect((await save(1,'After failure')).status).toBe(200);
+  expect((await read()).items[0].name).toBe('After failure');
+  expect((await save(1,'Stale')).status).toBe(409);
+  expect((await save(2,'Shared memory')).status).toBe(200);
+  expect((await read()).items[0].name).toBe('Shared memory');
+ }finally{failure.mockRestore()}
+});
+it('accepts browser same-origin writes behind TLS termination without trusting cross-site requests', async()=>{
+ const send=(site:string,origin:string,configured?:string)=>sharedDemoApi(new Request('http://internal:8080/api/demo-state',{method:'PUT',headers:{origin,'sec-fetch-site':site,'content-type':'application/json'},body:'{}'}),{MARKETPLACE_DATA_MODE:'mock',...(configured?{MARKETPLACE_PUBLIC_ORIGIN:configured}:{})});
+ // Invalid data should reach payload validation (400), not origin rejection (403).
+ expect((await send('same-origin','https://demo.example')).status).toBe(400);
+ expect((await send('cross-site','https://attacker.example')).status).toBe(403);
+ expect((await send('same-site','https://sibling.example')).status).toBe(403);
+ expect((await send('same-origin','null')).status).toBe(403);
+ expect((await send('same-origin','https://demo.example','https://other.example')).status).toBe(403);
+ expect((await send('same-origin','https://demo.example','https://demo.example/')).status).toBe(400);
+});
 it('memory mode ignores an unusable legacy file path and exports shared cases', async () => {
  const env={MARKETPLACE_DATA_MODE:'mock',MARKETPLACE_DEMO_STORAGE:'memory',MARKETPLACE_DEMO_DB_FILE:'/proc/unwritable/demo.sqlite'};
  const response=await sharedDemoApi(new Request('http://demo/api/demo-state?download=1'),env);

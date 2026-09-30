@@ -1,21 +1,23 @@
-# AI Marketplace deployment — v0.2.15
+# AI Marketplace deployment — v0.2.16
 
-This release uses shared in-memory SQLite without PVCs or database filesystem
-permissions. The hidden `/api/demo-backup` page exports and restores all cases.
+This release adds proxy-safe browser same-origin writes, automatic shared-memory
+fallback when SQLite fails, and three banking Guardrails with two linked Profiles
+adapted from the supplied F5 examples. Evaluation results remain simulated.
+SQLite runs in memory without PVCs. The hidden `/api/demo-backup` page exports and restores all cases.
 Server restart clears memory. Existing disk databases are not automatically
 loaded; preserve an export before switching and restore it through the maintenance
 page. Existing retained PVCs are not deleted.
 
-Image: `ghcr.io/idddd/tali-ui-demo:0.2.15` (linux/amd64).
+Image: `ghcr.io/idddd/tali-ui-demo:0.2.16` (linux/amd64).
 The Node server listens on port 8080. Mock mode uses shared SQLite automatically;
 there is no database enable flag.
 
 ## Docker
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.15
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.16
 docker run -d --name ai-marketplace -p 18082:8080 \
-  ghcr.io/idddd/tali-ui-demo:0.2.15
+  ghcr.io/idddd/tali-ui-demo:0.2.16
 ```
 
 Open [Profiles](http://127.0.0.1:18082/guardrails). SQLite runs in memory.
@@ -25,7 +27,7 @@ See [initial data and sharing](../README.md#shared-database-and-initial-data).
 
 ```sh
 helm upgrade --install tali-ui-demo oci://ghcr.io/idddd/charts/tali-ui-demo \
-  --version 0.2.15 --namespace ai-marketplace --create-namespace \
+  --version 0.2.16 --namespace ai-marketplace --create-namespace \
   --set openshift.enabled=true
 kubectl -n ai-marketplace port-forward svc/tali-ui-demo 18082:80
 ```
@@ -33,8 +35,9 @@ kubectl -n ai-marketplace port-forward svc/tali-ui-demo 18082:80
 No PVC or StorageClass is required. The OpenShift option lets the cluster assign
 the runtime UID. Use `replicaCount=1`. For a manually managed Deployment, remove
 obsolete PVC mounts, set `MARKETPLACE_DEMO_STORAGE=memory`, and use one replica.
-Set `marketplace.publicOrigin` to the actual HTTPS Route origin if required by
-your ingress setup. See [memory and backup](demo-memory-backup.md).
+Leave `marketplace.publicOrigin` empty for automatic browser same-origin support
+behind TLS-terminating routes. Remove any stale explicit origin from the previous
+deployment; an explicit value still takes precedence. See [memory and backup](demo-memory-backup.md).
 
 For a live Guard backend, add:
 
@@ -53,17 +56,17 @@ configuration and supported operations.
 Copy the published image to your Docker repository:
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.15
-docker tag ghcr.io/idddd/tali-ui-demo:0.2.15 jfrog.example.com/docker-local/tali-ui:0.2.15
-docker push jfrog.example.com/docker-local/tali-ui:0.2.15
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.16
+docker tag ghcr.io/idddd/tali-ui-demo:0.2.16 jfrog.example.com/docker-local/tali-ui:0.2.16
+docker push jfrog.example.com/docker-local/tali-ui:0.2.16
 ```
 
 Replace the example registry with yours and authenticate using your normal
 registry login. For offline transfer:
 
 ```sh
-docker save -o ai-marketplace-0.2.15.tar ghcr.io/idddd/tali-ui-demo:0.2.15
-docker load -i ai-marketplace-0.2.15.tar
+docker save -o ai-marketplace-0.2.16.tar ghcr.io/idddd/tali-ui-demo:0.2.16
+docker load -i ai-marketplace-0.2.16.tar
 ```
 
 Loading into Docker does not populate a Kubernetes containerd image store.
@@ -80,7 +83,7 @@ The image contains:
 Export without starting the application (POSIX shell):
 
 ```sh
-IMAGE=ghcr.io/idddd/tali-ui-demo:0.2.15
+IMAGE=ghcr.io/idddd/tali-ui-demo:0.2.16
 container=$(docker create "$IMAGE")
 docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" ./tali-UI-demo.tgz
 docker cp "$container:/opt/tali/source/project-source.zip" ./project-source.zip
@@ -105,7 +108,7 @@ Install the extracted chart with your internal image:
 helm upgrade --install tali-ui-demo ./tali-UI-demo.tgz \
   --namespace ai-marketplace --create-namespace \
   --set image.repository=jfrog.example.com/docker-local/tali-ui \
-  --set image.tag=0.2.15 --set openshift.enabled=true
+  --set image.tag=0.2.16 --set openshift.enabled=true
 ```
 
 ## Branding
@@ -117,7 +120,7 @@ Use `branding.existingConfigMap` for a ConfigMap containing `logo.svg` and
 
 The [release workflow](../.github/workflows/container-images.yml) builds
 `deploy/Dockerfile.marketplace`. Version tags publish image aliases such as
-`0.2.15` and `v0.2.15`, and the OCI chart at
+`0.2.16` and `v0.2.16`, and the OCI chart at
 `oci://ghcr.io/idddd/charts/tali-ui-demo`.
 
 Validation covers mock/live startup, default database reads and writes,

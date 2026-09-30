@@ -23,6 +23,11 @@ select the file again to retry. Export before restoring if you need to keep the
 current state. The hidden URL is not authentication: it has the same deployment
 access restrictions as the demo API. The maintenance page is disabled in live mode.
 
-The change removes SQLite filesystem permission failures. Infrastructure outages
-or resource exhaustion can still cause service errors; unexpected storage errors
-are now logged on the server for diagnosis.
+If SQLite cannot open or fails during reads/writes, the process automatically
+continues with shared JavaScript memory, preserving its most recent successful
+snapshot and revision. The failed storage is not retried on every request.
+Export and import remain available. If no data could be read before failure,
+the normal default cases initialize on the first page visit. Infrastructure
+outages or resource exhaustion can still cause service errors. Fallback events
+are logged on the server; validation and conflicting edits still reject unsafe
+writes instead of overwriting another user's work.

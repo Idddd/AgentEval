@@ -40,21 +40,75 @@ export class SharedDemoStore {
   close() { this.db.close(); }
 }
 
-const stores = new Map<string, SharedDemoStore>();
+// Keep a process-wide memory copy so a database failure cannot stop the demo.
+// This remains shared by all visitors; it is never browser-local storage.
+class ResilientDemoStore {
+  private database: SharedDemoStore | undefined;
+  private snapshot: {revision:number;items:Entity[]} = {revision:0,items:[]};
+  constructor(path:string) {
+    try { this.database = new SharedDemoStore(path); this.snapshot = this.database.read(); }
+    catch (error) { this.fallback(error); }
+  }
+  private fallback(error:unknown) {
+    console.warn('Demo database unavailable; continuing with shared process memory.', error);
+    try { this.database?.close(); } catch { /* Already unavailable. */ }
+    this.database = undefined;
+  }
+  read() {
+    if (this.database) {
+      try { this.snapshot = this.database.read(); }
+      catch (error) { this.fallback(error); }
+    }
+    return this.snapshot;
+  }
+  write(revision:number,items:Entity[]) {
+    const parsed = compactTraces(enforceMandatory(normalizeDemo(z.array(entitySchema).max(10000).parse(items))));
+    assertStorageCapacity(parsed);
+    if (new Set(parsed.map(item=>item.id)).size !== parsed.length) throw new SyntaxError('Duplicate record IDs.');
+    const current = this.read();
+    if (current.revision !== revision) throw new DemoConflict('Shared data changed. Reload and apply your changes again.');
+    if (this.database) {
+      try { this.snapshot = this.database.write(revision,parsed); return this.snapshot; }
+      catch (error) {
+        if (error instanceof DemoConflict || error instanceof StorageCapacityError || error instanceof z.ZodError) throw error;
+        this.fallback(error);
+      }
+    }
+    this.snapshot = {revision:revision+1,items:parsed};
+    return this.snapshot;
+  }
+  tick() {
+    const current = this.read();
+    const next = compactTraces(enforceMandatory(advanceProcessing(current.items,Date.now())));
+    return next === current.items ? current : this.write(current.revision,next);
+  }
+}
+const stores = new Map<string, ResilientDemoStore>();
+function permitsWrite(request: Request, configured?: string): boolean {
+  const origin = request.headers.get('origin');
+  const site = request.headers.get('sec-fetch-site');
+  if (!origin || origin === 'null' || site === 'cross-site') return false;
+  try {
+    const parsed = new URL(origin);
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.origin !== origin) return false;
+    // An explicit deployment allowlist takes precedence. Fetch Metadata is set
+    // by browsers and survives TLS termination without trusting forwarded hosts.
+    if (configured) return origin === new URL(configured.trim()).origin;
+    return site === 'same-origin' || origin === new URL(request.url).origin;
+  } catch { return false; }
+}
 export async function sharedDemoApi(request: Request, env = process.env) {
   const headers = { 'Cache-Control': 'no-store' };
   if ((env.MARKETPLACE_DATA_MODE ?? 'mock') === 'live') return Response.json({error: 'This service uses the live backend.'}, {status: 404, headers});
   try {
     if (request.method !== 'GET' && request.method !== 'PUT') return Response.json({error: 'Method not allowed'}, {status: 405, headers});
     if (request.method === 'PUT') {
-      const origin = request.headers.get('origin');
-      const allowed = env.MARKETPLACE_PUBLIC_ORIGIN || new URL(request.url).origin;
-      if (!origin || origin !== allowed || request.headers.get('sec-fetch-site') === 'cross-site') return Response.json({error: 'Origin not allowed'}, {status: 403, headers});
+      if (!permitsWrite(request, env.MARKETPLACE_PUBLIC_ORIGIN)) return Response.json({error: 'Origin not allowed. Set MARKETPLACE_PUBLIC_ORIGIN to the public site origin (https://your-host).'}, {status: 403, headers});
       if (!request.headers.get('content-type')?.startsWith('application/json')) return Response.json({error: 'JSON required'}, {status: 415, headers});
     }
     const databasePath=env.MARKETPLACE_DEMO_STORAGE === 'memory' ? ':memory:' : env.MARKETPLACE_DEMO_DB_FILE || ':memory:';
     let store = stores.get(databasePath);
-    if (!store) { store = new SharedDemoStore(databasePath); stores.set(databasePath, store); }
+    if (!store) { store = new ResilientDemoStore(databasePath); stores.set(databasePath, store); }
     if (request.method === 'GET') {
       const snapshot = store.tick();
       if (new URL(request.url).searchParams.get('download') === '1') return Response.json({format:'tali-demo',version:1,exportedAt:new Date().toISOString(),items:snapshot.items}, {headers:{...headers,'Content-Disposition':'attachment; filename="tali-demo-backup.json"'}});

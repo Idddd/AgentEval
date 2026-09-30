@@ -14,4 +14,4 @@ writeFileSync(backup,JSON.stringify(before,null,2),{flag:'wx'});
 const items=enforceMandatory(replaceLegacyExamples(before.items));
 const saved=await fetch(`${origin}/api/demo-state`,{method:'PUT',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({revision:before.revision,items})});
 if(!saved.ok)throw new Error(`Local demo was not replaced: ${saved.status} ${await saved.text()}`);
-console.log(JSON.stringify({backup,previousCount:before.items.length,currentCount:items.length,defaultGuardrails:2,defaultProfiles:1}));
+console.log(JSON.stringify({backup,previousCount:before.items.length,currentCount:items.length,defaultGuardrails:3,defaultProfiles:2}));
