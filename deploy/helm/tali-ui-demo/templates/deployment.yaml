@@ -53,8 +53,8 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
-            - name: MARKETPLACE_DEMO_DB_FILE
-              value: /data/demo.sqlite
+            - name: MARKETPLACE_DEMO_STORAGE
+              value: memory
             - name: MARKETPLACE_DATA_MODE
               value: {{ .Values.marketplace.dataMode | quote }}
             - name: GUARD_API_URL
@@ -88,8 +88,6 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            - name: demo-data
-              mountPath: /data
             - name: runtime-tmp
               mountPath: /tmp
             {{- if .Values.branding.existingConfigMap }}
@@ -98,13 +96,6 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
-        - name: demo-data
-          {{- if .Values.persistence.enabled }}
-          persistentVolumeClaim:
-            claimName: {{ .Values.persistence.existingClaim | default (printf "%s-data" (include "tali-ui-demo.fullname" .)) | quote }}
-          {{- else }}
-          emptyDir: {}
-          {{- end }}
         - name: runtime-tmp
           emptyDir: {}
         {{- if .Values.branding.existingConfigMap }}

@@ -1,7 +1,7 @@
 # AI Marketplace
 
 AI Marketplace manages **Guardrails** and **Profiles**. Current release:
-**v0.2.14**, image `ghcr.io/idddd/tali-ui-demo:0.2.14`.
+**v0.2.15**, image `ghcr.io/idddd/tali-ui-demo:0.2.15`.
 
 ## Current UI
 
@@ -18,11 +18,9 @@ AI Marketplace manages **Guardrails** and **Profiles**. Current release:
 Requires Docker. SQLite is included; no separate database service is needed.
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.14
-docker volume create ai-marketplace-data
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.15
 docker run -d --name ai-marketplace -p 18082:8080 \
-  -v ai-marketplace-data:/data \
-  ghcr.io/idddd/tali-ui-demo:0.2.14
+  ghcr.io/idddd/tali-ui-demo:0.2.15
 ```
 
 Open [Profiles](http://127.0.0.1:18082/guardrails).
@@ -38,10 +36,10 @@ Mock mode uses server-side SQLite automatically. No enable switch is needed,
 and database failures do not fall back to browser-only storage.
 
 - Users of the same service share records; the UI polls about every three seconds.
-- A new database is initialized on the first page visit. Existing records from that browser are migrated when available; otherwise default examples are created.
+- A new database is initialized with default examples on the first page visit.
 - A revision check allows only the first successful initializer to write. Concurrent visitors read that result instead of appending duplicate examples.
 - Once initialized, the database is authoritative. Later visitors do not import browser records. Account selection remains a browser preference.
-- The image stores data at `/data/demo.sqlite`. Keep the named volume across container replacements. Separate databases do not synchronize.
+- The image uses SQLite in memory, with one Pod and one server process. No PVC is required. Server restart clears the cases. Use the unlinked `/api/demo-backup` maintenance page to export and restore cases. See [backup instructions](docs/demo-memory-backup.md).
 - Completed trace details are limited to 200 per Profile, 1,000 overall and 24 hours, with an additional size budget. Older details are folded into aggregate statistics. A total state size limit prevents oversized writes.
 
 ## Local development

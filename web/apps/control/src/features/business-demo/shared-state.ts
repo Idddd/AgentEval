@@ -33,7 +33,7 @@ export function useSharedState(initial: () => Entity[]) {
           catch { snapshot = await request(); if (!snapshot.revision) throw new Error('Cannot initialize shared storage.'); }
         }
         if (!active || writing.current) return;
-        if (snapshot.revision > revision.current) accept(snapshot);
+        if (snapshot.revision !== revision.current) accept(snapshot);
         setReady(true); setError('');
       } catch (e) { if (active) setError(e instanceof Error ? e.message : 'Cannot connect to shared storage.'); }
     }

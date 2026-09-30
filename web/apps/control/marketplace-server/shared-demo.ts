@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import { z } from 'zod';
 import { entitySchema, advanceProcessing, enforceMandatory, type Entity } from '../src/features/business-demo/model';
 import { compactTraces, assertStorageCapacity, StorageCapacityError } from '../src/features/business-demo/trace-retention';
@@ -10,7 +10,7 @@ export class DemoConflict extends Error {}
 export class SharedDemoStore {
   private db: DatabaseSync;
   constructor(path: string) {
-    mkdirSync(dirname(path), { recursive: true });
+    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS demo_snapshot (id INTEGER PRIMARY KEY CHECK (id=1), revision INTEGER NOT NULL, payload TEXT NOT NULL)');
   }
@@ -52,16 +52,29 @@ export async function sharedDemoApi(request: Request, env = process.env) {
       if (!origin || origin !== allowed || request.headers.get('sec-fetch-site') === 'cross-site') return Response.json({error: 'Origin not allowed'}, {status: 403, headers});
       if (!request.headers.get('content-type')?.startsWith('application/json')) return Response.json({error: 'JSON required'}, {status: 415, headers});
     }
-    const databasePath=env.MARKETPLACE_DEMO_DB_FILE || resolve(process.cwd(), "data", "demo.sqlite");
+    const databasePath=env.MARKETPLACE_DEMO_STORAGE === 'memory' ? ':memory:' : env.MARKETPLACE_DEMO_DB_FILE || ':memory:';
     let store = stores.get(databasePath);
     if (!store) { store = new SharedDemoStore(databasePath); stores.set(databasePath, store); }
-    if (request.method === 'GET') return Response.json(store.tick(), {headers});
+    if (request.method === 'GET') {
+      const snapshot = store.tick();
+      if (new URL(request.url).searchParams.get('download') === '1') return Response.json({format:'tali-demo',version:1,exportedAt:new Date().toISOString(),items:snapshot.items}, {headers:{...headers,'Content-Disposition':'attachment; filename="tali-demo-backup.json"'}});
+      return Response.json(snapshot, {headers});
+    }
     const body = await request.text();
     if (body.length > 8_000_000) return Response.json({error: 'Demo data exceeds 8 MB.'}, {status: 413, headers});
-    const input = z.object({revision: z.number().int().nonnegative(), items: z.array(entitySchema).max(10000)}).parse(JSON.parse(body));
+    const raw = JSON.parse(body);
+    if (raw.backup) {
+      const backup = z.object({format:z.literal('tali-demo'),version:z.literal(1),items:z.array(entitySchema).max(10000)}).parse(raw.backup);
+      const ids = new Set(backup.items.map(item => item.id));
+      const policies = new Set(backup.items.filter(item => item.kind === 'policies').map(item => item.id));
+      if (ids.size !== backup.items.length || backup.items.some(item => item.policies.some(ref => !policies.has(ref.policyId)))) return Response.json({error:'Backup contains duplicate IDs or missing Guardrails.'},{status:400,headers});
+      raw.items = backup.items;
+    }
+    const input = z.object({revision: z.number().int().nonnegative(), items: z.array(entitySchema).max(10000)}).parse(raw);
     return Response.json(store.write(input.revision, input.items), {headers});
   } catch (error) {
     const status = error instanceof StorageCapacityError ? 413 : error instanceof DemoConflict ? 409 : error instanceof z.ZodError || error instanceof SyntaxError ? 400 : 503;
+    if (status === 503) console.error('Shared demo storage failed:', error);
     return Response.json({error: status === 413 || status === 409 ? (error as Error).message : status === 400 ? 'Invalid demo data.' : 'Shared storage unavailable. Changes were not saved.'}, {status, headers});
   }
 }

@@ -1,6 +1,6 @@
 replicaCount: 1
 
-# SQLite is always used. Enable persistence to retain data across pod replacement.
+# Legacy values retained for upgrade compatibility; memory SQLite does not use PVCs.
 persistence:
   enabled: false
   existingClaim: ""

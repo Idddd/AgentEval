@@ -7,6 +7,13 @@ import { blankDraft, seedEntities, type Entity } from '../src/features/business-
 const directories: string[] = [];
 afterEach(() => directories.splice(0).forEach(dir => rmSync(dir, {recursive: true, force: true})));
 const item: Entity = { ...blankDraft, id: 'one', kind: 'policies', name: 'Shared', owner: 'Compliance', text: 'Protect data', status: 'Needs input', version: 1, revisions: [], createdAt: 1, updatedAt: 1 };
+it('memory mode ignores an unusable legacy file path and exports shared cases', async () => {
+ const env={MARKETPLACE_DATA_MODE:'mock',MARKETPLACE_DEMO_STORAGE:'memory',MARKETPLACE_DEMO_DB_FILE:'/proc/unwritable/demo.sqlite'};
+ const response=await sharedDemoApi(new Request('http://demo/api/demo-state?download=1'),env);
+ expect(response.status).toBe(200);
+ expect(response.headers.get('content-disposition')).toContain('attachment');
+ expect(await response.json()).toMatchObject({format:'tali-demo',version:1,items:expect.any(Array)});
+});
 it('persists mandatory bindings and restores attempted removals',()=>{
  const dir=mkdtempSync(join(tmpdir(),'mandatory-demo-'));directories.push(dir);
  const path=join(dir,'demo.sqlite');const store=new SharedDemoStore(path);
@@ -64,4 +71,19 @@ it('compacts trace details before SQLite persistence and preserves counters',()=
 it('enables database sharing without an opt-in flag',async()=>{
  const response=await sharedDemoApi(new Request('http://demo/api/demo-state'),{MARKETPLACE_DATA_MODE:'mock',MARKETPLACE_DEMO_DB_FILE:':memory:'});
  expect(response.status).toBe(200);
+});
+it('restores exported cases for other clients and rejects corrupt or stale imports',async()=>{
+ const env={MARKETPLACE_DATA_MODE:'mock',MARKETPLACE_DEMO_STORAGE:'memory'};
+ const read=async()=> (await sharedDemoApi(new Request('http://demo/api/demo-state'),env)).json();
+ const restore=(revision:number,backup:unknown)=>sharedDemoApi(new Request('http://demo/api/demo-state',{method:'PUT',headers:{origin:'http://demo','content-type':'application/json'},body:JSON.stringify({revision,backup})}),env);
+ const exported=await (await sharedDemoApi(new Request('http://demo/api/demo-state?download=1'),env)).json();
+ const before=await read();
+ expect((await restore(before.revision,{...exported,items:[{...item,name:'Restored case'}]})).status).toBe(200);
+ const after=await read();
+ expect(after.items[0].name).toBe('Restored case');
+ expect((await restore(before.revision,exported)).status).toBe(409);
+ expect((await restore(after.revision,{...exported,items:[{id:'broken'}]})).status).toBe(400);
+ expect((await restore(after.revision,{...exported,items:[item,item]})).status).toBe(400);
+ expect((await read()).items).toEqual(after.items);
+ expect((await restore(after.revision,exported)).status).toBe(200);
 });
