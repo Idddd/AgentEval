@@ -80,6 +80,7 @@ export function defaultNmgrDemo(now = Date.now()): State {
       ...(guard && item.workflow?.config
         ? { config: item.workflow.config }
         : {}),
+      ...(guard ? { provider: item.source === "F5" ? "F5" as const : "NeMo" as const } : {}),
     };
   });
   return {

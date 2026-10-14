@@ -65,6 +65,18 @@ const DemoContext = createContext<{
   ) => Entity | Promise<Entity>;
 } | null>(null);
 
+export function ProfileOperationsProvider({ children, items, currentOwner, busy = false, onAction, onModeChange, onTraffic }: {
+  children: ReactNode; items: Entity[]; currentOwner: string; busy?: boolean;
+  onAction: (id: string, action: ProfileAction) => void | Promise<void>;
+  onModeChange?: (id: string, guardrail: string, mode: GuardrailMode) => void | Promise<void>;
+  onTraffic: (id: string, scenario: "safe" | "risk" | "error") => void | Promise<void>;
+}) {
+  return <DemoContext.Provider value={{ items, currentOwner, busy, mode: "mock", policyAuthoring: false, sessionOnly: false,
+    profileAction: onAction, runTraffic: onTraffic, ...(onModeChange ? { setProfileMode: onModeChange } : {}),
+    save: () => { throw new Error("Use the Profile configuration page to save changes."); },
+  }}>{children}</DemoContext.Provider>;
+}
+
 export function BusinessDemoProvider({
   children,
   config: supplied,

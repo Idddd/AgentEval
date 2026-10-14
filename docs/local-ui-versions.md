@@ -37,6 +37,22 @@ must be included for the selected jurisdiction. Optional scanner `config` uses
 the existing `scannerType`, `direction`, `content`, `versionName`, and
 `versionDescription` fields. Profiles also accept `threshold` (0–100%),
 `thresholdMetric`, and a positive integer `thresholdWindow` in minutes.
+The `unit` field and UI selectors share the fixed options `ISS`, `RMG`, `LCS`,
+`Line 1.5`, and `Line 2`. Ctrl Unit filters retain these options even when there
+are no records in a unit; workbench access scopes still apply.
+
+The User results review panel and the Approver/Tech evaluation records expand
+results directly by clicking the evaluation row. Its benchmark table follows the workspace
+theme and retains the grouped Accuracy, Precision, and Recall columns.
+These are deterministic mock metrics generated for the
+selected evaluation's theme; they do not affect evaluation status or
+sign-off eligibility. Version selection uses saved revision requirements when
+available.
+The product labels use Evaluation, Results, and Records. The demonstration
+labels are omitted from the UI, while the benchmark values remain generated
+illustrations rather than externally measured results. Control Intent supplies
+the initial policy content when configuring a new Guardrail; the separate
+Requirement field is omitted from the detail and configuration views.
 
 Imports add drafts and audit entries without overwriting existing IDs. Supplied
 approval status, deployment, test evidence, and history are not imported. A newly
@@ -50,6 +66,23 @@ The existing V2 technical test dataset upload remains available separately.
 
 The two interfaces retain their separate browser storage keys. V2 uses local
 simulated data and does not add backend authentication, inference, or deployment.
+
+On the V2 Dashboard, open a Profile using its title or right arrow to access
+the V1 operating controls and recent traces in a resizable right sidebar.
+The sidebar uses responsive Guardrail cards so metrics and actions remain visible
+without horizontal scrolling. It omits the aggregate scan summary and shows NeMo
+providers in violet and F5 providers in red.
+Control Unit Users can draft
+Monitoring/Preventing modes and submit them for approval; Control Unit Approvers
+apply or reject the saved configuration. Bypass pauses generated traffic and
+retains history. Resuming starts Monitoring and requires fresh approval to apply
+Preventing. Traffic updates every five seconds while the expanded page is visible;
+retention bounds and storage failures pause generation safely.
+
+Technical configuration includes a Guardrail provider selector for `NeMo` or
+`F5`. The provider is stored with the configuration and each revision, and JSON
+imports accept the same `provider` values. Older configurations default to NeMo;
+changing an undeployed revision does not alter the deployed provider.
 
 ## Start a local preview on Windows
 

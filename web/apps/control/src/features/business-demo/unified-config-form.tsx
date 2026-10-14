@@ -2,9 +2,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import type { UnifiedConfig, Source } from './evaluation';
 
-export function UnifiedConfigForm({ config, onChange, disabled = false, hideDescription = false }: {
+export function UnifiedConfigForm({ config, onChange, disabled = false, hideDescription = false, hideVersionDescription = false }: {
   config: UnifiedConfig; sources: Source[]; onChange: (config: UnifiedConfig) => void;
-  onSources: (sources: Source[]) => void; disabled?: boolean; hideDescription?: boolean;
+  onSources: (sources: Source[]) => void; disabled?: boolean; hideDescription?: boolean; hideVersionDescription?: boolean;
 }) {
   const patch = (value: Partial<UnifiedConfig>) => onChange({ ...config, ...value });
   return <fieldset disabled={disabled} className="space-y-5">
@@ -20,6 +20,6 @@ export function UnifiedConfigForm({ config, onChange, disabled = false, hideDesc
     </label>}
     <label className="grid gap-2 text-sm font-medium">Direction<select className="h-10 rounded-md border bg-background px-3" value={config.direction} onChange={e => patch({ direction: e.target.value as UnifiedConfig['direction'] })}><option value="both">Both</option><option value="request">Request</option><option value="response">Response</option></select></label>
     <label className="grid gap-2 text-sm font-medium">Version name<Input value={config.versionName} onChange={e => patch({ versionName: e.target.value })} /></label>
-    <label className="grid gap-2 text-sm font-medium">Version description<Input value={config.versionDescription} onChange={e => patch({ versionDescription: e.target.value })} /></label>
+    {!hideVersionDescription && <label className="grid gap-2 text-sm font-medium">Version description<Input value={config.versionDescription} onChange={e => patch({ versionDescription: e.target.value })} /></label>}
   </fieldset>;
 }

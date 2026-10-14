@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Entity, Kind, State } from "./model";
+import { EntityDetailLink } from "./entity-detail-link";
 
 const stamp = (value: string) =>
   new Date(value).toLocaleString("en-GB", { timeZone: "Asia/Shanghai" });
@@ -96,7 +97,7 @@ export function OperationHistory({
                   <time dateTime={entry.time}>{stamp(entry.time)}</time>
                 </td>
                 <td>
-                  <strong>{item.name}</strong>
+                  <strong><EntityDetailLink item={item} view="signoff" onOpen={() => onOpen(item.id)} /></strong>
                   <EntitySummary item={item} state={state} />
                 </td>
                 <td>
@@ -108,11 +109,8 @@ export function OperationHistory({
                 </td>
                 <td>{item.unit}</td>
                 <td>{stamp(item.updated)}</td>
-                <td>
-                  <Button variant="outline" onClick={() => onOpen(item.id)}>
-                    View
-                    <ChevronRight size={14} />
-                  </Button>
+                <td className="nm-entity-open-cell">
+                  <EntityDetailLink item={item} view="signoff" arrow onOpen={() => onOpen(item.id)} />
                 </td>
               </tr>
             ))}

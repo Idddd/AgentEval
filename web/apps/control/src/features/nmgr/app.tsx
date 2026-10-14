@@ -1,5 +1,5 @@
 import { statusLabel } from "./status-label";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useState, useRef } from "react";
 import {
   FlaskConical,
   Search,
@@ -35,6 +35,7 @@ import { actorNames, homeFor, canVisit, inScope } from "./workbench";
 import "./nmgr.css";
 import { ResizableSheetContent } from "./resizable-sheet";
 import { TestRecords } from "./test-records";
+import { TestResultsReview } from "./test-results-review";
 import {
   ProfileMonitoring,
   profileScans,
@@ -61,6 +62,9 @@ import { initialOwner, saveOwner, useDemoState } from "./demo-storage";
 import { OperationHistory, EntitySummary } from "./operation-history";
 import { EnforcementList } from "./enforcement-list";
 import { DeploymentQueues } from "./deployment-queues";
+import { EntityDetailLink } from "./entity-detail-link";
+import { ProfileDashboardOperations } from "./profile-dashboard-operations";
+import { operatingScans } from "./profile-operations-state";
 import {
   buildAlerts,
   profileAlertCounts,
@@ -160,6 +164,13 @@ export function NmgrApp() {
   }
 
   const [view, setView] = useState<View>("repository");
+  const operationsStarted = useRef(Date.now());
+  const [operationsNow, setOperationsNow] = useState(operationsStarted.current);
+  useEffect(() => {
+    if (!["dashboard", "enforce"].includes(view)) return;
+    const timer = window.setInterval(() => { if (document.visibilityState !== "hidden") setOperationsNow(Date.now()); }, 500);
+    return () => window.clearInterval(timer);
+  }, [view]);
   const [kind, setKind] = useState<Kind>("Guardrail");
   const [selected, setSelected] = useState("");
   const [monitorGuardrail, setMonitorGuardrail] = useState("");
@@ -203,12 +214,10 @@ export function NmgrApp() {
   const [fail, setFail] = useState(false);
   const [reason, setReason] = useState("");
   const [signoffApprover, setSignoffApprover] = useState("Feng ZONG");
-  const [policies, setPolicies] = useState(
-    "Detect personal identifiers in input and output.\nBlock disclosure of unmasked customer information.",
-  );
   const [configurationRefs, setConfigurationRefs] = useState<string[]>([]);
   const [configurationThreshold, setConfigurationThreshold] = useState("5");
   const [technical, setTechnical] = useState<UnifiedConfig>(emptyConfig);
+  const [guardrailProvider, setGuardrailProvider] = useState<NonNullable<Entity["provider"]>>("NeMo");
   const [tab, setTab] = useState("Info");
   useEffect(() => {
     const read = () => {
@@ -279,10 +288,10 @@ export function NmgrApp() {
     setSignoffApprover(item?.approver ?? e?.approver ?? "Feng ZONG");
     setFail(false);
     setDataset(`${item?.name ?? e?.name ?? "Guardrail"} acceptance suite`);
-    setPolicies((item?.policies ?? e?.policies ?? []).join("\n"));
     setConfigurationRefs([...(item?.refs ?? e?.refs ?? [])]);
     setConfigurationThreshold(String(item?.threshold ?? e?.threshold ?? 5));
     setTechnical(item?.config ?? e?.config ?? emptyConfig());
+    setGuardrailProvider(item?.provider ?? e?.provider ?? "NeMo");
   }
   function perform(action: Action) {
     if (!e) return;
@@ -300,10 +309,8 @@ export function NmgrApp() {
           cases,
           reason,
           ...(action === "request" ? { approver: signoffApprover } : {}),
-          policies: policies
-            .split("\n")
-            .map((x) => x.trim())
-            .filter(Boolean),
+          policies: e.policies.length ? e.policies : [e.description],
+          ...(action === "implement" && e.kind === "Guardrail" ? { provider: guardrailProvider } : {}),
           ...(action === "implement" &&
           (e.config ||
             technical.content.trim() ||
@@ -324,7 +331,7 @@ export function NmgrApp() {
           label: `View ${e.kind.toLowerCase()} requests`,
         });
       setNotice(
-        `${e.name}: ${action === "deploy" ? "deployed successfully" : action === "reject" ? (e.kind === "Profile" ? "request rejected; returned to DRAFT" : "request rejected; returned to TEST READY") : action === "approve" ? (e.kind === "Profile" ? "request approved; Profile is now active" : "request approved; ready for Tech Implementor deployment") : action === "request" ? "signoff request submitted" : "updated successfully"}.`,
+        `${e.name}: ${action === "deploy" ? "deployed successfully" : action === "reject" ? (e.kind === "Profile" ? "request rejected; returned to Draft" : "request rejected; returned to Evaluation ready") : action === "approve" ? (e.kind === "Profile" ? "request approved; Profile is now active" : "request approved; ready for Tech Implementor deployment") : action === "request" ? "signoff request submitted" : "updated successfully"}.`,
       );
     } catch (x) {
       setError(x instanceof Error ? x.message : "Unable to complete action.");
@@ -401,7 +408,7 @@ export function NmgrApp() {
         (unit === "All" || x.unit === unit),
     )
     .map(deployedEntity);
-  const scans = activeProfiles.flatMap((p) => profileScans(p, state));
+  const scans = activeProfiles.flatMap((p) => ["dashboard", "enforce"].includes(view) ? operatingScans(p, state, operationsNow, operationsStarted.current) : profileScans(p, state));
   const alerts = buildAlerts(activeProfiles, scans);
   const alertCountsByProfile = new Map(
     activeProfiles.map((profile) => [
@@ -410,7 +417,8 @@ export function NmgrApp() {
     ]),
   );
   const enforcementList = <EnforcementList key={`${role}-${view}`} profiles={activeProfiles} state={state}
-    role={role} alertCounts={alertCountsByProfile} onModeChange={changeMode} />;
+    role={role} alertCounts={alertCountsByProfile} onModeChange={changeMode} initialTime={operationsStarted.current}
+    renderOperations={(profile) => <ProfileDashboardOperations profile={profile} state={state} role={role} dirty={dirty} busy={busy} initialTime={operationsStarted.current} updateState={updateState} onGuardrail={setMonitorGuardrail} />} />;
   function backToAlerts() {
     go("Profile", "dashboard");
   }
@@ -433,22 +441,21 @@ export function NmgrApp() {
             : ["operations", "enforce"].includes(view)
               ? "Monitoring"
               : view === "deploy"
-                ? "GR Deployment"
+                ? "Guardrail Deployment"
                 : view === "tests"
-                  ? "GR Evaluation"
+                  ? "Guardrail Evaluation"
                   : view === "signoff"
                     ? `${kind} Sign-Off`
                     : view === "request"
                       ? "New Guardrail Request"
                       : role === "IT Admin"
-                        ? "GR Requests"
+                        ? "Guardrail Requests"
                         : kind === "Guardrail"
                           ? "Guardrails"
                           : "Configure Profiles";
   const studioFields = filterFields
     .filter(
       (field) =>
-        (role === "IT Admin" || field.key !== "unit") &&
         (kind === "Profile" || !["bu", "agent", "data"].includes(field.key)),
     )
     .map((field) => {
@@ -538,14 +545,12 @@ export function NmgrApp() {
           onChange={(x) => setSearch(x.target.value)}
         />
       </div>
-      {role === "IT Admin" && (
-        <Select
-          label="Control Unit"
-          value={unit}
-          onChange={setUnit}
-          options={["All", ...controlUnits]}
-        />
-      )}
+      <Select
+        label="Control Unit"
+        value={unit}
+        onChange={setUnit}
+        options={["All", ...controlUnits]}
+      />
       <Select
         label="Location"
         value={location}
@@ -632,12 +637,12 @@ export function NmgrApp() {
         <div className="nm-actions">
           {(
             [
+              "reject",
+              "revise",
               "implement",
               "request",
               "approve",
-              "reject",
               "deploy",
-              "revise",
             ] as Action[]
           )
             .filter(
@@ -672,7 +677,7 @@ export function NmgrApp() {
               }
             >
               <FlaskConical size={16} />
-              {view === "tests" ? "Run Test" : "Go Test"}
+              {view === "tests" ? "Run Evaluation" : "Go Evaluate"}
             </Button>
           )}
         </div>
@@ -680,14 +685,16 @@ export function NmgrApp() {
       {role === "User" && e.kind === "Guardrail" && e.runs.length > 0 && (
         <div className="nm-actions mb-4">
           <Button onClick={() => setReviewTests(true)}>
-            Review test result
+            Review results
           </Button>
         </div>
       )}
       {role === "User" && e.status === "DRAFT" && (
-        <Button variant="outline" className="mb-4" onClick={() => open("edit")}>
-          Edit {e.kind === "Guardrail" ? "business intents" : "Profile"}
-        </Button>
+        <div className="nm-actions mb-4">
+          <Button variant="outline" onClick={() => open("edit")}>
+            Edit {e.kind === "Guardrail" ? "control intent" : "Profile"}
+          </Button>
+        </div>
       )}
       <WorkflowSteps item={e} />
       <WorkflowNotice item={e} role={role} />
@@ -708,7 +715,7 @@ export function NmgrApp() {
                 onClick={() => setTab(t)}
                 key={t}
               >
-                {t === "Info" ? `${kind} Info` : t}
+                {t === "Info" ? `${kind} Info` : t === "Tests" ? "Evaluation" : t}
               </button>
             ))}
           </div>
@@ -749,7 +756,7 @@ export function NmgrApp() {
             : isBusinessIntents
               ? "Guardrails repository: View guardrail or create new one. Deployed version is marked in each guardrail."
               : view === "request"
-                ? "Raise a request with your business intents. Tech Implementor will configure and test the Guardrail."
+                ? "Raise a request with your control intent. Tech Implementor will configure and evaluate the Guardrail."
                 : view === "dashboard"
                   ? role === "IT Admin"
                     ? "Protection and breach alerts across all Control Units."
@@ -842,14 +849,14 @@ export function NmgrApp() {
                   setDirty(false);
                   setError("");
                   setNotice(
-                    "Request submitted! Your Guardrail is waiting for implementation.",
+                    `Request submitted! Your Guardrail is waiting for implementation in ${item.unit}.`,
                   );
-                  setResultLink({
+                  setResultLink(inScope(item, role, controlUnit) ? {
                     kind: "Guardrail",
                     view: "repository",
                     id: item.id,
                     label: "Guardrail Details",
-                  });
+                  } : null);
                   go("Guardrail", "repository");
                 } catch (error) {
                   setError((error as Error).message);
@@ -863,16 +870,14 @@ export function NmgrApp() {
           </section>
         ) : isBlank ? null : view === "dashboard" ? (
           <>
-            {role === "IT Admin" && (
-              <div className="nm-card nm-padding mb-4">
+            <div className="nm-card nm-padding mb-4">
                 <Select
                   label="Control Unit"
                   value={unit}
                   options={["All", ...controlUnits]}
                   onChange={setUnit}
                 />
-              </div>
-            )}
+            </div>
             <ProtectionSummary
               scans={scans}
               profiles={activeProfiles.length}
@@ -885,7 +890,14 @@ export function NmgrApp() {
             />
             {enforcementList}
           </>
-        ) : view === "enforce" ? enforcementList : view === "deploy" ? (
+        ) : view === "enforce" ? (
+          <>
+            <div className="nm-card nm-padding mb-4">
+              <Select label="Control Unit" value={unit} options={["All", ...controlUnits]} onChange={setUnit} />
+            </div>
+            {enforcementList}
+          </>
+        ) : view === "deploy" ? (
           <>
             <section className="nm-card">{filters}</section>
             <DeploymentQueues
@@ -969,7 +981,7 @@ export function NmgrApp() {
                       </th>
                       <th>Ctrl Unit</th>
                       <th>Last Modified</th>
-                      {view !== "repository" && <th>Action</th>}
+                      {["repository", "tests", "signoff"].includes(view) ? <th aria-label="Details" /> : <th>Action</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -1014,18 +1026,8 @@ export function NmgrApp() {
                                   }
                                 >
                                   <strong>
-                                    {view === "repository" ? (
-                                      <a
-                                        className="nm-entity-name-link"
-                                        href={`#${kind}/${view}/${item.id}`}
-                                        onClick={(event) => {
-                                          if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-                                          event.preventDefault();
-                                          go(kind, view, item.id);
-                                        }}
-                                      >
-                                        {item.name}
-                                      </a>
+                                    {["repository", "tests", "signoff"].includes(view) ? (
+                                      <EntityDetailLink item={item} view={view} onOpen={() => go(kind, view, item.id)} />
                                     ) : item.name}
                                   </strong>
                                   {["operations", "enforce"].includes(view) && (
@@ -1060,7 +1062,11 @@ export function NmgrApp() {
                           </td>
                           <td>{item.unit}</td>
                           <td>{stamp(item.updated)}</td>
-                          {view !== "repository" && <td>
+                          {["repository", "tests", "signoff"].includes(view) ? (
+                            <td className="nm-entity-open-cell">
+                              <EntityDetailLink item={item} view={view} arrow onOpen={() => go(kind, view, item.id)} />
+                            </td>
+                          ) : <td>
                             {["operations", "enforce"].includes(view) ? (
                               <div className="nm-select">
                                 <select
@@ -1103,7 +1109,7 @@ export function NmgrApp() {
                                 {view === "tests"
                                   ? item.status === "TEST READY" &&
                                     allowed(item, "test-pass", role)
-                                    ? "Go Test"
+                                    ? "Go Evaluate"
                                     : "View"
                                   : view === "signoff" &&
                                       allowed(item, "approve", role)
@@ -1176,7 +1182,7 @@ export function NmgrApp() {
             {view === "signoff" && role === "User Admin" && (
               <OperationHistory
                 key={kind}
-                state={state}
+                state={{ ...state, entities: state.entities.filter((item) => matchesFilters(item, { unit: studioFilters.unit ?? [] })) }}
                 kind={kind}
                 controlUnit={controlUnit}
                 actor={actorNames[role]}
@@ -1242,25 +1248,27 @@ export function NmgrApp() {
       <Sheet open={reviewTests && !!e} onOpenChange={setReviewTests}>
         <ResizableSheetContent
           aria-describedby={undefined}
-          className="nm-app nm-drawer bg-white overflow-y-auto p-6 data-[side=right]:sm:max-w-[700px]"
+          className="nm-app nm-drawer flex flex-col gap-4 bg-white overflow-y-auto p-6 data-[side=right]:sm:max-w-[700px]"
         >
-          <SheetTitle>Guardrail Test Records</SheetTitle>
+          <SheetTitle>Guardrail Results</SheetTitle>
           {e && (
             <>
               <h3>{e.name}</h3>
               <p className="nm-muted">
-                Review test reports for the current revision.
+                Review results for the current revision.
               </p>
-              {runs(e)}
-              <Button
-                disabled={!allowed(e, "request", role)}
-                onClick={() => {
-                  setReviewTests(false);
-                  open("request");
-                }}
-              >
-                Request Signoff
-              </Button>
+              <TestResultsReview key={e.id} item={e} />
+              <div className="nm-actions">
+                <Button
+                  disabled={!allowed(e, "request", role)}
+                  onClick={() => {
+                    setReviewTests(false);
+                    open("request");
+                  }}
+                >
+                  Request Signoff
+                </Button>
+              </div>
             </>
           )}
         </ResizableSheetContent>
@@ -1289,11 +1297,11 @@ export function NmgrApp() {
                 : modal === "create"
                   ? `Create ${kind}`
                   : modal === "report"
-                    ? "Test Report"
+                    ? "Evaluation Report"
                     : modal === "reset"
-                      ? "Reset Demo workspace?"
+                      ? "Reset workspace?"
                       : modal === "test-pass"
-                        ? `Run ${kind} Test`
+                        ? `Evaluate ${kind}`
                         : modal === "implement"
                           ? `Configure ${kind}`
                           : modal === "request"
@@ -1308,7 +1316,7 @@ export function NmgrApp() {
             {modal === "create"
               ? "Submit a request with its business scope and ownership."
               : modal === "reset"
-                ? "This clears only this NMGR Demo workspace and restores sample records."
+                ? "This clears this workspace and restores default records."
                 : modal === "report"
                   ? "Results for this recorded revision."
                   : "Review the current revision before confirming this action."}
@@ -1365,7 +1373,7 @@ export function NmgrApp() {
                     modal === "revise"
                       ? item.kind === "Profile"
                         ? "New revision saved. Request sign-off to make it active."
-                        : "New revision saved. The deployed version remains active until the new revision is tested, approved and deployed."
+                        : "New revision saved. The deployed version remains active until the new revision is evaluated, approved and deployed."
                       : "Changes saved successfully.",
                   );
                 } catch (x) {
@@ -1387,24 +1395,23 @@ export function NmgrApp() {
               <p>
                 {report.passed
                   ? "Acceptance checks passed."
-                  : "Personal identifiers remained visible in two demo responses. Tech Implementor can review the configuration and run another test."}
+                  : "Personal identifiers remained visible in two responses. Tech Implementor can review the configuration and run another evaluation."}
               </p>
-              <small>
-                Simulated Demo result; no inference service was called.
-              </small>
             </div>
           ) : modal === "reset" ? (
-            <Button
-              onClick={() => {
-                updateState(() => seed());
-                setSelected("");
-                setModal(null);
-                setNotice("Demo workspace reset.");
-                go("Guardrail", "repository");
-              }}
-            >
-              Reset workspace
-            </Button>
+            <div className="nm-actions">
+              <Button
+                onClick={() => {
+                  updateState(() => seed());
+                  setSelected("");
+                  setModal(null);
+                  setNotice("Workspace reset.");
+                  go("Guardrail", "repository");
+                }}
+              >
+                Reset workspace
+              </Button>
+            </div>
           ) : e ? (
             <>
               <div className="nm-callout">
@@ -1445,7 +1452,7 @@ export function NmgrApp() {
               ) &&
                 e.kind === "Guardrail" && (
                   <p>
-                    Last current test passed:{" "}
+                    Last successful evaluation:{" "}
                     {e.runs.find(
                       (run) =>
                         run.passed &&
@@ -1466,17 +1473,12 @@ export function NmgrApp() {
                 )}
               {modal === "implement" && e.kind === "Guardrail" && (
                 <>
-                  <label>
-                    Requirement
-                    <Textarea
-                      value={policies}
-                      onChange={(x) => {
-                        setPolicies(x.target.value);
-                        setDirty(true);
-                      }}
-                    />
-                  </label>
+                  <section aria-label="Control Intent">
+                    <h3>Control Intent</h3>
+                    <p>{e.description}</p>
+                  </section>
                   <UnifiedConfigForm
+                    hideVersionDescription
                     config={technical}
                     sources={[]}
                     onSources={() => {}}
@@ -1485,6 +1487,7 @@ export function NmgrApp() {
                       setDirty(true);
                     }}
                   />
+                  <Select label="Guardrail provider" value={guardrailProvider} options={["NeMo", "F5"]} onChange={(value) => { setGuardrailProvider(value as NonNullable<Entity["provider"]>); setDirty(true); }} />
                 </>
               )}
               {modal === "implement" && e.kind === "Profile" && (
@@ -1545,7 +1548,7 @@ export function NmgrApp() {
                     }}
                   />
                   <label>
-                    Upload Custom Dataset (JSON Array of Test Cases)
+                    Upload Custom Dataset (JSON Array of Cases)
                     <span className="nm-file-picker">
                       <span className="nm-file-picker-button" aria-hidden="true">Choose File</span>
                       <span className="nm-file-picker-name" aria-hidden="true">
@@ -1553,7 +1556,7 @@ export function NmgrApp() {
                       </span>
                     <Input
                       type="file"
-                      aria-label="Upload Custom Dataset (JSON Array of Test Cases)"
+                      aria-label="Upload Custom Dataset (JSON Array of Cases)"
                       accept=".json"
                       onChange={async (x) => {
                         try {
@@ -1586,14 +1589,14 @@ export function NmgrApp() {
                     />
                     </span>
                   </label>
-                  <p>{cases} acceptance cases · simulated locally</p>
+                  <p>{cases} acceptance cases</p>
                   <label className="nm-check">
                     <input
                       type="checkbox"
                       checked={fail}
                       onChange={(x) => setFail(x.target.checked)}
                     />
-                    Demonstrate a failed test
+                    Failed evaluation outcome
                   </label>
                 </>
               )}
@@ -1645,9 +1648,9 @@ export function NmgrApp() {
                   }
                 >
                   {busy
-                    ? "Running test…"
+                    ? "Evaluating…"
                     : modal === "test-pass"
-                      ? "Run Test"
+                      ? "Run Evaluation"
                       : "Confirm"}
                 </Button>
               </div>
@@ -1717,9 +1720,6 @@ function CreateForm({
   onSave: (e: Entity) => void;
 }) {
   const [formError, setFormError] = useState("");
-  const [policyText, setPolicyText] = useState(
-    initial?.policies.join("\n") ?? "",
-  );
   const [config, setConfig] = useState<UnifiedConfig>(() => ({
     ...(initial?.config ?? emptyConfig()),
     versionName: revision
@@ -1791,13 +1791,7 @@ function CreateForm({
           version: 1,
           deployed: null,
           updated: new Date().toISOString(),
-          policies:
-            initial && allowTechnical
-              ? policyText
-                  .split("\n")
-                  .map((p) => p.trim())
-                  .filter(Boolean)
-              : (initial?.policies ?? []),
+          policies: initial?.policies ?? [],
           ...(config.content.trim() && allowTechnical
             ? { config }
             : initial?.config
@@ -1819,7 +1813,7 @@ function CreateForm({
           {initial?.deployed}.0 stays active until the new revision passes
           {kind === "Profile"
             ? "sign-off."
-            : "testing, sign-off and deployment."}
+            : "evaluation, sign-off and deployment."}
         </p>
       )}
       <label>
@@ -1832,7 +1826,7 @@ function CreateForm({
       </label>
 
       <label>
-        {kind === "Guardrail" ? "Business Intents" : "Use Case"}
+        {kind === "Guardrail" ? "Control Intent" : "Use Case"}
         <Textarea
           required
           value={description}
@@ -1840,7 +1834,7 @@ function CreateForm({
         />
       </label>
       <div className="nm-create-fields">
-        {lockedUnit ? (
+        {lockedUnit && (initial || kind !== "Guardrail") ? (
           <label>
             Control Unit
             <Input value={unit} readOnly />
@@ -1914,14 +1908,8 @@ function CreateForm({
           {initial && allowTechnical && (
             <section className="nm-configuration">
               <h3>Technical Configuration</h3>
-              <label>
-                Requirement
-                <Textarea
-                  value={policyText}
-                  onChange={(e) => setPolicyText(e.target.value)}
-                />
-              </label>
               <UnifiedConfigForm
+                hideVersionDescription
                 config={config}
                 sources={[]}
                 onSources={() => {}}

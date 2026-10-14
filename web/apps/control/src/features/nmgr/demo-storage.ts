@@ -8,7 +8,7 @@ export const ownerStorageKey = "nmgr-owner";
 export function readDemoState(raw: string): State {
   const state = JSON.parse(raw);
   if (!Array.isArray(state.entities) || !Array.isArray(state.audit))
-    throw new Error("Invalid demo data");
+    throw new Error("Invalid workspace data");
   return completeDemoState(state);
 }
 
@@ -66,7 +66,7 @@ export function useDemoState(onNotice: (message: string) => void) {
       const serialized = JSON.stringify(next);
       if (raw !== serialized) localStorage.setItem(demoStorageKey, serialized);
     } catch {
-      notice.current("Saved demo data could not be read. Sample data loaded.");
+      notice.current("Saved workspace data could not be read. Default records loaded.");
     }
     current.current = next;
     setState(next);

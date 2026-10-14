@@ -8,10 +8,23 @@ import {
   allowed,
   accounts,
   canAuthor,
+  deployedEntity,
   type Kind,
   type State,
 } from "./model";
 const test = { dataset: "Acceptance", cases: 24 };
+it("preserves the deployed provider while the next revision changes provider", () => {
+  const state = seed();
+  const guard = state.entities.find((item) => item.kind === "Guardrail")!;
+  delete guard.provider;
+  let next = reviseEntity(state, guard, "User");
+  const revised = next.entities.find((item) => item.id === guard.id)!;
+  expect(revised.revisions?.[1]?.provider).toBe("NeMo");
+  revised.provider = "F5";
+  expect(deployedEntity(revised).provider).toBe("NeMo");
+  delete revised.revisions![1]!.provider;
+  expect(deployedEntity(revised).provider).toBe("NeMo");
+});
 function draft(kind: Kind) {
   const state = seed();
   const item = state.entities.find((e) => e.kind === kind)!;

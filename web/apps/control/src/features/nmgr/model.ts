@@ -1,6 +1,7 @@
 import { configError, type UnifiedConfig } from "../business-demo/evaluation";
 import { defaultNmgrDemo } from "./mock-data";
-export const controlUnits = ["ISS", "RMG", "LCS"];
+import type { Entity as OperatingProfile } from "../business-demo/model";
+export const controlUnits: [string, ...string[]] = ["ISS", "RMG", "LCS", "Line 1.5", "Line 2"];
 
 export type Kind = "Guardrail" | "Profile";
 export type Status =
@@ -30,6 +31,8 @@ export type Run = {
   cases: number;
 };
 export type Entity = {
+  provider?: "NeMo" | "F5";
+  runtime?: NonNullable<OperatingProfile["runtime"]>;
   configurationRevision?: number;
   id: string;
   kind: Kind;
@@ -69,11 +72,12 @@ export type Revision = Pick<
   | "mandatory"
   | "attributes"
   | "config"
+  | "provider"
 > & { threshold?: number; thresholdMetric?: Entity["thresholdMetric"]; thresholdWindow?: number | undefined };
 export function deployedEntity(item: Entity): Entity {
   const saved =
     item.deployed === null ? undefined : item.revisions?.[item.deployed];
-  return saved ? { ...item, ...saved, thresholdMetric: saved.thresholdMetric, thresholdWindow: saved.thresholdWindow } : item;
+  return saved ? { ...item, ...saved, ...(item.kind === "Guardrail" ? { provider: saved.provider ?? "NeMo" } : {}), thresholdMetric: saved.thresholdMetric, thresholdWindow: saved.thresholdWindow } : item;
 }
 export type Audit = {
   id: string;
@@ -184,6 +188,7 @@ export function transition(
     actorName?: string;
     approver?: string;
     config?: UnifiedConfig;
+    provider?: "NeMo" | "F5";
   } = {},
 ): State {
   const current = state.entities.find((e) => e.id === id);
@@ -196,7 +201,7 @@ export function transition(
     if (e.kind === "Guardrail" && !options.policies?.length)
       throw new Error("Add at least one implemented policy.");
     if (e.kind === "Guardrail" && !options.config)
-      throw new Error("Configure the Guardrail before testing.");
+      throw new Error("Configure the Guardrail before evaluation.");
     if (e.kind === "Profile") {
       e.refs = options.refs ?? e.refs;
       e.threshold = options.threshold ?? e.threshold;
@@ -209,6 +214,8 @@ export function transition(
       const problem = configError(options.config);
       if (problem) throw new Error(problem);
       e.config = options.config;
+      if (options.provider && !["NeMo", "F5"].includes(options.provider)) throw new Error("Select a valid Guardrail provider.");
+      e.provider = options.provider ?? e.provider ?? "NeMo";
     }
     if (e.kind === "Guardrail") e.policies = options.policies!;
     e.configurationRevision = (e.configurationRevision ?? 0) + 1;
@@ -306,7 +313,7 @@ export function addEntity(state: State, e: Entity, role: Role = "User"): State {
   if (!e.name.trim() || !e.description.trim())
     throw new Error(
       e.kind === "Guardrail"
-        ? "Guardrail name and business intents are required."
+        ? "Guardrail name and control intent are required."
         : "Profile name and use case are required.",
     );
   if (!/^[a-z][a-z0-9-]{2,63}$/.test(e.id))
@@ -397,7 +404,7 @@ export function editEntity(state: State, item: Entity, role: Role): State {
     audit: [
       {
         ...validated.audit[0]!,
-        action: "requirements updated; test evidence invalidated",
+        action: "requirements updated; evaluation evidence invalidated",
       },
       ...state.audit,
     ],
@@ -417,6 +424,7 @@ function snapshot(e: Entity): Revision {
     policies: [...e.policies],
     refs: [...e.refs],
     ...(e.config ? { config: { ...e.config } } : {}),
+    ...(e.kind === "Guardrail" ? { provider: e.provider ?? "NeMo" } : {}),
   };
 }
 export function reviseEntity(

@@ -4,26 +4,28 @@ import { SheetContent } from "@/components/ui/sheet";
 export function ResizableSheetContent({
   children,
   style,
+  defaultWidth = 720,
+  storageKey = "nmgr-detail-width",
   ...props
-}: ComponentProps<typeof SheetContent>) {
-  const [width, setWidth] = useState(720);
+}: ComponentProps<typeof SheetContent> & { defaultWidth?: number; storageKey?: string }) {
+  const [width, setWidth] = useState(defaultWidth);
   const [limit, setLimit] = useState(1440);
   const drag = useRef<{ x: number; width: number } | null>(null);
   useEffect(() => {
     const resize = () => setLimit(Math.min(1440, window.innerWidth));
     resize();
     try {
-      const saved = Number(localStorage.getItem("nmgr-detail-width"));
+      const saved = Number(localStorage.getItem(storageKey));
       if (saved >= 360 && saved <= 1440) setWidth(saved);
     } catch {}
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
-  }, []);
+  }, [storageKey]);
   function change(value: number) {
     const next = Math.max(Math.min(360, limit), Math.min(limit, value));
     setWidth(next);
     try {
-      localStorage.setItem("nmgr-detail-width", String(next));
+      localStorage.setItem(storageKey, String(next));
     } catch {}
   }
   return (

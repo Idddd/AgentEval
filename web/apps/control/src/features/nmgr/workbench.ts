@@ -25,23 +25,23 @@ type NavItem = { label: string; kind: Kind; view: View };
 export const workbenchNavigation: Record<Role, NavItem[]> = {
   User: [
     { label: "Dashboard", kind: "Profile", view: "dashboard" },
-    { label: "Business Intents", kind: "Guardrail", view: "repository" },
+    { label: "Control Intents", kind: "Guardrail", view: "repository" },
     { label: "Configure Profiles", kind: "Profile", view: "repository" },
     { label: "Enforce & Prevent", kind: "Profile", view: "enforce" },
     { label: "Trace", kind: "Profile", view: "audit" },
   ],
   "User Admin": [
     { label: "Dashboard", kind: "Profile", view: "dashboard" },
-    { label: "GR Signoff", kind: "Guardrail", view: "signoff" },
+    { label: "Guardrail Signoff", kind: "Guardrail", view: "signoff" },
     { label: "Profile Signoff", kind: "Profile", view: "signoff" },
     { label: "Trace", kind: "Profile", view: "audit" },
   ],
   "IT Admin": [
-    { label: "GR Requests", kind: "Guardrail", view: "repository" },
-    { label: "GR Evaluation", kind: "Guardrail", view: "tests" },
-    { label: "GR Deployment", kind: "Guardrail", view: "deploy" },
-    { label: "Trace", kind: "Profile", view: "audit" },
     { label: "Dashboard", kind: "Profile", view: "dashboard" },
+    { label: "Guardrail Requests", kind: "Guardrail", view: "repository" },
+    { label: "Guardrail Evaluation", kind: "Guardrail", view: "tests" },
+    { label: "Guardrail Deployment", kind: "Guardrail", view: "deploy" },
+    { label: "Trace", kind: "Profile", view: "audit" },
   ],
 };
 export function homeFor(role: Role): [Kind, View] {

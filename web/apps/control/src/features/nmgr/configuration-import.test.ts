@@ -15,6 +15,12 @@ const profile = {
 };
 
 describe("NMGR configuration JSON import", () => {
+  it.each(["NeMo", "F5"])("retains the selected %s provider when importing", (provider) => {
+    expect(parseConfigurationJson(JSON.stringify([{ ...guardrail, provider }]), seed())[0]?.provider).toBe(provider);
+  });
+  it.each(["Line 1.5", "Line 2"])("accepts the fixed %s Control Unit", (unit) => {
+    expect(parseConfigurationJson(JSON.stringify([{ ...guardrail, unit }]), seed())[0]?.unit).toBe(unit);
+  });
   it("imports linked configurations together as drafts without activating or overwriting existing data", () => {
     const state = seed();
     const before = structuredClone(state);

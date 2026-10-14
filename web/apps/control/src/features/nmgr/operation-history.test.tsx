@@ -66,7 +66,7 @@ it.each(["Guardrail", "Profile"] as const)(
       "Last Modified",
       "Action",
     ]);
-    fireEvent.click(screen.getAllByRole("button", { name: "View" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: /^View / })[0]!);
     expect(open).toHaveBeenCalled();
   },
 );

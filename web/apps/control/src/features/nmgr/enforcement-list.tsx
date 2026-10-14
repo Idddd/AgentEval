@@ -1,17 +1,23 @@
-import { useState } from "react";
-import { Search } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Search, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { allowed, type Entity, type Role, type State } from "./model";
 import { EntitySummary } from "./operation-history";
+import { operatingProfile, operatingModeLabel } from "./profile-operations-state";
+import { Sheet, SheetTitle } from "@/components/ui/sheet";
+import { ResizableSheetContent } from "./resizable-sheet";
 
-export function EnforcementList({ profiles, state, role, alertCounts, onModeChange }: {
+export function EnforcementList({ profiles, state, role, alertCounts, onModeChange, renderOperations, initialTime = Date.now() }: {
   profiles: Entity[];
   state: State;
   role: Role;
   alertCounts: Map<string, { critical: number; warning: number }>;
   onModeChange: (item: Entity, mode: Entity["mode"]) => void;
+  renderOperations?: (item: Entity) => ReactNode;
+  initialTime?: number;
 }) {
+  const [expanded, setExpanded] = useState("");
   const [search, setSearch] = useState("");
   const [location, setLocation] = useState("All");
   const [requestedPage, setPage] = useState(1);
@@ -20,6 +26,7 @@ export function EnforcementList({ profiles, state, role, alertCounts, onModeChan
     (location === "All" || item.location === location || item.location === "ALL"));
   const pages = Math.max(1, Math.ceil(rows.length / 6));
   const page = Math.min(requestedPage, pages);
+  const selected = profiles.find((item) => item.id === expanded);
   return <>
     <div className="nm-filters nm-monitor-filters">
       <div className="nm-search">
@@ -40,7 +47,7 @@ export function EnforcementList({ profiles, state, role, alertCounts, onModeChan
           <thead><tr><th>Profile</th><th>Mode</th><th>Ctrl Unit</th><th>Last Modified</th><th>Action</th></tr></thead>
           <tbody>{rows.slice((page - 1) * 6, page * 6).map((item) => <tr key={item.id}>
             <td><div className="nm-profile-identity"><div>
-              <div className="nm-profile-title"><strong>{item.name}</strong>
+              <div className="nm-profile-title"><strong>{renderOperations ? <button className="nm-entity-name-link" aria-expanded={expanded === item.id} onClick={() => setExpanded(expanded === item.id ? "" : item.id)}>{item.name}</button> : item.name}</strong>
                 <span className="nm-profile-alert-counts">{(["critical", "warning"] as const).map((level) =>
                   <span key={level} className={`nm-alert-badge nm-alert-count ${level}`}
                     aria-label={`${alertCounts.get(item.id)?.[level] ?? 0} ${level.toUpperCase()} alerts for ${item.name}`}
@@ -50,17 +57,17 @@ export function EnforcementList({ profiles, state, role, alertCounts, onModeChan
               </div>
               <EntitySummary item={item} state={state} />
             </div></div></td>
-            <td><span className={`nm-badge ${item.mode === "Pass all" ? "warning" : item.mode === "Block all" ? "bad" : "good"}`}>{item.mode}</span></td>
+            <td><span className={`nm-badge ${item.mode === "Pass all" ? "warning" : "good"}`}>{renderOperations ? operatingModeLabel(operatingProfile(item, state, initialTime)) : item.mode}</span></td>
             <td>{item.unit}</td>
             <td>{new Date(item.updated).toLocaleString("en-GB", { timeZone: "Asia/Shanghai" })}</td>
-            <td><div className="nm-select">
+            <td>{renderOperations ? <button className="nm-entity-open-link" aria-label={`View operations for ${item.name}`} aria-expanded={expanded === item.id} onClick={() => setExpanded(expanded === item.id ? "" : item.id)}><ArrowRight size={17} aria-hidden="true" /></button> : <div className="nm-select">
               <select aria-label={`Mode for ${item.name}`} value={item.mode}
                 disabled={!["Normal", "Pass all", "Block all"].some((mode) => allowed(item, mode as Entity["mode"], role))}
                 onChange={(event) => onModeChange(item, event.target.value as Entity["mode"])}>
                 {(["Normal", "Pass all", "Block all"] as const).map((mode) =>
                   <option key={mode} value={mode} disabled={mode !== item.mode && !allowed(item, mode, role)}>{mode}</option>)}
               </select>
-            </div></td>
+            </div>}</td>
           </tr>)}</tbody>
         </table>
       </div>
@@ -72,5 +79,13 @@ export function EnforcementList({ profiles, state, role, alertCounts, onModeChan
         <Button size="sm" variant="outline" disabled={page === pages} onClick={() => setPage(page + 1)}>Next</Button>
       </footer>
     </section>
+    {renderOperations && <Sheet open={!!selected} onOpenChange={(open) => { if (!open) setExpanded(""); }}>
+      <ResizableSheetContent storageKey="nmgr-operations-width" aria-describedby={undefined} className="nm-app nm-drawer gap-0 bg-white">
+        <div className="border-b px-6 py-5 pr-14"><SheetTitle className="text-xl">{selected?.name}</SheetTitle>
+          <p className="nm-muted">Profile operations · v{selected?.deployed}.0</p>
+        </div>
+        <div className="nm-detail-scroll overflow-y-auto px-6 py-5">{selected && renderOperations(selected)}</div>
+      </ResizableSheetContent>
+    </Sheet>}
   </>;
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { configError, unifiedConfigSchema } from "../business-demo/evaluation";
-import { deployedEntity, type Entity, type State } from "./model";
+import { controlUnits, deployedEntity, type Entity, type State } from "./model";
 
 export const maxImportBytes = 1024 * 1024;
 const requiredText = z.string().trim().min(1).max(100000);
@@ -9,7 +9,8 @@ const configurationSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]{2,63}$/),
   name: requiredText.max(200),
   description: requiredText,
-  unit: z.enum(["ISS", "LCS", "RMG"]).default("ISS"),
+  unit: z.enum(controlUnits).default("ISS"),
+  provider: z.enum(["NeMo", "F5"]).default("NeMo"),
   location: z.enum(["ALL", "SG", "CN", "IN", "ID", "HK", "TW"]).default("ALL"),
   mandatory: z.boolean().default(false),
   attributes: z.object({

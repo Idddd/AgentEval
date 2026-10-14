@@ -60,7 +60,7 @@ export const alertCriteria = [
   ],
   [
     "CRITICAL",
-    "A deployed Profile exceeds its configured rate threshold within the selected time window. Legacy Profiles use scanner error percentage across the demo snapshot.",
+    "A deployed Profile exceeds its configured rate threshold within the selected time window. Legacy Profiles use scanner error percentage across the monitoring window.",
   ],
 ] as const;
 
@@ -114,7 +114,7 @@ export function buildAlerts(profiles: Entity[], scans: Scan[], now = Date.now())
           threshold: profile.threshold,
         },
         reason: `Scanner error percentage exceeded this Profile's configured threshold (${profile.threshold}%).`,
-        evidence: `${errors.length} Error events / ${checks.length} checks = ${errorRate.toFixed(1)}% > ${profile.threshold}%. Scope: ${profile.deployedRefs.length} Guardrails, current demo snapshot.`,
+        evidence: `${errors.length} Error events / ${checks.length} checks = ${errorRate.toFixed(1)}% > ${profile.threshold}%. Scope: ${profile.deployedRefs.length} Guardrails, current monitoring window.`,
       });
     for (const scan of checks) {
       if (!["Detected", "Blocked", "Error"].includes(scan.result)) continue;
@@ -135,7 +135,7 @@ export function buildAlerts(profiles: Entity[], scans: Scan[], now = Date.now())
         reason: isError
           ? scan.message
           : `Matched policy: ${(scan.policy ?? "Active protection policy").replace(/[.!?]+$/, "")}. ${scan.message}`,
-        evidence: `Event ${scan.id} · ${scan.result} · ${scan.latency} ms · ${scan.time}. ${isError ? "Scanner did not return a completed result." : `Synthetic input: ${scan.input}`}`,
+        evidence: `Event ${scan.id} · ${scan.result} · ${scan.latency} ms · ${scan.time}. ${isError ? "Scanner did not return a completed result." : `Scanned content: ${scan.input}`}`,
         target: {
           profile: scan.profile,
           guardrail: scan.guardrail,

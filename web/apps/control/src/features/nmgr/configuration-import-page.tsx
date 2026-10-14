@@ -67,13 +67,15 @@ export function ConfigurationImportPage() {
           <input aria-label="Choose JSON file" type="file" accept=".json,application/json" disabled={!ready || reading}
             onChange={(event) => { void readFile(event.target.files?.[0]); event.target.value = ""; }} />
         </label>
-        <p className="text-xs text-muted-foreground">Up to 1 MB and 200 configurations. Use an array, an entities array, or separate guardrails / profiles arrays. <a className="underline" href="/nmgr-import-example.json" download>Download example JSON</a></p>
+        <p className="text-xs text-muted-foreground">Up to 1 MB and 200 configurations. Use an array, an entities array, or separate guardrails / profiles arrays. <a className="underline" href="/nmgr-import-example.json" download>Download JSON template</a></p>
         <label className="flex flex-col gap-2 text-sm font-medium">
           Configuration JSON
           <Textarea aria-label="Configuration JSON" className="min-h-56 font-mono text-xs" value={text} disabled={reading}
             onChange={(event) => { setText(event.target.value); setPreview(null); setError(""); setNotice(""); }} />
         </label>
-        <Button disabled={!ready || reading || !text.trim()} onClick={() => validate()}>{reading ? "Reading file…" : "Validate and preview"}</Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button disabled={!ready || reading || !text.trim()} onClick={() => validate()}>{reading ? "Reading file…" : "Validate and preview"}</Button>
+        </div>
       </div>
       {error && <div role="alert" className="whitespace-pre-wrap rounded-lg border border-destructive/30 p-4 text-sm text-destructive">{error}</div>}
       {notice && <div role="status" className="rounded-lg border bg-muted p-4 text-sm">{notice}</div>}
@@ -86,9 +88,9 @@ export function ConfigurationImportPage() {
               <tbody>{preview.map((item) => <tr key={item.id} className="border-t"><td className="p-2">{item.kind}</td><td className="p-2">{item.name}<small className="block text-muted-foreground">{item.id}</small></td><td className="p-2">{item.unit}</td><td className="p-2">{item.refs.join(", ") || "—"}</td></tr>)}</tbody>
             </table>
           </div>
-          <div className="flex gap-3">
-            <Button onClick={confirm}>Confirm import</Button>
+          <div className="flex flex-wrap justify-end gap-2">
             <Button variant="outline" onClick={() => { ++upload.current; setPreview(null); }}>Cancel preview</Button>
+            <Button onClick={confirm}>Confirm import</Button>
           </div>
         </section>
       )}

@@ -1,13 +1,12 @@
 import { statusLabel } from "./status-label";
 import { useEffect, useState } from "react";
-import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { allowed, type Entity, type Kind, type Role } from "./model";
+import { type Entity, type Kind, type Role } from "./model";
+import { EntityDetailLink } from "./entity-detail-link";
 
 export function DeploymentQueues({
   items,
   kind,
-  role,
   onOpen,
 }: {
   items: Entity[];
@@ -22,7 +21,6 @@ export function DeploymentQueues({
         status="SIGNED OFF"
         items={items}
         kind={kind}
-        role={role}
         onOpen={onOpen}
       />
     </div>
@@ -34,14 +32,12 @@ function Queue({
   status,
   items,
   kind,
-  role,
   onOpen,
 }: {
   title: string;
   status: Entity["status"];
   items: Entity[];
   kind: Kind;
-  role: Role;
   onOpen: (id: string) => void;
 }) {
   const rows = items.filter((item) => item.status === status);
@@ -50,7 +46,6 @@ function Queue({
   useEffect(() => setPage(1), [signature, kind]);
   const pages = Math.max(1, Math.ceil(rows.length / 6));
   const current = Math.min(page, pages);
-  const action = status === "SIGNOFF REQUESTED" ? "approve" : "deploy";
   return (
     <section className="nm-card" aria-label={`${kind} ${title}`}>
       <div className="nm-card-head">
@@ -74,7 +69,7 @@ function Queue({
             {rows.slice((current - 1) * 6, current * 6).map((item) => (
               <tr key={item.id}>
                 <td>
-                  <strong>{item.name}</strong>
+                  <strong><EntityDetailLink item={item} view="deploy" onOpen={() => onOpen(item.id)} /></strong>
                   <small>
                     Target Ver.: {item.version}.0 · Deployed
                     Ver.:{" "}
@@ -94,15 +89,8 @@ function Queue({
                     timeZone: "Asia/Shanghai",
                   })}
                 </td>
-                <td>
-                  <Button variant="outline" onClick={() => onOpen(item.id)}>
-                    {allowed(item, action, role)
-                      ? action === "approve"
-                        ? "Sign off"
-                        : "Go Deploy"
-                      : "View"}
-                    <ChevronRight size={14} />
-                  </Button>
+                <td className="nm-entity-open-cell">
+                  <EntityDetailLink item={item} view="deploy" arrow onOpen={() => onOpen(item.id)} />
                 </td>
               </tr>
             ))}

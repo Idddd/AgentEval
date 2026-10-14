@@ -16,7 +16,7 @@ export function WorkflowNotice({ item, role }: { item: Entity; role: Role }) {
           ? "This approved Profile is active for protection."
           : item.status === "SIGNOFF REQUESTED"
             ? "Waiting for Control Unit Approver sign-off."
-            : "Configure the referenced Guardrails, then request sign-off. No testing or deployment is required."}
+            : "Configure the referenced Guardrails, then request sign-off. No evaluation or deployment is required."}
       </p>
     );
   let title: string;
@@ -24,18 +24,18 @@ export function WorkflowNotice({ item, role }: { item: Entity; role: Role }) {
   if (item.status === "DRAFT") {
     title = "Waiting for Tech Implementor configuration";
     message =
-      "Tech Implementor needs to configure this request and complete the first passing test before you can review results and request sign-off.";
+      "Tech Implementor needs to configure this request and complete the first successful evaluation before you can review results and request sign-off.";
   } else if (
     ["TEST READY", "TEST FAILED", "TEST PASSED"].includes(item.status) &&
     !hasTechnicalPass(item)
   ) {
-    title = "Waiting for Tech Implementor testing";
+    title = "Waiting for Tech Implementor evaluation";
     message =
-      "Tech Implementor must record a passing test for the current configuration. You can then review the results and request sign-off.";
+      "Tech Implementor must record a successful evaluation for the current configuration. You can then review the results and request sign-off.";
   } else if (item.status === "SIGNOFF REQUESTED") {
     title = "Waiting for Control Unit Approver sign-off";
     message =
-      "Your request is awaiting review. Control Unit Approver will sign off or return it for further testing.";
+      "Your request is awaiting review. Control Unit Approver will sign off or return it for further evaluation.";
   } else if (item.status === "SIGNED OFF") {
     title = "Waiting for Tech Implementor deployment";
     message =
@@ -171,8 +171,8 @@ export function WorkflowSteps({ item }: { item: Entity }) {
       ? ["Draft", "Sign-off requested", "Signed off"]
       : [
           "Draft",
-          "Test ready",
-          "Test passed",
+          "Evaluation ready",
+          "Evaluation passed",
           "Sign-off requested",
           "Signed off",
           "Deployed",
@@ -205,7 +205,7 @@ export function WorkflowSteps({ item }: { item: Entity }) {
             )}
           </span>
           <span className="nm-step-label">
-            {i === current && failed ? "Test failed" : label}
+            {i === current && failed ? "Evaluation failed" : label}
           </span>
         </li>
       ))}

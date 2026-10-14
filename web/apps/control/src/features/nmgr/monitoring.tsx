@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import type { MonitoringTarget } from "./alerts";
 import { deployedEntity, type Entity, type State } from "./model";
+import { operatingScans } from "./profile-operations-state";
 
 export type Scan = {
   id: string;
@@ -18,6 +19,7 @@ export type Scan = {
   policy?: string;
 };
 export function profileScans(profile: Entity, state: State, snapshotTime = Math.floor(Date.now() / 60_000) * 60_000): Scan[] {
+  if (profile.runtime) return operatingScans(profile, state, Date.now());
   if (profile.deployed === null || profile.mode === "Pass all") return [];
   const active = deployedEntity(profile);
   const rateScenario = active.thresholdMetric === "Block Rate" || active.thresholdMetric === "Pass Rate";
@@ -59,11 +61,11 @@ export function profileScans(profile: Entity, state: State, snapshotTime = Math.
           result === "Passed"
             ? "Explain how to keep customer data private."
             : result === "Error"
-              ? "Synthetic content submitted to the scanner."
-              : `Synthetic rule-match sample: ${guard?.config?.content || guard?.policies[0] || "alex.example@example.test"}`,
+              ? "Content submitted to the scanner."
+              : `Matched rule: ${guard?.config?.content || guard?.policies[0] || "Protected identifier"}`,
         message:
           result === "Error"
-            ? "DETECTOR_TIMEOUT · Scanner did not respond within the demo deadline."
+            ? "DETECTOR_TIMEOUT · Scanner did not respond within the configured deadline."
             : result === "Blocked"
               ? "Request blocked by the active protection policy."
               : result === "Detected"
@@ -181,7 +183,7 @@ export function ProfileMonitoring({
           Deployed v{profile.deployed}.0 · {profile.mode} · Alert threshold{" "}
           {deployedEntity(profile).threshold}%
         </span>
-        <span>Simulated traffic · UTC+08:00</span>
+        <span>UTC+08:00</span>
       </div>
       {profile.mode !== "Normal" && (
         <p
@@ -194,7 +196,7 @@ export function ProfileMonitoring({
       )}
       {target && !scans.some((scan) => scan.id === target.activity) && (
         <p className="nm-callout" role="status">
-          This alert's activity is no longer present in the current demo
+          This alert's activity is no longer present in the current monitoring
           snapshot.
         </p>
       )}
@@ -400,7 +402,7 @@ export function ProfileMonitoring({
                                     <dd>
                                       {selected.result} · {selected.latency} ms
                                     </dd>
-                                    <dt>Scanned content (synthetic)</dt>
+                                    <dt>Scanned content</dt>
                                     <dd>{selected.input}</dd>
                                     <dt>Guardrail version</dt>
                                     <dd>v{selected.version}.0</dd>

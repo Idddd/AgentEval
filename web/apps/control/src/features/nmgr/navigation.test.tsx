@@ -42,7 +42,7 @@ it.each(["User", "User Admin", "IT Admin"] as Role[])(
       expect(navigate).toHaveBeenLastCalledWith(item.kind, item.view);
     }
     expect(
-      screen.queryByRole("button", { name: "GR Deployment" }) !== null,
+      screen.queryByRole("button", { name: "Guardrail Deployment" }) !== null,
     ).toBe(role === "IT Admin");
     expect(
       screen.queryByRole("button", { name: "Profile Signoff" }) !== null,
