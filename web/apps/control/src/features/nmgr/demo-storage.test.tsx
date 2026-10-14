@@ -8,6 +8,7 @@ import {
   useDemoState,
 } from "./demo-storage";
 import { seed, transition } from "./model";
+import { importConfigurationJson } from "./configuration-import";
 
 beforeEach(() => {
   localStorage.clear();
@@ -17,6 +18,24 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+});
+
+it("refuses persistent imports when the latest workspace cannot be read, retaining another tab's records", () => {
+  const { result } = renderHook(() => useDemoState(() => {}));
+  const incoming = importConfigurationJson(result.current.state, JSON.stringify([
+    { kind: "Guardrail", id: "gr-other-tab", name: "Another tab", description: "Another tab's new record" },
+  ]));
+  localStorage.setItem(demoStorageKey, JSON.stringify(incoming));
+  vi.spyOn(Storage.prototype, "getItem").mockImplementationOnce(() => { throw new Error("read blocked"); });
+  let saved: boolean | undefined;
+  act(() => {
+    saved = result.current.updateState((latest) => importConfigurationJson(latest, JSON.stringify([
+      { kind: "Guardrail", id: "gr-confirmed-import", name: "Import", description: "New imported record" },
+    ])), true);
+  });
+  expect(saved).toBe(false);
+  expect(JSON.parse(localStorage.getItem(demoStorageKey)!)).toEqual(incoming);
+  expect(result.current.state.entities.some((item) => item.id === "gr-confirmed-import")).toBe(false);
 });
 
 it("keeps role selection per tab and allows three direct role links", () => {

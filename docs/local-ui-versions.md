@@ -12,12 +12,41 @@ Both interfaces run in the same application:
 
 The entry paths resolve to `/v1/guardrails` and `/v2/guardrails`. Internal
 navigation keeps the active prefix. Existing unprefixed bookmarks default to
-V1. Use the V1 / V2 links in either header to switch interfaces.
+V1. Change the URL prefix to switch interfaces; the workbench has no V1 / V2 buttons.
 
 V2 also supports role links, for example
 `/v2/guardrails?role=tech`, `?role=user`, and `?role=approver`.
 Its fragment links still locate specific workbench screens and records.
 V1 configuration-version query parameters keep their original meaning.
+
+## Hidden V2 configuration import
+
+Open `/v2/import` directly. This page has no workbench menu item or import button
+in either main interface. V1 retains its existing two-section navigation.
+
+Choose a JSON file or paste JSON, validate the preview, then confirm the import.
+Download `/nmgr-import-example.json` for a complete Guardrail / Profile example.
+Accepted formats are an array of configurations, `{ "entities": [...] }`, or
+`{ "guardrails": [...], "profiles": [...] }`. Array records require a `kind` of
+`Guardrail` or `Profile`; separate arrays supply that field automatically.
+
+Each record requires a unique `id`, `name`, and `description`. Profiles require
+`refs` containing valid Guardrail IDs. The reference may point to an existing
+Guardrail or another Guardrail in the file. Existing deployed mandatory Guardrails
+must be included for the selected jurisdiction. Optional scanner `config` uses
+the existing `scannerType`, `direction`, `content`, `versionName`, and
+`versionDescription` fields. Profiles also accept `threshold` (0–100%),
+`thresholdMetric`, and a positive integer `thresholdWindow` in minutes.
+
+Imports add drafts and audit entries without overwriting existing IDs. Supplied
+approval status, deployment, test evidence, and history are not imported. A newly
+imported Guardrail must follow the normal technical implementation, testing,
+approval, and deployment workflow before a referencing Profile can activate.
+Invalid batches, cancelled previews, and failed browser-storage writes retain
+the existing workspace. Confirmation revalidates the latest stored workspace.
+Files are limited to 1 MB and 200 configurations.
+
+The existing V2 technical test dataset upload remains available separately.
 
 The two interfaces retain their separate browser storage keys. V2 uses local
 simulated data and does not add backend authentication, inference, or deployment.

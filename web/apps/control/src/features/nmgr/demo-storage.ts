@@ -94,22 +94,35 @@ export function useDemoState(onNotice: (message: string) => void) {
     return () => window.removeEventListener("storage", receive);
   }, []);
 
-  function updateState(change: (latest: State) => State) {
+  function updateState(change: (latest: State) => State, requirePersistence = false) {
     let latest = current.current;
     try {
       const raw = localStorage.getItem(demoStorageKey);
+      if (requirePersistence && raw === null) {
+        notice.current("Workspace storage was reset. Refresh before importing configurations.");
+        return false;
+      }
       if (raw) latest = readDemoState(raw);
-    } catch {}
+    } catch {
+      if (requirePersistence) {
+        notice.current("The latest workspace could not be read. Existing data was retained.");
+        return false;
+      }
+    }
     const next = change(latest);
-    current.current = next;
-    setState(next);
+    let persisted = true;
     try {
       localStorage.setItem(demoStorageKey, JSON.stringify(next));
     } catch {
+      persisted = false;
       notice.current(
         "Browser storage is unavailable. Changes in this tab cannot be synchronized.",
       );
     }
+    if (requirePersistence && !persisted) return false;
+    current.current = next;
+    setState(next);
+    return persisted;
   }
   return { state, ready, updateState };
 }

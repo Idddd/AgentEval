@@ -1,9 +1,17 @@
 # AI Marketplace
 
 AI Marketplace manages **Guardrails** and **Profiles**. Current release:
-**v0.2.17**, image `ghcr.io/idddd/tali-ui-demo:0.2.17`.
+**v0.2.20**, image `ghcr.io/idddd/tali-ui-demo:0.2.20`.
 
 ## Current UI
+
+Version URLs select the interface: **`/v1/`** keeps the existing two-section
+Profiles / Guardrails UI; **`/v2/`** opens the NMGR role workbenches.
+There are no interface-switch buttons. V2 configuration import is available
+only at the hidden **`/v2/import`** page. Upload or paste JSON, preview it,
+then confirm; imports add drafts without replacing existing records.
+The existing technical-test JSON dataset upload remains available.
+See [local version URLs and JSON format](docs/local-ui-versions.md).
 
 - **Guardrails**: create requirements, implement and evaluate versions, and review readiness.
 - **Profiles**: select Guardrails and versions, view statistics, and expand each Guardrail to inspect traces and errors.
@@ -18,13 +26,13 @@ AI Marketplace manages **Guardrails** and **Profiles**. Current release:
 Requires Docker. Default demo data is stored in browser localStorage; no database is used.
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.17
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.20
 docker run -d --name ai-marketplace -p 18082:8080 \
-  ghcr.io/idddd/tali-ui-demo:0.2.17
+  ghcr.io/idddd/tali-ui-demo:0.2.20
 ```
 
-Open [Profiles](http://127.0.0.1:18082/guardrails).
-Guardrails are at `/policies`; Profiles are at `/guardrails`.
+Open [V1](http://127.0.0.1:18082/v1/) or [V2](http://127.0.0.1:18082/v2/).
+V1 Guardrails are at `/v1/policies`; Profiles are at `/v1/guardrails`.
 
 See [deployment and source export](docs/marketplace-release.md) for Helm,
 JFrog and the embedded project source, or [runtime branding](docs/runtime-branding.md)
@@ -32,7 +40,7 @@ for logo and favicon replacement.
 
 ## Shared database and initial data
 
-Version 0.2.17 defaults to browser localStorage (`MARKETPLACE_DEMO_STORAGE=browser`).
+Version 0.2.20 defaults to browser localStorage (`MARKETPLACE_DEMO_STORAGE=browser`).
 Different browsers do not share cases. Server-side storage APIs are disabled.
 
 - Default cases initialize on the first visit in each browser. Refresh retains edits.

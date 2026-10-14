@@ -107,7 +107,7 @@ function Select({
     </label>
   );
 }
-export function NmgrApp({ versionSwitch }: { versionSwitch?: React.ReactNode } = {}) {
+export function NmgrApp() {
   const { state, ready, updateState } = useDemoState(setNotice);
   const [owner, setOwner] = useState(initialOwner);
   const role = roleForOwner(owner);
@@ -731,7 +731,6 @@ export function NmgrApp({ versionSwitch }: { versionSwitch?: React.ReactNode } =
   return (
     <>
       <NmgrShell
-        versionSwitch={versionSwitch}
         kind={kind}
         view={view}
         owner={owner}

@@ -1,0 +1,32 @@
+{
+  "guardrails": [
+    {
+      "id": "gr-json-example",
+      "name": "JSON Account Identifier Protection",
+      "description": "Prevent disclosure of customer account identifiers.",
+      "unit": "ISS",
+      "location": "ALL",
+      "policies": ["Block requests disclosing account identifiers."],
+      "config": {
+        "scannerType": "keyword",
+        "direction": "both",
+        "content": "account number",
+        "versionName": "v1",
+        "versionDescription": "Imported protection configuration"
+      }
+    }
+  ],
+  "profiles": [
+    {
+      "id": "pf-json-example",
+      "name": "JSON Customer Protection Profile",
+      "description": "Protect customer conversations with imported and existing Guardrails.",
+      "unit": "ISS",
+      "location": "ALL",
+      "refs": ["gr-json-example", "default-pii-response"],
+      "threshold": 10,
+      "thresholdMetric": "Block Rate",
+      "thresholdWindow": 5
+    }
+  ]
+}

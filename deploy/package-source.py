@@ -11,7 +11,7 @@ ROOT_FILES = ('README.md', 'requirements.txt', 'main.py', 'pytest.ini', 'Dockerf
               'docker-compose.images.yml', 'docker-compose.marketplace.yml', 'start-dev.ps1')
 SKIP_DIRS = {'node_modules', '.git', '.venv', '__pycache__', '.output', '.tanstack',
              'dist', 'build', 'coverage', '.cache', '.artifacts', 'data', 'reports',
-             '.idea', '.codex', '.claude', '.pnpm-store'}
+             '.idea', '.codex', '.claude', '.pnpm-store', '.vite-preview', 'generated'}
 SKIP_SUFFIXES = {'.pem', '.key', '.p12', '.pfx', '.jks', '.sqlite', '.sqlite3', '.db',
                  '.log', '.pyc', '.zip', '.tgz', '.tar', '.gz'}
 def allowed(path):

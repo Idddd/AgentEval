@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import {
   ClientOnly,
   HeadContent,
+  Outlet,
   Scripts,
   createRootRouteWithContext,
   redirect,
@@ -9,7 +10,6 @@ import {
 } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
 import { workspaceVersion } from "@/lib/workspace-version";
-import { WorkspaceVersionSwitch } from "@/components/shared/workspace-version-switch";
 
 const NmgrApp = lazy(() => import("@/features/nmgr/app").then((module) => ({ default: module.NmgrApp })));
 
@@ -21,6 +21,7 @@ export const Route = createRootRouteWithContext<{
 }>()({
   component: WorkspaceRoot,
   beforeLoad: ({ location }) => {
+    if (workspaceVersion(location.publicHref) === "v2" && location.pathname.replace(/\/$/, "") === "/import") return;
     const guardrailDetail = location.pathname.match(
       /^\/[^/]+\/governance\/guardrails\/([^/]+)\/?$/,
     );
@@ -64,7 +65,7 @@ function WorkspaceRoot() {
   const version = useRouterState({
     select: (state) => workspaceVersion(state.location.publicHref),
   });
-  const versionSwitch = <WorkspaceVersionSwitch version={version} />;
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   return (
     <ClientOnly
       fallback={
@@ -73,12 +74,12 @@ function WorkspaceRoot() {
         </div>
       }
     >
-      {version === "v2" ? (
+      {version === "v2" && pathname.replace(/\/$/, "") === "/import" ? <Outlet /> : version === "v2" ? (
         <Suspense fallback={<div className="p-8" role="status">Loading V2…</div>}>
-          <NmgrApp versionSwitch={versionSwitch} />
+          <NmgrApp />
         </Suspense>
       ) : (
-        <MarketplaceShell versionSwitch={versionSwitch} />
+        <MarketplaceShell />
       )}
     </ClientOnly>
   );

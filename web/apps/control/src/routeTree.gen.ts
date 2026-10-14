@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GuardrailsRouteImport } from './routes/guardrails'
+import { Route as ImportRouteImport } from './routes/import'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PoliciesRouteImport } from './routes/policies'
 import { Route as TemplatesRouteImport } from './routes/templates'
@@ -82,6 +83,11 @@ const IndexRoute = IndexRouteImport.update({
 const GuardrailsRoute = GuardrailsRouteImport.update({
   id: '/guardrails',
   path: '/guardrails',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ImportRoute = ImportRouteImport.update({
+  id: '/import',
+  path: '/import',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -435,6 +441,7 @@ const ProjectIdSettingModelRoutingsRoutingIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/guardrails': typeof GuardrailsRoute
+  '/import': typeof ImportRoute
   '/login': typeof LoginRoute
   '/policies': typeof PoliciesRoute
   '/templates': typeof TemplatesRoute
@@ -501,6 +508,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/guardrails': typeof GuardrailsRoute
+  '/import': typeof ImportRoute
   '/login': typeof LoginRoute
   '/policies': typeof PoliciesRoute
   '/templates': typeof TemplatesRoute
@@ -567,6 +575,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/guardrails': typeof GuardrailsRoute
+  '/import': typeof ImportRoute
   '/login': typeof LoginRoute
   '/policies': typeof PoliciesRoute
   '/templates': typeof TemplatesRoute
@@ -635,6 +644,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/guardrails'
+    | '/import'
     | '/login'
     | '/policies'
     | '/templates'
@@ -701,6 +711,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/guardrails'
+    | '/import'
     | '/login'
     | '/policies'
     | '/templates'
@@ -766,6 +777,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/guardrails'
+    | '/import'
     | '/login'
     | '/policies'
     | '/templates'
@@ -833,6 +845,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   GuardrailsRoute: typeof GuardrailsRoute
+  ImportRoute: typeof ImportRoute
   LoginRoute: typeof LoginRoute
   PoliciesRoute: typeof PoliciesRoute
   TemplatesRoute: typeof TemplatesRoute
@@ -887,6 +900,13 @@ declare module '@tanstack/react-router' {
       path: '/guardrails'
       fullPath: '/guardrails'
       preLoaderRoute: typeof GuardrailsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/import': {
+      id: '/import'
+      path: '/import'
+      fullPath: '/import'
+      preLoaderRoute: typeof ImportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -1401,6 +1421,7 @@ const ProjectIdGovernanceRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GuardrailsRoute: GuardrailsRoute,
+  ImportRoute: ImportRoute,
   LoginRoute: LoginRoute,
   PoliciesRoute: PoliciesRoute,
   TemplatesRoute: TemplatesRoute,

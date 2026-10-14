@@ -15,6 +15,7 @@ web/apps/*/node_modules
 web/apps/*/dist
 web/apps/*/.output
 web/apps/*/.tanstack
+web/apps/*/.vite-preview
 web/.env
 
 .artifacts
