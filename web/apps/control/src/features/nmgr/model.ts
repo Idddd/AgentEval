@@ -52,8 +52,8 @@ export type Entity = {
   runs: Run[];
   mode: "Normal" | "Pass all" | "Block all";
   threshold: number;
-  thresholdMetric?: "Block Rate" | "Pass Rate" | "Error Rate";
-  thresholdWindow?: number;
+  thresholdMetric?: "Block Rate" | "Pass Rate" | "Error Rate" | undefined;
+  thresholdWindow?: number | undefined;
   signedBy?: string;
   config?: UnifiedConfig;
   revisions?: Record<number, Revision>;
@@ -69,7 +69,7 @@ export type Revision = Pick<
   | "mandatory"
   | "attributes"
   | "config"
-> & { threshold?: number; thresholdMetric?: Entity["thresholdMetric"]; thresholdWindow?: number };
+> & { threshold?: number; thresholdMetric?: Entity["thresholdMetric"]; thresholdWindow?: number | undefined };
 export function deployedEntity(item: Entity): Entity {
   const saved =
     item.deployed === null ? undefined : item.revisions?.[item.deployed];

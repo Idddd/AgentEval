@@ -1,6 +1,6 @@
 # NMGR prototype Demo
 
-Based on NMGR.drawio. Enabled through `vite.preview.config.ts` with `TALI_UI_DEMO=true` at `/guardrails`. Navigation uses URL fragments so every workspace view and detail can be bookmarked without replacing the existing production route map.
+Based on NMGR.drawio. The integrated application exposes this workbench at `/v2/` and the existing interface at `/v1/`. Build the local static preview through `vite.preview.config.ts` with `TALI_UI_DEMO=true`; the URL selects the interface. Navigation uses URL fragments so every workspace view and detail can be bookmarked without replacing the existing production route map. See `docs/local-ui-versions.md` for local startup instructions.
 
 - Guardrail and Profile terminology follows the prototype; the legacy catalog uses different internal names.
 - `model.ts` owns role checks, lifecycle transitions, version activation and audit records. `app.tsx` shares lists, details, forms, test reports and confirmation sheets across both entity kinds. `shell.tsx` reuses the v0.2.17 Sidebar primitives, BrandMark, Control Unit header, top bar and workbench selector. User and Approver details use full pages; technical actions and Profile forms reuse the existing right-side Sheet. Button, Input, Textarea and global theme tokens are reused.

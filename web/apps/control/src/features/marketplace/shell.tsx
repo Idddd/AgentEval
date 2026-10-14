@@ -29,9 +29,10 @@ import {
   BusinessConnectionStatus,
 } from "@/features/business-demo/provider";
 import { OwnerMenu } from "@/features/business-demo/owner-menu";
+import type { ReactNode } from "react";
 
 // Restore the original visual shell without depending on live backend services.
-export function MarketplaceShell() {
+export function MarketplaceShell({ versionSwitch }: { versionSwitch?: ReactNode } = {}) {
   return (
     <ClientOnly
       fallback={
@@ -43,7 +44,7 @@ export function MarketplaceShell() {
       <TooltipProvider delayDuration={250}>
         <SidebarProvider>
           <BusinessDemoProvider>
-            <ShellContent />
+            <ShellContent versionSwitch={versionSwitch} />
           </BusinessDemoProvider>
         </SidebarProvider>
       </TooltipProvider>
@@ -51,7 +52,7 @@ export function MarketplaceShell() {
   );
 }
 
-function ShellContent() {
+function ShellContent({ versionSwitch }: { versionSwitch?: ReactNode }) {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -73,6 +74,7 @@ function ShellContent() {
             <span className="hidden text-muted-foreground sm:inline">/</span>
             <span className="font-medium">{section}</span>
           </div>
+          <div className="ml-auto">{versionSwitch}</div>
         </header>
         <BusinessConnectionStatus />
         <main

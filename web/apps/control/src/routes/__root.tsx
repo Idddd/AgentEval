@@ -5,12 +5,13 @@ import {
   Scripts,
   createRootRouteWithContext,
   redirect,
+  useRouterState,
 } from "@tanstack/react-router";
-import { NmgrApp } from "@/features/nmgr/app";
+import { lazy, Suspense } from "react";
+import { workspaceVersion } from "@/lib/workspace-version";
+import { WorkspaceVersionSwitch } from "@/components/shared/workspace-version-switch";
 
-declare const __TALI_UI_DEMO__: boolean;
-const prototypeDemo =
-  typeof __TALI_UI_DEMO__ !== "undefined" && __TALI_UI_DEMO__;
+const NmgrApp = lazy(() => import("@/features/nmgr/app").then((module) => ({ default: module.NmgrApp })));
 
 import { MarketplaceShell } from "@/features/marketplace/shell";
 import appCss from "../styles.css?url";
@@ -18,7 +19,7 @@ import appCss from "../styles.css?url";
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
-  component: prototypeDemo ? DemoRoot : MarketplaceShell,
+  component: WorkspaceRoot,
   beforeLoad: ({ location }) => {
     const guardrailDetail = location.pathname.match(
       /^\/[^/]+\/governance\/guardrails\/([^/]+)\/?$/,
@@ -45,7 +46,7 @@ export const Route = createRootRouteWithContext<{
         name: "viewport",
         content: "width=device-width, initial-scale=1",
       },
-      { title: prototypeDemo ? "NMGR · Guardrail Governance" : "Profiles" },
+      { title: "Profiles and Guardrails" },
       {
         name: "description",
         content: "Profiles and Guardrails",
@@ -59,7 +60,11 @@ export const Route = createRootRouteWithContext<{
   shellComponent: RootDocument,
 });
 
-function DemoRoot() {
+function WorkspaceRoot() {
+  const version = useRouterState({
+    select: (state) => workspaceVersion(state.location.publicHref),
+  });
+  const versionSwitch = <WorkspaceVersionSwitch version={version} />;
   return (
     <ClientOnly
       fallback={
@@ -68,7 +73,13 @@ function DemoRoot() {
         </div>
       }
     >
-      <NmgrApp />
+      {version === "v2" ? (
+        <Suspense fallback={<div className="p-8" role="status">Loading V2…</div>}>
+          <NmgrApp versionSwitch={versionSwitch} />
+        </Suspense>
+      ) : (
+        <MarketplaceShell versionSwitch={versionSwitch} />
+      )}
     </ClientOnly>
   );
 }

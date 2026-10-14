@@ -26,3 +26,5 @@ web/apps/*/.output/
 web/apps/*/.tanstack/
 web/.env
 web/apps/control/.env.local
+web/apps/control/.artifacts/
+web/apps/control/.vite-preview/

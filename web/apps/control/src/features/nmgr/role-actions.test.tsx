@@ -149,17 +149,17 @@ it.each(["Guardrail", "Profile"] as Kind[])("opens %s repository details through
   window.location.hash = `${kind}/repository/`;
   render(<NmgrApp />);
   expect(screen.queryByRole("columnheader", { name: "Action" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "View", exact: true })).toBeNull();
-  const link = screen.getByRole("link", { name: item.name, exact: true });
+  expect(screen.queryByRole("button", { name: "View" })).toBeNull();
+  const link = screen.getByRole("link", { name: item.name });
   expect(document.body.textContent).not.toContain(item.id);
   expect(link.getAttribute("href")).toBe(`#${kind}/repository/${item.id}`);
   fireEvent.click(link);
-  expect(screen.getByRole("heading", { name: `${kind} Details`, exact: true })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: `${kind} Details` })).toBeTruthy();
   expect(document.body.textContent).not.toContain(item.id);
 });
 it("keeps uploaded datasets usable with English file-picker text and no visible entity ID", async () => {
   const item = openDetail("IT Admin", "Guardrail", "TEST READY", "tests");
-  fireEvent.click(screen.getByRole("button", { name: "Run Test", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Run Test" }));
   const dialog = within(screen.getByRole("dialog"));
   expect(dialog.getByText("Choose File")).toBeTruthy();
   expect(dialog.getByText("No file chosen")).toBeTruthy();
@@ -192,7 +192,7 @@ it("creates a Profile with an automatic ID and the simplified fields", () => {
   fireEvent.change(form.getByLabelText("Alert Threshold (%)"), { target: { value: "25" } });
   fireEvent.change(form.getByLabelText("Alert Window (Minutes)"), { target: { value: "3" } });
   fireEvent.click(form.getByRole("button", { name: "Submit" }));
-  expect(screen.getByRole("heading", { name: "Profile Details", exact: true })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Profile Details" })).toBeTruthy();
   expect(window.location.hash).toMatch(/^#Profile\/repository\/pf-[0-9a-f-]{36}$/);
   expect(screen.getByText("Pass Rate > 25% in 3 minutes")).toBeTruthy();
 });
@@ -200,7 +200,7 @@ it("keeps Trace content blank while retaining its navigation and title", () => {
   window.location.hash = "Profile/audit/";
   render(<NmgrApp />);
   expect(screen.getByRole("heading", { name: "Trace", level: 1 })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Trace", exact: true })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Trace" })).toBeTruthy();
   expect(screen.getByRole("main").textContent).toBe("");
   expect(screen.queryByRole("table")).toBeNull();
 });
@@ -210,7 +210,7 @@ it("shows the shared enforcement list on the dashboard", () => {
   expect(screen.queryByText("Policy detection recorded")).toBeNull();
   expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Profile", "Mode", "Ctrl Unit", "Last Modified", "Action"]);
   expect(screen.getByRole("table", { name: "Enforce & Prevent" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Enforce & Prevent", exact: true })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Enforce & Prevent" })).toBeNull();
   expect(screen.queryByText("SLO Breach Alert")).toBeNull();
 });
 it.each(["Block all", "Pass all"])("synchronizes dashboard %s actions with Enforce and mock scan totals", (mode) => {
@@ -228,7 +228,7 @@ it.each(["Block all", "Pass all"])("synchronizes dashboard %s actions with Enfor
   });
   expect((screen.getByLabelText(name) as HTMLSelectElement).value).toBe(mode);
   fireEvent.change(screen.getByLabelText(name), { target: { value: "Normal" } });
-  fireEvent.click(screen.getByRole("button", { name: "Dashboard", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Dashboard" }));
   expect((screen.getByLabelText(name) as HTMLSelectElement).value).toBe("Normal");
   expect(screen.getByText("Pass: 22")).toBeTruthy();
 });

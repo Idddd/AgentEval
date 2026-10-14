@@ -6,7 +6,7 @@ export function ProtectionSummary({ scans, profiles, guardrails, onNewGuardrail 
   scans: Scan[];
   profiles: number;
   guardrails: number;
-  onNewGuardrail?: () => void;
+  onNewGuardrail?: (() => void) | undefined;
 }) {
   const now = Date.now();
   const recent = scans.filter((scan) => {

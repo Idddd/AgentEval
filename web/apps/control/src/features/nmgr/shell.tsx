@@ -34,6 +34,7 @@ import {
 } from "./workbench";
 export type { View } from "./workbench";
 type Props = {
+  versionSwitch?: ReactNode;
   kind: Kind;
   view: View;
   owner: string;
@@ -56,6 +57,7 @@ export function NmgrShell(props: Props) {
   );
 }
 function ShellContent({
+  versionSwitch,
   kind,
   view,
   owner,
@@ -211,6 +213,7 @@ function ShellContent({
             </div>
           </div>
           <div className="nm-workspace-account">
+            {versionSwitch}
             <span className="text-sm font-medium">{actorNames[role]}</span>
             {actions}
           </div>

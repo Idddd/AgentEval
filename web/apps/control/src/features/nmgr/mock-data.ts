@@ -12,7 +12,7 @@ function demoSlo(id: string) {
 // Upgrade the old, implicit 5% error-rate sample without replacing authored rules.
 function migrateDemoSlo(item: Entity): Entity {
   if (item.kind !== "Profile") return item;
-  const upgrade = <T extends { threshold?: number; thresholdMetric?: string }>(value: T): T =>
+  const upgrade = <T extends { threshold?: number; thresholdMetric?: string | undefined }>(value: T): T =>
     value.thresholdMetric === undefined && value.threshold === 5
       ? { ...value, ...demoSlo(item.id) }
       : value;
