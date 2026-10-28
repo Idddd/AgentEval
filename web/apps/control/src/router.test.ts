@@ -15,7 +15,7 @@ vi.mock("./routeTree.gen", () => {
   };
 });
 
-it.each(["v1", "v2"])("opens existing routes under /%s and preserves the prefix on navigation", async (version) => {
+it.each(["v1", "v2", "v2-mock", "v3"])("opens existing routes under /%s and preserves the prefix on navigation", async (version) => {
   const router = getRouter();
   router.update({ context: router.options.context, history: createMemoryHistory({ initialEntries: [`/${version}/guardrails?role=tech#Guardrail/tests/`] }) });
   await router.load();
@@ -29,11 +29,11 @@ it.each(["v1", "v2"])("opens existing routes under /%s and preserves the prefix 
   expect(router.state.location.pathname).toBe("/guardrails/profile-demo");
 });
 
-it("redirects unprefixed bookmarks to V1 and defaults new links to V1", async () => {
+it("redirects unprefixed bookmarks to V2 and defaults new links to V2", async () => {
   const router = getRouter();
   router.update({ context: router.options.context, history: createMemoryHistory({ initialEntries: ["/guardrails"] }) });
   await router.load();
   expect(router.state.statusCode).toBe(307);
-  expect(router.state.redirect?.headers.get("Location")).toBe("/v1/guardrails");
-  expect(router.buildLocation({ to: "/policies" }).publicHref).toBe("/v1/policies");
+  expect(router.state.redirect?.headers.get("Location")).toBe("/v2/guardrails");
+  expect(router.buildLocation({ to: "/policies" }).publicHref).toBe("/v2/policies");
 });

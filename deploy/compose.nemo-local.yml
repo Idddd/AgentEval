@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: guard_uat
+      POSTGRES_USER: guard_uat
+      POSTGRES_PASSWORD: ${NEMO_DB_PASSWORD:?Initialize local NeMo credentials first}
+    ports:
+      - "127.0.0.1:15440:5432"
+    volumes:
+      - guard-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guard_uat -d guard_uat"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  controller:
+    image: agenteval-guard-controller:9a1971b
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18083:8080"
+    environment:
+      NODE_ENV: production
+      # Local Docker network only; OCP must use the service TLS configuration.
+      CONTROLLER_GRPC_TRANSPORT: plaintext
+      CONTROLLER_DATABASE_URL: postgresql://guard_uat:${NEMO_DB_PASSWORD}@postgres:5432/guard_uat
+      CONTROLLER_PUBLIC_URL: http://127.0.0.1:18083
+      CONTROLLER_RUNTIME_SERVICE_URL: http://runner:8091
+      CONTROLLER_RUNTIME_PUBLIC_URL: http://127.0.0.1:18091
+      CONTROLLER_RUNNER_TOKEN: ${NEMO_RUNNER_TOKEN:?Required}
+      CONTROLLER_METRICS_TOKEN: ${NEMO_METRICS_TOKEN:?Required}
+      BETTER_AUTH_SECRET: ${NEMO_AUTH_SECRET:?Required}
+      BETTER_AUTH_TRUSTED_ORIGINS: http://127.0.0.1:18083
+      CONTROLLER_BOOTSTRAP_ADMIN_EMAIL: admin@marketplace.local
+      CONTROLLER_BOOTSTRAP_ADMIN_PASSWORD: ${NEMO_ADMIN_PASSWORD:?Required}
+      CONTROLLER_BOOTSTRAP_ADMIN_NAME: Marketplace Local Admin
+      CONTROLLER_BOOTSTRAP_USER_EMAIL: user@marketplace.local
+      CONTROLLER_BOOTSTRAP_USER_PASSWORD: ${NEMO_USER_PASSWORD:?Required}
+      CONTROLLER_BOOTSTRAP_USER_NAME: Marketplace Local User
+      CONTROLLER_ARTIFACT_SIGNING_KEY_PATH: /run/guard-keys/private.pem
+      MODEL_GUARDRAILS_RUNTIME_LOG_ENCRYPTION_KEY: ${NEMO_LOG_KEY:?Required}
+    volumes:
+      - ${NEMO_LOCAL_SECRETS_DIR:?Required}/private.pem:/run/guard-keys/private.pem:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+  runner:
+    image: agenteval-guard-runner:9a1971b
+    depends_on:
+      controller:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18091:8091"
+    environment:
+      GUARD_RUNNER_ID: marketplace-uat-local-1
+      GUARD_RUNNER_POOL_ID: default
+      GUARD_RUNNER_COMPILER_CAPABLE: "true"
+      GUARD_CONTROLLER_TARGET: controller:9090
+      GUARD_CONTROLLER_TOKEN: ${NEMO_RUNNER_TOKEN:?Required}
+      GUARD_METRICS_TOKEN: ${NEMO_METRICS_TOKEN:?Required}
+      GUARD_CONTROLLER_TELEMETRY_ENDPOINT: http://controller:8080/api/internal/v1/runtime-events
+      GUARD_ARTIFACT_PUBLIC_KEY_PATH: /run/guard-keys/public.pem
+      MODEL_GUARDRAILS_RUNTIME_LOG_ENCRYPTION_KEY: ${NEMO_LOG_KEY:?Required}
+    volumes:
+      - ${NEMO_LOCAL_SECRETS_DIR:?Required}/public.pem:/run/guard-keys/public.pem:ro
+      - guard-runner:/var/lib/tasklattice/guard-runner
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health/ready', timeout=4)"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
+volumes:
+  guard-postgres:
+  guard-runner:

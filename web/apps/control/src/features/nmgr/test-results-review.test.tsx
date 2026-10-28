@@ -51,6 +51,19 @@ it("keeps metrics stable for a run and distinguishes a failed mock scenario", ()
   }
 });
 
+it("does not substitute mock benchmarks for missing real evaluation evidence", () => {
+  render(<TestResultsReview item={guard()} allowMockResults={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Results for acceptance-v1.json" }));
+  expect(screen.queryByRole("table", { name: "Benchmark Results" })).toBeNull();
+  expect(screen.getByText(/0 result details received/)).toBeTruthy();
+});
+
+it("labels F5 evaluation evidence with its actual provider", () => {
+  render(<TestResultsReview item={{ ...guard(), runs: [{ ...run(), evidence: { source: "F5", status: "completed", results: [{ caseId: "1", passed: true }], failureReason: null } }] }} allowMockResults={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Results for acceptance-v1.json" }));
+  expect(screen.getByRole("table", { name: "F5 results" })).toBeTruthy();
+});
+
 it("does not create benchmark results when no test was recorded", () => {
   render(<TestResultsReview item={{ ...guard(), runs: [] }} />);
   expect(screen.getByText("No evaluations recorded for this version.")).toBeTruthy();

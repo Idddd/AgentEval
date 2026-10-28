@@ -1,0 +1,36 @@
+FROM node:22-bookworm-slim AS dependencies
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential python3 && rm -rf /var/lib/apt/lists/*
+COPY web/package.json web/package-lock.json ./
+COPY web/apps/control/package.json apps/control/package.json
+COPY web/apps/example-mcp-server/package.json apps/example-mcp-server/package.json
+COPY web/apps/runner/package.json apps/runner/package.json
+COPY web/packages/contracts/package.json packages/contracts/package.json
+RUN npm ci --include=optional
+
+FROM dependencies AS build
+COPY web/tsconfig.base.json ./
+COPY web/apps ./apps
+COPY web/packages ./packages
+COPY web/skills ./skills
+RUN npm run build:control
+
+FROM dependencies AS production-dependencies
+RUN npm prune --omit=dev
+
+FROM node:22-bookworm-slim AS runtime
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 MARKETPLACE_DATA_MODE=live MARKETPLACE_CRUD_ONLY=false MARKETPLACE_F5_MOCK=false
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && rm -rf /var/lib/apt/lists/*
+COPY --from=production-dependencies /app/node_modules ./node_modules
+COPY web/package.json web/package-lock.json ./
+COPY web/apps/control/package.json apps/control/package.json
+COPY web/packages/contracts/package.json packages/contracts/package.json
+COPY --from=build /app/packages/contracts/dist ./packages/contracts/dist
+COPY --from=build /app/apps/control/.output ./apps/control/.output
+COPY --from=build /app/skills/vendor/dist ./skills/vendor/dist
+COPY deploy/v2/check-nemo.mjs /opt/marketplace/check-nemo.mjs
+USER 1000
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=5 CMD ["node", "-e", "fetch('http://127.0.0.1:8080/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+CMD ["node", "apps/control/.output/server/index.mjs"]

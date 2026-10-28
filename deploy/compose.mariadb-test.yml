@@ -1,0 +1,24 @@
+services:
+  mariadb:
+    # Verified locally as 11.4.13; pin the digest for repeatable tests.
+    image: mariadb:11.4@sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MARIADB_TEST_PORT:-13306}:3306"
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Set the local test root password}
+      MARIADB_DATABASE: marketplace_uat_test
+      MARIADB_USER: marketplace_test
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?Set the local test application password}
+    volumes:
+      - mariadb-test-data:/var/lib/mysql
+      - ./mariadb-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  mariadb-test-data:

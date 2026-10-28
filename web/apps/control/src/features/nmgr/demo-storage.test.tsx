@@ -38,6 +38,22 @@ it("refuses persistent imports when the latest workspace cannot be read, retaini
   expect(result.current.state.entities.some((item) => item.id === "gr-confirmed-import")).toBe(false);
 });
 
+it("isolates mock state and roles from legacy browser records and live credentials", () => {
+  const legacy = seed();
+  legacy.entities[0]!.name = "Legacy workspace record";
+  localStorage.setItem("nmgr-three-role-v2", JSON.stringify(legacy));
+  localStorage.setItem("nmgr-owner", "IT Admin");
+  sessionStorage.setItem("marketplace-v2-token", "real-token");
+  const { result } = renderHook(() => useDemoState(() => {}));
+  expect(result.current.state.entities[0]!.name).not.toBe("Legacy workspace record");
+  expect(initialOwner()).toBe("User");
+  act(() => result.current.updateState((state) => ({ ...state, entities: [] })));
+  saveOwner("User Admin");
+  expect(JSON.parse(localStorage.getItem("nmgr-three-role-v2")!).entities[0].name).toBe("Legacy workspace record");
+  expect(localStorage.getItem("nmgr-owner")).toBe("IT Admin");
+  expect(sessionStorage.getItem("marketplace-v2-token")).toBe("real-token");
+});
+
 it("keeps role selection per tab and allows three direct role links", () => {
   for (const [query, role] of [
     ["user", "User"],
@@ -48,10 +64,10 @@ it("keeps role selection per tab and allows three direct role links", () => {
     expect(initialOwner()).toBe(role);
   }
   saveOwner("User Admin");
-  expect(sessionStorage.getItem("nmgr-owner")).toBe("User Admin");
-  expect(localStorage.getItem("nmgr-owner")).toBeNull();
+  expect(sessionStorage.getItem("nmgr-v2-mock-owner")).toBe("User Admin");
+  expect(localStorage.getItem("nmgr-v2-mock-owner")).toBeNull();
   expect(window.location.search).toBe("?role=approver");
-  localStorage.setItem("nmgr-owner", "IT Admin");
+  localStorage.setItem("nmgr-v2-mock-owner", "IT Admin");
   expect(initialOwner()).toBe("User Admin");
 });
 

@@ -1,13 +1,14 @@
 # AI Marketplace
 
 AI Marketplace manages **Guardrails** and **Profiles**. Current release:
-**v0.2.21**, image `ghcr.io/idddd/tali-ui-demo:0.2.21`.
+**v0.2.22**, image `ghcr.io/idddd/tali-ui-demo:0.2.22`.
 
 ## Current UI
 
 Version URLs select the interface: **`/v1/`** keeps the existing two-section
-Profiles / Guardrails UI; **`/v2/`** opens the NMGR role workbenches.
-There are no interface-switch buttons. V2 configuration import is available
+Profiles / Guardrails UI; **`/v2/`** opens the NMGR Mock role workbenches,
+and **`/v3/`** opens the real integration workspace. The mode banner links
+between Mock V2 and Real V3; `/v2-mock/` remains a compatible Mock alias. V2 configuration import is available
 only at the hidden **`/v2/import`** page. Upload or paste JSON, preview it,
 then confirm; imports add drafts without replacing existing records.
 The existing technical-test JSON dataset upload remains available.
@@ -30,9 +31,9 @@ Control Unit filters always include ISS, RMG, LCS, Line 1.5, and Line 2.
 Requires Docker. Default demo data is stored in browser localStorage; no database is used.
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.21
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.22
 docker run -d --name ai-marketplace -p 18082:8080 \
-  ghcr.io/idddd/tali-ui-demo:0.2.21
+  ghcr.io/idddd/tali-ui-demo:0.2.22
 ```
 
 Open [V1](http://127.0.0.1:18082/v1/) or [V2](http://127.0.0.1:18082/v2/).
@@ -44,7 +45,7 @@ for logo and favicon replacement.
 
 ## Shared database and initial data
 
-Version 0.2.21 defaults to browser localStorage (`MARKETPLACE_DEMO_STORAGE=browser`).
+Version 0.2.22 defaults to browser localStorage (`MARKETPLACE_DEMO_STORAGE=browser`).
 Different browsers do not share cases. Server-side storage APIs are disabled.
 
 - Default cases initialize on the first visit in each browser. Refresh retains edits.
@@ -76,8 +77,11 @@ npm run start:control
 ## Live Guard connection
 
 Mock is the default. To use a real Guard service, set `MARKETPLACE_DATA_MODE=live`
-and `GUARD_API_URL` to its API endpoint. Users connect with personal access
-tokens in the UI. Live mode uses the Guard backend instead of mock SQLite.
+and `GUARD_API_URL` to its `/api/v1` endpoint, then open `/v3/guardrails`.
+Real V3 also requires a database, account-role mapping and independent user
+authentication/SSO. Backend NeMo credentials do not sign in browser users.
+See [the current deployment guide](docs/marketplace-release.md). Mock `/v2/`
+continues to work when real configuration or connections fail.
 
 See [Guard API connection](docs/guard-openapi-connection.md) for supported
 operations and optional authoring configuration.

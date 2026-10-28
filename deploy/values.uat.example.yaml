@@ -1,0 +1,38 @@
+# Deploy Marketplace only. Use existing NeMo and PostgreSQL (or MariaDB).
+replicaCount: 1
+fullnameOverride: marketplace-v2
+image:
+  repository: registry.example.internal/marketplace-ui
+  tag: replace-with-tested-image-tag
+openshift:
+  enabled: true
+  route:
+    enabled: true
+    host: marketplace-uat.example.internal
+marketplace:
+  dataMode: live
+  v2Live: true
+  guardApiUrl: https://nemo.example.internal/api/v1
+  # Optional; defaults to guardApiUrl's origin. Must be trusted by NeMo.
+  guardAuthOrigin: ""
+  nemoSecret: ""
+  nemoTokenSecret: tali
+  # Exact key confirmed for UAT: ends in -ini, not -init.
+  nemoTokenKey: tali-guard-bootstrap-user-ini
+  publicOrigin: https://marketplace-uat.example.internal
+  crudOnly: false
+  databaseSecret: tali
+  # Must contain a complete PostgreSQL URL, including the application password.
+  databaseUrlKey: tali-guard-postgresql-init
+  # If password is stored separately, set its actual key in the same Secret.
+  databasePasswordKey: ""
+  databaseTls: true
+  workspaceId: uat
+  accountsConfigMap: marketplace-accounts
+  # Set to marketplace-ca when an intranet CA is needed; mount key ca.crt.
+  caConfigMap: ""
+  # Optional. Set URL + Secret together to enable F5 in V2; no image rebuild needed.
+  f5ApiUrl: ""
+  f5Secret: ""
+  # Comma-separated F5 user IDs. Required by F5 when creating Projects with global/project tokens.
+  f5ProjectAdminIds: ""

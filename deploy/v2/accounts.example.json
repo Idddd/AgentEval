@@ -1,0 +1,5 @@
+{
+  "replace-with-nemo-author-user-id": { "name": "Control Author", "role": "User", "unit": "ISS" },
+  "replace-with-nemo-approver-user-id": { "name": "Control Approver", "role": "User Admin", "unit": "ISS" },
+  "replace-with-nemo-engineer-user-id": { "name": "Engineer", "role": "IT Admin", "unit": "ISS" }
+}

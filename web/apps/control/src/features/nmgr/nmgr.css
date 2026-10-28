@@ -1,4 +1,29 @@
 /* Reserve the document scrollbar lane without changing the sidebar. */
+.nm-mode-app {
+  --nm-mode-height: 88px;
+  padding-top: var(--nm-mode-height);
+}
+.nm-workspace-mode {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 40;
+  height: var(--nm-mode-height);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-content: center;
+  gap: 4px 16px;
+}
+.nm-mode-app .nm-workspace {
+  min-height: calc(100svh - var(--nm-mode-height));
+}
+.nm-mode-app .nm-workspace-header { top: var(--nm-mode-height); }
+.nm-mode-app .nm-workspace [data-slot="sidebar"] > .fixed {
+  top: var(--nm-mode-height);
+  height: calc(100svh - var(--nm-mode-height));
+}
+@media (min-width: 768px) {
+  .nm-mode-app { --nm-mode-height: 64px; }
+}
 html:has(#nmgr-content) {
   scrollbar-gutter: stable;
 }
@@ -1863,6 +1888,64 @@ html:has(#nmgr-content) {
 .nm-guardrail-picker-card details { margin: 0; }
 .nm-guardrail-picker-list:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
+/* Real workspaces use the same card, field and detail system as the mock. */
+.nm-live-form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.nm-live-form-fields p { margin: 0; }
+.nm-live-id-field { display: grid; gap: 8px; }
+.nm-live-guardrails { min-width: 0; border: 0; padding: 0; display: grid; gap: 12px; }
+.nm-live-guardrails legend { font-size: 13px; font-weight: 500; margin-bottom: 8px; }
+.nm-live-form-fields .nm-actions { padding-top: 20px; border-top: 1px solid var(--border); }
+.nm-live-login { max-width: 620px; margin: 48px auto; padding: 0 20px; }
+.nm-live-login h1 { font-family: var(--font-heading); font-size: 28px; }
+.nm-live-panel { display: flex; flex-direction: column; gap: 20px; overflow-wrap: anywhere; }
+.nm-live-panel > p, .nm-live-panel .nm-callout p { margin: 0; }
+.nm-live-panel > label, .nm-live-panel .space-y-2 > label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 500; }
+.nm-live-panel h2 { font-size: 22px; font-weight: 600; }
+.nm-live-panel h3 { font-size: 15px; font-weight: 600; }
+.nm-live-panel > .nm-detail-head { align-items: flex-start; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+.nm-live-panel > .nm-detail-head > .nm-badge { flex-shrink: 0; }
+.nm-live-observation, .nm-live-draft-sync { display: grid; gap: 4px; }
+.nm-live-panel .nm-live-observation p, .nm-live-panel .nm-live-draft-sync p { margin: 0; }
+.nm-live-panel .nm-info-description { white-space: pre-wrap; }
+.nm-live-panel .nm-callout { display: grid; gap: 10px; }
+.nm-live-panel textarea { min-height: 120px; }
+.nm-live-refs { display: grid; gap: 12px; margin-top: 12px; }
+.nm-live-refs small { display: block; color: #777; }
+.nm-live-toolbar { display: flex; gap: 16px; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.nm-live-list table { min-width: 760px; }
+.nm-live-list td { vertical-align: middle; }
+.nm-live-list td:first-child { min-width: 220px; max-width: 300px; white-space: normal; overflow-wrap: anywhere; }
+.nm-live-record-name { text-align: left; font-weight: 600; line-height: 1.6; }
+.nm-live-record-name:hover { color: var(--primary); text-decoration: underline; }
+.nm-live-backend-status { max-width: 260px; white-space: normal; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
+.nm-live-backend-status > div + div { margin-top: 8px; }
+.nm-live-backend-status p { margin: 0; }
+.nm-live-backend-status small { font-size: 11px; }
+@media (max-width: 600px) {
+  .nm-live-toolbar { align-items: stretch; flex-direction: column; padding: 16px; }
+  .nm-live-toolbar .nm-search { min-width: 0; }
+  .nm-live-login { margin-top: 24px; }
+}
+
+.nm-live-unit-filter { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.nm-live-unit-filter select { width: 100%; }
+.nm-live-metrics-note { margin: 14px 0 24px; font-size: 12px; line-height: 1.6; }
+.nm-live-list-filters { margin: 0; padding: 20px 24px; flex-wrap: wrap; }
+.nm-live-list-filters .nm-search { flex: 1 1 260px; min-width: 0; }
+.nm-live-list-filters .nm-select { flex-shrink: 0; }
+@media (max-width: 600px) {
+  .nm-live-list-filters { padding: 16px; align-items: stretch; }
+  .nm-live-list-filters .nm-search { flex-basis: 100%; }
+}
+
 /* One field system for the request page and the Profile drawer. */
 .nm-app .nm-create-form {
   display: flex;
@@ -1877,6 +1960,7 @@ html:has(#nmgr-content) {
 .nm-create-guardrail .nm-create-fields {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+.nm-create-guardrail .nm-live-business-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .nm-create-form label:not(.nm-check) {
   display: flex;
   flex-direction: column;

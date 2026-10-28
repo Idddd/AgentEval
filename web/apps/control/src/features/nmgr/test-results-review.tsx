@@ -68,7 +68,7 @@ export function mockBenchmarkResults(item: Entity, run: Run): MockBenchmark[] {
   });
 }
 
-export function TestResultsReview({ item }: { item: Entity }) {
+export function TestResultsReview({ item, allowMockResults = true }: { item: Entity; allowMockResults?: boolean }) {
   const [version, setVersion] = useState(String(item.version));
   const [runId, setRunId] = useState("");
   const versions = [...new Set([item.version, ...item.runs.map((run) => run.version)])].sort((a, b) => b - a);
@@ -91,23 +91,23 @@ export function TestResultsReview({ item }: { item: Entity }) {
           </label>}
         </div>
       </div>
-      {run ? <BenchmarkResultsDisclosure key={run.id} item={item} run={run} />
+      {run ? <BenchmarkResultsDisclosure key={run.id} item={item} run={run} allowMockResults={allowMockResults} />
         : <p className="nm-empty">No evaluations recorded for this version.</p>}
     </section>
   );
 }
 
-export function BenchmarkResultsDisclosure({ item, run, asTableRow = false }: { item: Entity; run: Run; asTableRow?: boolean }) {
+export function BenchmarkResultsDisclosure({ item, run, asTableRow = false, allowMockResults = true }: { item: Entity; run: Run; asTableRow?: boolean; allowMockResults?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
-  const rows = expanded ? mockBenchmarkResults(item, run) : [];
+  const rows = expanded && allowMockResults && !run.evidence ? mockBenchmarkResults(item, run) : [];
   const status = <span className={`nm-badge ${run.passed ? "good" : "bad"}`}>{run.passed ? "Passed" : "Evaluation failed"}</span>;
   const trigger = <button type="button" className="nm-benchmark-toggle" aria-label={`Results for ${run.dataset}`} aria-expanded={expanded} aria-controls={contentId} onClick={(event) => { event.stopPropagation(); setExpanded(!expanded); }}>
     <span className="nm-benchmark-run-label"><strong>{run.dataset}</strong><small>Target {run.version}.0 · Base {run.base === null ? "None" : `${run.base}.0`} · {run.cases} cases</small></span>
     {!asTableRow && status}<ChevronDown size={16} aria-hidden="true" className={expanded ? "rotate-180" : ""} />
   </button>;
   const content = expanded && <div id={contentId} className="nm-scroll nm-review-table-scroll nm-review-results" role="region" aria-label="Benchmark results table" tabIndex={0}>
-          <table aria-label="Benchmark Results">
+          {run.evidence ? <><p>{run.evidence.source} run: {run.id} · {run.evidence.status}</p>{run.evidence.failureReason && <p>{run.evidence.failureReason}</p>}<table aria-label={`${run.evidence.source} results`}><thead><tr><th>Case</th><th>Result</th><th>Decision</th><th>Details</th></tr></thead><tbody>{run.evidence.results.map(result => <tr key={result.caseId}><td>{result.caseId}</td><td>{result.passed ? "Passed" : "Failed"}</td><td>{result.actualDecision ?? "—"}</td><td>{result.reason ?? ""}</td></tr>)}</tbody></table></> : !allowMockResults ? <p className="nm-empty">Evaluation evidence is not available. 0 result details received.</p> : <table aria-label="Benchmark Results">
             <thead>
               <tr><th rowSpan={2} scope="col">Benchmark</th><th rowSpan={2} scope="col">Evaluation Scope</th><th rowSpan={2} scope="col">DataSet</th><th colSpan={3} scope="colgroup" className="nm-review-metric-group">Guardrail</th></tr>
               <tr>{["Accuracy", "Precision", "Recall"].map((metric) => <th key={metric} scope="col" className="nm-review-metric-head">{metric}</th>)}</tr>
@@ -116,7 +116,7 @@ export function BenchmarkResultsDisclosure({ item, run, asTableRow = false }: { 
               <td><strong>{row.benchmark}</strong></td><td>{row.description}</td><td className="nm-review-dataset">{row.dataset}</td>
               {[row.accuracy, row.precision, row.recall].map((metric, index) => <td key={index} className="nm-review-score">{metric.toFixed(2)}%</td>)}
             </tr>)}</tbody>
-          </table>
+          </table>}
         </div>;
   return asTableRow ? <Fragment>
     <tr className="nm-benchmark-record-row" onClick={() => setExpanded(!expanded)}><td className="nm-record-result-cell">{trigger}</td><td>{status}</td></tr>

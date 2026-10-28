@@ -1,4 +1,6 @@
 import { statusLabel } from "./status-label";
+import { NmgrMode } from "./live";
+import { Measure } from "./measure/measure";
 import { Fragment, useEffect, useState, useRef } from "react";
 import {
   FlaskConical,
@@ -111,7 +113,17 @@ function Select({
     </label>
   );
 }
-export function NmgrApp() {
+export function NmgrApp({ mock = false }: { mock?: boolean }) {
+  return <div className="nm-mode-app">
+    <nav aria-label="Workspace mode" className={`nm-workspace-mode border-b px-4 py-2 text-sm ${mock ? "border-amber-300 bg-amber-50 text-amber-950" : "border-border bg-background text-foreground"}`}>
+      <strong>{mock ? "Mock V2" : "Real V3"}</strong>
+      <a className="justify-self-end underline" href={mock ? "/v3/guardrails" : "/v2/guardrails"}>{mock ? "Open Real V3" : "Open Mock V2"}</a>
+      <span className="col-span-2 text-xs">{mock ? "Simulated operations. Demo data is saved only in this browser." : "Changes use the configured NeMo and F5 services."}</span>
+    </nav>
+    {mock ? <DemoNmgrApp /> : <NmgrMode />}
+  </div>;
+}
+export function DemoNmgrApp() {
   const { state, ready, updateState } = useDemoState(setNotice);
   const [owner, setOwner] = useState(initialOwner);
   const role = roleForOwner(owner);
@@ -430,7 +442,7 @@ export function NmgrApp() {
   const showRepositoryCreate =
     view === "repository" && !fullDetail && canAuthor(role);
   const title =
-    view === "enforce"
+    view === "runners" ? "Guardrail Runners" : view === "protection" ? "Protection Center" : view === "measure" ? "Measure" : view === "enforce"
       ? "Enforce & Prevent"
       : view === "audit"
         ? "Trace"
@@ -738,6 +750,7 @@ export function NmgrApp() {
   return (
     <>
       <NmgrShell
+        enableMeasure
         kind={kind}
         view={view}
         owner={owner}
@@ -820,7 +833,7 @@ export function NmgrApp() {
             Guardrails
           </p>
         )}
-        {view === "request" ? (
+        {["measure", "runners", "protection"].includes(view) ? <Measure key={role} role={role} center={view === "runners" ? "runners" : view === "protection" ? "protection" : "overview"} onCenter={center => go("Profile", center === "overview" ? "measure" : center)} onDashboard={() => go("Profile", "dashboard")} onPolicyAdjustment={() => go("Guardrail", "repository")} /> : view === "request" ? (
           <section className="nm-card nm-padding nm-request-page">
             {error && (
               <div role="alert" className="nm-inline-notice nm-inline-error">
@@ -1687,6 +1700,9 @@ function locationHash(): [Kind, View, string] {
       "operations",
       "logs",
       "enforce",
+      "measure",
+      "runners",
+      "protection",
       "audit",
     ].includes(v ?? "")
       ? v === "logs"

@@ -8,7 +8,7 @@ import { operatingProfile, operatingModeLabel } from "./profile-operations-state
 import { Sheet, SheetTitle } from "@/components/ui/sheet";
 import { ResizableSheetContent } from "./resizable-sheet";
 
-export function EnforcementList({ profiles, state, role, alertCounts, onModeChange, renderOperations, initialTime = Date.now() }: {
+export function EnforcementList({ profiles, state, role, alertCounts, onModeChange, renderOperations, initialTime = Date.now(), runtimeConnected = true }: {
   profiles: Entity[];
   state: State;
   role: Role;
@@ -16,6 +16,7 @@ export function EnforcementList({ profiles, state, role, alertCounts, onModeChan
   onModeChange: (item: Entity, mode: Entity["mode"]) => void;
   renderOperations?: (item: Entity) => ReactNode;
   initialTime?: number;
+  runtimeConnected?: boolean;
 }) {
   const [expanded, setExpanded] = useState("");
   const [search, setSearch] = useState("");
@@ -55,14 +56,14 @@ export function EnforcementList({ profiles, state, role, alertCounts, onModeChan
                     {alertCounts.get(item.id)?.[level] ?? 0}
                   </span>)}</span>
               </div>
-              <EntitySummary item={item} state={state} />
+              {runtimeConnected ? <EntitySummary item={item} state={state} /> : <small>Published Ver.: <strong>{item.deployed}.0</strong> · {item.deployedRefs.length} Guardrails Set · {item.provider ?? "NeMo"}</small>}
             </div></div></td>
-            <td><span className={`nm-badge ${item.mode === "Pass all" ? "warning" : "good"}`}>{renderOperations ? operatingModeLabel(operatingProfile(item, state, initialTime)) : item.mode}</span></td>
+            <td><span className={`nm-badge ${!runtimeConnected ? "" : item.mode === "Pass all" ? "warning" : "good"}`}>{!runtimeConnected ? "Not connected" : renderOperations ? operatingModeLabel(operatingProfile(item, state, initialTime)) : item.mode}</span></td>
             <td>{item.unit}</td>
             <td>{new Date(item.updated).toLocaleString("en-GB", { timeZone: "Asia/Shanghai" })}</td>
             <td>{renderOperations ? <button className="nm-entity-open-link" aria-label={`View operations for ${item.name}`} aria-expanded={expanded === item.id} onClick={() => setExpanded(expanded === item.id ? "" : item.id)}><ArrowRight size={17} aria-hidden="true" /></button> : <div className="nm-select">
               <select aria-label={`Mode for ${item.name}`} value={item.mode}
-                disabled={!["Normal", "Pass all", "Block all"].some((mode) => allowed(item, mode as Entity["mode"], role))}
+                disabled={!runtimeConnected || !["Normal", "Pass all", "Block all"].some((mode) => allowed(item, mode as Entity["mode"], role))}
                 onChange={(event) => onModeChange(item, event.target.value as Entity["mode"])}>
                 {(["Normal", "Pass all", "Block all"] as const).map((mode) =>
                   <option key={mode} value={mode} disabled={mode !== item.mode && !allowed(item, mode, role)}>{mode}</option>)}

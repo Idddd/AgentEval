@@ -1,3 +1,4 @@
+import { sourceLabel } from "./model";
 import { ChevronRight } from "lucide-react";
 import type { Entity, State } from "./model";
 
@@ -61,7 +62,7 @@ export function GuardrailInfo({
           {item.config?.content || "No prompt configured."}
         </p>
         <dl className="nm-info-facts nm-config-meta">
-          <div><dt>Guardrail provider</dt><dd>{item.provider ?? "NeMo"}</dd></div>
+          <div><dt>Guardrail provider</dt><dd>{sourceLabel(item)}</dd></div>
           <div>
             <dt>Scanner</dt>
             <dd>

@@ -9,11 +9,19 @@ const json = JSON.stringify([{ kind: "Guardrail", id: "gr-hidden-json", name: "H
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-it.each(["/import", "/import/"])("allows the hidden %s route only under V2", (pathname) => {
+it.each(["/import", "/import/"])("allows the local %s utility only under Mock V2", (pathname) => {
   const load = Route.options.beforeLoad;
   if (typeof load !== "function") throw new Error("Missing root routing policy");
+  expect(() => load({ location: { pathname, publicHref: `/v2-mock${pathname}` } } as never)).not.toThrow();
   expect(() => load({ location: { pathname, publicHref: `/v2${pathname}` } } as never)).not.toThrow();
+  expect(() => load({ location: { pathname, publicHref: `/v3${pathname}` } } as never)).toThrow();
   expect(() => load({ location: { pathname, publicHref: `/v1${pathname}` } } as never)).toThrow();
+});
+
+it("labels imported drafts as browser-local mock data and returns to the mock workspace", () => {
+  render(<ConfigurationImportPage />);
+  expect(screen.getByText("Mock V2")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Back to Mock V2" }).getAttribute("href")).toBe("/v2/guardrails");
 });
 
 it("previews configurations and writes them only after confirmation", () => {

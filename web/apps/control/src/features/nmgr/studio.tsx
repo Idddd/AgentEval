@@ -165,10 +165,10 @@ export function CheckboxFilter({
     </div>
   );
 }
-export function WorkflowSteps({ item }: { item: Entity }) {
+export function WorkflowSteps({ item, releaseProfile = false }: { item: Entity; releaseProfile?: boolean }) {
   const steps =
     item.kind === "Profile"
-      ? ["Draft", "Sign-off requested", "Signed off"]
+      ? ["Draft", "Sign-off requested", "Signed off", ...(releaseProfile ? ["Released"] : [])]
       : [
           "Draft",
           "Evaluation ready",
@@ -179,7 +179,7 @@ export function WorkflowSteps({ item }: { item: Entity }) {
         ];
   const states =
     item.kind === "Profile"
-      ? ["DRAFT", "SIGNOFF REQUESTED", "SIGNED OFF"]
+      ? ["DRAFT", "SIGNOFF REQUESTED", "SIGNED OFF", ...(releaseProfile ? ["DEPLOYED"] : [])]
       : studioStatuses.filter((s) => s !== "TEST FAILED");
   const failed = item.status === "TEST FAILED";
   const current = failed ? 2 : states.indexOf(item.status);

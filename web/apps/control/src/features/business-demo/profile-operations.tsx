@@ -103,7 +103,7 @@ export function ProfileOperations({profile,dirty,onOpenGuardrail,showSummary=tru
    {rows.map(({ref,m}) => <article key={ref.policyId} aria-label={ref.name} className="nm-operation-card rounded-lg border bg-white">
      <header className="nm-operation-card-header">
        <div className="min-w-0 flex-1 space-y-2">
-         <button className="nm-operation-name text-left font-medium" aria-expanded={focused?.ref.policyId === ref.policyId} aria-controls={`traces-${ref.policyId}`} onClick={() => toggle(ref.policyId)}>{ref.name}</button>
+         <button className="nm-operation-name flex items-start gap-2 text-left font-medium" aria-expanded={focused?.ref.policyId === ref.policyId} aria-controls={`traces-${ref.policyId}`} onClick={() => toggle(ref.policyId)}><span className="min-w-0">{ref.name}</span><ChevronDown aria-hidden="true" className={`mt-0.5 size-3.5 shrink-0 ${focused?.ref.policyId === ref.policyId ? "rotate-180" : ""}`} /></button>
          <div className="flex flex-wrap items-center gap-2 text-xs"><span className="text-muted-foreground">v{ref.version}</span>
            {showProvider && <GuardrailProviderTag provider={String(profile.policies.find(policy => policy.policyId === ref.policyId)?.workflow?.configs?.provider ?? "NeMo")} />}
            <span className={`rounded-md px-2 py-0.5 font-medium ${bypass ? "bg-amber-50 text-amber-800" : guardrailMode(profile,ref.policyId) === "active" ? "bg-emerald-50 text-emerald-800" : "bg-blue-50 text-blue-800"}`}>Current: {bypass ? "Bypass" : modeLabel(guardrailMode(profile,ref.policyId))}</span>
@@ -112,6 +112,7 @@ export function ProfileOperations({profile,dirty,onOpenGuardrail,showSummary=tru
        <GuardrailActions name={ref.name} current={guardrailMode(profile,ref.policyId)} disabled={bypass||busy||pending||dirty||!setProfileMode} onChange={value => void perform(() => setProfileMode!(profile.id,ref.policyId,value))} />
      </header>
      {draftModes?.[ref.policyId] && draftModes[ref.policyId] !== guardrailMode(profile,ref.policyId) && <p className="px-4 pb-3 text-right text-xs text-amber-700">{modeLabel(draftModes[ref.policyId]!)} · {approval === "pending" ? "Pending approval" : "Not submitted"}</p>}
+     {focused?.ref.policyId === ref.policyId && <div id={`traces-${ref.policyId}`}>
      <dl className="nm-operation-card-metrics">
        <div><dt>Scans</dt><dd>{m.count.toLocaleString()}</dd></div>
        <div><dt>Avg response</dt><dd>{m.count ? `${m.average} ms` : "—"}</dd></div>
@@ -119,8 +120,7 @@ export function ProfileOperations({profile,dirty,onOpenGuardrail,showSummary=tru
        <div><dt>Detected</dt><dd className="text-blue-700">{m.detected}<small>{rate(m.detected,m.count)}</small></dd></div>
        <div><dt>Block</dt><dd className="text-red-700">{ref.mode === "active" ? m.blocked : "—"}<small>{ref.mode === "active" ? rate(m.blocked,m.count) : "—"}</small></dd></div>
      </dl>
-     <footer className="flex justify-end border-t px-4 py-3"><Button size="sm" variant="ghost" aria-expanded={focused?.ref.policyId === ref.policyId} aria-controls={`traces-${ref.policyId}`} onClick={() => toggle(ref.policyId)}>{focused?.ref.policyId === ref.policyId ? "Hide traces" : "View traces"}<ChevronDown aria-hidden="true" className={`ml-2 size-3.5 ${focused?.ref.policyId === ref.policyId ? "rotate-180" : ""}`} /></Button></footer>
-     {focused?.ref.policyId === ref.policyId && <div id={`traces-${ref.policyId}`}>{traceList}</div>}
+     {traceList}</div>}
    </article>)}
    {!rows.length && <p className="p-4 text-sm text-muted-foreground">No matching guardrails.</p>}
  </div> : <section className="overflow-hidden rounded-lg border bg-white">

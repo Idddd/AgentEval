@@ -9,7 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { NmgrApp } from "./app";
+import { DemoNmgrApp as NmgrApp } from "./app";
 import { seed, type Role, type Kind, type Status } from "./model";
 beforeEach(() => {
   localStorage.clear();
@@ -44,8 +44,8 @@ function openDetail(
   item.unit = "ISS";
   item.status = status;
   if (status === "DRAFT") item.runs = [];
-  localStorage.setItem("nmgr-three-role-v2", JSON.stringify(state));
-  localStorage.setItem("nmgr-owner", role);
+  localStorage.setItem("nmgr-v2-mock-state", JSON.stringify(state));
+  localStorage.setItem("nmgr-v2-mock-owner", role);
   window.location.hash = `${kind}/${view}/${item.id}`;
   render(<NmgrApp />);
   return item;
@@ -85,7 +85,7 @@ it("shows User test records in a drawer and requests approval from there", () =>
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
   expect(screen.getByText(/signoff request submitted/)).toBeTruthy();
   expect(
-    JSON.parse(localStorage.getItem("nmgr-three-role-v2")!).entities.some(
+    JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!).entities.some(
       (e: { status: string }) => e.status === "SIGNOFF REQUESTED",
     ),
   ).toBe(true);
@@ -156,8 +156,8 @@ it.each(["Guardrail", "Profile"] as Kind[])("opens %s repository details through
   const state = seed();
   const item = state.entities.find((entity) => entity.kind === kind)!;
   item.unit = "ISS";
-  localStorage.setItem("nmgr-three-role-v2", JSON.stringify(state));
-  localStorage.setItem("nmgr-owner", "User");
+  localStorage.setItem("nmgr-v2-mock-state", JSON.stringify(state));
+  localStorage.setItem("nmgr-v2-mock-owner", "User");
   window.location.hash = `${kind}/repository/`;
   render(<NmgrApp />);
   expect(screen.queryByRole("columnheader", { name: "Action" })).toBeNull();
@@ -189,7 +189,7 @@ it("creates a Profile with an automatic ID and the simplified fields", () => {
   const guard = state.entities.find((entity) => entity.kind === "Guardrail" && entity.deployed !== null)!;
   guard.mandatory = true;
   guard.location = "ALL";
-  localStorage.setItem("nmgr-three-role-v2", JSON.stringify(state));
+  localStorage.setItem("nmgr-v2-mock-state", JSON.stringify(state));
   window.location.hash = "Profile/repository/";
   render(<NmgrApp />);
   fireEvent.click(screen.getByRole("button", { name: "New Profile" }));
@@ -214,8 +214,8 @@ it("configures a new Guardrail using Control Intent and scanner content without 
   item.status = "DRAFT";
   item.policies = [];
   item.runs = [];
-  localStorage.setItem("nmgr-three-role-v2", JSON.stringify(state));
-  localStorage.setItem("nmgr-owner", "IT Admin");
+  localStorage.setItem("nmgr-v2-mock-state", JSON.stringify(state));
+  localStorage.setItem("nmgr-v2-mock-owner", "IT Admin");
   window.location.hash = `Guardrail/repository/${item.id}`;
   render(<NmgrApp />);
   fireEvent.click(screen.getByRole("button", { name: "Configure" }));
@@ -225,7 +225,7 @@ it("configures a new Guardrail using Control Intent and scanner content without 
   expect(dialog.getByText(item.description)).toBeTruthy();
   fireEvent.change(dialog.getByLabelText("Guardrail provider"), { target: { value: "F5" } });
   fireEvent.click(dialog.getByRole("button", { name: "Confirm" }));
-  const saved = JSON.parse(localStorage.getItem("nmgr-three-role-v2")!);
+  const saved = JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!);
   expect(saved.entities.find((entry: { id: string }) => entry.id === item.id)).toMatchObject({ status: "TEST READY", policies: [item.description], provider: "F5" });
 });
 it("keeps Trace content blank while retaining its navigation and title", () => {
@@ -256,7 +256,7 @@ it("bypasses a Dashboard Profile and resumes the same configuration in Monitorin
   expect(screen.getByRole("article", { name: "Customer-Facing Banking Assistant Restrictions" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Bypass" }));
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirm bypass" })); });
-  const saved = () => JSON.parse(localStorage.getItem("nmgr-three-role-v2")!).entities.find((item: { id: string }) => item.id === "default-customer-assistant");
+  const saved = () => JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!).entities.find((item: { id: string }) => item.id === "default-customer-assistant");
   expect(saved().runtime.bypass).toBe(true);
   expect(saved().mode).toBe("Pass all");
   act(() => {
@@ -280,7 +280,7 @@ it("submits Dashboard mode changes for approval and lets the Approver apply them
   await act(async () => { fireEvent.keyDown(screen.getByRole("button", { name: `Actions for ${guard.name}` }), { key: "ArrowDown" }); });
   await act(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "Switch to Monitoring" })); });
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Submit for approval" })); });
-  const saved = () => JSON.parse(localStorage.getItem("nmgr-three-role-v2")!).entities.find((item: { id: string }) => item.id === profile.id);
+  const saved = () => JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!).entities.find((item: { id: string }) => item.id === profile.id);
   expect(saved().runtime.approval).toBe("pending");
   expect(screen.queryByRole("button", { name: "Approve Profile" })).toBeNull();
   fireEvent.click(within(screen.getByRole("dialog", { name: profile.name })).getByRole("button", { name: "Close" }));
@@ -295,7 +295,7 @@ it("adds live Dashboard logs on each traffic tick and pauses them during Bypass"
   vi.useFakeTimers();
   render(<NmgrApp />);
   fireEvent.click(screen.getByRole("button", { name: "View operations for Customer Banking Assistant" }));
-  const saved = () => JSON.parse(localStorage.getItem("nmgr-three-role-v2")!).entities.find((item: { id: string }) => item.id === "default-customer-assistant");
+  const saved = () => JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!).entities.find((item: { id: string }) => item.id === "default-customer-assistant");
   await act(async () => { vi.advanceTimersByTime(6000); });
   const count = saved().runtime.events.length;
   await act(async () => { vi.advanceTimersByTime(6000); });
@@ -343,7 +343,7 @@ it.each(["RMG", "LCS", "Line 1.5", "Line 2"])("submits a new Guardrail to the se
   fireEvent.change(screen.getByLabelText("Guardrail Name"), { target: { value: "Selected unit request" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Control Intent" }), { target: { value: "Protect customer information" } });
   fireEvent.click(screen.getByRole("button", { name: "Submit" }));
-  const saved = JSON.parse(localStorage.getItem("nmgr-three-role-v2")!);
+  const saved = JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!);
   expect(saved.entities.find((item: { name: string }) => item.name === "Selected unit request").unit).toBe(unit);
   expect(screen.getByText(/Request submitted!/).textContent).toContain(unit);
   expect(screen.queryByRole("button", { name: /Guardrail Details/ })).toBeNull();
@@ -353,7 +353,7 @@ it("does not expose another department via a detail URL", () => {
   const item = state.entities[0]!;
   item.unit = "RMG";
   item.name = "Other department secret";
-  localStorage.setItem("nmgr-three-role-v2", JSON.stringify(state));
+  localStorage.setItem("nmgr-v2-mock-state", JSON.stringify(state));
   window.location.hash = `Guardrail/repository/${item.id}`;
   render(<NmgrApp />);
   expect(screen.queryByText("Other department secret")).toBeNull();
@@ -364,7 +364,7 @@ it.each([
   ["User Admin", "Guardrail/signoff/"], ["User Admin", "Profile/signoff/"],
   ["IT Admin", "Guardrail/repository/"], ["IT Admin", "Guardrail/tests/"], ["IT Admin", "Guardrail/deploy/"],
 ] as const)("always exposes fixed Ctrl Unit filters for %s at %s", (role, route) => {
-  localStorage.setItem("nmgr-owner", role);
+  localStorage.setItem("nmgr-v2-mock-owner", role);
   window.location.hash = route;
   render(<NmgrApp />);
   const units = within(screen.getByRole("group", { name: "Control unit" }));
@@ -372,7 +372,7 @@ it.each([
 });
 
 it.each(["User", "User Admin", "IT Admin"] as const)("exposes dashboard Control Unit options for %s without relying on records", (role) => {
-  localStorage.setItem("nmgr-owner", role);
+  localStorage.setItem("nmgr-v2-mock-owner", role);
   window.location.hash = "Profile/dashboard/";
   render(<NmgrApp />);
   const units = within(screen.getByRole("combobox", { name: "Control Unit" }));
@@ -380,7 +380,7 @@ it.each(["User", "User Admin", "IT Admin"] as const)("exposes dashboard Control 
 });
 
 it("filters the signoff history alongside the queue without broadening departmental scope", () => {
-  localStorage.setItem("nmgr-owner", "User Admin");
+  localStorage.setItem("nmgr-v2-mock-owner", "User Admin");
   window.location.hash = "Guardrail/signoff/";
   render(<NmgrApp />);
   fireEvent.click(screen.getByText("Operation History"));
@@ -394,8 +394,8 @@ it("filters the signoff history alongside the queue without broadening departmen
 it("uses title and arrow links to open the same signoff details", () => {
   const state = seed(), item = state.entities.find((item) => item.kind === "Guardrail")!;
   item.status = "SIGNOFF REQUESTED";
-  localStorage.setItem("nmgr-three-role-v2", JSON.stringify(state));
-  localStorage.setItem("nmgr-owner", "User Admin");
+  localStorage.setItem("nmgr-v2-mock-state", JSON.stringify(state));
+  localStorage.setItem("nmgr-v2-mock-owner", "User Admin");
   window.location.hash = "Guardrail/signoff/";
   render(<NmgrApp />);
   const queue = within(screen.getAllByRole("table")[0]!);
@@ -408,7 +408,7 @@ it("uses title and arrow links to open the same signoff details", () => {
 });
 
 it("resets technical department filters when switching to a Control Unit workbench", () => {
-  localStorage.setItem("nmgr-owner", "IT Admin");
+  localStorage.setItem("nmgr-v2-mock-owner", "IT Admin");
   render(<NmgrApp />);
   fireEvent.click(screen.getByRole("button", { name: "Dashboard" }));
   fireEvent.change(screen.getByLabelText("Control Unit"), {

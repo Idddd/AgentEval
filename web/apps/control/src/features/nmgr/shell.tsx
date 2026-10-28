@@ -39,9 +39,12 @@ type Props = {
   owner: string;
   busy: boolean;
   controlUnit?: string;
+  identity?: string;
+  onDisconnect?: () => void;
   title?: string;
   description?: string;
   actions?: ReactNode;
+  enableMeasure?: boolean;
   onOwner: (owner: string) => void;
   onNavigate: (kind: Kind, view: View) => void;
   children: ReactNode;
@@ -61,9 +64,12 @@ function ShellContent({
   owner,
   busy,
   controlUnit = "ISS",
+  identity,
+  onDisconnect,
   title,
   description,
   actions,
+  enableMeasure = false,
   onOwner,
   onNavigate,
   children,
@@ -98,6 +104,7 @@ function ShellContent({
         isActive={
           kind === k &&
           (view === v ||
+            (v === "measure" && ["runners", "protection"].includes(view)) ||
             (v === "dashboard" && view === "operations") ||
             (v === "repository" && view === "request"))
         }
@@ -106,6 +113,7 @@ function ShellContent({
         aria-current={
           kind === k &&
           (view === v ||
+            (v === "measure" && ["runners", "protection"].includes(view)) ||
             (v === "dashboard" && view === "operations") ||
             (v === "repository" && view === "request"))
             ? "page"
@@ -157,14 +165,14 @@ function ShellContent({
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {workbenchNavigation[role].filter((item) => item.view !== "enforce").map((item) =>
+                  {[...workbenchNavigation[role], ...(enableMeasure && !identity ? [{ kind: "Profile" as const, view: "measure" as const, label: "Measure" }] : []), ...(identity && role === "IT Admin" ? [{ kind: "Profile" as const, view: "deploy" as const, label: "Profile Deployment" }] : [])].filter((item) => item.view !== "enforce").map((item) =>
                     nav(
                       item.kind,
                       item.view,
                       item.label,
                       item.view === "dashboard"
                         ? LayoutDashboard
-                        : item.view === "audit"
+                        : ["audit", "measure"].includes(item.view)
                           ? Activity
                           : item.kind === "Profile"
                             ? Layers
@@ -182,7 +190,7 @@ function ShellContent({
             <select
               id="nm-workbench"
               aria-label="Workbench"
-              disabled={busy}
+              disabled={busy || !!identity}
               value={role}
               onChange={(event) => onOwner(event.target.value)}
             >
@@ -193,6 +201,7 @@ function ShellContent({
               ))}
             </select>
           </div>
+          {onDisconnect && <button type="button" disabled={busy} onClick={onDisconnect}>Disconnect</button>}
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>
@@ -211,7 +220,7 @@ function ShellContent({
             </div>
           </div>
           <div className="nm-workspace-account">
-            <span className="text-sm font-medium">{actorNames[role]}</span>
+            <span className="text-sm font-medium">{identity ?? actorNames[role]}</span>
             {actions}
           </div>
         </header>

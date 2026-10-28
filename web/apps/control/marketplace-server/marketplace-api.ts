@@ -1,12 +1,14 @@
+import { databaseCacheKey } from "./storage/config";
+import { openMarketplaceStore } from "./marketplace-store";
 import { z } from "zod";
 import { guardConfig, guardProxy } from "./guard-api";
 import { f5Proxy } from "./f5-api";
 import { GuardAdapter, GuardApiError } from "../src/features/business-demo/guard-api";
 import { entitySchema, type Entity } from "../src/features/business-demo/model";
-import { MarketplaceStore, StoreError, type ProviderBridge } from "./marketplace-db";
+import { type MarketplaceStore, StoreError, type ProviderBridge } from "./marketplace-db";
 
-const stores = new Map<string, MarketplaceStore>();
-const draftSchema = entitySchema.pick({ name: true, text: true, source: true, policies: true, useCase: true, busu: true, location: true, agentType: true, dataType: true, scanDirection: true }).strict();
+const stores = new Map<string, Promise<MarketplaceStore>>();
+const draftSchema = entitySchema.pick({ name: true, text: true, source: true, policies: true, useCase: true, busu: true, location: true, agentType: true, dataType: true, scanDirection: true, mandatory: true, mandatoryLocations: true }).strict();
 const bodySchema = z.object({ draft: draftSchema, expectedRevision: z.number().int().positive().optional() }).strict();
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
@@ -58,7 +60,7 @@ function bridgeFor(request: Request, env: NodeJS.ProcessEnv): ProviderBridge {
 
 export async function marketplaceApi(request: Request, env = process.env) {
   try {
-    if (!env.MARKETPLACE_DB_FILE || env.MARKETPLACE_CRUD_ONLY !== "true") throw new StoreError(404, "Marketplace database API is not enabled.");
+    if (!(env.MARKETPLACE_DATABASE_URL || env.MARKETPLACE_DB_FILE) || env.MARKETPLACE_CRUD_ONLY !== "true") throw new StoreError(404, "Marketplace database API is not enabled.");
     const url = new URL(request.url);
     const match = /^\/api\/marketplace\/(items|policies|guardrails)(?:\/([a-zA-Z0-9-]+))?(?:\/(sync))?$/.exec(url.pathname);
     if (!match || url.search) throw new StoreError(404, "Route not found.");
@@ -67,14 +69,19 @@ export async function marketplaceApi(request: Request, env = process.env) {
     if (!identityResponse.ok) return identityResponse;
     const identity = await identityResponse.json();
     const write = request.method !== "GET";
+    if (!["user", "admin"].includes(identity.role)) throw new StoreError(403, "A business account is required.");
     for (const module of kind === "items" ? ["policies", "guardrails"] : [kind!]) {
       const grant = identity.effectivePermissions?.[module];
       if (identity.authentication !== "session" && !["read", "write"].includes(grant)) throw new StoreError(403, "Module access is required.");
-      if (write && (identity.role !== "admin" || (identity.authentication !== "session" && grant !== "write"))) throw new StoreError(403, "Write permission is required.");
+      if (write && (identity.role !== "user" || (identity.authentication !== "session" && grant !== "write"))) throw new StoreError(403, "Write permission is required.");
     }
-    let store = stores.get(env.MARKETPLACE_DB_FILE);
-    if (!store) { store = new MarketplaceStore(env.MARKETPLACE_DB_FILE); stores.set(env.MARKETPLACE_DB_FILE, store); }
-    const db = store, bridge = bridgeFor(request, env);
+    const storageKey = env.MARKETPLACE_DATABASE_URL ? databaseCacheKey(env) : env.MARKETPLACE_DB_FILE!;
+    let store = stores.get(storageKey);
+    if (!store) {
+      store = openMarketplaceStore(env).catch(error => { stores.delete(storageKey); throw error; });
+      stores.set(storageKey, store);
+    }
+    const db = await store, bridge = bridgeFor(request, env);
     return await db.exclusive(async () => {
       if (request.method === "GET" && !id && kind === "items") {
         const warnings: string[] = [];
@@ -82,11 +89,11 @@ export async function marketplaceApi(request: Request, env = process.env) {
           try { await db.importSource(source as "Guard" | "F5", bridge); }
           catch { warnings.push(`${source === "Guard" ? "Nemo" : "F5"} initial import unavailable; local records are retained. Refresh to retry.`); }
         }
-        return reply({ items: db.list(), warnings });
+        return reply({ items: await db.list(), warnings });
       }
       if (kind !== "policies" && kind !== "guardrails") throw new StoreError(405, "Method not allowed.");
-      if (id && !db.list().some((r) => r.id === id && r.kind === kind)) throw new StoreError(404, "Record not found.");
-      if (request.method === "GET" && id) return reply(db.list().find((r) => r.id === id));
+      if (id && !(await db.list()).some((r) => r.id === id && r.kind === kind)) throw new StoreError(404, "Record not found.");
+      if (request.method === "GET" && id) return reply((await db.list()).find((r) => r.id === id));
       if (action === "sync" && id && request.method === "POST") return reply(await db.retry(id, bridge));
       if (!request.headers.get("Content-Type")?.startsWith("application/json")) throw new StoreError(415, "JSON required.");
       const raw = await request.text();

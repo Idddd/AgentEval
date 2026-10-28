@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import zipfile
 
-ROOTS = ('web', 'src', 'tests', 'deploy', 'config', 'branding', 'docs', '.github')
+ROOTS = ('web', 'src', 'tests', 'deploy', 'config', 'branding', 'docs', 'scripts', '.github')
 ROOT_FILES = ('README.md', 'requirements.txt', 'main.py', 'pytest.ini', 'Dockerfile',
               '.dockerignore', '.gitignore', 'docker-compose.yml',
               'docker-compose.images.yml', 'docker-compose.marketplace.yml', 'start-dev.ps1')

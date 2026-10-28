@@ -1,0 +1,35 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+const base = "http://127.0.0.1:18082";
+async function call(path, method = "GET", body, key) {
+  const r = await fetch(base + path, { method, headers: { "Content-Type": "application/json", ...(key ? { "Idempotency-Key": key } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60000) });
+  const data = await r.json();
+  assert.ok(r.ok, `${method} ${path}: HTTP ${r.status} ${data.error?.message ?? ""}`);
+  return data;
+}
+const config = await call("/api/marketplace-config");
+assert.equal(config.mode, "live"); assert.equal(config.marketplaceDb, true); assert.equal(config.f5Mock, false);
+const initial = await call("/api/marketplace/items");
+assert.deepEqual(initial.warnings, []);
+assert.ok(initial.items.length > 0);
+const id = randomUUID();
+const draft = { name: `Local smoke ${id}`, text: "本地联调控制意图", source: "Guard", scanDirection: "Both", useCase: "本地测试", busu: "ISS", location: "SG", agentType: "Customer", dataType: "Personal data", policies: [], mandatory: false, mandatoryLocations: [] };
+const created = await call("/api/marketplace/policies", "POST", { draft }, id);
+assert.equal(created.sync.state, "synced", created.sync.error);
+const replay = await call("/api/marketplace/policies", "POST", { draft }, id);
+assert.equal(replay.id, created.id);
+const remote = await call("/api/guard/policies");
+assert.equal(remote.items.filter(item => item.name === draft.name).length, 1);
+const edited = await call(`/api/marketplace/policies/${created.id}`, "PATCH", { draft: { ...draft, busu: "RMG", text: "已修改的本地联调控制意图" }, expectedRevision: created.sync.revision });
+assert.equal(edited.sync.state, "synced", edited.sync.error);
+assert.equal(edited.busu, "RMG");
+const builtin = initial.items.find(item => item.kind === "policies" && item.remote?.readOnly && item.revisions.length && /local|pii|privacy/i.test(item.name));
+assert.ok(builtin, "A published built-in rule is required");
+const ref = builtin.revisions[0];
+const profile = await call("/api/marketplace/guardrails", "POST", { draft: { ...draft, name: `Local profile ${id}`, policies: [{ policyId: builtin.id, version: ref.version, name: ref.name, text: ref.text }] } }, randomUUID());
+assert.equal(profile.sync.state, "synced", profile.sync.error);
+const deletedProfile = await call(`/api/marketplace/guardrails/${profile.id}`, "DELETE", { expectedRevision: profile.sync.revision });
+assert.equal(deletedProfile.deleted, true, deletedProfile.item.sync.error);
+const deleted = await call(`/api/marketplace/policies/${created.id}`, "DELETE", { expectedRevision: edited.sync.revision });
+assert.equal(deleted.deleted, true, deleted.item.sync.error);
+console.log(`PASS: imported ${initial.items.length} NeMo records; real policy create/update/delete, idempotent replay, metadata persistence, profile binding/delete. F5 disabled. No model inference claimed.`);

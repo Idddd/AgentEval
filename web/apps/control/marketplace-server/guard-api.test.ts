@@ -4,6 +4,15 @@ const env = {
   MARKETPLACE_DATA_MODE: "live",
   GUARD_API_URL: "http://guard.internal:8080/api/v1",
 };
+it("sanitizes upstream rejection bodies and supplies a server reference", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const response = await guardProxy(new Request("http://localhost/api/guard/account/identity", { headers: { Authorization: "Bearer user-token" } }), env, async () => Response.json({ error: { code: "private_token", message: "private_password" } }, { status: 403 }));
+  expect(response.status).toBe(403);
+  const body = await response.json();
+  expect(body.error).toMatchObject({ component: "nemo", code: "nemo_http_403", requestId: expect.any(String) });
+  expect(JSON.stringify(body)).not.toMatch(/private_/);
+  vi.restoreAllMocks();
+});
 const demoEnv = {
   MARKETPLACE_DATA_MODE: "live",
   GUARD_API_URL: "http://127.0.0.1:18083/api/v1",
@@ -11,6 +20,12 @@ const demoEnv = {
   MARKETPLACE_PUBLIC_ORIGIN: "http://127.0.0.1:18082",
   MARKETPLACE_DEMO_TOKEN: "local-demo-secret",
 };
+it("selects shared Marketplace storage from a MariaDB URL without exposing its credentials", async () => {
+  const response = runtimeResponse({ ...env, MARKETPLACE_DATABASE_URL: "mariadb://app:private-db-password@db.internal:3306/marketplace" });
+  expect(response.status).toBe(200);
+  expect(await response.clone().json()).toMatchObject({ marketplaceDb: true });
+  expect(await response.text()).not.toMatch(/private-db-password|db\.internal/);
+});
 it("allows CRUD deletion with empty upstream response and blocks evaluation", async () => {
   const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
   const config = { ...demoEnv, MARKETPLACE_CRUD_ONLY: "true" };

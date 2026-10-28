@@ -30,8 +30,32 @@ marketplace:
   demoStorage: browser
   dataMode: mock
   guardApiUrl: ""
+  # NeMo's trusted public origin when guardApiUrl uses an internal service hostname.
+  guardAuthOrigin: ""
+  # Existing Secret containing GUARD_USERNAME and GUARD_PASSWORD.
+  nemoSecret: ""
+  # Alternative to nemoSecret: existing Secret with a raw NeMo business-user PAT.
+  nemoTokenSecret: ""
+  nemoTokenKey: GUARD_API_TOKEN
   policyAuthoringUrl: ""
   publicOrigin: ""
+  crudOnly: false
+  # Existing database Secret; never put credentials here.
+  databaseSecret: ""
+  databaseUrlKey: MARKETPLACE_DATABASE_URL
+  # Leave empty when the URL already contains the correct application's password.
+  databasePasswordKey: ""
+  databaseTls: false
+  # Legacy setting name retained for real-workspace deployment notes.
+  # UI probes always use /api/health; inspect /api/nmgr/ready separately for V3.
+  v2Live: false
+  workspaceId: uat
+  accountsConfigMap: ""
+  caConfigMap: ""
+  # Optional F5 AI Security. Token is server-only and supplied by an existing Secret.
+  f5ApiUrl: ""
+  f5Secret: ""
+  f5ProjectAdminIds: ""
 
 branding:
   existingConfigMap: ""

@@ -9,7 +9,8 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
-import { workspaceVersion } from "@/lib/workspace-version";
+import { isMockWorkspace, workspaceVersion } from "@/lib/workspace-version";
+import { WorkspaceBoundary, WorkspaceFailure } from "@/components/workspace-fallback";
 
 const NmgrApp = lazy(() => import("@/features/nmgr/app").then((module) => ({ default: module.NmgrApp })));
 
@@ -20,8 +21,9 @@ export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
   component: WorkspaceRoot,
+  errorComponent: WorkspaceFailure,
   beforeLoad: ({ location }) => {
-    if (workspaceVersion(location.publicHref) === "v2" && location.pathname.replace(/\/$/, "") === "/import") return;
+    if (isMockWorkspace(workspaceVersion(location.publicHref)) && location.pathname.replace(/\/$/, "") === "/import") return;
     const guardrailDetail = location.pathname.match(
       /^\/[^/]+\/governance\/guardrails\/([^/]+)\/?$/,
     );
@@ -70,14 +72,14 @@ function WorkspaceRoot() {
     <ClientOnly
       fallback={
         <div className="p-8" role="status">
-          Loading workspace…
+          Loading workspace… If this message persists, check JavaScript asset delivery, browser console and deployment logs.
         </div>
       }
     >
-      {version === "v2" && pathname.replace(/\/$/, "") === "/import" ? <Outlet /> : version === "v2" ? (
-        <Suspense fallback={<div className="p-8" role="status">Loading V2…</div>}>
-          <NmgrApp />
-        </Suspense>
+      {isMockWorkspace(version) && pathname.replace(/\/$/, "") === "/import" ? <Outlet /> : version !== "v1" ? (
+        <WorkspaceBoundary key={version}><Suspense fallback={<div className="p-8" role="status">Loading workspace assets… If loading stalls, reload and check the deployment asset path and cache.</div>}>
+          <NmgrApp mock={isMockWorkspace(version)} />
+        </Suspense></WorkspaceBoundary>
       ) : (
         <MarketplaceShell />
       )}

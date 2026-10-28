@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { MarketplaceStore, StoreError, type ProviderBridge } from "./marketplace-db";
 import { blankDraft, type Entity } from "../src/features/business-demo/model";
 const files: string[] = [], stores: MarketplaceStore[] = [];
-afterEach(() => { stores.splice(0).forEach((s) => s.close()); files.splice(0).forEach((f) => rmSync(f, { recursive: true, force: true })); });
+afterEach(async () => { await Promise.all(stores.splice(0).map((s) => s.close())); files.splice(0).forEach((f) => rmSync(f, { recursive: true, force: true })); });
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), "marketplace-db-")); files.push(dir);
   const file = join(dir, "db.sqlite"), store = new MarketplaceStore(file); stores.push(store);
@@ -36,20 +36,20 @@ it("stores independent records, persists metadata, translates bindings, and reje
   await expect(store.save("guardrails", draft, "Owner", bridge, g.id, g.sync!.revision)).rejects.toMatchObject({ status: 409 });
   await expect(store.remove(p.id, p.sync!.revision, bridge)).rejects.toMatchObject({ status: 409 });
   const reopened = new MarketplaceStore(file); stores.push(reopened);
-  expect(reopened.list().find((r) => r.id === g.id)?.busu).toBe("CBG");
-  expect(reopened.list().find((r) => r.id === g.id)?.policies[0]?.policyId).toBe(p.id);
+  expect((await reopened.list()).find((r) => r.id === g.id)?.busu).toBe("CBG");
+  expect((await reopened.list()).find((r) => r.id === g.id)?.policies[0]?.policyId).toBe(p.id);
 });
 it("keeps failed records and retries without losing local fields", async () => {
   const { store, bridge } = setup();
   vi.mocked(bridge.save).mockRejectedValueOnce(new StoreError(422, "Provider rejected configuration"));
   const p = await store.save("policies", policy, "Owner", bridge, undefined, undefined, "failed-request");
-  expect(p.sync?.state).toBe("failed"); expect(store.list()).toHaveLength(1);
+  expect(p.sync?.state).toBe("failed"); expect((await store.list())).toHaveLength(1);
   const synced = await store.retry(p.id, bridge);
   expect(synced.sync?.state).toBe("synced");
   vi.mocked(bridge.remove).mockRejectedValueOnce(new Error("Offline"));
   const deletion = await store.remove(p.id, synced.sync!.revision, bridge);
-  expect(deletion.deleted).toBe(false); expect(store.list()[0]?.sync?.deleting).toBe(true);
-  await store.retry(p.id, bridge); expect(store.list()).toHaveLength(0);
+  expect(deletion.deleted).toBe(false); expect((await store.list())[0]?.sync?.deleting).toBe(true);
+  await store.retry(p.id, bridge); expect((await store.list())).toHaveLength(0);
 });
 it("does not repeat an ambiguous create and reconciles the observed new remote record", async () => {
   const { store, bridge, remote } = setup();
@@ -68,7 +68,7 @@ it("rejects cross-source bindings and imports provider records only once", async
   const p = await store.save("policies", policy, "Owner", bridge, undefined, undefined, "nemo-policy");
   await expect(store.save("guardrails", { ...blankDraft, source: "F5", name: "Wrong", policies: [{ policyId: p.id, version: p.version, name: p.name, text: p.text }] }, "Owner", bridge, undefined, undefined, "bad-profile")).rejects.toMatchObject({ status: 422 });
   await store.importSource("Guard", bridge); await store.importSource("Guard", bridge);
-  expect(store.list()).toHaveLength(remote.length);
+  expect((await store.list())).toHaveLength(remote.length);
 });
 it("does not resend a create when reconciliation cannot confirm its result", async () => {
   const { store, bridge } = setup();

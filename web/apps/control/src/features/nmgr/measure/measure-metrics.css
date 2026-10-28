@@ -1,0 +1,213 @@
+.nm-measure .nm-metric-card {
+  min-width: 0;
+  padding: 16px 18px 14px;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--nm-metric-color) 4%, white),
+    white 65%
+  );
+  border-top: 2px solid
+    color-mix(in srgb, var(--nm-metric-color) 40%, var(--border));
+}
+.nm-metric-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.nm-metric-heading h3,
+.nm-metric-heading [role="heading"] {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.nm-metric-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  color: var(--nm-metric-color);
+  background: color-mix(in srgb, var(--nm-metric-color) 9%, white);
+}
+.nm-metric-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  gap: 10px;
+  text-align: left;
+}
+.nm-metric-reading {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.nm-metric-reading > strong {
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.65px;
+  color: var(--nm-metric-color);
+}
+.nm-metric-reading > span {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.nm-metric-action {
+  cursor: pointer;
+  border-radius: var(--radius-control);
+}
+.nm-metric-action > svg,
+.nm-metric-reading > svg {
+  color: var(--primary);
+}
+.nm-metric-action:hover {
+  background: color-mix(in srgb, var(--nm-metric-color) 5%, white);
+}
+.nm-metric-action:hover strong,
+.nm-metric-action:hover [role="heading"] {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.nm-metric-action:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 4px;
+}
+.nm-metric-throughput .nm-metric-content {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 70px;
+}
+.nm-metric-chart {
+  display: block;
+  width: 112px;
+  max-width: 100%;
+  height: 64px;
+  min-width: 0;
+}
+.nm-metric-throughput .nm-metric-chart {
+  width: 148px;
+}
+.nm-metric-chart > div,
+.nm-metric-chart svg {
+  display: block;
+}
+.nm-metric-tooltip {
+  padding: 7px;
+  box-sizing: border-box;
+  text-align: center;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px #00000012;
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.nm-metric-latencies {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.nm-metric-latencies > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.nm-metric-latencies dt {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+}
+.nm-metric-latencies dt i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--nm-metric-color);
+}
+.nm-metric-latencies dd {
+  color: var(--nm-metric-color);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.nm-metric-latencies dd span {
+  font-size: 10px;
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+.nm-metric-error-total {
+  display: block;
+  margin-top: 18px;
+  font-size: 28px;
+  color: var(--nm-metric-color);
+  font-weight: 500;
+  line-height: 1.2;
+}
+.nm-measure .nm-measure-health > .nm-metric-runner {
+  grid-column: 1/-1;
+  display: block;
+  padding: 0;
+  margin: 0;
+  background: color-mix(in srgb, var(--nm-metric-color) 3%, white);
+  border-color: color-mix(in srgb, var(--nm-metric-color) 22%, var(--border));
+}
+.nm-metric-runner > button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 17px 18px;
+  text-align: left;
+  border-radius: inherit;
+}
+.nm-metric-runner .nm-metric-heading {
+  margin: 0 auto 0 0;
+}
+.nm-metric-runner strong {
+  font-size: 24px;
+  color: var(--nm-metric-color);
+  font-weight: 500;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.nm-metric-runner strong span {
+  font-size: 18px;
+  color: var(--muted-foreground);
+}
+@media (max-width: 760px) {
+  .nm-measure .nm-metric-card {
+    padding: 14px 12px 10px;
+  }
+  .nm-metric-heading {
+    gap: 7px;
+  }
+  .nm-metric-heading h3,
+  .nm-metric-heading [role="heading"] {
+    font-size: 11px;
+  }
+  .nm-metric-reading > strong {
+    font-size: 25px;
+  }
+  .nm-metric-runner > button {
+    gap: 12px;
+    padding: 15px 12px;
+    flex-wrap: wrap;
+  }
+  .nm-metric-runner .nm-metric-heading {
+    flex: 1 1 100%;
+  }
+  .nm-metric-runner strong {
+    margin-right: auto;
+  }
+  .nm-metric-throughput .nm-metric-chart {
+    width: 128px;
+  }
+}

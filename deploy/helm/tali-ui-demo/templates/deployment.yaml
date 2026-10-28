@@ -1,9 +1,6 @@
 {{- if not (has .Values.marketplace.dataMode (list "mock" "live" "auto")) }}
 {{- fail "marketplace.dataMode must be mock, live or auto" }}
 {{- end }}
-{{- if and (ne .Values.marketplace.dataMode "mock") (empty .Values.marketplace.guardApiUrl) }}
-{{- fail "marketplace.guardApiUrl is required in live/auto mode" }}
-{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,7 +9,7 @@ metadata:
     {{- include "tali-ui-demo.labels" . | nindent 4 }}
 spec:
   {{- if ne (int .Values.replicaCount) 1 }}
-  {{- fail "SQLite demo persistence requires replicaCount=1" }}
+  {{- fail "This UAT chart requires replicaCount=1" }}
   {{- end }}
   strategy:
     type: Recreate
@@ -59,10 +56,97 @@ spec:
               value: {{ .Values.marketplace.dataMode | quote }}
             - name: GUARD_API_URL
               value: {{ .Values.marketplace.guardApiUrl | quote }}
+            - name: GUARD_AUTH_ORIGIN
+              value: {{ .Values.marketplace.guardAuthOrigin | default "" | quote }}
+            {{- if or .Values.marketplace.nemoSecret .Values.marketplace.nemoTokenSecret }}
+            # Preserve the selected credential source even if its optional Secret is absent.
+            - name: MARKETPLACE_NEMO_AUTH_MODE
+              value: {{ if and .Values.marketplace.nemoSecret .Values.marketplace.nemoTokenSecret }}"invalid"{{ else if .Values.marketplace.nemoTokenSecret }}"token"{{ else }}"password"{{ end }}
+            {{- end }}
+            {{- if .Values.marketplace.nemoSecret }}
+            - name: GUARD_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.marketplace.nemoSecret | quote }}
+                  key: GUARD_USERNAME
+                  optional: true
+            - name: GUARD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.marketplace.nemoSecret | quote }}
+                  key: GUARD_PASSWORD
+                  optional: true
+            {{- end }}
+            {{- if .Values.marketplace.nemoTokenSecret }}
+            - name: GUARD_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.marketplace.nemoTokenSecret | quote }}
+                  key: {{ .Values.marketplace.nemoTokenKey | default "GUARD_API_TOKEN" | quote }}
+                  optional: true
+            {{- end }}
+            - name: MARKETPLACE_V2_LOCAL_ACCESS
+              value: "false"
             - name: GUARD_POLICY_AUTHORING_URL
               value: {{ .Values.marketplace.policyAuthoringUrl | quote }}
             - name: MARKETPLACE_PUBLIC_ORIGIN
               value: {{ .Values.marketplace.publicOrigin | quote }}
+            - name: MARKETPLACE_CRUD_ONLY
+              value: {{ .Values.marketplace.crudOnly | quote }}
+            - name: MARKETPLACE_F5_MOCK
+              value: "false"
+            {{- if .Values.marketplace.f5ApiUrl }}
+            - name: F5_API_URL
+              value: {{ .Values.marketplace.f5ApiUrl | quote }}
+            {{- end }}
+            {{- if .Values.marketplace.f5Secret }}
+            - name: F5_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.marketplace.f5Secret | quote }}
+                  key: F5_API_TOKEN
+                  optional: true
+            {{- end }}
+            {{- if or .Values.marketplace.f5ApiUrl .Values.marketplace.f5Secret }}
+            - name: MARKETPLACE_F5_ENABLED
+              value: "true"
+            - name: F5_PROJECT_ADMIN_IDS
+              value: {{ .Values.marketplace.f5ProjectAdminIds | quote }}
+            {{- end }}
+            - name: MARKETPLACE_WORKSPACE_ID
+              value: {{ .Values.marketplace.workspaceId | quote }}
+            {{- if .Values.marketplace.accountsConfigMap }}
+            - name: MARKETPLACE_V2_ACCOUNTS_FILE
+              value: /opt/marketplace/accounts/accounts.json
+            {{- end }}
+            {{- if .Values.marketplace.caConfigMap }}
+            - name: NODE_EXTRA_CA_CERTS
+              value: /opt/marketplace/ca/ca.crt
+            {{- if .Values.marketplace.databaseTls }}
+            - name: MARKETPLACE_DB_CA_FILE
+              value: /opt/marketplace/ca/ca.crt
+            {{- end }}
+            {{- end }}
+            {{- if .Values.marketplace.databaseSecret }}
+            - name: MARKETPLACE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.marketplace.databaseSecret | quote }}
+                  key: {{ .Values.marketplace.databaseUrlKey | default "MARKETPLACE_DATABASE_URL" | quote }}
+                  optional: true
+            {{- if .Values.marketplace.databasePasswordKey }}
+            - name: MARKETPLACE_DATABASE_PASSWORD_REQUIRED
+              value: "true"
+            - name: MARKETPLACE_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.marketplace.databaseSecret | quote }}
+                  key: {{ .Values.marketplace.databasePasswordKey | quote }}
+                  optional: true
+            {{- end }}
+            - name: MARKETPLACE_DB_TLS
+              value: {{ .Values.marketplace.databaseTls | quote }}
+            {{- end }}
             {{- if .Values.branding.existingConfigMap }}
             - name: BRAND_LOGO_PATH
               value: {{ printf "/app/branding/%s" .Values.branding.logoFile | quote }}
@@ -77,9 +161,12 @@ spec:
             periodSeconds: 2
           readinessProbe:
             httpGet:
+              # Keep the shared UI/Mock reachable when real integrations fail.
+              # /api/nmgr/ready remains the strict V3 diagnostic endpoint.
               path: /api/health
               port: http
             periodSeconds: 5
+            timeoutSeconds: 15
           livenessProbe:
             httpGet:
               path: /api/health
@@ -90,6 +177,16 @@ spec:
           volumeMounts:
             - name: runtime-tmp
               mountPath: /tmp
+            {{- if .Values.marketplace.accountsConfigMap }}
+            - name: accounts
+              mountPath: /opt/marketplace/accounts
+              readOnly: true
+            {{- end }}
+            {{- if .Values.marketplace.caConfigMap }}
+            - name: ca
+              mountPath: /opt/marketplace/ca
+              readOnly: true
+            {{- end }}
             {{- if .Values.branding.existingConfigMap }}
             - name: branding
               mountPath: /app/branding
@@ -98,6 +195,18 @@ spec:
       volumes:
         - name: runtime-tmp
           emptyDir: {}
+        {{- if .Values.marketplace.accountsConfigMap }}
+        - name: accounts
+          configMap:
+            name: {{ .Values.marketplace.accountsConfigMap | quote }}
+            optional: true
+        {{- end }}
+        {{- if .Values.marketplace.caConfigMap }}
+        - name: ca
+          configMap:
+            name: {{ .Values.marketplace.caConfigMap | quote }}
+            optional: true
+        {{- end }}
         {{- if .Values.branding.existingConfigMap }}
         - name: branding
           configMap:

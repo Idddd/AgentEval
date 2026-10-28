@@ -106,7 +106,7 @@ const snapshotSchema = z.looseObject({
   version: z.string(),
   name: z.string(),
   description: z.string(),
-  owner: z.string(),
+  owner: z.string().optional(),
 });
 const policySchema = z.looseObject({
   ...bindingMetadata,
@@ -145,7 +145,9 @@ const guardSchema = z.looseObject({
   createdAt: z.string(),
   updatedAt: z.string(),
   draftRevision: z.number(),
-  activeVersion: z.string().nullable(),
+  // Current Controller releases expose versionSummary/baselineVersion instead.
+  // A baseline is not proof of runtime activation.
+  activeVersion: z.string().nullable().optional().default(null),
   runtimeProfile: z.string(),
   draftConfig: z.looseObject({
     policyBindings: z.array(
@@ -462,7 +464,7 @@ export class GuardAdapter {
           ...(!existing ? { owner: "Marketplace", draft: {
             guardrail_category: "content_safety", colang_version: "2.x",
             sources: [{ path: "unimplemented.co", content: "# CRUD-only draft. Rule text is metadata. No executable flow is implemented.\n" }],
-            rail_bindings: [{ rail_type: "input", flow_name: "unimplemented", execution_mode: "detect", on_unsafe: "reject" }],
+            rail_bindings: [{ rail_type: "input", flow_name: "unimplemented", execution_mode: "detect", on_unsafe: "block" }],
           } } : {}),
         },
       ));

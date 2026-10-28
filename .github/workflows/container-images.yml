@@ -39,7 +39,7 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           image_tag="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
           storage=browser
-          chart_version="0.2.21-dev.${GITHUB_RUN_NUMBER}"
+          chart_version="0.2.22-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${image_tag}")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tags+=("${image}:pr-${{ github.event.pull_request.number }}")
@@ -53,7 +53,7 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.2.21-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.22-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
@@ -119,13 +119,19 @@ jobs:
             curl --fail http://127.0.0.1:18082/guardrails > /dev/null
             curl --fail http://127.0.0.1:18082/v1/guardrails > /dev/null
             curl --fail http://127.0.0.1:18082/v2/guardrails > /dev/null
-            curl --fail http://127.0.0.1:18082/v2/import | grep 'Configuration import'
+            # ClientOnly pages hydrate after serving the shell. Do not require
+            # their interactive heading to appear in the server HTML.
+            curl --fail http://127.0.0.1:18082/v2/import > /dev/null
+            curl --fail http://127.0.0.1:18082/v2-mock/guardrails > /dev/null
+            curl --fail http://127.0.0.1:18082/v3/guardrails > /dev/null
             docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" "artifacts/tali-ui-demo-${CHART_VERSION}.tgz"
             docker cp "$container:/opt/tali/source/project-source.zip" artifacts/project-source.zip
             docker cp "$container:/opt/tali/source/project-source.zip.sha256" artifacts/project-source.zip.sha256
             (cd artifacts && sha256sum -c project-source.zip.sha256)
             unzip -t artifacts/project-source.zip >/dev/null
             unzip -l artifacts/project-source.zip | grep 'project/web/apps/control/src/features/business-demo/profile-operations.tsx'
+            unzip -l artifacts/project-source.zip | grep 'project/scripts/uat/verify-ui-isolation.mjs'
+            docker exec "$container" test -f /opt/marketplace/check-nemo.mjs
             docker rm -f "$container"
             container=""
           done
@@ -159,6 +165,25 @@ jobs:
           fi
           helm template tali-ui-demo "$chart" --set marketplace.dataMode=live \
             --set marketplace.guardApiUrl=https://guard.internal/api/v1 > artifacts/live.yaml
+          helm template tali-ui-demo "$chart" --set marketplace.dataMode=live \
+            --set marketplace.v2Live=true --set marketplace.databaseSecret=missing-db \
+            --set marketplace.nemoTokenSecret=missing-nemo \
+            --set marketplace.accountsConfigMap=missing-accounts > artifacts/incomplete-live.yaml
+          test "$(grep -c 'path: /api/health' artifacts/incomplete-live.yaml)" = 3
+          if grep -Eq '^\s+path: /api/nmgr/ready' artifacts/incomplete-live.yaml; then
+            echo 'Real diagnostics must not gate shared UI readiness'; exit 1
+          fi
+
+      - name: Verify real integration failures keep Mock available
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}:${{ steps.image.outputs.image_tag }}
+        run: node scripts/uat/verify-ui-isolation.mjs "$IMAGE" artifacts/isolation-test-results.json
+
+      - name: Preserve release verification artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-release-${{ steps.image.outputs.chart_version }}
+          path: artifacts/
 
       - name: Publish OCI Helm chart
         if: github.event_name != 'pull_request' && (github.ref_type == 'tag' || github.ref_name == 'main')

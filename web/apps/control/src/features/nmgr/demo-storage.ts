@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { accounts, seed, type State } from "./model";
 import { completeDemoState } from "./mock-data";
 
-export const demoStorageKey = "nmgr-three-role-v2";
-export const ownerStorageKey = "nmgr-owner";
+// Mock data never migrates from the legacy workspace or uses live credentials.
+export const demoStorageKey = "nmgr-v2-mock-state";
+export const ownerStorageKey = "nmgr-v2-mock-owner";
 
 export function readDemoState(raw: string): State {
   const state = JSON.parse(raw);

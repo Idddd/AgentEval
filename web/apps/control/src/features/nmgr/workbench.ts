@@ -10,6 +10,9 @@ export type View =
   | "operations"
   | "logs"
   | "enforce"
+  | "measure"
+  | "runners"
+  | "protection"
   | "audit";
 export const workbenchLabels: Record<Role, string> = {
   User: "Control Unit User",
@@ -50,6 +53,8 @@ export function homeFor(role: Role): [Kind, View] {
     : ["Profile", "dashboard"];
 }
 export function canVisit(role: Role, kind: Kind, view: View) {
+  if (view === "runners" || view === "protection") return role === "IT Admin" && kind === "Profile";
+  if (view === "measure") return kind === "Profile";
   if (view === "operations" && kind === "Profile") return true;
   if (view === "request") return role === "User" && kind === "Guardrail";
   // Referenced objects may be inspected from a detail page, without adding a menu.

@@ -1,5 +1,17 @@
 # NMGR prototype Demo
 
+## Figma Measure import (2026-10-27)
+
+The `/v2` Mock entry (legacy alias `/v2-mock`) includes Measure for all three workbenches, adapted
+from the NMGR Figma interaction prototype using the existing workbench UI.
+Business users drill from Agent breaches into policy events and report false
+positives; Tech reviews event evidence and records a decision and reason without
+changing production policy or replaying the request. Measure data uses its own
+`nmgr-v2-mock-measure-v1` browser key. The live shell does not expose this mock
+feature. See `docs/uat/2026-10-27-figma-measure-import.md` for source-screen coverage
+and validation, and `docs/reviews/2026-10-27-figma-nmgr-interaction-review.md` for
+the archived review recommendations.
+
 Based on NMGR.drawio. The integrated application exposes this workbench at `/v2/` and the existing interface at `/v1/`. Build the local static preview through `vite.preview.config.ts` with `TALI_UI_DEMO=true`; the URL selects the interface. Navigation uses URL fragments so every workspace view and detail can be bookmarked without replacing the existing production route map. See `docs/local-ui-versions.md` for local startup instructions.
 
 Configuration JSON import is available only at the hidden `/v2/import` page, with no workbench navigation or import button. Upload/paste, validate and preview, then confirm. New configurations are drafts; existing records and active versions are preserved. The separate technical-test JSON dataset upload remains available.
@@ -79,3 +91,5 @@ Creation forms generate UUID-based gr-/pf- IDs automatically and keep custodian 
 Internal entity, policy and scan IDs are hidden from visible UI summaries, details and operation dialogs; relationships and routes still use their stored IDs. Dataset uploads use an English Choose File / No file chosen control regardless of browser locale.
 
 Demo scans use a minute-stable rolling snapshot shared by dashboard, alerts, and monitoring. Block/Pass Rate scenarios generate ten checks per deployed binding within the configured window (nine blocked or ten passed); legacy error-rate scenarios retain twelve checks over 5.5 minutes. Trace retains its navigation and title only; its content is intentionally blank while audit records continue to be stored.
+
+The real workspace is now served at /v3/guardrails. V2 is always Mock; existing browser storage keys are preserved. Runtime failures show actionable configuration diagnostics and a correlated reference ID. See docs/uat/2026-10-28-v3-deployment-diagnostics.md.

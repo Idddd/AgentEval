@@ -30,11 +30,12 @@ export function readUnified(configs: Record<string, string>, fallback = ''): Uni
     return { ...emptyConfig(), content: fallback || value.sources?.map((s: {content: string}) => s.content).join('\n\n') || raw };
   } catch { return { ...emptyConfig(), content: raw || fallback }; }
 }
-export function configError(config: UnifiedConfig): string | null {
+export function configError(config: UnifiedConfig, regexDialect: 'javascript' | 'python' = 'javascript'): string | null {
   if (!config.content.trim()) return 'Enter detection content.';
   if (config.content.length > 100000) return 'Use at most 100,000 characters.';
   if (!config.versionName.trim()) return 'Enter a version name.';
-  if (config.scannerType === 'regex') { try { new RegExp(config.content); } catch { return 'Enter a valid regular expression.'; } }
+  // Python patterns are validated by F5 when creating the Scanner.
+  if (config.scannerType === 'regex' && regexDialect === 'javascript') { try { new RegExp(config.content); } catch { return 'Enter a valid regular expression.'; } }
   return null;
 }
 

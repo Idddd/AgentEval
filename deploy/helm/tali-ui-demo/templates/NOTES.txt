@@ -1,10 +1,26 @@
 AI Marketplace is available through service {{ include "tali-ui-demo.fullname" . }}.
 Data mode: {{ .Values.marketplace.dataMode }}
 
+UI startup/readiness/liveness: /api/health (independent of real dependencies).
+Real V3 configuration/database diagnostics: /api/nmgr/ready (may return 503 while Mock stays available).
+Integration Secret/ConfigMap references are optional for UI startup; V3 still rejects missing or invalid settings.
+
 kubectl --namespace {{ .Release.Namespace }} port-forward service/{{ include "tali-ui-demo.fullname" . }} 18082:{{ .Values.service.port }}
 
+{{- if .Values.marketplace.v2Live }}
+Open {{ .Values.marketplace.publicOrigin }}/v3/guardrails
+NeMo credentials are configured on the backend via marketplace.nemoTokenSecret (token) or marketplace.nemoSecret (password).
+Independent Marketplace identity integration is required before multi-user UI acceptance.
+Fixed-identity local testing is disabled in this OCP deployment.
+Run the read-only compatibility check:
+kubectl --namespace {{ .Release.Namespace }} exec deployment/{{ include "tali-ui-demo.fullname" . }} -- node /opt/marketplace/check-nemo.mjs
+{{- else }}
 Open http://127.0.0.1:18082/v1/ or http://127.0.0.1:18082/v2/
-V2 configuration import (no navigation entry): http://127.0.0.1:18082/v2/import
-{{- if ne .Values.marketplace.dataMode "mock" }}
+{{- if eq .Values.marketplace.dataMode "mock" }}
+Real V3: http://127.0.0.1:18082/v3/guardrails
+Mock V2: http://127.0.0.1:18082/v2/guardrails
+Demo-only V2 configuration import: http://127.0.0.1:18082/v2/import
+{{- else }}
 Connect with your own Guard personal access token.
+{{- end }}
 {{- end }}

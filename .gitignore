@@ -14,6 +14,7 @@ data/
 .pytest_tmp*/
 streamlit.*.log
 .worktrees/
+.artifacts/
 .superpowers/
 .claude
 .agents

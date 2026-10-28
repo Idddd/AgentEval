@@ -19,6 +19,7 @@ export function roleForOwner(owner: string): Role {
 }
 export const canAuthor = (role: Role) => role === "User";
 export type Run = {
+  evidence?: { source: "NeMo" | "F5"; status: string; results: Array<{ caseId: string; passed: boolean; actualDecision?: string | undefined; reason?: string | undefined; [key: string]: unknown }>; failureReason: string | null };
   tester?: Role;
   configurationRevision?: number;
   id: string;
@@ -31,6 +32,8 @@ export type Run = {
   cases: number;
 };
 export type Entity = {
+  sourcePending?: boolean;
+  sourceInstanceId?: string;
   provider?: "NeMo" | "F5";
   runtime?: NonNullable<OperatingProfile["runtime"]>;
   configurationRevision?: number;
@@ -74,6 +77,7 @@ export type Revision = Pick<
   | "config"
   | "provider"
 > & { threshold?: number; thresholdMetric?: Entity["thresholdMetric"]; thresholdWindow?: number | undefined };
+export const sourceLabel = (item: Entity) => item.sourcePending ? "Pending Tech selection" : item.provider ?? "NeMo";
 export function deployedEntity(item: Entity): Entity {
   const saved =
     item.deployed === null ? undefined : item.revisions?.[item.deployed];
@@ -211,7 +215,7 @@ export function transition(
       );
     }
     if (e.kind === "Guardrail" && options.config) {
-      const problem = configError(options.config);
+      const problem = configError(options.config, (options.provider ?? e.provider) === "F5" ? "python" : "javascript");
       if (problem) throw new Error(problem);
       e.config = options.config;
       if (options.provider && !["NeMo", "F5"].includes(options.provider)) throw new Error("Select a valid Guardrail provider.");

@@ -58,6 +58,7 @@ export function ConfigurationImportPage() {
   return (
     <main className="mx-auto min-h-svh w-full max-w-4xl space-y-6 p-6 sm:p-10">
       <header className="space-y-2">
+        <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><strong>Mock V2</strong> · Imports are saved only in this browser for simulated operations.</p>
         <h1 className="text-2xl font-semibold">Import Guardrail / Profile JSON</h1>
         <p className="text-sm text-muted-foreground">Configurations are added as drafts. Existing records, approvals and active versions are retained. New Guardrails must be deployed before a referencing Profile can be approved.</p>
       </header>
@@ -94,7 +95,7 @@ export function ConfigurationImportPage() {
           </div>
         </section>
       )}
-      <a className="inline-block text-sm underline" href="/v2/guardrails">Back to V2</a>
+      <a className="inline-block text-sm underline" href="/v2/guardrails">Back to Mock V2</a>
     </main>
   );
 }

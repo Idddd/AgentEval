@@ -1,18 +1,20 @@
-# Local V1 / V2 interfaces
+# Local V1 / V2 Mock / V3 real interfaces
 
 The `integration/nmgr-v0217` branch contains the v0.2.17 interface (V1) and
 the NMGR workbench imported through PR #9 (V2).
 
-Both interfaces run in the same application:
+All entries run in the same application:
 
 | Entry | Interface |
 | --- | --- |
 | `/v1/` | Existing Profiles / Guardrails interface |
-| `/v2/` | NMGR role workbenches |
+| `/v2/` | NMGR Mock role workbenches |
+| `/v3/` | Real NMGR workspace using configured services |
+| `/v2-mock/` | Compatible alias for V2 Mock |
 
 The entry paths resolve to `/v1/guardrails` and `/v2/guardrails`. Internal
 navigation keeps the active prefix. Existing unprefixed bookmarks default to
-V1. Change the URL prefix to switch interfaces; the workbench has no V1 / V2 buttons.
+V2 Mock. The mode banner links between V2 Mock and Real V3.
 
 V2 also supports role links, for example
 `/v2/guardrails?role=tech`, `?role=user`, and `?role=approver`.
@@ -109,3 +111,5 @@ node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
 
 The Prisma generation step prepares the existing server test dependencies; it
 does not require a database migration or a running database for this preview.
+
+Real V3 deployment diagnostics: [operator guide](uat/2026-10-28-v3-deployment-diagnostics.md). Real mode never silently falls back to Mock. Mock imports are unavailable under /v3.
