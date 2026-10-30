@@ -54,6 +54,12 @@ spec:
               value: {{ .Values.marketplace.demoStorage | quote }}
             - name: MARKETPLACE_DATA_MODE
               value: {{ .Values.marketplace.dataMode | quote }}
+            - name: MARKETPLACE_V3_DEMO
+              value: {{ .Values.marketplace.demoRoles | quote }}
+            - name: MARKETPLACE_CONNECTION_DIR
+              value: /var/lib/marketplace/connection
+            - name: MARKETPLACE_CONNECTION_PERSISTENT
+              value: {{ if .Values.marketplace.connectionStorage.existingClaim }}"true"{{ else }}"false"{{ end }}
             - name: GUARD_API_URL
               value: {{ .Values.marketplace.guardApiUrl | quote }}
             - name: GUARD_AUTH_ORIGIN
@@ -175,6 +181,8 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            - name: connection-settings
+              mountPath: /var/lib/marketplace/connection
             - name: runtime-tmp
               mountPath: /tmp
             {{- if .Values.marketplace.accountsConfigMap }}
@@ -193,6 +201,13 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
+        - name: connection-settings
+          {{- if .Values.marketplace.connectionStorage.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.marketplace.connectionStorage.existingClaim | quote }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         - name: runtime-tmp
           emptyDir: {}
         {{- if .Values.marketplace.accountsConfigMap }}

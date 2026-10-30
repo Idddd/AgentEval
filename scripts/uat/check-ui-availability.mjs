@@ -10,11 +10,12 @@ const root = resolve(import.meta.dirname, "../..");
 const chart = resolve(root, "deploy/helm/tali-ui-demo");
 const cases = [
   ["default", []],
+  ["persistent-fallback", ["marketplace.connectionStorage.existingClaim=marketplace-connection-settings"]],
   ["live-unconfigured", ["marketplace.dataMode=live", "marketplace.v2Live=true"]],
   ["missing-secret-refs", ["marketplace.dataMode=live", "marketplace.v2Live=true", "marketplace.databaseSecret=missing-db", "marketplace.databasePasswordKey=password", "marketplace.nemoTokenSecret=missing-nemo", "marketplace.accountsConfigMap=missing-accounts", "marketplace.caConfigMap=missing-ca"]],
   ["f5-url-only", ["marketplace.dataMode=live", "marketplace.f5ApiUrl=https://f5.invalid/backend/v1"]],
   ["f5-secret-only", ["marketplace.dataMode=live", "marketplace.f5Secret=missing-f5"]],
-  ["nemo-password", ["marketplace.dataMode=live", "marketplace.nemoSecret=missing-password"]],
+  ["nemo-password", ["marketplace.dataMode=live", "marketplace.nemoSecret=missing-password", "marketplace.nemoTokenSecret="]],
   ["nemo-conflict", ["marketplace.dataMode=live", "marketplace.nemoSecret=missing-password", "marketplace.nemoTokenSecret=missing-token"]],
 ];
 for (const [name, settings] of cases) {
@@ -34,6 +35,17 @@ for (const [name, settings] of cases) {
   }
   if (name.startsWith("f5-")) assert.equal(container.env.find(item => item.name === "MARKETPLACE_F5_ENABLED").value, "true");
   if (name === "nemo-conflict") assert.equal(container.env.find(item => item.name === "MARKETPLACE_NEMO_AUTH_MODE").value, "invalid");
+  if (name === "default") {
+    assert.equal(container.env.find(item => item.name === "GUARD_API_TOKEN").valueFrom.secretKeyRef.name, "tali");
+    assert.equal(container.env.find(item => item.name === "GUARD_API_TOKEN").valueFrom.secretKeyRef.key, "tali-guard-bootstrap-user-ini");
+    assert.equal(container.env.find(item => item.name === "MARKETPLACE_DATABASE_URL").valueFrom.secretKeyRef.key, "tali-guard-postgresql-init");
+    assert.equal(container.env.find(item => item.name === "MARKETPLACE_V3_DEMO").value, "true");
+    assert.deepEqual(pod.volumes.find(item => item.name === "connection-settings").emptyDir, {});
+  }
+  if (name === "persistent-fallback") {
+    assert.equal(pod.volumes.find(item => item.name === "connection-settings").persistentVolumeClaim.claimName, "marketplace-connection-settings");
+    assert.equal(container.env.find(item => item.name === "MARKETPLACE_CONNECTION_PERSISTENT").value, "true");
+  }
   console.log(`PASS ${name}`);
 }
 console.log("UI probes remain independent of real integrations; missing inputs reach runtime diagnostics.");

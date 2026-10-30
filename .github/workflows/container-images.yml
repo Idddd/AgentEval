@@ -39,7 +39,7 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           image_tag="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
           storage=browser
-          chart_version="0.2.22-dev.${GITHUB_RUN_NUMBER}"
+          chart_version="0.2.23-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${image_tag}")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tags+=("${image}:pr-${{ github.event.pull_request.number }}")
@@ -53,7 +53,7 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.2.22-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.23-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
@@ -100,9 +100,18 @@ jobs:
           set -euo pipefail
           if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then docker pull "$IMAGE"; fi
           container=""
-          cleanup() { if [[ -n "$container" ]]; then docker logs "$container"; docker rm -f "$container"; fi; }
+          connection_volume=""
+          cleanup() { if [[ -n "$container" ]]; then docker logs "$container"; docker rm -f "$container"; fi; if [[ -n "$connection_volume" ]]; then docker volume rm "$connection_volume"; fi; }
           trap cleanup EXIT
           mkdir -p artifacts
+          connection_volume="marketplace-connection-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker volume create "$connection_volume"
+          docker run --rm --read-only --mount "type=volume,source=${connection_volume},target=/var/lib/marketplace/connection" \
+            --entrypoint node "$IMAGE" -e 'require("node:fs").writeFileSync("/var/lib/marketplace/connection/permission-probe", "ok", {mode:0o600})'
+          docker run --rm --read-only --mount "type=volume,source=${connection_volume},target=/var/lib/marketplace/connection" \
+            --entrypoint node "$IMAGE" -e 'const fs=require("node:fs");if(fs.readFileSync("/var/lib/marketplace/connection/permission-probe","utf8")!=="ok")process.exit(1)'
+          docker volume rm "$connection_volume"
+          connection_volume=""
           for mode in mock live; do
             container=$(docker run -d --read-only --tmpfs /tmp -p 127.0.0.1:18082:8080 \
               -e MARKETPLACE_DATA_MODE="$mode" -e MARKETPLACE_DEMO_STORAGE=memory -e GUARD_API_URL=http://guard.internal/api/v1 "$IMAGE")
@@ -131,6 +140,7 @@ jobs:
             unzip -t artifacts/project-source.zip >/dev/null
             unzip -l artifacts/project-source.zip | grep 'project/web/apps/control/src/features/business-demo/profile-operations.tsx'
             unzip -l artifacts/project-source.zip | grep 'project/scripts/uat/verify-ui-isolation.mjs'
+            unzip -l artifacts/project-source.zip | grep 'project/web/apps/control/marketplace-server/fixtures/connection-tls/localhost-test-key.txt'
             docker exec "$container" test -f /opt/marketplace/check-nemo.mjs
             docker rm -f "$container"
             container=""

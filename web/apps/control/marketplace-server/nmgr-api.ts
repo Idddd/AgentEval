@@ -15,28 +15,38 @@ const accountSchema = z.record(z.string().min(1), z.object({ name: z.string().mi
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 export function nmgrConfiguration(env: NodeJS.ProcessEnv) {
   const config = guardConfig(env);
+  const demo = env.MARKETPLACE_V3_DEMO === "true";
   const localAccess = env.MARKETPLACE_V2_LOCAL_ACCESS === "true";
   if (localAccess && (!config.publicOrigin || !["127.0.0.1", "localhost", "[::1]"].includes(new URL(config.publicOrigin).hostname))) throw new DeploymentError("identity", "local_access_unsafe", "Fixed-identity access is restricted to a loopback local test deployment. Disable MARKETPLACE_V2_LOCAL_ACCESS in deployed services.", ["MARKETPLACE_V2_LOCAL_ACCESS", "MARKETPLACE_PUBLIC_ORIGIN"]);
   if (config.mode !== "live") throw new DeploymentError("runtime", "live_mode_required", "Real V3 requires MARKETPLACE_DATA_MODE=live. Use /v2/guardrails for Mock.");
-  if (!config.publicOrigin) throw new DeploymentError("origin", "public_origin_missing", "Configure MARKETPLACE_PUBLIC_ORIGIN to the browser origin.");
+  if (!demo && !config.publicOrigin) throw new DeploymentError("origin", "public_origin_missing", "Configure MARKETPLACE_PUBLIC_ORIGIN to the browser origin.");
   try { databaseConfig(env); } catch { throw new DeploymentError("database", "database_config_invalid", "Configure a valid PostgreSQL or MariaDB URL, database credentials and readable TLS CA file."); }
   if (!config.base?.endsWith("/api/v1")) throw new DeploymentError("nemo", "nemo_url_invalid", "GUARD_API_URL must end with /api/v1.", ["GUARD_API_URL"]);
   if (env.MARKETPLACE_CRUD_ONLY === "true") throw new DeploymentError("runtime", "crud_only_enabled", "Real V3 requires MARKETPLACE_CRUD_ONLY=false for evaluations and publishing.", ["MARKETPLACE_CRUD_ONLY"]);
-  if (localAccess || hasNemoCredentials(env)) nemoServiceFetch(env); // Validate selected credential source, without a network request.
+  if (demo || localAccess || hasNemoCredentials(env)) nemoServiceFetch(env); // Validate selected credential source, without a network request.
   let accounts: z.infer<typeof accountSchema>;
-  try { accounts = accountSchema.parse(JSON.parse(env.MARKETPLACE_V2_ACCOUNTS_FILE ? readFileSync(env.MARKETPLACE_V2_ACCOUNTS_FILE, "utf8") : env.MARKETPLACE_V2_ACCOUNTS_JSON ?? "{}")); }
+  try { accounts = demo ? {} : accountSchema.parse(JSON.parse(env.MARKETPLACE_V2_ACCOUNTS_FILE ? readFileSync(env.MARKETPLACE_V2_ACCOUNTS_FILE, "utf8") : env.MARKETPLACE_V2_ACCOUNTS_JSON ?? "{}")); }
   catch { throw new DeploymentError("identity", "account_mapping_invalid", "Configure valid account-role JSON and a readable MARKETPLACE_V2_ACCOUNTS_FILE when selected."); }
-  if (!Object.keys(accounts).length) throw new DeploymentError("identity", "account_mapping_missing", "Configure NeMo account IDs and Marketplace roles in MARKETPLACE_V2_ACCOUNTS_FILE or MARKETPLACE_V2_ACCOUNTS_JSON.");
+  if (!demo && !Object.keys(accounts).length) throw new DeploymentError("identity", "account_mapping_missing", "Configure NeMo account IDs and Marketplace roles in MARKETPLACE_V2_ACCOUNTS_FILE or MARKETPLACE_V2_ACCOUNTS_JSON.");
   if (localAccess && !Object.hasOwn(accounts, env.MARKETPLACE_V2_LOCAL_ACTOR_ID ?? "")) throw new DeploymentError("identity", "local_actor_invalid", "MARKETPLACE_V2_LOCAL_ACTOR_ID must match an account in the mapping.");
   const namespace = env.MARKETPLACE_WORKSPACE_ID ?? "uat";
   if (!/^[a-z0-9-]{1,24}$/.test(namespace)) throw new DeploymentError("workspace", "workspace_id_invalid", "MARKETPLACE_WORKSPACE_ID must use 1–24 lowercase letters, numbers or hyphens.");
-  return { ...config, localAccess, accounts, f5: f5Configuration(env), workspace: createHash("sha256").update(`${namespace}:${config.base}`).digest("hex").slice(0, 12) };
+  return { ...config, demo, localAccess, accounts, f5: f5Configuration(env), workspace: createHash("sha256").update(`${namespace}:${config.base}`).digest("hex").slice(0, 12) };
 }
 function store(env: NodeJS.ProcessEnv) {
   const key = databaseCacheKey(env);
   let opening = stores.get(key);
-  if (!opening) { opening = openDatabase(env).catch(error => { stores.delete(key); throw error; }); stores.set(key, opening); }
+  if (!opening) {
+    if (stores.size >= 8) throw new DeploymentError("database", "connection_limit_reached", "Too many active database configurations. Retry after the previous connection is closed.");
+    opening = openDatabase(env).catch(error => { stores.delete(key); throw error; }); stores.set(key, opening);
+  }
   return opening;
+}
+export async function closeNmgrDatabase(env: NodeJS.ProcessEnv) {
+  const key = databaseCacheKey(env), opening = stores.get(key);
+  if (!opening) return;
+  stores.delete(key);
+  await (await opening).close?.();
 }
 export async function nmgrApi(request: Request, env = process.env, fetcher: typeof fetch = fetch) {
   let component: Component = "runtime";
@@ -54,9 +64,21 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
     if (request.headers.get("origin") && request.headers.get("origin") !== config.publicOrigin || request.headers.get("sec-fetch-site") === "cross-site") throw new DeploymentError("origin", "origin_mismatch", "Cross-origin requests are not allowed. Check MARKETPLACE_PUBLIC_ORIGIN and the browser URL.", undefined, 403);
     if (config.localAccess && (url.origin !== config.publicOrigin || write && request.headers.get("origin") !== config.publicOrigin)) throw new DeploymentError("origin", "origin_mismatch", "Local test requests must use the configured origin.", undefined, 403);
     component = "nemo";
-    const serviceFetch = config.localAccess || hasNemoCredentials(env) ? nemoServiceFetch(env, fetcher) : undefined;
+    const serviceFetch = config.demo || config.localAccess || hasNemoCredentials(env) ? nemoServiceFetch(env, fetcher) : undefined;
     let actor: NmgrActor;
-    if (config.localAccess) {
+    if (config.demo) {
+      let response: Response;
+      try { response = await serviceFetch!(`${config.base}/account/identity`, { headers: { Accept: "application/json" } }); }
+      catch (error) { if (error instanceof DeploymentError) throw error; throw new DeploymentError("nemo", "nemo_unreachable", "Cannot reach NeMo. Check the URL, network and trusted TLS CA."); }
+      if (!response.ok) throw new DeploymentError("nemo", "nemo_identity_rejected", "NeMo rejected the configured token. Check the business API token and NeMo permissions.");
+      let identity: any;
+      try { identity = await response.json(); } catch { throw new DeploymentError("nemo", "nemo_response_invalid", "NeMo identity returned invalid JSON. Check the URL and API routing."); }
+      if (typeof identity.userId !== "string" || !identity.userId) throw new DeploymentError("nemo", "nemo_response_invalid", "NeMo identity is incompatible. Check the URL and API version.");
+      const requested = request.headers.get("x-marketplace-role") ?? "User";
+      if (!["User", "User Admin", "IT Admin"].includes(requested)) throw new StoreError(422, "Choose a supported demo workbench role.");
+      const role = requested as NmgrActor["role"];
+      actor = { id: `demo-${createHash("sha256").update(`${identity.userId}:${role}`).digest("hex").slice(0, 24)}`, name: role === "IT Admin" ? "Demo Tech" : role === "User Admin" ? "Demo Approver" : "Demo User", role, unit: "ISS" };
+    } else if (config.localAccess) {
       const id = env.MARKETPLACE_V2_LOCAL_ACTOR_ID ?? "";
       if (!Object.hasOwn(config.accounts, id)) throw new StoreError(503, "Configure a fixed local actor ID from the Marketplace account mapping.");
       const identityResponse = await serviceFetch!(`${config.base}/account/identity`, { headers: { Accept: "application/json" } });
@@ -98,7 +120,7 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
       if (!response.ok) throw new DeploymentError("nemo", `nemo_http_${response.status}`, `NeMo rejected the operation (HTTP ${response.status}). Check token permissions, request configuration and NeMo logs. Reconcile before retrying a write.`, undefined, response.status >= 400 && response.status < 500 ? response.status : 502);
       return result;
     } };
-    if (!write) return reply(resource ? await service.resourceStatus(actor, resource, remote) : { ...await service.snapshot(actor), accessMode: config.localAccess ? "local" : "authenticated" });
+    if (!write) return reply(resource ? await service.resourceStatus(actor, resource, remote) : { ...await service.snapshot(actor), accessMode: config.demo ? "demo" : config.localAccess ? "local" : "authenticated" });
     if (!request.headers.get("content-type")?.startsWith("application/json")) throw new StoreError(415, "JSON is required.");
     const raw = await request.text();
     if (Buffer.byteLength(raw) > 1_000_000) throw new StoreError(413, "Request is too large.");

@@ -20,10 +20,10 @@ export function databaseConfig(env: NodeJS.ProcessEnv) {
     if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schema)) throw new Error();
     return { dialect, host: url.hostname.replace(/^\[|\]$/g, ""), port: Number(url.port || (dialect === "postgresql" ? 5432 : 3306)),
       database, schema, user: decodeURIComponent(url.username), password: env.MARKETPLACE_DATABASE_PASSWORD ?? decodeURIComponent(url.password),
-      ssl: tls ? { rejectUnauthorized: true, ...(env.MARKETPLACE_DB_CA_FILE ? { ca: readFileSync(env.MARKETPLACE_DB_CA_FILE, "utf8") } : {}) } : undefined };
+      ssl: tls ? { rejectUnauthorized: true, ...(env.MARKETPLACE_DB_CA_PEM ? { ca: env.MARKETPLACE_DB_CA_PEM } : env.MARKETPLACE_DB_CA_FILE ? { ca: readFileSync(env.MARKETPLACE_DB_CA_FILE, "utf8") } : {}) } : undefined };
   } catch { throw new Error("Invalid Marketplace database configuration"); }
 }
 
 export function databaseCacheKey(env: NodeJS.ProcessEnv) {
-  return createHash("sha256").update(JSON.stringify([env.MARKETPLACE_DATABASE_URL, env.MARKETPLACE_DATABASE_PASSWORD, env.MARKETPLACE_DB_TLS, env.MARKETPLACE_DB_CA_FILE])).digest("hex");
+  return createHash("sha256").update(JSON.stringify([env.MARKETPLACE_DATABASE_URL, env.MARKETPLACE_DATABASE_PASSWORD, env.MARKETPLACE_DB_TLS, env.MARKETPLACE_DB_CA_FILE, env.MARKETPLACE_DB_CA_PEM])).digest("hex");
 }

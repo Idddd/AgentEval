@@ -14,28 +14,27 @@ const inspect = JSON.parse(docker(["image", "inspect", image]))[0];
 assert(inspect.Config.Healthcheck.Test.join(" ").includes("/api/health"), "Image healthcheck must check UI health");
 assert(!inspect.Config.Healthcheck.Test.join(" ").includes("/api/nmgr/ready"));
 const base = {
-  MARKETPLACE_DATA_MODE: "live", GUARD_API_URL: "http://127.0.0.1:9/api/v1",
-  MARKETPLACE_PUBLIC_ORIGIN: "http://127.0.0.1:18089",
+  GUARD_API_URL: "http://127.0.0.1:9/api/v1",
+  GUARD_API_TOKEN: "smoke-business-fixture",
   MARKETPLACE_DATABASE_URL: "postgres://smoke:synthetic@127.0.0.1:9/marketplace_smoke",
-  MARKETPLACE_V2_ACCOUNTS_JSON: JSON.stringify({ smoke: { name: "Smoke fixture", role: "IT Admin", unit: "ISS" } }),
 };
 const cases = [
   ["missing-nemo-url", { GUARD_API_URL: "" }, "nemo", "nemo_url_missing"],
-  ["invalid-origin", { MARKETPLACE_PUBLIC_ORIGIN: "invalid" }, "origin", "public_origin_invalid"],
+  ["invalid-nemo-url", { GUARD_API_URL: "ftp://nemo.invalid/api/v1" }, "nemo", "nemo_url_invalid"],
   ["missing-database", { MARKETPLACE_DATABASE_URL: "" }, "database", "database_config_invalid"],
   ["invalid-database", { MARKETPLACE_DATABASE_URL: "invalid" }, "database", "database_config_invalid"],
-  ["missing-account-file", { MARKETPLACE_V2_ACCOUNTS_FILE: "/missing/accounts.json" }, "identity", "account_mapping_invalid"],
-  ["missing-token-secret", { MARKETPLACE_NEMO_AUTH_MODE: "token" }, "nemo", "nemo_token_config_invalid"],
-  ["missing-password-secret", { MARKETPLACE_NEMO_AUTH_MODE: "password" }, "nemo", "nemo_credentials_missing"],
-  ["conflicting-nemo-auth", { MARKETPLACE_NEMO_AUTH_MODE: "invalid" }, "nemo", "nemo_auth_mode_invalid"],
-  ["password-mode-stale-token", { MARKETPLACE_NEMO_AUTH_MODE: "password", GUARD_API_TOKEN: "synthetic-stale-token" }, "nemo", "nemo_credentials_missing"],
-  ["token-mode-stale-password", { MARKETPLACE_NEMO_AUTH_MODE: "token", GUARD_USERNAME: "synthetic-old-user", GUARD_PASSWORD: "synthetic-old-password" }, "nemo", "nemo_token_config_invalid"],
+  ["invalid-token-format", { GUARD_API_TOKEN: "Bearer invalid" }, "nemo", "nemo_token_config_invalid"],
+  ["missing-token-secret", { MARKETPLACE_NEMO_AUTH_MODE: "token", GUARD_API_TOKEN: "" }, "nemo", "nemo_token_config_invalid"],
+  ["legacy-password-without-token", { MARKETPLACE_NEMO_AUTH_MODE: "password", GUARD_API_TOKEN: "" }, "nemo", "nemo_token_config_invalid"],
+  ["legacy-auth-selector-ignored", { MARKETPLACE_NEMO_AUTH_MODE: "invalid" }, "database", "database_unreachable"],
+  ["legacy-password-selector-ignored", { MARKETPLACE_NEMO_AUTH_MODE: "password", GUARD_API_TOKEN: "synthetic-stale-token" }, "database", "database_unreachable"],
+  ["token-mode-stale-password", { MARKETPLACE_NEMO_AUTH_MODE: "token", GUARD_API_TOKEN: "", GUARD_USERNAME: "synthetic-old-user", GUARD_PASSWORD: "synthetic-old-password" }, "nemo", "nemo_token_config_invalid"],
   ["missing-f5-secret", { MARKETPLACE_F5_ENABLED: "true" }, "f5", "f5_config_invalid"],
   ["partial-f5-config", { F5_API_URL: "https://f5.invalid/backend/v1" }, "f5", "f5_config_invalid"],
-  ["missing-database-password-secret", { MARKETPLACE_DATABASE_PASSWORD_REQUIRED: "true" }, "database", "database_config_invalid"],
+  ["complete-url-ignores-legacy-password-secret", { MARKETPLACE_DATABASE_PASSWORD_REQUIRED: "true" }, "database", "database_unreachable"],
   ["missing-database-ca", { MARKETPLACE_DB_TLS: "true", MARKETPLACE_DB_CA_FILE: "/missing/ca.crt" }, "database", "database_config_invalid"],
   ["database-offline", {}, "database", "database_unreachable"],
-  ["nemo-offline", {}, "nemo", "upstream_unavailable", "/api/nmgr/workspace"],
+  ["nemo-offline", {}, "nemo", "nemo_unreachable", "/api/nmgr/workspace"],
 ];
 const report = { image, imageId: inspect.Id, platform: `${inspect.Os}/${inspect.Architecture}`, checkedAt: new Date().toISOString(), cases: [] };
 for (let index = 0; index < cases.length; index++) {

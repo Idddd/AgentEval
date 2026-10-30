@@ -1,3 +1,3 @@
 import { defineHandler } from "nitro";
-import { nmgrApi } from "../../../nmgr-api";
-export default defineHandler(event => nmgrApi(event.req));
+import { nmgrRequest } from "../../../nmgr-connection-api";
+export default defineHandler(event => nmgrRequest(event.req));

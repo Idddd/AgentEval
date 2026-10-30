@@ -34,21 +34,28 @@ marketplace:
   guardAuthOrigin: ""
   # Existing Secret containing GUARD_USERNAME and GUARD_PASSWORD.
   nemoSecret: ""
-  # Alternative to nemoSecret: existing Secret with a raw NeMo business-user PAT.
-  nemoTokenSecret: ""
-  nemoTokenKey: GUARD_API_TOKEN
+  # Default V3 uses a raw NeMo business-user PAT from this existing Secret.
+  # Password-based nemoSecret is a legacy/strict-mode alternative.
+  nemoTokenSecret: tali
+  nemoTokenKey: tali-guard-bootstrap-user-ini
   policyAuthoringUrl: ""
   publicOrigin: ""
   crudOnly: false
   # Existing database Secret; never put credentials here.
-  databaseSecret: ""
-  databaseUrlKey: MARKETPLACE_DATABASE_URL
+  databaseSecret: tali
+  databaseUrlKey: tali-guard-postgresql-init
   # Leave empty when the URL already contains the correct application's password.
   databasePasswordKey: ""
   databaseTls: false
   # Legacy setting name retained for real-workspace deployment notes.
   # UI probes always use /api/health; inspect /api/nmgr/ready separately for V3.
   v2Live: false
+  # Demo integration keeps role switching and needs no extra account mapping/SSO.
+  # Set false only when explicitly using strict identity mode.
+  demoRoles: true
+  # Optional existing PVC for saved fallback connections across Pod replacement.
+  connectionStorage:
+    existingClaim: ""
   workspaceId: uat
   accountsConfigMap: ""
   caConfigMap: ""

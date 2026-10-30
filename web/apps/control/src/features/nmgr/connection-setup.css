@@ -1,0 +1,140 @@
+.nm-connection-login {
+  max-width: 660px;
+}
+.nm-connection-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.nm-connection-title > span {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--background));
+}
+.nm-connection-title p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.nm-connection-form {
+  display: grid;
+  gap: 16px;
+}
+.nm-connection-login .nm-live-panel {
+  gap: 16px;
+}
+.nm-connection-login .nm-live-panel .nm-connection-title h1,
+.nm-connection-login .nm-live-panel .nm-connection-title p,
+.nm-connection-login .nm-live-panel p.nm-connection-note {
+  margin: 0;
+}
+.nm-connection-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.nm-connection-field-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.nm-connection-field-label label {
+  font-size: 13px;
+  font-weight: 500;
+}
+.nm-connection-field-label > span {
+  font-size: 11px;
+}
+.nm-connection-configured {
+  color: #047857;
+}
+.nm-connection-input {
+  position: relative;
+}
+.nm-connection-input input {
+  padding-right: 44px;
+}
+.nm-connection-input button {
+  position: absolute;
+  right: 4px;
+  top: 0;
+  bottom: 0;
+  width: 36px;
+  display: grid;
+  place-items: center;
+  color: var(--muted-foreground);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.nm-connection-input button:hover {
+  color: var(--foreground);
+}
+.nm-connection-input button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.nm-connection-login .nm-live-panel .nm-connection-field > p {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.nm-connection-note {
+  font-size: 12px;
+  line-height: 1.7;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--muted);
+}
+.nm-connection-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  font-size: 12px;
+}
+.nm-connection-error {
+  overflow-wrap: anywhere;
+}
+.nm-connection-advanced {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.nm-connection-advanced summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+.nm-connection-advanced[open] summary {
+  margin-bottom: 16px;
+}
+.nm-connection-option {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.nm-connection-option select,
+.nm-connection-certificate {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--background);
+  padding: 8px 12px;
+}
+.nm-connection-certificate {
+  padding-right: 44px;
+  font-family: monospace;
+  font-size: 12px;
+}
+.nm-connection-login .nm-live-panel .nm-connection-advanced p {
+  margin: 0;
+  line-height: 1.5;
+  font-size: 11px;
+}

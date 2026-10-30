@@ -1,36 +1,32 @@
+# V3 demo connection defaults for v0.2.23.
 # Deploy Marketplace only. Use existing NeMo and PostgreSQL (or MariaDB).
 replicaCount: 1
 fullnameOverride: marketplace-v2
 image:
   repository: registry.example.internal/marketplace-ui
-  tag: replace-with-tested-image-tag
+  tag: "0.2.23"
 openshift:
   enabled: true
   route:
-    enabled: true
+    # Enable only when there is no existing Istio/Ingress domain route.
+    enabled: false
     host: marketplace-uat.example.internal
 marketplace:
   dataMode: live
   v2Live: true
   guardApiUrl: https://nemo.example.internal/api/v1
-  # Optional; defaults to guardApiUrl's origin. Must be trusted by NeMo.
-  guardAuthOrigin: ""
-  nemoSecret: ""
-  nemoTokenSecret: tali
-  # Exact key confirmed for UAT: ends in -ini, not -init.
-  nemoTokenKey: tali-guard-bootstrap-user-ini
-  publicOrigin: https://marketplace-uat.example.internal
-  crudOnly: false
-  databaseSecret: tali
-  # Must contain a complete PostgreSQL URL, including the application password.
-  databaseUrlKey: tali-guard-postgresql-init
-  # If password is stored separately, set its actual key in the same Secret.
-  databasePasswordKey: ""
-  databaseTls: true
-  workspaceId: uat
-  accountsConfigMap: marketplace-accounts
-  # Set to marketplace-ca when an intranet CA is needed; mount key ca.crt.
-  caConfigMap: ""
+  # The chart defaults read both credentials from the existing Secret `tali`:
+  # Token: tali-guard-bootstrap-user-ini (raw business PAT, no Bearer prefix)
+  # Database URL: tali-guard-postgresql-init (complete URL including password)
+  # Only override nemoTokenSecret/nemoTokenKey or databaseSecret/databaseUrlKey
+  # when your Secret uses different names. Never put credentials in values.
+  # Demo role switching is enabled by default; no accounts ConfigMap/SSO needed.
+  # Set databaseTls: true and caConfigMap: your-ca only if your DB needs TLS/CA.
+  # Token-based default V3 needs no guardAuthOrigin, account map or password mode.
+  # TLS/CA, workspace and optional F5 can also be changed on the V3 connection page.
+  # Optional existing PVC: retain shared manual fallbacks after Pod replacement.
+  # connectionStorage:
+  #   existingClaim: marketplace-connection-settings
   # Optional. Set URL + Secret together to enable F5 in V2; no image rebuild needed.
   f5ApiUrl: ""
   f5Secret: ""

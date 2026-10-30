@@ -13,25 +13,29 @@ import { WorkflowSteps } from "./studio";
 import { GuardrailInfo } from "./guardrail-info";
 import { UnifiedConfigForm } from "../business-demo/unified-config-form";
 import { emptyConfig, type UnifiedConfig } from "../business-demo/evaluation";
-import type { Entity, Kind, State } from "./model";
-import { sourceLabel } from "./model";
+import type { Entity, Kind, State, Role } from "./model";
+import { sourceLabel, roleForOwner } from "./model";
 import type { NmgrActor, NmgrBinding, NmgrJob } from "../../../marketplace-server/nmgr";
 import type { ResourceObservation } from "../../../marketplace-server/nmgr-observation";
 import { runtimeFailure, runtimeRequest } from "@/lib/runtime-request";
+import { ConnectionSetup } from "./connection-setup";
+import { initialOwner, saveOwner } from "./demo-storage";
 
-type Snapshot = { accessMode?: "local" | "authenticated"; sources?: Array<"NeMo" | "F5">; revision: number; actor: NmgrActor; state: State; jobs: Record<string, NmgrJob>; bindings: Record<string, NmgrBinding> };
+type Snapshot = { accessMode?: "local" | "authenticated" | "demo"; sources?: Array<"NeMo" | "F5">; revision: number; actor: NmgrActor; state: State; jobs: Record<string, NmgrJob>; bindings: Record<string, NmgrBinding> };
 export function NmgrMode(_props: { demo?: ReactNode } = {}) {
-  const [mode, setMode] = useState("loading"), [error, setError] = useState("");
+  const [config, setConfig] = useState<{ demoRoleSwitching?: boolean; connectionRevision?: string } | null>(null), [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0), [editing, setEditing] = useState(false), [role, setRole] = useState(() => roleForOwner(initialOwner()));
+  const reconnect = () => { setConfig(null); setError(""); setEditing(false); setAttempt(value => value + 1); };
   useEffect(() => { let active = true; runtimeRequest("/api/marketplace-config?workspace=v3", { cache: "no-store" }).then(config => {
     if (config.mode !== "live") throw runtimeFailure({ code: "live_mode_required", component: "runtime", settings: ["MARKETPLACE_DATA_MODE"], message: "Real V3 requires live configuration on the API server. This host is configured for Mock/preview. Use Mock V2 for demonstrations." }, "/api/marketplace-config");
-    if (active) setMode("live");
-  }).catch(e => { if (active) setError(e.message); }); return () => { active = false; }; }, []);
-  if (error) return <main className="nm-app nm-live-login"><section className="nm-card nm-padding nm-live-panel"><h1>Marketplace V3</h1><p role="alert" className="nm-callout my-4">{error}</p><p className="nm-muted mb-4">Find the reference ID in server logs. For preview, network or routing failures, check the browser console and Network tab. Correct the listed settings, then retry.</p><div className="flex gap-4 items-center"><Button onClick={() => window.location.reload()}>Retry</Button><a className="underline" href="/v2/guardrails">Open Mock workspace</a></div></section></main>;
-  if (mode === "loading") return <p className="p-8" role="status">Loading Marketplace V3… Checking runtime configuration.</p>;
-  return <LiveWorkspace />;
+    if (active) setConfig(config);
+  }).catch(e => { if (active) setError(e.message); }); return () => { active = false; }; }, [attempt]);
+  if (error || editing) return <ConnectionSetup initialError={error} onConnected={reconnect} onRetry={reconnect} {...(config ? { onCancel: () => setEditing(false) } : {})} />;
+  if (!config) return <p className="p-8" role="status">Loading Marketplace V3… Checking runtime configuration.</p>;
+  return <LiveWorkspace key={`${attempt}:${config.demoRoleSwitching ? role : "fixed"}`} demoRoles={!!config.demoRoleSwitching} role={role} connectionRevision={config.connectionRevision} onRole={value => { saveOwner(value); setRole(value); }} onConfigure={() => setEditing(true)} onReconnect={reconnect} />;
 }
 
-function LiveWorkspace() {
+function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, onConfigure, onReconnect }: { demoRoles?: boolean; role?: Role; connectionRevision?: string | undefined; onRole?: (role: Role) => void; onConfigure?: () => void; onReconnect?: () => void }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null), current = useRef<Snapshot | null>(null);
   const [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false), working = useRef(false);
@@ -46,7 +50,7 @@ function LiveWorkspace() {
   const [cases, setCases] = useState("[]"), [dataset, setDataset] = useState("Acceptance tests"), [reason, setReason] = useState("");
   const [remoteId, setRemoteId] = useState(""), [datasetFile, setDatasetFile] = useState("");
   const mounted = useRef(true);
-  const headers = () => ({ "Content-Type": "application/json" });
+  const headers = () => ({ "Content-Type": "application/json", ...(demoRoles && role ? { "X-Marketplace-Role": role } : {}), ...(connectionRevision ? { "X-Marketplace-Connection": connectionRevision } : {}) });
   const apply = (value: Snapshot) => { if (mounted.current) { if (current.current?.revision !== value.revision) setObservations({}); current.current = value; setSnapshot(value); } };
   async function read() {
     const value = await runtimeRequest("/api/nmgr/workspace", { headers: headers(), cache: "no-store" });
@@ -125,9 +129,7 @@ function LiveWorkspace() {
     catch (e) { setError(e instanceof Error ? e.message : "Connection lost. Refresh to check the saved result before retrying."); try { apply(await read()); } catch {} return false; }
     finally { working.current = false; setBusy(false); }
   }
-  if (!snapshot) return <main className="nm-app nm-live-login"><section className="nm-card nm-padding nm-live-panel"><h1>Marketplace V3</h1><p>The connection and local test identity are configured on the server.</p>
-    {error ? <><p role="alert" className="nm-callout">{error}</p><Button onClick={() => { setError(""); void refresh(); }}>Retry connection</Button></> : <p role="status">Connecting to the configured backend…</p>}
-  </section></main>;
+  if (!snapshot) return error ? <ConnectionSetup initialError={error} retryLabel="Retry connection" onConnected={onReconnect ?? (() => void refresh())} onRetry={onReconnect ?? (() => { setError(""); void refresh(); })} /> : <p className="p-8" role="status">Connecting to the configured backend…</p>;
   const actor = snapshot.actor, state = snapshot.state, item = state.entities.find(e => e.id === selected), job = item ? snapshot.jobs[item.id] : undefined;
   const pending = job && (job.status === "pending" || job.status === "uncertain" || job.inflight || job.purpose === "draft-sync" && job.status !== "done");
   const canCorrect = job?.purpose === "draft-sync" && job.status === "failed" && job.canCorrect && !job.inflight;
@@ -138,8 +140,8 @@ function LiveWorkspace() {
   const implementationSource = item?.sourcePending ? source : item?.provider ?? "NeMo";
   const action = (name: string) => item && execute({ type: "action", id: item.id, action: name, ...(name === "implement" ? { config, provider: implementationSource } : {}), ...(name === "reject" ? { reason } : {}) });
   const pageTitle = form ? `${form === "create" ? "New" : form === "revise" ? "Revise" : "Edit"} ${kind}${kind === "Guardrail" && form === "create" ? " Request" : ""}` : view === "dashboard" || view === "operations" ? "Protection Dashboard" : view === "audit" || view === "logs" ? "Trace" : view === "tests" ? `${kind} Evaluation` : view === "signoff" ? `${kind} Sign-Off` : view === "deploy" ? `${kind} Deployment` : kind === "Profile" ? "Configure Profiles" : actor.role === "IT Admin" ? "Guardrail Requests" : "Guardrails";
-  return <NmgrShell kind={kind} view={view} owner={actor.role} identity={actor.name} controlUnit={actor.unit} busy={busy} onOwner={() => {}} onNavigate={navigate}
-    title={pageTitle} description={error ? "Marketplace V3 · Connection or action requires attention" : `Marketplace V3${snapshot.accessMode === "local" ? " · Local test identity" : ""} · Sources: ${(snapshot.sources ?? ["NeMo"]).join(" / ")}`} actions={<Button variant="outline" disabled={busy} onClick={() => void refreshBackend()}>{querying ? "Querying backends…" : "Refresh backend status"}</Button>}>
+  return <NmgrShell kind={kind} view={view} owner={actor.role} identity={actor.name} controlUnit={actor.unit} busy={busy} allowRoleSwitch={demoRoles} onOwner={value => onRole?.(value as Role)} onNavigate={navigate}
+    title={pageTitle} description={error ? "Marketplace V3 · Connection or action requires attention" : `Marketplace V3${snapshot.accessMode === "local" ? " · Local test identity" : snapshot.accessMode === "demo" ? " · Demo role switching" : ""} · Sources: ${(snapshot.sources ?? ["NeMo"]).join(" / ")}`} actions={<div className="nm-actions">{onConfigure && <Button variant="outline" disabled={busy} onClick={onConfigure}>Connection settings</Button>}<Button variant="outline" disabled={busy} onClick={() => void refreshBackend()}>{querying ? "Querying backends…" : "Refresh backend status"}</Button></div>}>
     {error && <p role="alert" className="nm-callout mb-4">{error}</p>}{notice && <p role="status" className="nm-callout mb-4">{notice}</p>}
     {view === "dashboard" || view === "operations" ? <LiveDashboard state={state} bindings={snapshot.bindings} role={actor.role} onCreate={() => { navigate("Guardrail", "repository"); setForm("create"); }} onOpen={openRecord} />
     : view === "audit" || view === "logs" ? <section className="nm-card"><div className="nm-card-head"><h3>Operation History</h3><span>{state.audit.length} recorded actions</span></div><p className="nm-muted nm-padding">Marketplace configuration history. Runtime traffic traces are not connected (0).</p><div className="nm-scroll"><table><thead><tr><th>Time</th><th>Record</th><th>Actor</th><th>Action</th></tr></thead><tbody>{state.audit.map(a => <tr key={a.id}><td>{new Date(a.time).toLocaleString()}</td><td>{a.entity}</td><td>{a.actor}</td><td>{a.action}</td></tr>)}</tbody></table></div>{!state.audit.length && <p className="nm-empty">No recorded actions.</p>}</section>

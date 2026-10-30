@@ -45,6 +45,7 @@ type Props = {
   description?: string;
   actions?: ReactNode;
   enableMeasure?: boolean;
+  allowRoleSwitch?: boolean;
   onOwner: (owner: string) => void;
   onNavigate: (kind: Kind, view: View) => void;
   children: ReactNode;
@@ -70,6 +71,7 @@ function ShellContent({
   description,
   actions,
   enableMeasure = false,
+  allowRoleSwitch = false,
   onOwner,
   onNavigate,
   children,
@@ -190,7 +192,7 @@ function ShellContent({
             <select
               id="nm-workbench"
               aria-label="Workbench"
-              disabled={busy || !!identity}
+              disabled={busy || !!identity && !allowRoleSwitch}
               value={role}
               onChange={(event) => onOwner(event.target.value)}
             >

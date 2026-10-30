@@ -22,7 +22,7 @@ RUN npm prune --omit=dev
 
 FROM alpine/helm:3.18.4 AS chart
 ENTRYPOINT []
-ARG TALI_UI_DEMO_CHART_VERSION=0.2.22
+ARG TALI_UI_DEMO_CHART_VERSION=0.2.23
 ARG TALI_UI_DEMO_IMAGE_REPOSITORY=ghcr.io/idddd/tali-ui-demo
 ARG TALI_UI_DEMO_IMAGE_TAG=dev
 ARG TALI_UI_DEMO_STORAGE=browser
@@ -59,7 +59,8 @@ ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080 MARKETPLACE_DATA_MODE=mock MARKET
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates openssl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -o node -g node -m 0700 /var/lib/marketplace/connection
 COPY --from=production-dependencies /app/node_modules ./node_modules
 COPY web/package.json web/package-lock.json ./
 COPY web/apps/control/package.json apps/control/package.json

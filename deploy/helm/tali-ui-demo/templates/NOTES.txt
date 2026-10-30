@@ -10,8 +10,17 @@ kubectl --namespace {{ .Release.Namespace }} port-forward service/{{ include "ta
 {{- if .Values.marketplace.v2Live }}
 Open {{ .Values.marketplace.publicOrigin }}/v3/guardrails
 NeMo credentials are configured on the backend via marketplace.nemoTokenSecret (token) or marketplace.nemoSecret (password).
-Independent Marketplace identity integration is required before multi-user UI acceptance.
-Fixed-identity local testing is disabled in this OCP deployment.
+{{- if .Values.marketplace.demoRoles }}
+V3 demo: role switching is enabled; no additional account mapping or SSO is required.
+V3 connection settings can be saved from the login/error page and are shared by this demo instance.
+{{- if .Values.marketplace.connectionStorage.existingClaim }}
+Saved fallback settings use existing PVC {{ .Values.marketplace.connectionStorage.existingClaim }}.
+{{- else }}
+Saved fallback settings use emptyDir; attach an existing PVC to retain them after Pod replacement.
+{{- end }}
+{{- else }}
+Strict identity mode: independent Marketplace identity integration is required.
+{{- end }}
 Run the read-only compatibility check:
 kubectl --namespace {{ .Release.Namespace }} exec deployment/{{ include "tali-ui-demo.fullname" . }} -- node /opt/marketplace/check-nemo.mjs
 {{- else }}

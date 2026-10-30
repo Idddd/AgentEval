@@ -1,7 +1,7 @@
 # AI Marketplace
 
 AI Marketplace manages **Guardrails** and **Profiles**. Current release:
-**v0.2.22**, image `ghcr.io/idddd/tali-ui-demo:0.2.22`.
+**v0.2.23**, image `ghcr.io/idddd/tali-ui-demo:0.2.23`.
 
 ## Current UI
 
@@ -31,9 +31,9 @@ Control Unit filters always include ISS, RMG, LCS, Line 1.5, and Line 2.
 Requires Docker. Default demo data is stored in browser localStorage; no database is used.
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.22
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.23
 docker run -d --name ai-marketplace -p 18082:8080 \
-  ghcr.io/idddd/tali-ui-demo:0.2.22
+  ghcr.io/idddd/tali-ui-demo:0.2.23
 ```
 
 Open [V1](http://127.0.0.1:18082/v1/) or [V2](http://127.0.0.1:18082/v2/).
@@ -45,7 +45,7 @@ for logo and favicon replacement.
 
 ## Shared database and initial data
 
-Version 0.2.22 defaults to browser localStorage (`MARKETPLACE_DEMO_STORAGE=browser`).
+V2 Mock defaults to browser localStorage (`MARKETPLACE_DEMO_STORAGE=browser`).
 Different browsers do not share cases. Server-side storage APIs are disabled.
 
 - Default cases initialize on the first visit in each browser. Refresh retains edits.
@@ -76,10 +76,14 @@ npm run start:control
 
 ## Live Guard connection
 
-Mock is the default. To use a real Guard service, set `MARKETPLACE_DATA_MODE=live`
-and `GUARD_API_URL` to its `/api/v1` endpoint, then open `/v3/guardrails`.
-Real V3 also requires a database, account-role mapping and independent user
-authentication/SSO. Backend NeMo credentials do not sign in browser users.
+Open `/v3/guardrails` for the default live demo. Only a NeMo `/api/v1` URL,
+business API Token and full PostgreSQL/MariaDB URL are needed; all three can
+be entered on that page when deployment configuration is missing or invalid.
+Masked fallback settings are encrypted and shared by the demo instance;
+optional TLS/CA/workspace/F5 controls are on the same page. Role switching is
+enabled without extra SSO/account mapping. Explicit `demoRoles: false` selects
+strict identity mode. Persist the connection directory or attach an existing
+PVC to retain saved configuration across container/Pod replacement.
 See [the current deployment guide](docs/marketplace-release.md). Mock `/v2/`
 continues to work when real configuration or connections fail.
 
