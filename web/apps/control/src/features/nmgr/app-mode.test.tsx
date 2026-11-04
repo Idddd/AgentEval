@@ -12,6 +12,23 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+it("opens Profile bypass controls from a scan without activating bypass", async () => {
+  vi.stubGlobal("fetch", vi.fn());
+  window.history.replaceState(null, "", "/v2/guardrails?role=user#Profile/measure/?view=scan&event=customer-verifier%2F12356%2F1");
+  render(<NmgrApp mock />);
+  await screen.findByRole("heading", { name: "View Scan" });
+  const saved = localStorage.getItem("nmgr-v2-mock-state");
+  document.documentElement.scrollTop = 600;
+  fireEvent.click(screen.getByRole("button", { name: "Go To Set Bypass Mode [Kill Switch]" }));
+  expect(await screen.findByRole("heading", { name: "Protection Dashboard" })).toBeTruthy();
+  expect(window.location.hash).toBe("#Profile/dashboard/");
+  expect(document.documentElement.scrollTop).toBe(0);
+  fireEvent.click(screen.getByRole("button", { name: "View operations for Customer Banking Assistant" }));
+  expect(screen.getAllByRole("button", { name: "Bypass" }).length).toBeGreaterThan(0);
+  expect(localStorage.getItem("nmgr-v2-mock-state")).toBe(saved);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
 it("runs the explicit mock entry locally and keeps workbench navigation in mock mode", () => {
   const network = vi.fn(() => Promise.reject(new Error("Mock must not contact runtime")));
   vi.stubGlobal("fetch", network);

@@ -46,7 +46,7 @@ const titles: Record<ScanPage, string> = {
   overview: "Scan Overview",
   guardrails: "All Guardrails",
   guardrail: "Guardrail Scans",
-  policy: "Guardrail Policy Scans",
+  policy: "Agent Policy Scans",
   agents: "All Agents",
   agent: "Agent Scans",
   scan: "View Scan",
@@ -148,12 +148,14 @@ export function ScanJourney({
   change,
   error,
   clearError,
+  onDashboard,
 }: {
   state: MeasureState;
   role: Role;
   change: (update: (current: MeasureState) => MeasureState) => boolean;
   error: string;
   clearError: () => void;
+  onDashboard?: () => void;
 }) {
   const navigation = useScanNavigation();
   const { route, previous } = navigation;
@@ -693,6 +695,21 @@ export function ScanJourney({
               <MeasureCard title="Profile Info">
                 <div className="nm-padding">
                   —<p className="nm-muted">Profile details placeholder</p>
+                  <Button
+                    variant="link"
+                    className="h-auto whitespace-normal p-0 text-left"
+                    onClick={() => {
+                      resetDocumentScroll();
+                      if (onDashboard) onDashboard();
+                      else window.location.hash = "Profile/dashboard/";
+                    }}
+                  >
+                    Go To Set Bypass Mode [Kill Switch]
+                    <ArrowRight size={14} aria-hidden="true" />
+                  </Button>
+                  <p className="nm-muted">
+                    Select a Profile on the dashboard to manage Bypass.
+                  </p>
                 </div>
               </MeasureCard>
             </div>

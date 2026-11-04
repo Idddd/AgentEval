@@ -26,7 +26,7 @@ const titles = {
   feedback: "All Feedback",
   review: "Feedback Review",
   close: "Close Feedback",
-  closed: "Closure Preview",
+  closed: "Feedback Closure",
 } as const;
 type Page = keyof typeof titles;
 const parents: Partial<Record<Page, Page>> = {
@@ -34,7 +34,7 @@ const parents: Partial<Record<Page, Page>> = {
   runner: "runners",
   review: "feedback",
   close: "review",
-  closed: "review",
+  closed: "feedback",
 };
 const categories = [
   "All categories",
@@ -185,6 +185,64 @@ export function TechWorkspace() {
       <ArrowRight size={14} />
     </Button>
   );
+  const closureForm = (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (comment.trim()) go("closed");
+      }}
+    >
+      <MeasureCard title="Feedback Closure">
+        <div className="nm-tech-form">
+          <label>
+            <span>
+              Closure comment <span aria-hidden="true">*</span>
+            </span>
+            <Textarea
+              aria-label="Closure comment"
+              className="min-h-36 resize-y"
+              required
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Summarize the review and any follow-up required…"
+              rows={6}
+              maxLength={5000}
+            />
+          </label>
+          <label>
+            <span>
+              JIRA ticket <span className="nm-muted">(optional)</span>
+            </span>
+            <Input
+              aria-label="JIRA ticket"
+              value={jira}
+              onChange={(e) => setJira(e.target.value)}
+              placeholder="Enter the follow-up ticket number"
+              maxLength={100}
+            />
+          </label>
+          <p className="nm-muted">
+            Close the feedback with a comment and an optional JIRA ticket for
+            follow-up. This placeholder preview does not update live records.
+          </p>
+          <div className="nm-tech-form-actions">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => go("feedback")}
+            >
+              <ArrowLeft size={14} aria-hidden="true" />
+              Go Back
+            </Button>
+            <Button type="submit" disabled={!comment.trim()}>
+              Close feedback
+              <ArrowRight size={14} aria-hidden="true" />
+            </Button>
+          </div>
+        </div>
+      </MeasureCard>
+    </form>
+  );
   const comparison = (
     <label className="nm-select">
       <span>Comparison</span>
@@ -318,7 +376,11 @@ export function TechWorkspace() {
       <header className="nm-tech-heading">
         <div>
           <nav aria-label="Measure breadcrumb">
-            <button className="nm-link" aria-label="Back to Tech overview" onClick={() => go("overview")}>
+            <button
+              className="nm-link"
+              aria-label="Back to Tech overview"
+              onClick={() => go("overview")}
+            >
               Measure
             </button>
             <span>
@@ -512,20 +574,26 @@ export function TechWorkspace() {
         <>
           <MeasureCard
             title="Feedback Summary"
-            aside={<span className="nm-tech-tag">Placeholder</span>}
+            aside={
+              <span className="nm-tech-tag">
+                {page === "closed" && comment.trim()
+                  ? "Closed · Preview"
+                  : "Placeholder"}
+              </span>
+            }
           >
             <Fields
               names={[
                 "Feedback ID",
                 "Category",
-                "Status",
+                ...(page === "closed" && comment.trim() ? [] : ["Status"]),
                 "Submitted at · UTC",
                 "Reporter / Control Unit",
                 "Agent / Custodian",
               ]}
             />
           </MeasureCard>
-          {page === "review" && (
+          {(page === "review" || page === "close") && (
             <>
               <div className="nm-tech-two">
                 <div>
@@ -567,73 +635,19 @@ export function TechWorkspace() {
                       names={["Agent", "Business unit", "Custodian", "Profile"]}
                     />
                   </MeasureCard>
+                  {closureForm}
                 </div>
               </div>
-              <footer className="nm-tech-footer">
-                <span className="nm-muted">
-                  Preview the closure form for this placeholder request.
-                </span>
-                {action("Close feedback", "close")}
-              </footer>
             </>
-          )}
-          {page === "close" && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                go("closed");
-              }}
-            >
-              <MeasureCard title="Closure Details">
-                <div className="nm-tech-form">
-                  <label>
-                    Closure comment <span aria-hidden="true">*</span>
-                    <Textarea
-                      aria-label="Closure comment"
-                      required
-                      value={comment}
-                      onChange={(e) => setComment(e.target.value)}
-                      placeholder="Summarize the review and any follow-up required…"
-                      rows={6}
-                      maxLength={5000}
-                    />
-                  </label>
-                  <label>
-                    JIRA ticket <span className="nm-muted">(optional)</span>
-                    <Input
-                      aria-label="JIRA ticket"
-                      value={jira}
-                      onChange={(e) => setJira(e.target.value)}
-                      placeholder="Enter the follow-up ticket number"
-                      maxLength={100}
-                    />
-                  </label>
-                  <p className="nm-muted">
-                    This form previews the closure flow. No feedback record is
-                    saved or closed.
-                  </p>
-                  <div className="nm-tech-form-actions">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => go("review")}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={!comment.trim()}>
-                      Preview closure
-                    </Button>
-                  </div>
-                </div>
-              </MeasureCard>
-            </form>
           )}
           {page === "closed" && (
             <>
-              <MeasureCard title="Closure Preview">
+              <MeasureCard title="Closure Summary">
                 <div className="nm-tech-form">
                   <p className="nm-muted">
-                    Preview only · No request has been closed.
+                    {comment.trim()
+                      ? "The feedback has reached its Closed state in this preview. No live record was changed."
+                      : "Closure details placeholder · No feedback record loaded."}
                   </p>
                   <div>
                     <h4>Closure comment</h4>
@@ -647,11 +661,9 @@ export function TechWorkspace() {
                   </div>
                   <Fields names={["Closed by", "Closed at · UTC"]} />
                   <div className="nm-tech-form-actions">
-                    <Button variant="outline" onClick={() => go("close")}>
-                      Edit closure
-                    </Button>
                     <Button onClick={() => go("feedback")}>
-                      Back to All Feedback
+                      <ArrowLeft size={14} aria-hidden="true" />
+                      Go Back
                     </Button>
                   </div>
                 </div>

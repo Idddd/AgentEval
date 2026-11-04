@@ -50,11 +50,13 @@ it("previews all three feedback categories and closure without inventing or pers
   fireEvent.click(
     screen.getByRole("button", { name: "Preview feedback review" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: /^Close feedback$/ }));
+  expect(
+    screen.getByRole("heading", { name: "Feedback Closure" }),
+  ).toBeTruthy();
   expect(
     (
       screen.getByRole("button", {
-        name: "Preview closure",
+        name: "Close feedback",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -64,14 +66,13 @@ it("previews all three feedback categories and closure without inventing or pers
   fireEvent.change(screen.getByLabelText("JIRA ticket"), {
     target: { value: "TEAM-42" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Preview closure" }));
-  expect(
-    screen.getByText("Preview only · No request has been closed."),
-  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Close feedback" }));
+  expect(screen.getByText("Closed · Preview")).toBeTruthy();
   expect(screen.getByText("TEAM-42")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Edit closure" })).toBeNull();
   expect(localStorage.length).toBe(0);
   expect(fetch).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Back to All Feedback" }));
+  fireEvent.click(screen.getByRole("button", { name: "Go Back" }));
   expect(
     (screen.getByLabelText("Feedback category") as HTMLSelectElement).value,
   ).toBe("False-negative");
@@ -87,5 +88,25 @@ it("shows only placeholders for model and runner data and resets scroll on navig
   expect(screen.getByRole("heading", { name: "Runner Status" })).toBeTruthy();
   expect(screen.getAllByText("Data not available").length).toBeGreaterThan(0);
   expect(screen.queryByText("326 / 500")).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("returns from feedback review without closing and preserves feedback filters", () => {
+  window.history.replaceState(
+    null,
+    "",
+    "/v2/guardrails?role=tech#Profile/measure/?tech=review&category=False-negative&status=Open",
+  );
+  render(<TechWorkspace />);
+  fireEvent.change(screen.getByLabelText("Closure comment"), {
+    target: { value: "Still reviewing" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Go Back" }));
+  expect(screen.getByRole("heading", { name: "All Feedback" })).toBeTruthy();
+  expect(
+    (screen.getByLabelText("Feedback category") as HTMLSelectElement).value,
+  ).toBe("False-negative");
+  expect(screen.queryByText("Closed · Preview")).toBeNull();
+  expect(localStorage.length).toBe(0);
   expect(fetch).not.toHaveBeenCalled();
 });

@@ -65,7 +65,7 @@ it("uses the existing V2 mock placeholders for the Guardrail path without making
   ).toBe(true);
   await screen.findByRole("heading", { name: "View Scan" });
   fireEvent.click(screen.getByRole("button", { name: "Back to Policy Scans" }));
-  await screen.findByRole("heading", { name: "Guardrail Policy Scans" });
+  await screen.findByRole("heading", { name: "Agent Policy Scans" });
   expect((screen.getByLabelText("Decision") as HTMLSelectElement).value).toBe(
     "Modified",
   );
@@ -91,7 +91,7 @@ it("supports the Agent path, common feedback and a local-only Guardrail hang-up"
   ).toBe("common");
   await screen.findByRole("heading", { name: "View Scan" });
   fireEvent.click(screen.getByRole("button", { name: "Back to Policy Scans" }));
-  await screen.findByRole("heading", { name: "Guardrail Policy Scans" });
+  await screen.findByRole("heading", { name: "Agent Policy Scans" });
   fireEvent.click(screen.getByRole("button", { name: "Back to Agent Scans" }));
   await screen.findByRole("heading", { name: "Agent Scans" });
   expect(screen.getByRole("heading", { name: "Agent Scans" })).toBeTruthy();
@@ -214,7 +214,7 @@ it("restores a selected Guardrail on refresh and follows browser back and forwar
   await act(async () => window.history.back());
   await screen.findByRole("heading", { name: "Guardrail Scans" });
   await act(async () => window.history.forward());
-  await screen.findByRole("heading", { name: "Guardrail Policy Scans" });
+  await screen.findByRole("heading", { name: "Agent Policy Scans" });
 });
 
 it("keeps an Agent policy scoped to its own scans and restores the original list page", async () => {
