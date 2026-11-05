@@ -1,3 +1,4 @@
+import { assertOpenApiSchema } from "./test-utils/openapi";
 import { expect, it } from "vitest";
 import { NmgrService, type NmgrDocument, type NmgrActor } from "./nmgr";
 import { StoreError } from "./marketplace-db";
@@ -31,7 +32,7 @@ function fixture() {
     throw new Error(`Unexpected ${method} ${path}`);
   } };
   const service = new NmgrService(db, "test");
-  const command = async (actor: NmgrActor, input: Record<string, unknown>) => service.command(actor, { requestId: crypto.randomUUID(), expectedRevision: (await service.snapshot(actor)).revision, ...input }, remote);
+  const command = async (actor: NmgrActor, input: Record<string, unknown>) => { const result = await service.command(actor, { requestId: crypto.randomUUID(), expectedRevision: (await service.snapshot(actor)).revision, ...input }, remote); assertOpenApiSchema("Workspace", result); return result; };
   async function finish(id = draft.id) { for (let i = 0; i < 15; i++) { const s = await service.snapshot(tech); if (s.jobs[id]?.status !== "pending") return s; await command(tech, { type: "advance", id }); } throw new Error("not done"); }
   return { service, db, command, finish, remote, policies, profiles, calls, lose: () => { loseWrite = true; } };
 }

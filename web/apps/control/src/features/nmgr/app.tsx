@@ -430,6 +430,7 @@ export function DemoNmgrApp() {
   );
   const enforcementList = <EnforcementList key={`${role}-${view}`} profiles={activeProfiles} state={state}
     role={role} alertCounts={alertCountsByProfile} onModeChange={changeMode} initialTime={operationsStarted.current}
+    {...(view === "dashboard" ? { expandedProfile: selected, onExpandedProfileChange: (id: string) => go("Profile", "dashboard", id) } : {})}
     renderOperations={(profile) => <ProfileDashboardOperations profile={profile} state={state} role={role} dirty={dirty} busy={busy} initialTime={operationsStarted.current} updateState={updateState} onGuardrail={setMonitorGuardrail} />} />;
   function backToAlerts() {
     go("Profile", "dashboard");
@@ -833,7 +834,7 @@ export function DemoNmgrApp() {
             Guardrails
           </p>
         )}
-        {["measure", "runners", "protection"].includes(view) ? <Measure key={role} role={role} initialBusinessView="scans" technicalPlaceholders center={view === "runners" ? "runners" : view === "protection" ? "protection" : "overview"} onCenter={center => go("Profile", center === "overview" ? "measure" : center)} onDashboard={() => go("Profile", "dashboard")} onPolicyAdjustment={() => go("Guardrail", "repository")} /> : view === "request" ? (
+        {["measure", "runners", "protection"].includes(view) ? <Measure key={role} role={role} initialBusinessView="scans" technicalPlaceholders center={view === "runners" ? "runners" : view === "protection" ? "protection" : "overview"} onCenter={center => go("Profile", center === "overview" ? "measure" : center)} onDashboard={() => go("Profile", "dashboard")} onBypass={() => go("Profile", "dashboard", "default-customer-assistant")} onPolicyAdjustment={() => go("Guardrail", "repository")} /> : view === "request" ? (
           <section className="nm-card nm-padding nm-request-page">
             {error && (
               <div role="alert" className="nm-inline-notice nm-inline-error">

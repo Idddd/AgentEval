@@ -8,7 +8,7 @@ import { operatingProfile, operatingModeLabel } from "./profile-operations-state
 import { Sheet, SheetTitle } from "@/components/ui/sheet";
 import { ResizableSheetContent } from "./resizable-sheet";
 
-export function EnforcementList({ profiles, state, role, alertCounts, onModeChange, renderOperations, initialTime = Date.now(), runtimeConnected = true }: {
+export function EnforcementList({ profiles, state, role, alertCounts, onModeChange, renderOperations, initialTime = Date.now(), runtimeConnected = true, expandedProfile, onExpandedProfileChange }: {
   profiles: Entity[];
   state: State;
   role: Role;
@@ -17,8 +17,15 @@ export function EnforcementList({ profiles, state, role, alertCounts, onModeChan
   renderOperations?: (item: Entity) => ReactNode;
   initialTime?: number;
   runtimeConnected?: boolean;
+  expandedProfile?: string;
+  onExpandedProfileChange?: (id: string) => void;
 }) {
-  const [expanded, setExpanded] = useState("");
+  const [localExpanded, setLocalExpanded] = useState("");
+  const expanded = expandedProfile ?? localExpanded;
+  const setExpanded = (id: string) => {
+    setLocalExpanded(id);
+    onExpandedProfileChange?.(id);
+  };
   const [search, setSearch] = useState("");
   const [location, setLocation] = useState("All");
   const [requestedPage, setPage] = useState(1);

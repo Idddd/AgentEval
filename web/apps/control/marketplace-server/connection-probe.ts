@@ -3,7 +3,7 @@ import { createConnection } from "mariadb";
 import { databaseConfig } from "./storage/config";
 import { nemoServiceFetch } from "./nemo-session";
 import { DeploymentError, upstreamFailure } from "./diagnostics";
-import { f5Configuration, createF5Client } from "./f5-client";
+import { f5Configuration, createF5Client, probeF5 } from "./f5-client";
 
 export type ProbeTarget = "nemoUrl" | "nemoToken" | "databaseUrl" | "f5Url" | "f5Token";
 export async function probeConnection(target: ProbeTarget, env: NodeJS.ProcessEnv, fetcher: typeof fetch) {
@@ -39,7 +39,7 @@ export async function probeConnection(target: ProbeTarget, env: NodeJS.ProcessEn
       httpStatus = response.status;
       message = `Address reachable (HTTP ${response.status}). Test F5 Token next to verify access.`;
     } else {
-      await createF5Client(config, fetcher).request("/scanners");
+      await probeF5(createF5Client(config, fetcher));
       message = "F5 connection, Token and scanner read access succeeded.";
       httpStatus = 200;
     }

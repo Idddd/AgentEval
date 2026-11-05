@@ -29,8 +29,8 @@ const cases = [
   ["legacy-auth-selector-ignored", { MARKETPLACE_NEMO_AUTH_MODE: "invalid" }, "database", "database_unreachable"],
   ["legacy-password-selector-ignored", { MARKETPLACE_NEMO_AUTH_MODE: "password", GUARD_API_TOKEN: "synthetic-stale-token" }, "database", "database_unreachable"],
   ["token-mode-stale-password", { MARKETPLACE_NEMO_AUTH_MODE: "token", GUARD_API_TOKEN: "", GUARD_USERNAME: "synthetic-old-user", GUARD_PASSWORD: "synthetic-old-password" }, "nemo", "nemo_token_config_invalid"],
-  ["missing-f5-secret", { MARKETPLACE_F5_ENABLED: "true" }, "f5", "f5_config_invalid"],
-  ["partial-f5-config", { F5_API_URL: "https://f5.invalid/backend/v1" }, "f5", "f5_config_invalid"],
+  ["missing-f5-secret", { MARKETPLACE_F5_ENABLED: "true" }, "database", "database_unreachable"],
+  ["partial-f5-config", { F5_API_URL: "https://f5.invalid/backend/v1" }, "database", "database_unreachable"],
   ["complete-url-ignores-legacy-password-secret", { MARKETPLACE_DATABASE_PASSWORD_REQUIRED: "true" }, "database", "database_unreachable"],
   ["missing-database-ca", { MARKETPLACE_DB_TLS: "true", MARKETPLACE_DB_CA_FILE: "/missing/ca.crt" }, "database", "database_config_invalid"],
   ["database-offline", {}, "database", "database_unreachable"],
@@ -73,6 +73,7 @@ for (let index = 0; index < cases.length; index++) {
     // docker logs may place application error output on stderr instead of stdout.
     const allLogs = spawnSync("docker", ["logs", name], { encoding: "utf8" });
     assert.equal(allLogs.status, 0);
+    if (["missing-f5-secret", "partial-f5-config"].includes(label)) assert((allLogs.stdout + allLogs.stderr).includes("f5_config_invalid"), `${label}: optional F5 error must be logged while the shared database check still runs`);
     assert((allLogs.stdout + allLogs.stderr).includes(body.error.requestId), `${label}: correlated diagnostic log`);
     assert(!JSON.stringify(body).includes("synthetic"));
     keep = process.argv.includes("--keep-last") && index === cases.length - 1;

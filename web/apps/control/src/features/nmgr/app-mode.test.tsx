@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NmgrApp } from "./app";
 
@@ -20,13 +20,14 @@ it("opens Profile bypass controls from a scan without activating bypass", async 
   const saved = localStorage.getItem("nmgr-v2-mock-state");
   document.documentElement.scrollTop = 600;
   fireEvent.click(screen.getByRole("button", { name: "Go To Set Bypass Mode [Kill Switch]" }));
-  expect(await screen.findByRole("heading", { name: "Protection Dashboard" })).toBeTruthy();
-  expect(window.location.hash).toBe("#Profile/dashboard/");
+  const drawer = await screen.findByRole("dialog", { name: "Customer Banking Assistant" });
+  expect(window.location.hash).toBe("#Profile/dashboard/default-customer-assistant");
   expect(document.documentElement.scrollTop).toBe(0);
-  fireEvent.click(screen.getByRole("button", { name: "View operations for Customer Banking Assistant" }));
-  expect(screen.getAllByRole("button", { name: "Bypass" }).length).toBeGreaterThan(0);
+  expect(within(drawer).getByRole("button", { name: "Bypass" }).hasAttribute("disabled")).toBe(false);
   expect(localStorage.getItem("nmgr-v2-mock-state")).toBe(saved);
   expect(fetch).not.toHaveBeenCalled();
+  fireEvent.click(within(drawer).getByRole("button", { name: "Close" }));
+  expect(window.location.hash).toBe("#Profile/dashboard/");
 });
 
 it("runs the explicit mock entry locally and keeps workbench navigation in mock mode", () => {

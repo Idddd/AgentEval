@@ -1,6 +1,6 @@
-# UAT 升级到 v0.2.26
+# UAT 升级到 v0.2.27
 
-镜像 `ghcr.io/idddd/tali-ui-demo:0.2.26`，Chart `oci://ghcr.io/idddd/charts/tali-ui-demo`，版本 `0.2.26`。默认 V3 演示只需 NeMo URL、业务 Token、完整 DB URL，保留三角色切换，无需 SSO 或账号映射。Mock 继续独立运行。
+镜像 `ghcr.io/idddd/tali-ui-demo:0.2.27`，Chart `oci://ghcr.io/idddd/charts/tali-ui-demo`，版本 `0.2.27`。默认 V3 演示只需 NeMo URL、业务 Token、完整 DB URL，保留三角色切换，无需 SSO 或账号映射。Mock 继续独立运行。
 
 ## 现有 values.yaml 最小改动
 
@@ -8,7 +8,7 @@
 
 ```yaml
 image:
-  tag: "0.2.26"
+  tag: "0.2.27"
 marketplace:
   guardApiUrl: https://你的NeMo域名/api/v1
 ```
@@ -24,11 +24,11 @@ marketplace:
 
 默认值已包含 `demoRoles: true`、`workspaceId: uat`；默认 V3 自行进入 live 模式，不要求额外配置 `dataMode`、`v2Live`、`crudOnly`、`publicOrigin`、`guardAuthOrigin`、`accountsConfigMap` 或本地固定身份。保留原 workspaceId 和 NeMo URL 可延续原工作区；两者改变会切换工作区。
 
-0.2.26 默认 V3 仅对配置的 NeMo API 跳过证书校验，不影响 F5 和数据库。需要开启 NeMo 验证时配置 `marketplace.nemoTls: verify`，或在 V3 配置页选择 Verify certificate；默认跳过无需新增配置。CA、DB TLS、F5 可继续沿用已有部署值，也可以在同页修复。不要因升级而更改现有数据库 TLS 策略。
+0.2.27 默认 V3 仅对配置的 NeMo API 跳过证书校验，不影响 F5 和数据库。需要开启 NeMo 验证时配置 `marketplace.nemoTls: verify`，或在 V3 配置页选择 Verify certificate；默认跳过无需新增配置。CA、DB TLS、F5 可继续沿用已有部署值，也可以在同页修复。不要因升级而更改现有数据库 TLS 策略。
 
 正式 UI 通过同域网关调用 `/api/nmgr/*`。保持 `/api` 路径及子路径原样转发；Swagger 为 `/api/docs`，其本地 JS/CSS 使用 `/api/docs/*`，契约为 `/api/openapi.json`，列表为 `/api/endpoints`。无需新增 CORS。已有完整 `/api` 转发规则无需改动。
 
-从已正确配置的 0.2.23 升级，无新增必填连接项；镜像改为 0.2.26，Chart 同步到 0.2.26。使用自维护模板且需要通过 values 控制 NeMo TLS 时，增加以下可选映射：
+从已正确配置的 0.2.23 升级，无新增必填连接项；镜像改为 0.2.27，Chart 同步到 0.2.27。使用自维护模板且需要通过 values 控制 NeMo TLS 时，增加以下可选映射：
 
 ```yaml
 - name: MARKETPLACE_NEMO_TLS
@@ -99,7 +99,7 @@ Chart 不自动创建 PVC。旧自维护模板则将上述 volume 替换为 pers
 
 ## 同页备用配置与验收
 
-直接打开 `/v3/guardrails`。三项缺失/失效时自动显示当前页的掩码配置表单；连通后通过页头 Connection settings 返回。所有访问者共用服务端加密保存值，不需要其他隐藏配置页面。输入留空保留原值；保存前检查依赖，失败不覆盖旧配置；更改 NeMo/F5 URL 必须同时重新输入该服务 Token。高级项包含 Workspace ID、DB TLS、可信 CA 和可选 F5。Use deployment settings 删除手动覆盖，重新使用 Secret/YAML；后续轮换部署 Secret 时可用此入口取消已保存的旧覆盖。
+直接打开 `/v3/guardrails`。NeMo URL、Token 或 Database URL 缺失时自动进入 `/v3/guardrails#connection`。已配置后不显示 Connection settings 按钮，需在地址栏手动输入 `/v3/guardrails#connection`；连接故障仅显示错误和重试。主配置页提供 NeMo、F5 和数据库分组；F5 可选择 Enabled，再填写 URL、Token 和可选项目管理员 ID，并分别测试 URL/Token。输入留空保留原值；保存前检查依赖，失败不覆盖旧配置；更改 NeMo/F5 URL 必须同时重新输入该服务 Token。高级项包含 Workspace ID、DB TLS 和可信 CA。所有访问者共用服务端加密保存值。Use deployment settings 删除手动覆盖，重新使用 Secret/YAML；后续轮换部署 Secret 时可用此入口取消已保存的旧覆盖。
 
 默认演示模式允许所有访问者切换角色和修改连接，不做额外 Marketplace 用户权限。只有显式选择 `marketplace.demoRoles: false` 才进入严格身份模式，该模式要求独立用户认证/账号映射，并禁用及忽略手动演示配置。
 

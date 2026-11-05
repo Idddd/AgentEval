@@ -13,7 +13,7 @@ import { databaseCacheKey } from "./storage/config";
 import { runtimeResponse } from "./guard-api";
 import { DeploymentError, diagnosticResponse } from "./diagnostics";
 import { connectionTransport } from "./nmgr-connection-tls";
-import { createF5Client, f5Configuration } from "./f5-client";
+import { createF5Client, probeF5, f5Configuration } from "./f5-client";
 import { withConnectionDiagnostics } from "./connection-diagnostics";
 import { probeConnection, type ProbeTarget } from "./connection-probe";
 import { connectionTestSchema } from "./nmgr-contract";
@@ -324,7 +324,7 @@ export async function connectionApi(
           const f5 = f5Configuration(effective);
           if (f5)
             await withConnectionDiagnostics(effective, "connection.save.f5", async () => {
-              try { await createF5Client(f5, transport.fetcher).request("/scanners"); }
+              try { await probeF5(createF5Client(f5, transport.fetcher)); }
               catch (error) { probe = diagnosticResponse(error, "f5", "connection.save.f5", "F5 connection failed."); }
             });
         }

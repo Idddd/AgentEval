@@ -23,3 +23,9 @@ it("tests the F5 address without requiring or forwarding a Token", async () => {
   });
   expect(result).toMatchObject({ ok: true, httpStatus: 401 });
 });
+
+it("validates the F5 scanner list contract instead of accepting arbitrary JSON", async () => {
+  const env = { F5_API_URL: "https://f5.test/backend/v1", F5_API_TOKEN: "private" };
+  await expect(probeConnection("f5Token", env, async () => Response.json({ ok: true }))).rejects.toThrow(/scanner list/i);
+  await expect(probeConnection("f5Token", env, async () => Response.json({ scanners: [] }))).resolves.toMatchObject({ ok: true });
+});

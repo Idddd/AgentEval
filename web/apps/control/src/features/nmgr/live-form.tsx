@@ -15,7 +15,7 @@ export function LiveForm({ kind, initial, mode, state, controlUnit, busy, onCanc
 }) {
   const [draft, setDraft] = useState(() => initial ? toDraft(initial) : { id: `${kind === "Profile" ? "pf" : "gr"}-${crypto.randomUUID()}`, kind, name: "", description: "", location: "ALL", mandatory: false, refs: [] as string[], attributes: { bu: "", agent: "", data: "" }, threshold: 5 });
   const [guardQuery, setGuardQuery] = useState("");
-  const guards = state.entities.filter(e => e.kind === "Guardrail" && e.deployed != null && !e.sourcePending);
+  const guards = state.entities.filter(e => e.kind === "Guardrail" && e.deployed != null && !e.sourcePending && (!e.imported || e.imported.available && e.imported.bindable !== false));
   const selectedGuard = guards.find(e => draft.refs.includes(e.id));
   const profileSource = initial ? initial.provider ?? "NeMo" : selectedGuard ? selectedGuard.provider ?? "NeMo" : undefined;
   return <section className="nm-card nm-padding nm-request-page">
@@ -34,7 +34,7 @@ export function LiveForm({ kind, initial, mode, state, controlUnit, busy, onCanc
             <Input aria-label="Search available Guardrails" placeholder="Search Guardrails…" value={guardQuery} onChange={e => setGuardQuery(e.target.value)} />
             <div className="nm-guardrail-picker-list" role="region" aria-label="Available Guardrails" tabIndex={0}>
               {!guards.length && <p className="nm-callout">No published Guardrails are available. Publish a Guardrail before creating a Profile.</p>}
-              {guards.filter(e => `${e.name} ${e.id}`.toLowerCase().includes(guardQuery.toLowerCase())).map(e => <div className="nm-guardrail-picker-card rounded-lg border p-3" key={e.id}><label className="nm-check"><input type="checkbox" checked={draft.refs.includes(e.id)} disabled={!!profileSource && (e.provider ?? "NeMo") !== profileSource} onChange={event => setDraft({ ...draft, refs: event.target.checked ? [...draft.refs, e.id] : draft.refs.filter(id => id !== e.id) })} />{e.name}{e.mandatory && <span className="nm-badge">Mandatory</span>}</label><p className="nm-muted">Published v{e.deployed} · {e.provider ?? "NeMo"} · {e.location}</p><p className="nm-muted">{e.description}</p></div>)}
+              {guards.filter(e => `${e.name} ${e.id}`.toLowerCase().includes(guardQuery.toLowerCase())).map(e => <div className="nm-guardrail-picker-card rounded-lg border p-3" key={e.id}><label className="nm-check"><input type="checkbox" checked={draft.refs.includes(e.id)} disabled={!!profileSource && (e.provider ?? "NeMo") !== profileSource} onChange={event => setDraft({ ...draft, refs: event.target.checked ? [...draft.refs, e.id] : draft.refs.filter(id => id !== e.id) })} />{e.name}{e.mandatory && <span className="nm-badge">Mandatory</span>}</label><p className="nm-muted">Published {e.imported ? e.imported.publishedVersion ?? "in NeMo" : `v${e.deployed}`} · {e.provider ?? "NeMo"} · {e.location}</p><p className="nm-muted">{e.description}</p></div>)}
             </div>
           </fieldset>}
         <div className="nm-actions"><Button type="button" variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit">{busy ? "Saving…" : "Save"}</Button></div>

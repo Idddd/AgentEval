@@ -59,7 +59,7 @@ const hints: Record<string, string> = {
 };
 
 // Include causal diagnostics, not arbitrary exception properties, SQL, headers or stack dumps.
-export function connectionErrorDetails(error: unknown) {
+export function connectionErrorDetails(error: unknown, f5 = false) {
   const active = context.getStore();
   if (!active) return undefined;
   const clean = redactor(active.env);
@@ -70,7 +70,7 @@ export function connectionErrorDetails(error: unknown) {
     seen.add(value);
     const item = value as Record<string, unknown>;
     const code = typeof item.code === "string" && /^[A-Za-z0-9_]{1,80}$/.test(item.code) ? item.code : undefined;
-    causes.push({ name: clean(item.name), code, message: clean(item.message), syscall: clean(item.syscall) });
+    causes.push({ name: clean(item.name), code, message: f5 ? undefined : clean(item.message), syscall: clean(item.syscall) });
     visit(item.cause);
     if (Array.isArray(item.errors)) item.errors.slice(0, 4).forEach(visit);
   };
@@ -78,10 +78,10 @@ export function connectionErrorDetails(error: unknown) {
   const upstream = error && typeof error === "object" && "upstream" in error ? error.upstream as Record<string, unknown> : undefined;
   return {
     operation: active.operation,
-    certificateVerification: active.env.MARKETPLACE_NEMO_TLS === "skip" ? "NeMo skipped" : "NeMo enabled",
+    certificateVerification: f5 ? "F5 enabled" : active.env.MARKETPLACE_NEMO_TLS === "skip" ? "NeMo skipped" : "NeMo enabled",
     ...(upstream ? { httpStatus: typeof upstream.httpStatus === "number" ? upstream.httpStatus : undefined,
-      contentType: clean(upstream.contentType), upstreamCode: clean(upstream.code), upstreamMessage: clean(upstream.message) } : {}),
+      contentType: clean(upstream.contentType), upstreamCode: f5 ? undefined : clean(upstream.code), upstreamMessage: f5 ? undefined : clean(upstream.message) } : {}),
     causes,
-    hints: [...new Set(causes.map(c => hints[String(c.code)] || hints[String(c.name)]).filter(Boolean))],
+    hints: [...new Set(causes.map(c => (f5 && c.code === "DEPTH_ZERO_SELF_SIGNED_CERT" ? "F5 certificate is self-signed. Supply its trusted CA; F5 certificate verification remains enabled." : hints[String(c.code)] || hints[String(c.name)])).filter(Boolean))],
   };
 }

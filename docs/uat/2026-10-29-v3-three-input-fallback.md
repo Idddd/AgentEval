@@ -26,7 +26,7 @@ Secret 名称或 key 不同时才覆盖 `nemoTokenSecret` / `nemoTokenKey`、`da
 
 ## 手动备用配置
 
-V3 登录/连接失败页面提供三个默认掩码输入框；已配置的值只显示“Configured”和掩码占位符，不回传原文。已连通后可从 Connection settings 调整。眼睛按钮仅显示本次输入，不读取已有 Secret 或已保存的值。
+V3 未配置时进入 `/v3/guardrails#connection`，提供 NeMo URL、Token 和 Database URL 掩码输入框；已配置的值只显示“Configured”和掩码占位符，不回传原文。已配置后隐藏 Connection settings 按钮，需手动输入该地址调整。眼睛按钮仅显示本次输入，不读取已有 Secret 或已保存的值。
 
 保存前验证 NeMo 身份和数据库连接，成功后加密、原子写入服务端。失败不覆盖上次成功配置。留空保留当前值；更换 NeMo URL 时必须同时重新输入 Token，防止将旧凭据发送到新地址。保存值优先于部署值，但不修改 Kubernetes Secret 或 values。Use deployment settings 删除手动覆盖并恢复部署配置。
 
@@ -34,16 +34,15 @@ V3 登录/连接失败页面提供三个默认掩码输入框；已配置的值�
 
 ### 当前页面的可选高级设置
 
-默认 V3 访问 `/v3/guardrails`，配置错误时直接显示此表单；已连通时点击页头 Connection settings。所有连接项均在同一个页面，无需其他隐藏页面、额外登录页或手工 API 请求。
+默认 V3 访问 `/v3/guardrails`，三项必填配置缺失时自动进入配置页；已配置但连接失败时仅显示错误和重试，设置需手动访问 `/v3/guardrails#connection`。
 
-正常使用仅填写三个主字段。Advanced settings (optional) 提供特殊环境的备用配置：
+NeMo、F5 和数据库分组显示在主配置页；F5 可启用后填写 URL、Token 和项目管理员 ID，并单独测试 URL/Token。Advanced settings (optional) 提供工作区与 TLS 配置：
 
 | 可选项 | 默认行为 / 用途 |
 | --- | --- |
 | Workspace ID | 默认 `uat`，可修复不合法的部署值或选择另一个工作区 |
 | Database TLS | 默认沿用部署/URL；可选使用 URL 设置或强制验证 TLS，支持 MariaDB |
 | Trusted CA | 默认沿用部署信任；可选择内置根证书，或粘贴 PEM CA 证书包用于 NeMo、F5、数据库 TLS |
-| F5 integration | 默认未配置则不启用；可在页面禁用不完整的 F5 部署配置，或填写 URL、Token、项目管理员 ID 启用 |
 
 CA、URL、Token、工作区等输入均默认掩码，已保存原文不回传。选择自定义 CA 时仍验证证书和主机名，不提供关闭 TLS 校验的开关。启用或修改 F5 时保存前验证其只读 API；修改 F5 地址也必须重新输入 Token。高级配置验证失败仍保留旧配置。
 

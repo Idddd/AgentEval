@@ -1,9 +1,23 @@
 import { beforeEach, expect, it, vi } from "vitest";
 const storage = vi.hoisted(() => new Map<string, unknown>());
 vi.mock("./storage/database", () => ({ openDatabase: async () => ({ exclusive: (fn: () => Promise<unknown>) => fn(), readDocument: async (id: string) => structuredClone(storage.get(id)), writeDocument: async (id: string, value: unknown) => { storage.set(id, structuredClone(value)); } }) }));
-import { nmgrApi } from "./nmgr-api";
+import { nmgrApi as handleNmgrApi } from "./nmgr-api";
+import { assertOpenApiResponse } from "./test-utils/openapi";
+async function nmgrApi(...args: Parameters<typeof handleNmgrApi>) { const response = await handleNmgrApi(...args); await assertOpenApiResponse(args[0], response); return response; }
 const env = { MARKETPLACE_DATA_MODE: "live", GUARD_API_URL: "https://nemo.internal/api/v1", MARKETPLACE_PUBLIC_ORIGIN: "https://marketplace.internal", MARKETPLACE_DATABASE_URL: "mariadb://test@localhost/test", MARKETPLACE_V2_ACCOUNTS_JSON: JSON.stringify({ user: { name: "Author", role: "User", unit: "ISS" } }), F5_API_URL: "https://f5.internal/backend/v1", F5_API_TOKEN: "server-f5-secret" };
 beforeEach(() => storage.clear());
+it("discovers NeMo only for an explicit import read and never writes to the upstream API", async () => {
+  const fetcher = vi.fn<typeof fetch>(async url => String(url).endsWith("/account/identity") ? Response.json({ userId: "user", role: "user", effectivePermissions: { policies: "read", guardrails: "read" } }) : Response.json({ items: [], count: 0 }));
+  const headers = { Authorization: "Bearer user-token", "X-Marketplace-Import": "true" };
+  const response = await nmgrApi(new Request("https://marketplace.internal/api/nmgr/workspace", { headers }), env, fetcher);
+  expect(response.status).toBe(200);
+  expect(fetcher.mock.calls.map(([url]) => String(url))).toContain("https://nemo.internal/api/v1/policies");
+  expect(fetcher.mock.calls.map(([url]) => String(url))).toContain("https://nemo.internal/api/v1/guardrails");
+  expect(fetcher.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+  fetcher.mockClear();
+  await nmgrApi(new Request("https://marketplace.internal/api/nmgr/workspace", { headers: { Authorization: "Bearer user-token" } }), env, fetcher);
+  expect(fetcher.mock.calls).toHaveLength(1);
+});
 it("keeps user identity separate while querying NeMo with the server token", async () => {
   const { nmgrConfiguration } = await import("./nmgr-api");
   const tokenEnv = { ...env, GUARD_API_TOKEN: "server-nemo-token" };
@@ -41,4 +55,18 @@ it("rejects User source selection at the API boundary", async () => {
   const response = await nmgrApi(new Request("https://marketplace.internal/api/nmgr/commands", { method: "POST", headers: { "Content-Type": "application/json", Origin: env.MARKETPLACE_PUBLIC_ORIGIN, Authorization: "Bearer user-token" }, body: JSON.stringify({ type: "create", requestId: crypto.randomUUID(), expectedRevision: 0, draft: { id: "f5-test", provider: "F5", kind: "Guardrail", name: "Test", description: "Test control", location: "ALL", mandatory: false, refs: [], attributes: { bu: "", agent: "", data: "" }, threshold: 5 } }) }), nemoEnv, async () => Response.json({ userId: "user", role: "user", effectivePermissions: { policies: "write", guardrails: "write" } }));
   expect(response.status).toBe(403);
   expect((await response.json()).error.message).toMatch(/Only Tech/);
+});
+
+it("isolates invalid optional F5 configuration from NeMo workspace, import and readiness", async () => {
+  const broken = { ...env, F5_API_URL: "bad-url" };
+  const fetcher = vi.fn<typeof fetch>(async url => String(url).endsWith("/account/identity") ? Response.json({ userId: "user", role: "user", effectivePermissions: { policies: "write", guardrails: "write" } }) : Response.json({ items: [], count: 0 }));
+  const response = await nmgrApi(new Request("https://marketplace.internal/api/nmgr/workspace", { headers: { Authorization: "Bearer user-token", "X-Marketplace-Import": "true" } }), broken, fetcher);
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body.sources).toEqual(["NeMo"]);
+  expect(body.sourceErrors.F5).toMatchObject({ code: "f5_config_invalid", component: "f5", requestId: expect.any(String) });
+  expect(JSON.stringify(body)).not.toContain("server-f5-secret");
+  const ready = await nmgrApi(new Request("https://marketplace.internal/api/nmgr/ready"), broken, fetcher);
+  expect(ready.status).toBe(200);
+  expect((await ready.json()).checks.f5).toBe("configuration_error");
 });

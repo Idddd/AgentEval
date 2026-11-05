@@ -17,7 +17,6 @@ it.each([
   ["MARKETPLACE_DATABASE_URL", "", "database"],
   ["MARKETPLACE_DATABASE_URL", "postgres://secret@db", "database"],
   ["MARKETPLACE_V2_ACCOUNTS_JSON", "{}", "identity"],
-  ["F5_API_URL", "https://f5.internal/backend/v1", "f5"],
 ])("identifies invalid %s and correlates safe response and log", async (setting, value, component) => {
   const log = vi.spyOn(console, "error").mockImplementation(() => {});
   const response = await nmgrApi(request(), { ...env, [setting]: value });
@@ -68,7 +67,6 @@ it.each([
   [{ MARKETPLACE_NEMO_AUTH_MODE: "token" }, "nemo", "nemo_token_config_invalid", "GUARD_API_TOKEN"],
   [{ MARKETPLACE_NEMO_AUTH_MODE: "password" }, "nemo", "nemo_credentials_missing", "GUARD_PASSWORD"],
   [{ MARKETPLACE_NEMO_AUTH_MODE: "invalid" }, "nemo", "nemo_auth_mode_invalid", "MARKETPLACE_NEMO_AUTH_MODE"],
-  [{ MARKETPLACE_F5_ENABLED: "true" }, "f5", "f5_config_invalid", "F5_API_TOKEN"],
   [{ MARKETPLACE_DATABASE_PASSWORD_REQUIRED: "true" }, "database", "database_config_invalid", "MARKETPLACE_DATABASE_PASSWORD"],
 ])("reports an absent selected Secret instead of silently choosing another credential source: %j", async (selected, component, code, setting) => {
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -116,4 +114,13 @@ it.each([
   const body = await response.json();
   expect(body.error).toMatchObject({ code, component: "f5", requestId: expect.any(String) });
   expect(JSON.stringify([body, log.mock.calls])).not.toMatch(/private-|f5\.internal/);
+});
+
+it.each([{ F5_API_URL: "https://f5.internal/backend/v1" }, { MARKETPLACE_F5_ENABLED: "true" }])("keeps readiness healthy while reporting invalid optional F5 configuration: %j", async selected => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const response = await nmgrApi(request(), { ...env, ...selected });
+  expect(response.status).toBe(200);
+  expect((await response.json()).checks.f5).toBe("configuration_error");
+  expect(JSON.stringify(log.mock.calls)).toContain("f5_config_invalid");
+  expect(JSON.stringify(log.mock.calls)).not.toContain("f5.internal");
 });

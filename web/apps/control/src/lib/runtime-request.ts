@@ -2,7 +2,7 @@ type Failure = { code?: string | undefined; component?: string | undefined; mess
 export function runtimeFailure(details: Failure, path: string, status?: number) {
   const requestId = details.requestId ?? crypto.randomUUID();
   console.error(JSON.stringify({ event: "workspace_request_failed", path: path.split("?")[0], status, code: details.code, component: details.component, requestId, details: details.details }));
-  return new Error(`[${details.code ?? "api_error"}] ${details.component ? `${details.component}: ` : ""}${details.message ?? "The operation failed."}${details.settings?.length ? ` Check: ${details.settings.join(", ")}.` : ""} Reference: ${requestId}${details.details ? `\nHTTP ${status ?? "unknown"}\n${JSON.stringify(details.details, null, 2)}` : ""}`);
+  return Object.assign(new Error(`[${details.code ?? "api_error"}] ${details.component ? `${details.component}: ` : ""}${details.message ?? "The operation failed."}${details.settings?.length ? ` Check: ${details.settings.join(", ")}.` : ""} Reference: ${requestId}${details.details ? `\nHTTP ${status ?? "unknown"}\n${JSON.stringify(details.details, null, 2)}` : ""}`), { code: details.code, status });
 }
 
 // A SPA host can answer /api with HTML and HTTP 200. Do not treat it as data,

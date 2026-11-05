@@ -5,7 +5,7 @@ import { guardConfig, guardProxy } from "./guard-api";
 import { hasNemoCredentials, nemoServiceFetch } from "./nemo-session";
 import { StoreError } from "./marketplace-db";
 import { databaseCacheKey, databaseConfig } from "./storage/config";
-import { DeploymentError, diagnosticResponse, upstreamFailure, type Component } from "./diagnostics";
+import { DeploymentError, diagnosticResponse, reportFailure, upstreamFailure, type Component } from "./diagnostics";
 import { openDatabase } from "./storage/database";
 import { NmgrService, type NmgrActor, type NmgrRemote } from "./nmgr";
 import { createF5Client, f5Configuration } from "./f5-client";
@@ -31,7 +31,10 @@ export function nmgrConfiguration(env: NodeJS.ProcessEnv) {
   if (localAccess && !Object.hasOwn(accounts, env.MARKETPLACE_V2_LOCAL_ACTOR_ID ?? "")) throw new DeploymentError("identity", "local_actor_invalid", "MARKETPLACE_V2_LOCAL_ACTOR_ID must match an account in the mapping.");
   const namespace = env.MARKETPLACE_WORKSPACE_ID ?? "uat";
   if (!/^[a-z0-9-]{1,24}$/.test(namespace)) throw new DeploymentError("workspace", "workspace_id_invalid", "MARKETPLACE_WORKSPACE_ID must use 1–24 lowercase letters, numbers or hyphens.");
-  return { ...config, demo, localAccess, accounts, f5: f5Configuration(env), workspace: createHash("sha256").update(`${namespace}:${config.base}`).digest("hex").slice(0, 12) };
+  let f5: ReturnType<typeof f5Configuration>, f5Error: Omit<ReturnType<typeof reportFailure>, "status"> | undefined;
+  try { f5 = f5Configuration(env); }
+  catch (error) { const { status: _, ...details } = reportFailure(error, "f5", "configuration.f5", "F5 configuration is unavailable."); f5Error = details; }
+  return { ...config, demo, localAccess, accounts, f5, f5Error, workspace: createHash("sha256").update(`${namespace}:${config.base}`).digest("hex").slice(0, 12) };
 }
 function store(env: NodeJS.ProcessEnv) {
   const key = databaseCacheKey(env);
@@ -57,7 +60,7 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
     if (url.pathname === "/api/nmgr/ready" && request.method === "GET") {
       component = "database";
       await (await store(env)).readDocument(`nmgr:${config.workspace}`);
-      return reply({ ready: true, workspace: "v3", backend: "configured", checks: { database: "reachable", nemo: "not_probed", f5: config.f5 ? "not_probed" : "not_configured", identity: "mapping_configured" } });
+      return reply({ ready: true, workspace: "v3", backend: "configured", checks: { database: "reachable", nemo: "not_probed", f5: config.f5Error ? "configuration_error" : config.f5 ? "not_probed" : "not_configured", identity: "mapping_configured" } });
     }
     const write = url.pathname === "/api/nmgr/commands";
     if (request.method !== (write ? "POST" : "GET")) throw new StoreError(405, "Method not allowed.");
@@ -107,7 +110,7 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
       actor = { id: identity.userId, ...mapping };
     }
     component = "database";
-    const service = new NmgrService(await store(env), config.workspace, config.f5 ? createF5Client(config.f5, fetcher) : undefined);
+    const service = new NmgrService(await store(env), config.workspace, config.f5 ? createF5Client(config.f5, fetcher) : undefined, config.f5Error ? { F5: config.f5Error } : undefined);
     const remote: NmgrRemote = { async request(path, method = "GET", body) {
       // Paths originate exclusively in the workflow, never from client input.
       let response: Response;
@@ -121,7 +124,14 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
       try { result = await response.json(); } catch (error) { throw new DeploymentError("nemo", "nemo_response_invalid", "NeMo returned invalid JSON. Check the gateway and API compatibility.", undefined, 502, error); }
       return result;
     } };
-    if (!write) return reply(resource ? await service.resourceStatus(actor, resource, remote) : { ...await service.snapshot(actor), accessMode: config.demo ? "demo" : config.localAccess ? "local" : "authenticated" });
+    if (!write) {
+      if (!resource && request.headers.get("x-marketplace-import") === "true") {
+        component = "nemo";
+        try { return reply({ ...await service.importResources(actor, remote), accessMode: config.demo ? "demo" : config.localAccess ? "local" : "authenticated" }); }
+        catch (error) { if (error instanceof z.ZodError) throw new DeploymentError("nemo", "nemo_catalog_invalid", "NeMo catalog or resource definitions are incompatible. Existing workspace data was retained."); throw error; }
+      }
+      return reply(resource ? await service.resourceStatus(actor, resource, remote) : { ...await service.snapshot(actor), accessMode: config.demo ? "demo" : config.localAccess ? "local" : "authenticated" });
+    }
     if (!request.headers.get("content-type")?.startsWith("application/json")) throw new StoreError(415, "JSON is required.");
     const raw = await request.text();
     if (Buffer.byteLength(raw) > 1_000_000) throw new StoreError(413, "Request is too large.");

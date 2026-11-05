@@ -148,14 +148,14 @@ export function ScanJourney({
   change,
   error,
   clearError,
-  onDashboard,
+  onBypass,
 }: {
   state: MeasureState;
   role: Role;
   change: (update: (current: MeasureState) => MeasureState) => boolean;
   error: string;
   clearError: () => void;
-  onDashboard?: () => void;
+  onBypass?: () => void;
 }) {
   const navigation = useScanNavigation();
   const { route, previous } = navigation;
@@ -700,15 +700,15 @@ export function ScanJourney({
                     className="h-auto whitespace-normal p-0 text-left"
                     onClick={() => {
                       resetDocumentScroll();
-                      if (onDashboard) onDashboard();
-                      else window.location.hash = "Profile/dashboard/";
+                      if (onBypass) onBypass();
+                      else window.location.hash = "Profile/dashboard/default-customer-assistant";
                     }}
                   >
                     Go To Set Bypass Mode [Kill Switch]
                     <ArrowRight size={14} aria-hidden="true" />
                   </Button>
                   <p className="nm-muted">
-                    Select a Profile on the dashboard to manage Bypass.
+                    Open Customer Banking Assistant operations to manage Bypass.
                   </p>
                 </div>
               </MeasureCard>

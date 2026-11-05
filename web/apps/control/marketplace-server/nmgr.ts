@@ -1,18 +1,20 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { addEntity, editEntity, reviseEntity, transition, type Entity, type State, type Role } from "../src/features/nmgr/model";
 import { commandSchema, caseSchema } from "./nmgr-contract";
 import { StoreError } from "./marketplace-db";
-import { reportFailure } from "./diagnostics";
+import { DeploymentError, reportFailure } from "./diagnostics";
 import { f5Evaluation, f5Step, type F5Binding, type F5Work } from "./nmgr-f5";
 import type { F5Remote, F5ScannerRef } from "./f5-client";
 import { observeResource } from "./nmgr-observation";
 import { emptyNemoPolicy, nemoDraftStep } from "./nmgr-draft-sync";
+import { discoverNemo, mergeNemo } from "./nmgr-import";
+import { f5Trace, logF5 } from "./f5-trace";
 
 export type NmgrActor = { id: string; name: string; role: Role; unit: string };
 type PolicyBinding = { policyId: string; policyVersion: string; enabledRuleIds: string[]; enabledRails: string[]; f5?: F5ScannerRef };
 export type NmgrBinding = { draftSyncedAt?: string; f5?: F5Binding; policyId?: string; revision?: number; publishedVersion?: string; ruleIds?: string[]; rails?: string[]; guardrailId?: string; draftRevision?: number; version?: string; publishedRefs?: Record<string, PolicyBinding>; released?: boolean };
-export type NmgrJob = { canCorrect?: boolean; canResume?: boolean; purpose?: "draft-sync"; expectedRevision?: number; f5?: F5Work; actor: string; phase: string; status: "pending" | "failed" | "uncertain" | "done"; started: string; inflight?: boolean; message?: string; runId?: string; dataset?: string; definition?: any; profile?: any };
+export type NmgrJob = { traceId?: string; leaseUntil?: number; canCorrect?: boolean; canResume?: boolean; purpose?: "draft-sync"; expectedRevision?: number; f5?: F5Work; actor: string; phase: string; status: "pending" | "failed" | "uncertain" | "done"; started: string; inflight?: boolean; message?: string; runId?: string; dataset?: string; definition?: any; profile?: any };
 export type NmgrDocument = { revision: number; state: State; requests: Record<string, string>; jobs: Record<string, NmgrJob>; bindings: Record<string, NmgrBinding>; authors: Record<string, string>; requestors: Record<string, string> };
 export interface NmgrPersistence {
   exclusive<T>(fn: () => Promise<T>): Promise<T>;
@@ -33,17 +35,27 @@ function subset(expected: any, actual: any): boolean {
 }
 
 export class NmgrService {
-  constructor(private db: NmgrPersistence, private workspace: string, private f5?: F5Remote) {}
+  constructor(private db: NmgrPersistence, private workspace: string, private f5?: F5Remote, private sourceErrors?: Record<string, { code: string; component: string; message: string; requestId: string; settings: string[] }>) {}
   private get documentId() { return `nmgr:${this.workspace}`; }
   private async load() { return await this.db.readDocument<NmgrDocument>(this.documentId) ?? empty(); }
   private async save(doc: NmgrDocument) { doc.revision++; await this.db.writeDocument(this.documentId, doc); }
   private view(doc: NmgrDocument, actor: NmgrActor) {
     const entities = doc.state.entities.filter(e => scope(e, actor)), ids = new Set(entities.map(e => e.id));
-    return { revision: doc.revision, actor, sources: this.f5 ? ["NeMo", "F5"] : ["NeMo"], state: { entities, audit: doc.state.audit.filter(a => ids.has(a.entity)) },
-      jobs: Object.fromEntries(Object.entries(doc.jobs).filter(([id]) => ids.has(id)).map(([id, job]) => [id, { ...job, canResume: job.purpose === "draft-sync" ? actor.role === "IT Admin" || actor.role === "User" && doc.authors[id] === actor.id : actor.role === "IT Admin" && job.actor === actor.id, definition: undefined, profile: undefined, f5: undefined }])),
+    return { revision: doc.revision, actor, ...(this.sourceErrors ? { sourceErrors: this.sourceErrors } : {}), sources: this.f5 ? ["NeMo", "F5"] : ["NeMo"], state: { entities, audit: doc.state.audit.filter(a => ids.has(a.entity)) },
+      jobs: Object.fromEntries(Object.entries(doc.jobs).filter(([id]) => ids.has(id)).map(([id, job]) => [id, { ...job, canResume: job.purpose === "draft-sync" ? actor.role === "IT Admin" || actor.role === "User" && doc.authors[id] === actor.id : actor.role === "IT Admin" && job.actor === actor.id, definition: undefined, profile: undefined, f5: undefined, leaseUntil: undefined }])),
       bindings: Object.fromEntries(Object.entries(doc.bindings).filter(([key]) => ids.has(key.split("@")[0]!))) };
   }
   async snapshot(actor: NmgrActor) { return this.db.exclusive(async () => this.view(await this.load(), actor)); }
+  async importResources(actor: NmgrActor, remote: NmgrRemote) {
+    const revision = (await this.snapshot(actor)).revision;
+    const resources = await discoverNemo(remote);
+    return this.db.exclusive(async () => {
+      const doc = await this.load();
+      if (doc.revision !== revision) fail(409, "Workspace changed during import. Refresh again to read the latest NeMo resources.");
+      mergeNemo(doc, actor, resources);
+      await this.save(doc); return this.view(doc, actor);
+    });
+  }
   async resourceStatus(actor: NmgrActor, id: string, remote: NmgrRemote) {
     const view = await this.snapshot(actor);
     const entity = view.state.entities.find(e => e.id === id);
@@ -52,16 +64,18 @@ export class NmgrService {
   }
   async command(actor: NmgrActor, raw: unknown, remote: NmgrRemote) {
     const cmd = commandSchema.parse(raw);
-    return this.db.exclusive(async () => {
+    let deferred: { doc: NmgrDocument; id: string; traceId: string; leaseKey: string; recovering: boolean; remoteId?: string | undefined } | undefined;
+    const result = await this.db.exclusive(async () => {
       const doc = await this.load(), requestKey = `${actor.id}:${cmd.requestId}`, fingerprint = createHash("sha256").update(JSON.stringify(cmd)).digest("hex"), priorAudit = [...doc.state.audit];
       if (doc.requests[requestKey]) {
         if (doc.requests[requestKey] !== fingerprint) fail(409, "Idempotency key was already used for different content.");
         return this.view(doc, actor);
       }
-      if (doc.revision !== cmd.expectedRevision) fail(409, "Workspace changed. Refresh and review before retrying.");
+      if (doc.revision !== cmd.expectedRevision) throw new DeploymentError("workspace", "workspace_revision_changed", "Workspace changed. Refresh and review before retrying.", [], 409);
       const id = "draft" in cmd ? cmd.draft.id : cmd.id;
       let e = doc.state.entities.find(e => e.id === id && scope(e, actor));
       if (cmd.type !== "create" && !e) fail(404, "Record not found.");
+      if (e?.imported) fail(403, "This resource is managed in NeMo. Refresh to import its latest changes.");
       const job = doc.jobs[id];
       let syncAfterSave = false;
       if (cmd.type === "advance" || cmd.type === "reconcile") {
@@ -69,6 +83,21 @@ export class NmgrService {
         if (job.status === "done") fail(409, "Operation is already complete.");
         if (cmd.type === "advance" && (job.inflight || job.status === "uncertain")) fail(409, "Remote outcome is uncertain. Reconcile before retrying.");
         if (cmd.type === "advance" && job.status === "failed") fail(409, "Resolve the error and reconcile before continuing.");
+        if (e!.provider === "F5") {
+          if (job.inflight && (job.leaseUntil ?? 0) > Date.now()) fail(409, "F5 operation is still in flight. Wait before reconciling.");
+          // Scanner access lists are shared by Projects, including across workspaces.
+          // Serialize F5 phases per source without holding the NeMo workspace lock.
+          const leaseKey = `nmgr-f5-lease:${e!.sourceInstanceId}`;
+          const lease = await this.db.readDocument<{ traceId: string; until: number }>(leaseKey);
+          if (lease && lease.until > Date.now()) fail(409, "Another F5 operation is in flight. Retry after it completes.");
+          job.traceId = randomUUID(); job.leaseUntil = Date.now() + 120_000; job.inflight = true;
+          await this.db.writeDocument(leaseKey, { traceId: job.traceId, until: job.leaseUntil });
+          doc.requests[requestKey] = fingerprint;
+          this.audit(doc, e!, actor, `${job.phase}: started · Reference: ${job.traceId}`);
+          await this.save(doc);
+          deferred = { doc: structuredClone(doc), id, traceId: job.traceId, leaseKey, recovering: cmd.type === "reconcile", remoteId: cmd.remoteId };
+          return this.view(doc, actor);
+        }
         doc.requests[requestKey] = fingerprint;
         await this.runJob(doc, e!, job, actor, remote, cmd.type === "reconcile", cmd.remoteId);
       } else {
@@ -164,6 +193,32 @@ export class NmgrService {
       }
       return this.view(doc, actor);
     });
+    if (!deferred) return result;
+    const work = deferred;
+    const entity = work.doc.state.entities.find(e => e.id === work.id)!;
+    const job = work.doc.jobs[work.id]!;
+    const phase = job.phase, priorAudit = new Set(work.doc.state.audit.map(a => a.id));
+    // F5 network I/O must never hold the shared workspace lock.
+    await f5Trace.run({ operationId: work.traceId, workspace: this.workspace, actorId: actor.id, resourceId: entity.id, phase }, async () => {
+      logF5("f5_phase_started", { sourceId: this.f5?.sourceId });
+      await this.runJob(work.doc, entity, job, actor, remote, work.recovering, work.remoteId, async () => {});
+      this.audit(work.doc, entity, actor, `${phase}: ${job.status === "pending" ? "completed" : job.status} · Reference: ${work.traceId}`);
+      logF5("f5_phase_remote_completed", { sourceId: this.f5?.sourceId, outcome: job.status, nextPhase: job.phase });
+    });
+    return this.db.exclusive(async () => {
+      const latest = await this.load();
+      const lease = await this.db.readDocument<{ traceId: string; until: number }>(work.leaseKey);
+      if (lease?.traceId !== work.traceId || latest.jobs[work.id]?.traceId !== work.traceId || !latest.jobs[work.id]?.inflight) fail(409, "A newer F5 recovery owns this operation. Refresh the workspace.");
+      latest.state.entities = latest.state.entities.map(e => e.id === work.id ? entity : e);
+      delete job.leaseUntil;
+      latest.jobs[work.id] = job;
+      latest.bindings[keyFor(entity)] = work.doc.bindings[keyFor(entity)]!;
+      latest.state.audit = [...work.doc.state.audit.filter(a => !priorAudit.has(a.id)), ...latest.state.audit];
+      await this.save(latest);
+      await this.db.writeDocument(work.leaseKey, { traceId: work.traceId, until: 0 });
+      logF5("f5_phase_persisted", { operationId: work.traceId, workspace: this.workspace, actorId: actor.id, resourceId: entity.id, phase, outcome: job.status });
+      return this.view(latest, actor);
+    });
   }
   private profileDraft(e: Entity, bindings: PolicyBinding[]) { return { name: `MP ${this.workspace} ${e.id} v${e.version} ${e.name}`.slice(0, 160), draftConfig: { policyBindings: bindings }, runtimeProfile: "auto" }; }
   private queueDraftSync(doc: NmgrDocument, e: Entity, actor: NmgrActor, pinned = false) {
@@ -177,14 +232,19 @@ export class NmgrService {
     } else { job.expectedRevision = binding.draftRevision ?? 0; job.profile = this.profileDraft(e, this.profileBindings(doc, e, pinned)); }
     doc.jobs[e.id] = job;
   }
-  private async runJob(doc: NmgrDocument, e: Entity, job: NmgrJob, actor: NmgrActor, remote: NmgrRemote, recovering: boolean, remoteId?: string) {
+  private async runJob(doc: NmgrDocument, e: Entity, job: NmgrJob, actor: NmgrActor, remote: NmgrRemote, recovering: boolean, remoteId?: string, persist = (value: NmgrDocument) => this.save(value)) {
     const unresolved = !!job.inflight || job.status === "uncertain";
-    job.inflight = true; delete job.canCorrect; await this.save(doc);
+    job.inflight = true; delete job.canCorrect; await persist(doc);
     try {
       const binding = doc.bindings[keyFor(e)]!;
       if (e.provider === "F5") {
         if (!this.f5) fail(503, "F5 is not configured. Restore the connection before continuing.");
-        if (await f5Step(e, binding, job, this.f5, recovering, remoteId) === "released") this.released(doc, e, job, binding);
+        const source = this.f5;
+        const bounded: F5Remote = { ...source, request: (path, method, body) => {
+          if (job.leaseUntil && Date.now() >= job.leaseUntil) throw new DeploymentError("f5", "f5_attempt_expired", "F5 operation lease expired. Reconcile before continuing.", undefined, 503);
+          return source.request(path, method, body);
+        } };
+        if (await f5Step(e, binding, job, bounded, recovering, remoteId) === "released") this.released(doc, e, job, binding);
       } else if (job.purpose === "draft-sync" || ["policy-save", "policy-read"].includes(job.phase)) await nemoDraftStep(e, binding, job, remote, recovering, unresolved, remoteId);
       else await this.step(doc, e, job, remote, recovering);
       job.inflight = false; delete job.message;
@@ -201,7 +261,7 @@ export class NmgrService {
       job.message = `[${failure.code}] ${failure.message} Check: ${failure.settings.join(", ")}. Reference: ${failure.requestId}${failure.details ? `\n${JSON.stringify(failure.details, null, 2)}` : ""}`;
       this.audit(doc, e, actor, `${job.phase}: ${job.status}`);
     }
-    await this.save(doc);
+    await persist(doc);
   }
   private audit(doc: NmgrDocument, e: Entity, actor: NmgrActor, action: string) {
     e.updated = now();

@@ -51,3 +51,23 @@ describe("F5 documented contract", () => {
     expect(() => scanEvidence({ result: { outcome: "cleared", scannerResults: [] } }, scannerId, version, "input", "allow", "case-1")).toThrow();
   });
 });
+
+it("logs successful and failed requests without credentials or content, with a shared trace ID", async () => {
+  const { vi } = await import("vitest");
+  const log = vi.spyOn(console, "info").mockImplementation(() => {});
+  try {
+    const config = f5Configuration({ F5_API_URL: "https://f5.local/backend/v1", F5_API_TOKEN: "private-credential" })!;
+    const calls: RequestInit[] = [];
+    const client = createF5Client(config, async (_, init) => { calls.push(init!); return Response.json({ id: "remote-id" }); });
+    await client.request("/scans", "POST", { input: "sensitive scan text" });
+    const failure = createF5Client(config, async () => Response.json({ message: "private-credential" }, { status: 403 }));
+    await expect(failure.request("/scanners")).rejects.toThrow(/403/);
+    const events = log.mock.calls.map(([value]) => JSON.parse(value));
+    expect(events.filter(e => e.event === "f5_request_completed")).toHaveLength(2);
+    const success = events.find(e => e.event === "f5_request_completed" && e.outcome === "success");
+    expect(success).toMatchObject({ sourceId: config.sourceId, status: 200, durationMs: expect.any(Number), requestId: expect.any(String) });
+    expect(new Headers(calls[0]!.headers).get("x-request-id")).toBe(success.requestId);
+    expect(events.some(e => e.code === "f5_http_403")).toBe(true);
+    expect(JSON.stringify(events)).not.toMatch(/private-credential|sensitive scan text/);
+  } finally { log.mockRestore(); }
+});

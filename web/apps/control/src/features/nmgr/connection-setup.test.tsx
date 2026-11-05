@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -226,4 +227,82 @@ it("keeps fallback and advanced settings on the default V3 route when deployment
   expect(screen.getByLabelText("NeMo URL")).toBeTruthy();
   expect(screen.getByLabelText("Database URL")).toBeTruthy();
   expect(window.location.pathname).toBe("/v3/guardrails");
+  expect(window.location.hash).toBe("#connection");
+});
+
+const workspace = { revision: 0, actor: { id: "demo", name: "Demo identity", role: "User", unit: "ISS" }, state: { entities: [], audit: [] }, jobs: {}, bindings: {} };
+it.each(["nemoToken", "databaseUrl"])("opens setup when runtime responds but %s is missing", async field => {
+  const partial = { ...status, configured: { ...status.configured, [field]: false } };
+  const fetcher = vi.fn(async (path: string) => Response.json(path.includes("marketplace-config") ? { mode: "live", ...partial } : partial));
+  vi.stubGlobal("fetch", fetcher);
+  render(<NmgrMode />);
+  await screen.findByLabelText("NeMo URL");
+  expect(window.location.hash).toBe("#connection");
+  expect(fetcher.mock.calls.some(([path]) => path === "/api/nmgr/workspace")).toBe(false);
+});
+it("hides the settings entry after configuration and opens settings only through its address", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (path: string) => Response.json(
+    path.includes("marketplace-config") ? { mode: "live" } : path === "/api/nmgr/connection" ? status : workspace,
+  )));
+  const page = render(<NmgrMode />);
+  await screen.findByLabelText("Workbench");
+  expect(screen.queryByRole("button", { name: "Connection settings" })).toBeNull();
+  expect(screen.queryByLabelText("NeMo URL")).toBeNull();
+  page.unmount();
+  window.history.replaceState(null, "", "/v3/guardrails?role=user#connection");
+  render(<NmgrMode />);
+  expect(await screen.findByLabelText("NeMo URL")).toBeTruthy();
+  await screen.findByRole("button", { name: "Use deployment settings" });
+  fireEvent.click(screen.getByRole("button", { name: "Save & connect" }));
+  await screen.findByLabelText("Workbench");
+  expect(window.location.hash).toBe("");
+  expect(window.location.search).toBe("?role=user");
+});
+
+it("does not open settings automatically when a configured runtime or backend fails", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", vi.fn(async (path: string) => path === "/api/nmgr/connection"
+    ? Response.json(status)
+    : Response.json({ error: { code: "nemo_token_invalid", message: "Saved token needs attention" } }, { status: 503 })));
+  render(<NmgrMode />);
+  await screen.findByRole("alert");
+  expect(screen.queryByLabelText("NeMo URL")).toBeNull();
+  expect(window.location.hash).toBe("");
+});
+
+it("clears an old runtime error when returning from the settings address after recovery", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  let recovered = false;
+  vi.stubGlobal("fetch", vi.fn(async (path: string) => path.includes("marketplace-config")
+    ? recovered ? Response.json({ mode: "live" }) : Response.json({ error: { message: "Runtime unavailable" } }, { status: 503 })
+    : Response.json(path === "/api/nmgr/connection" ? status : workspace)));
+  render(<NmgrMode />);
+  await screen.findByRole("alert");
+  act(() => { window.location.hash = "connection"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+  await screen.findByLabelText("NeMo URL");
+  recovered = true;
+  act(() => { window.history.replaceState(null, "", "/v3/guardrails"); window.dispatchEvent(new HashChangeEvent("hashchange")); });
+  await screen.findByLabelText("Workbench");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("shows F5 beside NeMo, tests its URL without sending the token, and saves entered settings", async () => {
+  const connected = vi.fn();
+  const fetcher = vi.fn(async (path: string, init?: RequestInit) => Response.json(path.endsWith("/test")
+    ? { message: "F5 reachable", durationMs: 4 } : { ...status, advanced: { f5Mode: "disabled" } }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<ConnectionSetup onConnected={connected} onRetry={() => {}} />);
+  await screen.findByRole("button", { name: "Use deployment settings" });
+  const mode = screen.getByLabelText("F5 integration");
+  expect(mode.closest("details")).toBeNull();
+  fireEvent.change(mode, { target: { value: "enabled" } });
+  fireEvent.change(screen.getByLabelText("F5 URL"), { target: { value: "https://f5.example/backend/v1" } });
+  fireEvent.change(screen.getByLabelText("F5 Token"), { target: { value: "private-f5-token" } });
+  expect((screen.getByLabelText("F5 Token") as HTMLInputElement).type).toBe("password");
+  fireEvent.click(screen.getByRole("button", { name: "Test F5 URL" }));
+  await screen.findByText(/F5 reachable/);
+  expect(JSON.parse(String(fetcher.mock.calls.find(([path]) => path.endsWith("/test"))?.[1]?.body))).toEqual({ target: "f5Url", settings: { f5Url: "https://f5.example/backend/v1", f5Mode: "enabled" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save & connect" }));
+  await waitFor(() => expect(connected).toHaveBeenCalledOnce());
+  expect(JSON.parse(String(fetcher.mock.calls.find(([path, init]) => path === "/api/nmgr/connection" && init?.method === "POST")?.[1]?.body))).toEqual({ f5Url: "https://f5.example/backend/v1", f5Token: "private-f5-token", f5Mode: "enabled" });
 });

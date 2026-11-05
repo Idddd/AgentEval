@@ -10,10 +10,14 @@ const db = vi.hoisted(() => ({
 vi.mock("./storage/database", () => ({ openDatabase: async () => db }));
 import { ConnectionStore } from "./nmgr-connection-store";
 import {
-  connectionApi,
-  nmgrRequest,
-  v3RuntimeResponse,
+  connectionApi as handleConnectionApi,
+  nmgrRequest as handleNmgrRequest,
+  v3RuntimeResponse as handleV3RuntimeResponse,
 } from "./nmgr-connection-api";
+import { assertOpenApiResponse, assertOpenApiSchema } from "./test-utils/openapi";
+async function connectionApi(...args: Parameters<typeof handleConnectionApi>) { const response = await handleConnectionApi(...args); await assertOpenApiResponse(args[0], response); return response; }
+async function nmgrRequest(...args: Parameters<typeof handleNmgrRequest>) { const response = await handleNmgrRequest(...args); await assertOpenApiResponse(args[0], response); return response; }
+async function v3RuntimeResponse(...args: Parameters<typeof handleV3RuntimeResponse>) { const response = await handleV3RuntimeResponse(...args); assertOpenApiSchema(response.ok ? "RuntimeStatus" : "ErrorResponse", await response.clone().json()); return response; }
 const env = {
   GUARD_API_URL: "https://nemo.private/api/v1",
   GUARD_API_TOKEN: "secret-business-token",

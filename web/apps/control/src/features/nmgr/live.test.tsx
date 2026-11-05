@@ -11,7 +11,7 @@ const liveEntity = (id: string, kind: Entity["kind"], patch: Partial<Entity> = {
 });
 function serveWorkspace(entities: Entity[], role: Role = "User", bindings: Record<string, NmgrBinding> = {}) {
   const snapshot = { revision: 1, actor: { id: "u", name: "Configured Author", role, unit: "ISS" }, state: { entities, audit: [] }, jobs: {}, bindings };
-  const fetcher = vi.fn(async (url: string) => url === "/api/marketplace-config?workspace=v3" ? Response.json({ mode: "live" }) : Response.json(snapshot));
+  const fetcher = vi.fn(async (url: string, _init?: RequestInit) => url === "/api/marketplace-config?workspace=v3" ? Response.json({ mode: "live" }) : Response.json(snapshot));
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 }
@@ -21,6 +21,25 @@ beforeEach(() => {
   window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener() {}, removeEventListener() {} });
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+it("automatically imports and displays externally managed resources without edit or release actions", async () => {
+  const imported = { remoteId: "nemo-policy", available: true, checkedAt: "2026-11-05T00:00:00Z", policyBindings: [] };
+  const fetcher = serveWorkspace([liveEntity("imported-policy", "Guardrail", { imported })]);
+  render(<NmgrMode />);
+  fireEvent.click(await screen.findByRole("button", { name: "imported-policy" }));
+  expect(fetcher.mock.calls.some(([url, init]) => url === "/api/nmgr/workspace" && new Headers((init as RequestInit)?.headers).get("X-Marketplace-Import") === "true")).toBe(true);
+  expect(screen.getByText(/Managed in NeMo/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Create revision" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Edit requirements" })).toBeNull();
+  expect(screen.queryByText(/NeMo draft sync:/)).toBeNull();
+});
+it("keeps existing records visible with an import error when discovery fails", async () => {
+  const fetcher = serveWorkspace([liveEntity("saved-policy", "Guardrail")]);
+  const original = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation(async (url, init?: RequestInit) => new Headers(init?.headers).get("X-Marketplace-Import") === "true" ? Response.json({ error: { message: "NeMo catalog denied", code: "nemo_http_403" } }, { status: 503 }) : original(url));
+  render(<NmgrMode />);
+  expect(await screen.findByRole("button", { name: "saved-policy" })).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain("NeMo import failed");
+});
 it("renders the shared dashboard with zero disconnected metrics, real released counts, and working create navigation", async () => {
   serveWorkspace([liveEntity("published-control", "Guardrail"), liveEntity("draft-control", "Guardrail", { deployed: null, status: "DRAFT" }), liveEntity("published-profile", "Profile", { refs: ["published-control"], deployedRefs: ["published-control"] })]);
   render(<NmgrMode />);
@@ -113,15 +132,16 @@ it("enters the local workspace without asking for credentials or sending stored 
   expect(screen.getByText(/Local test identity/)).toBeTruthy();
 });
 it("shows backend configuration errors without offering a credential form", async () => {
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => url === "/api/marketplace-config?workspace=v3" ? Response.json({ mode: "live" }) : Response.json({ error: { message: "Configure the NeMo username and password on the Marketplace server." } }, { status: 503 })));
+  vi.stubGlobal("fetch", vi.fn(async (url: string, _init?: RequestInit) => url === "/api/marketplace-config?workspace=v3" ? Response.json({ mode: "live" }) : Response.json({ error: { message: "Configure the NeMo username and password on the Marketplace server." } }, { status: 503 })));
   render(<NmgrMode />);
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Retry connection" })).toBeTruthy();
   expect(screen.queryByLabelText("Password")).toBeNull();
+  expect(screen.queryByLabelText("NeMo URL")).toBeNull();
 });
 it("actively queries backend status on click and shows missing resources without deleting the row", async () => {
   const snapshot = { revision: 2, actor: { id: "u", name: "Author", role: "User", unit: "ISS" }, state: { entities: [{ id: "control", name: "Existing control", provider: "NeMo", kind: "Guardrail", status: "TEST PASSED", version: 1, unit: "ISS", updated: "2026-10-21T00:00:00Z" }], audit: [] }, jobs: {}, bindings: {} };
-  const fetcher = vi.fn(async (url: string) => url === "/api/marketplace-config?workspace=v3" ? Response.json({ mode: "live" }) : url.includes("?resource=") ? Response.json({ id: "control", revision: 2, status: "missing", message: "Not found in backend", checkedAt: "2026-10-21T00:01:00Z" }) : Response.json(snapshot));
+  const fetcher = vi.fn(async (url: string, _init?: RequestInit) => url === "/api/marketplace-config?workspace=v3" ? Response.json({ mode: "live" }) : url.includes("?resource=") ? Response.json({ id: "control", revision: 2, status: "missing", message: "Not found in backend", checkedAt: "2026-10-21T00:01:00Z" }) : Response.json(snapshot));
   vi.stubGlobal("fetch", fetcher); render(<NmgrMode demo={<p>Demo</p>} />);
   expect(await screen.findByText("Existing control")).toBeTruthy();
   expect(fetcher.mock.calls.some(([url]) => url.includes("?resource="))).toBe(false);
@@ -133,7 +153,7 @@ it("actively queries backend status on click and shows missing resources without
 it("clears old observations on a failed refresh and rejects results from a different revision", async () => {
   const snapshot = { revision: 2, actor: { id: "u", name: "Author", role: "User", unit: "ISS" }, state: { entities: [{ id: "control", name: "Existing control", kind: "Guardrail", status: "TEST PASSED", version: 1, updated: "2026-10-21T00:00:00Z" }], audit: [] }, jobs: {}, bindings: {} };
   let mode = "ok";
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string, _init?: RequestInit) => {
     if (url === "/api/marketplace-config?workspace=v3") return Response.json({ mode: "live" });
     if (url.includes("?resource=")) { if (mode === "fail") throw new Error("offline"); return Response.json({ id: "control", revision: mode === "stale" ? 3 : 2, status: "available", message: "Backend resource readable", checkedAt: "2026-10-21T00:01:00Z" }); }
     return Response.json(snapshot);
@@ -162,7 +182,7 @@ it("never silently switches the real V2 entry to mock data", async () => {
 });
 it("shows draft sync failures and lets the authorized author reconcile", async () => {
   const snapshot = { revision: 2, actor: { id: "u", name: "Author", role: "User", unit: "ISS" }, state: { entities: [{ id: "control", name: "Unsynced control", provider: "NeMo", kind: "Guardrail", status: "DRAFT", version: 1, unit: "ISS", runs: [], refs: [], updated: "2026-10-21T00:00:00Z" }], audit: [] }, jobs: { control: { actor: "u", canResume: true, purpose: "draft-sync", status: "uncertain", phase: "sync-profile-save", message: "Response lost" } }, bindings: {} };
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => url === "/api/marketplace-config?workspace=v3" ? Response.json({ mode: "live" }) : Response.json(snapshot)));
+  vi.stubGlobal("fetch", vi.fn(async (url: string, _init?: RequestInit) => url === "/api/marketplace-config?workspace=v3" ? Response.json({ mode: "live" }) : Response.json(snapshot)));
   render(<NmgrMode demo={<p>Demo</p>} />);
   fireEvent.click(await screen.findByText("Unsynced control"));
   expect(await screen.findByText("NeMo draft sync: outcome needs verification")).toBeTruthy();
@@ -205,7 +225,7 @@ it.each(["Guardrail", "Profile"] as const)("creates %s with a hidden stable ID a
 });
 it("lets Tech correct a definitely rejected draft configuration", async () => {
   const snapshot = { revision: 2, actor: { id: "tech", name: "Tech", role: "IT Admin", unit: "ISS" }, state: { entities: [{ id: "control", name: "Rejected control", provider: "NeMo", kind: "Guardrail", status: "DRAFT", version: 1, unit: "ISS", runs: [], refs: [], updated: "2026-10-21T00:00:00Z" }], audit: [] }, jobs: { control: { actor: "tech", canResume: true, canCorrect: true, purpose: "draft-sync", status: "failed", phase: "sync-policy-save" } }, bindings: {} };
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => url === "/api/marketplace-config?workspace=v3" ? Response.json({ mode: "live" }) : Response.json(snapshot)));
+  vi.stubGlobal("fetch", vi.fn(async (url: string, _init?: RequestInit) => url === "/api/marketplace-config?workspace=v3" ? Response.json({ mode: "live" }) : Response.json(snapshot)));
   render(<NmgrMode />);
   fireEvent.click(await screen.findByText("Rejected control"));
   expect(await screen.findByRole("button", { name: "Save implementation" })).toBeTruthy();
@@ -243,4 +263,45 @@ it("keeps source selection out of User requests even when F5 is configured", asy
   fireEvent.change(screen.getByLabelText("Control intent"), { target: { value: "Block secrets" } });
   fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
   await waitFor(() => expect(sent?.draft).toBeTruthy()); expect(sent.draft).not.toHaveProperty("provider");
+});
+
+it("shows an F5 configuration error with a trace reference while keeping NeMo usable", async () => {
+  const fetcher = serveWorkspace([liveEntity("nemo-policy", "Guardrail")]);
+  const original = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation(async (url, init) => {
+    const response = await original(url, init);
+    if (url !== "/api/nmgr/workspace") return response;
+    return Response.json({ ...await response.json(), sourceErrors: { F5: { code: "f5_config_invalid", message: "Check F5 URL and Token", requestId: "f5-reference" } } });
+  });
+  render(<NmgrMode />);
+  expect(await screen.findByRole("button", { name: "nemo-policy" })).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain("f5-reference");
+  fireEvent.click(screen.getByRole("button", { name: "Create Guardrail" }));
+  expect(screen.getByLabelText("Name")).toBeTruthy();
+});
+
+it.each([false, true])("retries an F5-only revision conflict only if NeMo state is unchanged (changed=%s)", async changed => {
+  const entity = liveEntity("nemo-control", "Guardrail", { status: "DRAFT", deployed: null });
+  const base = { revision: 1, sources: ["NeMo", "F5"], actor: { id: "u", name: "Author", role: "User", unit: "ISS" }, state: { entities: [entity], audit: [] }, jobs: {}, bindings: {} };
+  let attempts = 0;
+  const latest = { ...base, revision: 2, state: { ...base.state, entities: changed ? [{ ...entity, name: "Changed remotely" }] : base.state.entities } };
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/api/marketplace-config?workspace=v3") return Response.json({ mode: "live" });
+    if (url === "/api/nmgr/commands") {
+      attempts++;
+      if (attempts === 1) return Response.json({ error: { code: "workspace_revision_changed", message: "Workspace changed" } }, { status: 409 });
+      expect(JSON.parse(init!.body as string).expectedRevision).toBe(2);
+      return Response.json({ ...latest, revision: 3 });
+    }
+    return Response.json(attempts ? latest : base);
+  }));
+  render(<NmgrMode />);
+  fireEvent.click(await screen.findByRole("button", { name: "Create Guardrail" }));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New NeMo control" } });
+  fireEvent.change(screen.getByLabelText("Control intent"), { target: { value: "Block secrets" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+  if (changed) {
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Workspace changed"));
+    expect(attempts).toBe(1);
+  } else await waitFor(() => expect(attempts).toBe(2));
 });

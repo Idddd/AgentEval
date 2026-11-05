@@ -32,6 +32,7 @@ export type Run = {
   cases: number;
 };
 export type Entity = {
+  imported?: { remoteId: string; available: boolean; publishedVersion?: string; bindable?: boolean; checkedAt: string; policyBindings: Array<{ policyId: string; policyVersion: string; enabledRuleIds: string[]; enabledRails: string[] }> };
   sourcePending?: boolean;
   sourceInstanceId?: string;
   provider?: "NeMo" | "F5";

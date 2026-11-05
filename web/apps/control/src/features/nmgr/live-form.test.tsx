@@ -7,6 +7,12 @@ import type { Entity, Kind, State } from "./model";
 afterEach(cleanup);
 const state: State = { entities: [], audit: [] };
 const props = { state, sources: ["NeMo"] as Array<"NeMo" | "F5">, controlUnit: "ISS", busy: false, onCancel: () => {} };
+it("shows the NeMo published version rather than the internal revision in the Profile picker", () => {
+  const guard = { id: "imported", kind: "Guardrail", unit: "ISS", custodian: "—", approver: "—", mandatory: false, status: "DEPLOYED", version: 1, updated: "2026-11-05", policies: [], refs: [], deployedRefs: [], attributes: { bu: "", agent: "", data: "" }, runs: [], mode: "Normal", threshold: 0, name: "Imported Policy", description: "Real control", deployed: 1, provider: "NeMo", location: "—", imported: { remoteId: "policy", available: true, bindable: true, publishedVersion: "2026.09", checkedAt: "2026-11-05", policyBindings: [] } } as Entity;
+  render(<LiveForm {...props} state={{ entities: [guard], audit: [] }} kind="Profile" mode="create" onSave={async () => {}} />);
+  expect(screen.getByText(/Published 2026.09/)).toBeTruthy();
+  expect(screen.queryByText(/Published v1/)).toBeNull();
+});
 it.each(["Guardrail", "Profile"] as Kind[])("does not let User choose or submit a Source for %s", kind => {
   const onSave = vi.fn(async (_draft: ReturnType<typeof toDraft>) => {});
   render(<LiveForm {...props} sources={["NeMo", "F5"]} kind={kind} mode="create" onSave={onSave} />);

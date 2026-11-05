@@ -23,6 +23,23 @@
   display: grid;
   gap: 16px;
 }
+.nm-connection-group {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 16px;
+}
+.nm-connection-group legend {
+  padding: 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.nm-connection-login .nm-live-panel .nm-connection-group > p {
+  margin: 0;
+  font-size: 12px;
+}
 .nm-connection-login .nm-live-panel {
   gap: 16px;
 }

@@ -1,8 +1,9 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { StoreError } from "./marketplace-db";
 import { DeploymentError, upstreamFailure } from "./diagnostics";
+import { logF5 } from "./f5-trace";
 import type { UnifiedConfig } from "../src/features/business-demo/evaluation";
 
 export type F5Configuration = { base: string; token: string; sourceId: string; adminIds: string[] };
@@ -24,14 +25,28 @@ export function f5Configuration(env: NodeJS.ProcessEnv): F5Configuration | undef
 export function createF5Client(config: F5Configuration, fetcher: typeof fetch = fetch): F5Remote {
   return { sourceId: config.sourceId, adminIds: config.adminIds, async request(path, method = "GET", body) {
     if (!/^\/(scanners|projects|scans)(?:\/|\?|$)/.test(path) || /[\\#]/.test(path) || path.includes("..")) throw new StoreError(422, "Invalid F5 resource path.");
-    let response: Response;
-    try { response = await fetcher(`${config.base}${path}`, { method, redirect: "manual", signal: AbortSignal.timeout(20_000),
-      headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }) }); }
-    catch (error) { throw new DeploymentError("f5", "f5_unreachable", "F5 connection failed or timed out. Check URL, DNS, network and TLS CA. Reconcile before retrying a write.", undefined, 502, error); }
-    if (!response.ok) throw await upstreamFailure("f5", `f5_http_${response.status}`, `F5 request failed (${response.status}). Check permissions, configuration and backend logs.`, response);
-    if (!response.headers.get("content-type")?.includes("application/json")) throw await upstreamFailure("f5", "f5_response_invalid", "F5 returned an incompatible response. Check F5_API_URL, gateway routing and API compatibility.", response);
-    try { return await response.json(); } catch { throw new DeploymentError("f5", "f5_response_invalid", "F5 returned invalid JSON.", undefined, 502); }
+    const requestId = randomUUID(), started = Date.now();
+    const metadata = { requestId, sourceId: config.sourceId, method, path: path.split("?")[0] };
+    logF5("f5_request_started", metadata);
+    let status: number | undefined;
+    try {
+      let response: Response;
+      try { response = await fetcher(`${config.base}${path}`, { method, redirect: "manual", signal: AbortSignal.timeout(20_000),
+        headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json", "X-Request-ID": requestId, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }) }); }
+      catch (error) { throw new DeploymentError("f5", "f5_unreachable", "F5 connection failed or timed out. Check URL, DNS, network and TLS CA. Reconcile before retrying a write.", undefined, 502, error); }
+      status = response.status;
+      if (!response.ok) throw await upstreamFailure("f5", `f5_http_${response.status}`, `F5 request failed (${response.status}). Check permissions, configuration and backend logs.`, response);
+      if (!response.headers.get("content-type")?.includes("application/json")) throw await upstreamFailure("f5", "f5_response_invalid", "F5 returned an incompatible response. Check F5_API_URL, gateway routing and API compatibility.", response);
+      let result: unknown;
+      try { result = await response.json(); } catch { throw new DeploymentError("f5", "f5_response_invalid", "F5 returned invalid JSON or the response body timed out. Reconcile before retrying a write.", undefined, 502); }
+      logF5("f5_request_completed", { ...metadata, status, durationMs: Date.now() - started, outcome: "success" });
+      return result;
+    } catch (error) {
+      logF5("f5_request_completed", { ...metadata, status, durationMs: Date.now() - started, outcome: "error",
+        code: error instanceof DeploymentError ? error.code : "f5_unavailable", errorReference: error instanceof DeploymentError ? error.requestId : undefined });
+      throw error;
+    }
   } };
 }
 export function scannerBody(name: string, config: UnifiedConfig) {
@@ -54,4 +69,11 @@ export function scanEvidence(raw: any, scannerId: string, version: string, phase
   if (matches.length !== 1 || match?.scannerVersionMeta?.id !== version || !["passed", "failed"].includes(match.outcome)) throw new StoreError(409, "F5 scan evidence is missing or does not match the exact Scanner version and direction.");
   const actualDecision = match.outcome === "passed" ? "allow" : "block";
   return { caseId, passed: actualDecision === expected, actualDecision, scannerId, version, scanDirection: direction, scanId: typeof raw.id === "string" ? raw.id : null };
+}
+
+/** A successful HTTP response alone does not establish vendor API compatibility. */
+export async function probeF5(remote: F5Remote) {
+  const result = await remote.request("/scanners");
+  if (!result || !Array.isArray(result.scanners) || result.scanners.some((item: any) => !item || typeof item.id !== "string" || typeof item.name !== "string"))
+    throw new DeploymentError("f5", "f5_catalog_invalid", "F5 scanner list is incompatible. Check the /backend/v1 URL, gateway routing and F5 API version.", undefined, 502);
 }

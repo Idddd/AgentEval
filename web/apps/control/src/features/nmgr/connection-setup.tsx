@@ -20,7 +20,7 @@ const probeFields: Record<Probe, Array<Field | Option>> = {
   nemoUrl: ["nemoUrl", "nemoTls", "caMode", "caPem"],
   nemoToken: ["nemoUrl", "nemoToken", "nemoTls", "caMode", "caPem"],
   databaseUrl: ["databaseUrl", "databaseTls", "caMode", "caPem"],
-  f5Url: ["f5Url", "f5Token", "f5Mode", "caMode", "caPem"],
+  f5Url: ["f5Url", "f5Mode", "caMode", "caPem"],
   f5Token: ["f5Url", "f5Token", "f5Mode", "caMode", "caPem"],
 };
 type Status = {
@@ -263,20 +263,36 @@ export function ConnectionSetup({
           }}
           autoComplete="off"
         >
-          {field("nemoUrl")}
-          {choice("nemoTls", "NeMo certificate verification", [
-            ["skip", "Skip verification (demo default)"],
-            ["verify", "Verify certificate"],
-          ])}
-          {field("nemoToken")}
-          {field("databaseUrl")}
+          <fieldset className="nm-connection-group">
+            <legend>NeMo connection</legend>
+            {field("nemoUrl")}
+            {choice("nemoTls", "NeMo certificate verification", [
+              ["skip", "Skip verification (demo default)"],
+              ["verify", "Verify certificate"],
+            ])}
+            {field("nemoToken")}
+          </fieldset>
+          <fieldset className="nm-connection-group">
+            <legend>F5 connection</legend>
+            {choice("f5Mode", "F5 integration", [
+              ["disabled", "Disabled — NeMo only"],
+              ["enabled", "Enabled"],
+            ])}
+            {f5Mode === "enabled" ? <>
+              {field("f5Url")}
+              {field("f5Token")}
+              {field("f5AdminIds")}
+            </> : <p className="nm-muted">Enable F5 to configure its URL and API token.</p>}
+          </fieldset>
+          <fieldset className="nm-connection-group">
+            <legend>Database connection</legend>
+            {field("databaseUrl")}
+          </fieldset>
           <details className="nm-connection-advanced">
             <summary>Advanced settings (optional)</summary>
             <div className="nm-connection-form">
               <p className="nm-muted">
-                The three connection fields above are sufficient by default.
-                Change these only for your environment or to repair deployment
-                settings.
+                Configure workspace identity and trusted certificates for your environment.
               </p>
               {field("workspaceId")}
               {choice("databaseTls", "Database TLS", [
@@ -288,17 +304,6 @@ export function ConnectionSetup({
                 ["custom", "Add a trusted CA certificate"],
               ])}
               {caMode === "custom" && field("caPem")}
-              {choice("f5Mode", "F5 integration", [
-                ["disabled", "Disabled — NeMo only"],
-                ["enabled", "Enabled"],
-              ])}
-              {f5Mode === "enabled" && (
-                <>
-                  {field("f5Url")}
-                  {field("f5Token")}
-                  {field("f5AdminIds")}
-                </>
-              )}
             </div>
           </details>
           <p className="nm-connection-note nm-muted">

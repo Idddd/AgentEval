@@ -25,6 +25,7 @@ export function Measure({
   role,
   onPolicyAdjustment,
   onDashboard,
+  onBypass,
   center = "overview",
   onCenter,
   initialBusinessView = "activity",
@@ -33,6 +34,7 @@ export function Measure({
   role: Role;
   onPolicyAdjustment?: () => void;
   onDashboard?: () => void;
+  onBypass?: () => void;
   center?: MeasureCenter;
   onCenter?: (center: MeasureCenter) => void;
   initialBusinessView?: "scans" | "activity";
@@ -118,7 +120,7 @@ export function Measure({
           change={change}
           error={error}
           clearError={() => setError("")}
-          {...(onDashboard ? { onDashboard } : {})}
+          {...(onBypass ? { onBypass } : {})}
         />
       ) : (
         <BusinessMeasure

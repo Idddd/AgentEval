@@ -28,3 +28,17 @@ it("omits driver SQL and parameters while preserving the failure code", async ()
     expect(JSON.stringify([body, log.mock.calls])).not.toMatch(/INSERT INTO|private-business-payload/);
   });
 });
+
+it("never logs F5 scan content echoed by an upstream error or nested cause", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  await withConnectionDiagnostics({ MARKETPLACE_V3_DEMO: "true", MARKETPLACE_NEMO_TLS: "skip" }, "job.f5-scan", async () => {
+    const failure = await upstreamFailure("f5", "f5_http_422", "F5 request rejected", Response.json({ error: { code: "validation_error", message: "customer-private-scan-text" } }, { status: 422 }));
+    failure.cause = Object.assign(new Error("nested-private-scan-text"), { code: "DEPTH_ZERO_SELF_SIGNED_CERT" });
+    const response = diagnosticResponse(failure, "f5", "job.f5-scan", "Failed");
+    const body = await response.json();
+    expect(body.error.details.httpStatus).toBe(422);
+    expect(body.error.details.certificateVerification).toBe("F5 enabled");
+    expect(JSON.stringify([body, log.mock.calls])).not.toMatch(/customer-private-scan-text|nested-private-scan-text|skip verification/);
+    expect(body.error.details.hints.join(" ")).toContain("trusted CA");
+  });
+});

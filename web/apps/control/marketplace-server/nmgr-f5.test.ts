@@ -1,3 +1,4 @@
+import { assertOpenApiSchema } from "./test-utils/openapi";
 import { describe, expect, it } from "vitest";
 import { NmgrService, type NmgrDocument, type NmgrPersistence, type NmgrActor } from "./nmgr";
 import type { F5Remote } from "./f5-client";
@@ -7,8 +8,8 @@ const approver: NmgrActor = { id: "approver", name: "Reviewer", role: "User Admi
 const draft = { id: "f5-control", kind: "Guardrail", name: "F5 Control", description: "Block secrets", location: "ALL", mandatory: false, refs: [], attributes: { bu: "", agent: "", data: "" }, threshold: 5 };
 const config = { scannerType: "keyword", direction: "request", content: "secret", versionName: "v1", versionDescription: "review" };
 function fixture() {
-  let saved: NmgrDocument | undefined;
-  const db: NmgrPersistence = { exclusive: fn => fn(), readDocument: async <T>() => structuredClone(saved) as T | undefined, writeDocument: async (_, value) => { saved = structuredClone(value as NmgrDocument); } };
+  const saved = new Map<string, unknown>();
+  const db: NmgrPersistence = { exclusive: fn => fn(), readDocument: async <T>(id: string) => structuredClone(saved.get(id)) as T | undefined, writeDocument: async (id, value) => { saved.set(id, structuredClone(value)); } };
   const calls: { path: string; method: string; body: any }[] = [];
   const scanners = new Map<string, any>(), projects = new Map<string, any>();
   let lostCreate = false, wrongVersion = false;
@@ -36,7 +37,7 @@ function fixture() {
   } };
   const nemo = { request: async (): Promise<any> => { throw new Error("F5 must not call NeMo resources"); } };
   const service = new NmgrService(db, "test", f5);
-  const cmd = async (actor: NmgrActor, input: Record<string, unknown>) => service.command(actor, { requestId: crypto.randomUUID(), expectedRevision: (await service.snapshot(actor)).revision, ...input }, nemo);
+  const cmd = async (actor: NmgrActor, input: Record<string, unknown>) => { const result = await service.command(actor, { requestId: crypto.randomUUID(), expectedRevision: (await service.snapshot(actor)).revision, ...input }, nemo); assertOpenApiSchema("Workspace", result); return result; };
   const advance = async (id = draft.id) => {
     for (let i = 0; i < 30; i++) { const s = await service.snapshot(tech); if (s.jobs[id]?.status !== "pending") return s; await cmd(tech, { type: "advance", id }); }
     throw new Error("workflow did not terminate");
@@ -124,4 +125,101 @@ describe("V2 F5 lifecycle", () => {
     await f.cmd(tech, { type: "action", id: draft.id, action: "implement", provider: "F5", config: { ...config, scannerType: "regex", content } });
     expect((await f.service.snapshot(tech)).state.entities[0]?.config?.content).toBe(content);
   });
+});
+
+it("releases the workspace lock while F5 is stalled and preserves concurrent NeMo edits", async () => {
+  const f = fixture();
+  let tail = Promise.resolve();
+  f.db.exclusive = async fn => {
+    const previous = tail;
+    let release!: () => void;
+    tail = new Promise<void>(resolve => { release = resolve; });
+    await previous;
+    try { return await fn(); } finally { release(); }
+  };
+  await f.cmd(user, { type: "create", draft });
+  await f.cmd(tech, { type: "action", id: draft.id, action: "implement", provider: "F5", config });
+  await f.cmd(tech, { type: "evaluate", id: draft.id, dataset: "test", cases: [{ input: "secret", expected: "block", phase: "input" }] });
+  let started!: () => void, fail!: () => void;
+  const entered = new Promise<void>(resolve => { started = resolve; });
+  const blocked = new Promise<void>(resolve => { fail = resolve; });
+  f.f5.request = async () => { started(); await blocked; throw new Error("unavailable"); };
+  const advancing = f.cmd(tech, { type: "advance", id: draft.id });
+  await entered;
+  try {
+    const other = await Promise.race([
+      f.cmd(user, { type: "create", draft: { ...draft, id: "nemo-concurrent" } }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("F5 blocked NeMo")), 200)),
+    ]);
+    expect(other.state.entities.some(e => e.id === "nemo-concurrent")).toBe(true);
+    await expect(f.cmd(tech, { type: "reconcile", id: draft.id })).rejects.toThrow(/in flight/i);
+  } finally { fail(); await advancing; }
+  const final = await f.service.snapshot(tech);
+  expect(final.state.entities.some(e => e.id === "nemo-concurrent")).toBe(true);
+  expect(final.jobs[draft.id]?.status).toBe("uncertain");
+  expect(final.jobs[draft.id]?.traceId).toEqual(expect.any(String));
+  expect(final.state.audit.some(a => a.action.includes(final.jobs[draft.id]!.traceId!))).toBe(true);
+});
+
+it.each([401, 403, 500, 503])("preserves NeMo access when F5 returns HTTP %s", async status => {
+  const f = fixture();
+  await f.cmd(user, { type: "create", draft });
+  await f.cmd(tech, { type: "action", id: draft.id, action: "implement", provider: "F5", config });
+  await f.cmd(tech, { type: "evaluate", id: draft.id, dataset: "test", cases: [{ input: "secret", expected: "block", phase: "input" }] });
+  const { DeploymentError } = await import("./diagnostics");
+  f.f5.request = async () => { throw new DeploymentError("f5", `f5_http_${status}`, `F5 HTTP ${status}`, undefined, status); };
+  const failed = await f.cmd(tech, { type: "advance", id: draft.id });
+  expect(failed.jobs[draft.id]?.message).toContain(`f5_http_${status}`);
+  const nemo = await f.cmd(user, { type: "create", draft: { ...draft, id: `nemo-after-${status}` } });
+  expect(nemo.state.entities.find(e => e.id === `nemo-after-${status}`)?.provider).toBe("NeMo");
+});
+
+it("fences late F5 completions after recovery acquires an expired lease", async () => {
+  const f = fixture();
+  await f.cmd(user, { type: "create", draft });
+  await f.cmd(tech, { type: "action", id: draft.id, action: "implement", provider: "F5", config });
+  await f.cmd(tech, { type: "evaluate", id: draft.id, dataset: "test", cases: [{ input: "secret", expected: "block", phase: "input" }] });
+  let enter!: () => void, release!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const original = f.f5.request;
+  f.f5.request = async (path, method, body) => { if (method === "POST") { enter(); await gate; } return original(path, method, body); };
+  const stale = f.cmd(tech, { type: "advance", id: draft.id });
+  await entered;
+  const doc = (await f.db.readDocument<NmgrDocument>("nmgr:test"))!;
+  doc.jobs[draft.id]!.leaseUntil = 1;
+  await f.db.writeDocument("nmgr-f5-lease:f5-instance", { traceId: doc.jobs[draft.id]!.traceId, until: 1 });
+  await f.db.writeDocument("nmgr:test", doc);
+  const recovery = await f.cmd(tech, { type: "reconcile", id: draft.id });
+  const trace = recovery.jobs[draft.id]!.traceId;
+  release();
+  await expect(stale).rejects.toThrow(/newer F5 recovery/);
+  const final = await f.service.snapshot(tech);
+  expect(final.jobs[draft.id]!.traceId).toBe(trace);
+  expect(final.jobs[draft.id]!.status).toBe("uncertain");
+  expect(final.bindings[`${draft.id}@1`]!.f5!.scannerId).toBeUndefined();
+  expect(f.calls.filter(c => c.method === "POST" && c.path === "/scanners")).toHaveLength(1);
+});
+
+it("coordinates shared Scanner access across F5 jobs without blocking NeMo", async () => {
+  const f = fixture();
+  for (const id of [draft.id, "f5-second"]) {
+    await f.cmd(user, { type: "create", draft: { ...draft, id } });
+    await f.cmd(tech, { type: "action", id, action: "implement", provider: "F5", config });
+    await f.cmd(tech, { type: "evaluate", id, dataset: "test", cases: [{ input: "secret", expected: "block", phase: "input" }] });
+  }
+  let enter!: () => void, release!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const original = f.f5.request;
+  f.f5.request = async (path, method, body) => { enter(); await gate; return original(path, method, body); };
+  const first = f.cmd(tech, { type: "advance", id: draft.id });
+  await entered;
+  try {
+    await expect(f.cmd(tech, { type: "advance", id: "f5-second" })).rejects.toThrow(/Another F5 operation/);
+    await f.cmd(user, { type: "create", draft: { ...draft, id: "nemo-while-f5" } });
+    expect(f.calls).toHaveLength(0);
+  } finally { release(); await first; }
+  await f.cmd(tech, { type: "advance", id: "f5-second" });
+  expect(f.calls.filter(c => c.path === "/scanners" && c.method === "POST")).toHaveLength(2);
 });

@@ -1,3 +1,4 @@
+import { f5Trace } from "./f5-trace";
 import { randomUUID } from "node:crypto";
 import { StoreError } from "./marketplace-db";
 import { connectionErrorDetails } from "./connection-diagnostics";
@@ -62,9 +63,9 @@ export function reportFailure(error: unknown, component: Component, operation: s
   const failure = categorized instanceof DeploymentError ? categorized : new DeploymentError(component,
     error instanceof StoreError ? `${component}_${error.status}` : `${component}_unavailable`,
     error instanceof StoreError && !["nemo", "f5"].includes(component) ? error.message : fallback, componentSettings[component], error instanceof StoreError ? error.status : 503);
-  const details = connectionErrorDetails(error);
+  const details = connectionErrorDetails(error, failure.component === "f5");
   const metadata = { code: failure.code, component: failure.component, settings: failure.settings, requestId: failure.requestId, ...(details ? { details } : {}) };
-  console.error(JSON.stringify({ time: new Date().toISOString(), level: "error", service: "marketplace", event: "dependency_failure", operation, status: failure.status, ...metadata }));
+  console.error(JSON.stringify({ time: new Date().toISOString(), level: "error", service: "marketplace", event: "dependency_failure", ...(failure.component === "f5" ? f5Trace.getStore() : {}), operation, status: failure.status, ...metadata }));
   return { ...metadata, message: failure.message, status: failure.status };
 }
 export function diagnosticResponse(error: unknown, component: Component, operation: string, fallback: string) {
