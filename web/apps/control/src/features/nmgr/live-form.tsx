@@ -8,17 +8,18 @@ export function toDraft(e: Entity) {
   return { id: e.id, kind: e.kind, name: e.name, description: e.description, location: e.location, mandatory: e.mandatory, refs: e.refs, attributes: e.attributes, threshold: e.threshold };
 }
 
-export function LiveForm({ kind, initial, mode, state, controlUnit, busy, onCancel, onSave }: {
+export function LiveForm({ kind, initial, mode, state, controlUnit, busy, onCancel, onSave, embedded = false }: {
   kind: Kind; initial?: Entity | undefined; mode: string; state: State;
   sources: Array<"NeMo" | "F5">; controlUnit: string; busy: boolean;
   onCancel: () => void; onSave: (draft: ReturnType<typeof toDraft>) => Promise<void>;
+  embedded?: boolean;
 }) {
   const [draft, setDraft] = useState(() => initial ? toDraft(initial) : { id: `${kind === "Profile" ? "pf" : "gr"}-${crypto.randomUUID()}`, kind, name: "", description: "", location: "ALL", mandatory: false, refs: [] as string[], attributes: { bu: "", agent: "", data: "" }, threshold: 5 });
   const [guardQuery, setGuardQuery] = useState("");
   const guards = state.entities.filter(e => e.kind === "Guardrail" && e.deployed != null && !e.sourcePending && (!e.imported || e.imported.available && e.imported.bindable !== false));
   const selectedGuard = guards.find(e => draft.refs.includes(e.id));
   const profileSource = initial ? initial.provider ?? "NeMo" : selectedGuard ? selectedGuard.provider ?? "NeMo" : undefined;
-  return <section className="nm-card nm-padding nm-request-page">
+  return <section className={embedded ? undefined : "nm-card nm-padding nm-request-page"}>
     <form className={`nm-form nm-create-form nm-create-${kind.toLowerCase()}`} onSubmit={event => { event.preventDefault(); if (!busy) void onSave(draft); }}>
       <fieldset disabled={busy} className="nm-live-form-fields">
         {mode === "revise" && <p className="nm-callout">Save as revision {(initial?.version ?? 0) + 1}. The published revision stays active until this revision is approved and released.</p>}

@@ -1,4 +1,4 @@
-import { createMemoryHistory, createRootRoute, createRoute } from "@tanstack/react-router";
+import { createMemoryHistory, createRootRoute, createRoute, redirect } from "@tanstack/react-router";
 import { expect, it, vi } from "vitest";
 import { getRouter } from "./router";
 
@@ -36,4 +36,12 @@ it("redirects unprefixed bookmarks to V2 and defaults new links to V2", async ()
   expect(router.state.statusCode).toBe(307);
   expect(router.state.redirect?.headers.get("Location")).toBe("/v2/guardrails");
   expect(router.buildLocation({ to: "/policies" }).publicHref).toBe("/v2/policies");
+});
+
+it("does not change the active V3 prefix when resolving another workspace's URL", async () => {
+  const router = getRouter();
+  router.update({ context: router.options.context, history: createMemoryHistory({ initialEntries: ["/v3/guardrails?role=user"] }) });
+  await router.load();
+  router.resolveRedirect(redirect({ href: "/v2/guardrails" }));
+  expect(router.buildLocation({ to: "/policies" }).publicHref).toBe("/v3/policies");
 });

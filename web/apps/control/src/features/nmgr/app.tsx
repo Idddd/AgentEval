@@ -184,6 +184,7 @@ export function DemoNmgrApp() {
     return () => window.clearInterval(timer);
   }, [view]);
   const [kind, setKind] = useState<Kind>("Guardrail");
+  const [createKind, setCreateKind] = useState<Kind>("Guardrail");
   const [selected, setSelected] = useState("");
   const [monitorGuardrail, setMonitorGuardrail] = useState("");
   const [search, setSearch] = useState("");
@@ -223,7 +224,6 @@ export function DemoNmgrApp() {
   const [busy, setBusy] = useState(false);
   const [dataset, setDataset] = useState("PII acceptance suite");
   const [cases, setCases] = useState(24);
-  const [fail, setFail] = useState(false);
   const [reason, setReason] = useState("");
   const [signoffApprover, setSignoffApprover] = useState("Feng ZONG");
   const [configurationRefs, setConfigurationRefs] = useState<string[]>([]);
@@ -289,7 +289,8 @@ export function DemoNmgrApp() {
     }
     setTab(v === "operations" ? "Monitoring" : "Info");
   }
-  function open(action: typeof modal, item?: Entity) {
+  function open(action: typeof modal, item?: Entity, newKind: Kind = kind) {
+    if (action === "create") setCreateKind(newKind);
     if (item) setSelected(item.id);
     setResultLink(null);
     setModal(action);
@@ -298,7 +299,6 @@ export function DemoNmgrApp() {
     setError("");
     setReason("");
     setSignoffApprover(item?.approver ?? e?.approver ?? "Feng ZONG");
-    setFail(false);
     setDataset(`${item?.name ?? e?.name ?? "Guardrail"} acceptance suite`);
     setConfigurationRefs([...(item?.refs ?? e?.refs ?? [])]);
     setConfigurationThreshold(String(item?.threshold ?? e?.threshold ?? 5));
@@ -366,7 +366,7 @@ export function DemoNmgrApp() {
     setBusy(true);
     setError("");
     window.setTimeout(() => {
-      perform(fail ? "test-fail" : "test-pass");
+      perform("test-pass");
       setBusy(false);
     }, 650);
   }
@@ -448,7 +448,7 @@ export function DemoNmgrApp() {
       : view === "audit"
         ? "Trace"
         : view === "dashboard"
-          ? "Protection Dashboard"
+          ? "Guardrail Dashboard"
           : view === "logs"
             ? "Trace"
             : ["operations", "enforce"].includes(view)
@@ -863,7 +863,7 @@ export function DemoNmgrApp() {
                   setDirty(false);
                   setError("");
                   setNotice(
-                    `Request submitted! Your Guardrail is waiting for implementation in ${item.unit}.`,
+                    "Request submitted! Your Guardrail is waiting for implementation by Tech.",
                   );
                   setResultLink(inScope(item, role, controlUnit) ? {
                     kind: "Guardrail",
@@ -900,7 +900,7 @@ export function DemoNmgrApp() {
                   ((role === "IT Admin" && unit === "All") ||
                     activeProfiles.some((p) => p.deployedRefs.includes(g.id))),
               ).length}
-              onNewGuardrail={canAuthor(role) ? () => go("Guardrail", "request") : undefined}
+              onNewGuardrail={canAuthor(role) ? () => open("create", undefined, "Guardrail") : undefined}
             />
             {enforcementList}
           </>
@@ -965,11 +965,7 @@ export function DemoNmgrApp() {
             {showRepositoryCreate && (
               <div className="nm-repository-create">
                 <Button
-                  onClick={() =>
-                    kind === "Guardrail"
-                      ? go("Guardrail", "request")
-                      : open("create")
-                  }
+                  onClick={() => open("create")}
                 >
                   <Plus size={16} /> New {kind}
                 </Button>
@@ -1309,7 +1305,7 @@ export function DemoNmgrApp() {
               : modal === "edit"
                 ? `Edit ${kind}`
                 : modal === "create"
-                  ? `Create ${kind}`
+                  ? `Create ${createKind}`
                   : modal === "report"
                     ? "Evaluation Report"
                     : modal === "reset"
@@ -1362,7 +1358,7 @@ export function DemoNmgrApp() {
           )}
           {modal === "create" || modal === "edit" || modal === "revise" ? (
             <CreateForm
-              kind={kind}
+              kind={modal === "create" ? createKind : kind}
               revision={modal === "revise"}
               allowTechnical={false}
               onCancel={closeModal}
@@ -1604,14 +1600,6 @@ export function DemoNmgrApp() {
                     </span>
                   </label>
                   <p>{cases} acceptance cases</p>
-                  <label className="nm-check">
-                    <input
-                      type="checkbox"
-                      checked={fail}
-                      onChange={(x) => setFail(x.target.checked)}
-                    />
-                    Failed evaluation outcome
-                  </label>
                 </>
               )}
               {modal === "reject" && (

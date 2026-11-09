@@ -9,6 +9,7 @@ import { DeploymentError, diagnosticResponse, reportFailure, upstreamFailure, ty
 import { openDatabase } from "./storage/database";
 import { NmgrService, type NmgrActor, type NmgrRemote } from "./nmgr";
 import { createF5Client, f5Configuration } from "./f5-client";
+import { nmgrRestApi } from "./nmgr-rest-api";
 
 const stores = new Map<string, ReturnType<typeof openDatabase>>();
 const accountSchema = z.record(z.string().min(1), z.object({ name: z.string().min(1).max(160), role: z.enum(["User", "User Admin", "IT Admin"]), unit: z.string().min(1).max(100) }).strict());
@@ -51,7 +52,8 @@ export async function closeNmgrDatabase(env: NodeJS.ProcessEnv) {
   stores.delete(key);
   await (await opening).close?.();
 }
-export async function nmgrApi(request: Request, env = process.env, fetcher: typeof fetch = fetch) {
+export async function nmgrApi(request: Request, env = process.env, fetcher: typeof fetch = fetch): Promise<Response> {
+  if (new URL(request.url).pathname.startsWith("/api/nmgr/v1/")) return nmgrRestApi(request, legacy => nmgrApi(legacy, env, fetcher));
   let component: Component = "runtime";
   try {
     const config = nmgrConfiguration(env), url = new URL(request.url);

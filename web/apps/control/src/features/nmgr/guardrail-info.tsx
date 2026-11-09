@@ -6,24 +6,18 @@ export function GuardrailInfo({
   item,
   state,
   onProfile,
+  policyJson = false,
 }: {
   item: Entity;
   state: State;
   onProfile: (id: string) => void;
+  policyJson?: boolean;
 }) {
   const profiles = state.entities.filter(
     (p) =>
       p.kind === "Profile" &&
       (p.refs.includes(item.id) || p.deployedRefs.includes(item.id)),
   );
-  const versions = [
-    ...new Set([
-      item.version,
-      ...(item.deployed === null ? [] : [item.deployed]),
-      ...item.runs.map((run) => run.version),
-      ...Object.keys(item.revisions ?? {}).map(Number),
-    ]),
-  ].sort((a, b) => b - a);
   return (
     <div className="nm-info">
       <section aria-label="Control Intent">
@@ -56,10 +50,10 @@ export function GuardrailInfo({
           ))}
         </dl>
       </section>
-      <section aria-label="LLM prompt">
-        <h3>LLM prompt</h3>
+      <section aria-label={policyJson ? "NeMo Policy JSON" : "LLM prompt"}>
+        <h3>{policyJson ? "NeMo Policy JSON" : "LLM prompt"}</h3>
         <p className="nm-prompt-content">
-          {item.config?.content || "No prompt configured."}
+          {item.config?.content || (policyJson ? "No Policy definition configured." : "No prompt configured.")}
         </p>
         <dl className="nm-info-facts nm-config-meta">
           <div><dt>Guardrail provider</dt><dd>{sourceLabel(item)}</dd></div>
@@ -67,7 +61,7 @@ export function GuardrailInfo({
             <dt>Scanner</dt>
             <dd>
               {item.config
-                ? { custom: "GenAI", regex: "Regex", keyword: "Keywords" }[
+                ? { custom: policyJson ? "Custom Policy (JSON)" : "GenAI", regex: "Regex", keyword: "Keywords" }[
                     item.config.scannerType
                   ]
                 : "Not specified"}
@@ -75,7 +69,7 @@ export function GuardrailInfo({
           </div>
           <div>
             <dt>Direction</dt>
-            <dd>{item.config?.direction ?? "Not specified"}</dd>
+            <dd>{policyJson ? "Defined by Policy rule stages" : item.config?.direction ?? "Not specified"}</dd>
           </div>
           <div>
             <dt>Configuration version</dt>
@@ -115,24 +109,6 @@ export function GuardrailInfo({
         ) : (
           <p className="nm-muted">No Profile references this Guardrail.</p>
         )}
-      </section>
-      <section aria-label="Versions">
-        <h3>Versions</h3>
-        <div className="nm-version-list">
-          {versions.map((v) => (
-            <div key={v}>
-              <strong>v{v}.0</strong>
-              <span>
-                {[
-                  v === item.version && "Current revision",
-                  v === item.deployed && "Deployed",
-                ]
-                  .filter(Boolean)
-                  .join(" · ") || "Evaluated revision"}
-              </span>
-            </div>
-          ))}
-        </div>
       </section>
     </div>
   );

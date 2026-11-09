@@ -1,14 +1,14 @@
 # AI Marketplace
 
 AI Marketplace manages **Guardrails** and **Profiles**. Current release:
-**v0.2.27**, image `ghcr.io/idddd/tali-ui-demo:0.2.27`.
+**v0.2.28**, image `ghcr.io/idddd/tali-ui-demo:0.2.28`.
 
 The current source also exposes the real NeMo/F5 integration backend for a separate
 UI behind the same-origin `/api` gateway. Interactive Swagger is at `/api/docs`,
 OpenAPI at `/api/openapi.json`, and the API inventory at `/api/endpoints`.
 The bundled V3 UI remains available for quick deployment and connection testing;
 V2 remains independent Mock. See [integration API and frontend contract](docs/integration-api.md).
-Version 0.2.27 adds real NeMo resource import/binding, F5 failure isolation and traceable operations, verified Swagger schemas, and direct V2 Measure Bypass navigation.
+Version 0.2.28 adds independent resource APIs with legacy compatibility, request tracing and Swagger coverage, fixes V3 navigation, and aligns Guardrail creation drawers across V2/V3. NeMo custom policies use executable JSON with a keyboard-insertable sample. See [resource API guide](docs/resource-api.md).
 
 ## Current UI
 
@@ -38,9 +38,9 @@ Control Unit filters always include ISS, RMG, LCS, Line 1.5, and Line 2.
 Requires Docker. Default demo data is stored in browser localStorage; no database is used.
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.27
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.28
 docker run -d --name ai-marketplace -p 18082:8080 \
-  ghcr.io/idddd/tali-ui-demo:0.2.27
+  ghcr.io/idddd/tali-ui-demo:0.2.28
 ```
 
 Open [V1](http://127.0.0.1:18082/v1/) or [V2](http://127.0.0.1:18082/v2/).

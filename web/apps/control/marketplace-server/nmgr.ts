@@ -10,6 +10,7 @@ import { observeResource } from "./nmgr-observation";
 import { emptyNemoPolicy, nemoDraftStep } from "./nmgr-draft-sync";
 import { discoverNemo, mergeNemo } from "./nmgr-import";
 import { f5Trace, logF5 } from "./f5-trace";
+import { parseNemoPolicy } from "../src/features/nmgr/nemo-policy";
 
 export type NmgrActor = { id: string; name: string; role: Role; unit: string };
 type PolicyBinding = { policyId: string; policyVersion: string; enabledRuleIds: string[]; enabledRails: string[]; f5?: F5ScannerRef };
@@ -376,8 +377,9 @@ export class NmgrService {
 function policyDefinition(e: Entity, id: string, cases: z.infer<typeof caseSchema>[], draftOnly = false) {
   const config = e.config!;
   if (config.scannerType === "custom") {
-    let definition: any; try { definition = JSON.parse(config.content); } catch { fail(422, "Custom detection requires a NeMo Policy JSON definition; natural-language text is not executable."); }
-    if (definition?.kind !== "Policy" || definition.schema_version !== 1 || !Array.isArray(definition.rules) || !definition.rules.length || !Array.isArray(definition.tests) || !draftOnly && !definition.tests.length) fail(422, "Provide a complete NeMo Policy definition with rules and required acceptance tests.");
+    let definition: any;
+    try { definition = parseNemoPolicy(config.content, !draftOnly); }
+    catch (error) { fail(422, (error as Error).message); }
     return { ...definition, metadata: { ...definition.metadata, id, name: e.name, description: e.description, version: "0" } };
   }
   const stages = config.direction === "both" ? ["input", "output"] : [config.direction === "request" ? "input" : "output"];

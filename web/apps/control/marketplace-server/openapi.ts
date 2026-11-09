@@ -3,6 +3,7 @@ import { responseSchemas } from "./openapi-responses";
 import { pageCoverage, pageCoverageMarkdown } from "./api-page-coverage";
 import { commandSchema, connectionTestSchema } from "./nmgr-contract";
 import { connectionSettingsSchema } from "./nmgr-connection-config";
+import { restOpenApi, restResponseSchemas } from "./nmgr-rest-openapi";
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const string = { type: "string" };
@@ -49,6 +50,7 @@ export function createOpenApi() {
     servers: [{ url: "/", description: "Same-origin gateway; forward /api to this service" }],
     tags: [{ name: "Connections", description: "Shared encrypted connection settings and read-only independent probes" }, { name: "Workflow", description: "Real NeMo/F5 business workflow; HTTP 200 is not proof a background job succeeded" }, { name: "Operations" }, { name: "Documentation" }],
     paths: {
+      ...restOpenApi([role, revision], errorResponses),
       "/api/health": { get: { tags: ["Operations"], operationId: "health", summary: "UI/API process health", description: "Independent of database, NeMo and F5. Suitable for Kubernetes probes; does not prove integration readiness.", responses: responses(ref("Health")) } },
       "/api/marketplace-config": { get: { tags: ["Connections"], operationId: "v3Runtime", summary: "Read V3 runtime flags and connection revision", parameters: [{ name: "workspace", in: "query", required: true, schema: { type: "string", enum: ["v3"] } }], responses: responses(ref("RuntimeStatus")) } },
       "/api/nmgr/connection": {
@@ -68,6 +70,7 @@ export function createOpenApi() {
       Command: inputSchema(commandSchema), ConnectionSettings: connection,
       ConnectionTest: { ...inputSchema(connectionTestSchema), properties: { target: { type: "string", enum: ["nemoUrl", "nemoToken", "databaseUrl", "f5Url", "f5Token"] }, settings: ref("ConnectionSettings") } },
       ...responseSchemas,
+      ...restResponseSchemas,
     } },
   };
 }

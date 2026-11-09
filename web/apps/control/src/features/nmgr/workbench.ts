@@ -28,7 +28,7 @@ type NavItem = { label: string; kind: Kind; view: View };
 export const workbenchNavigation: Record<Role, NavItem[]> = {
   User: [
     { label: "Dashboard", kind: "Profile", view: "dashboard" },
-    { label: "Control Intents", kind: "Guardrail", view: "repository" },
+    { label: "Configurate Guardrails", kind: "Guardrail", view: "repository" },
     { label: "Configure Profiles", kind: "Profile", view: "repository" },
     { label: "Enforce & Prevent", kind: "Profile", view: "enforce" },
     { label: "Trace", kind: "Profile", view: "audit" },

@@ -17,6 +17,7 @@ import { createF5Client, probeF5, f5Configuration } from "./f5-client";
 import { withConnectionDiagnostics } from "./connection-diagnostics";
 import { probeConnection, type ProbeTarget } from "./connection-probe";
 import { connectionTestSchema } from "./nmgr-contract";
+import { withNmgrRequestLog } from "./nmgr-request-log";
 
 const stores = new Map<string, ConnectionStore>();
 const locks = new WeakMap<ConnectionStore, Promise<unknown>>();
@@ -148,6 +149,15 @@ export async function v3RuntimeResponse(
 }
 
 export async function nmgrRequest(
+  request: Request,
+  env = process.env,
+  fetcher: typeof fetch = fetch,
+  store = defaultStore(env),
+) {
+  return withNmgrRequestLog(request, () => handleNmgrRequest(request, env, fetcher, store));
+}
+
+async function handleNmgrRequest(
   request: Request,
   env = process.env,
   fetcher: typeof fetch = fetch,

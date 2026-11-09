@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const unifiedConfigSchema = z.object({
   scannerType: z.enum(['custom', 'regex', 'keyword']),
   direction: z.enum(['request', 'response', 'both']),
-  content: z.string().max(100000),
+  content: z.string().max(100000).describe('For V3 NeMo custom scanners, a JSON-encoded Policy definition (kind Policy, schema_version 1, non-empty rules and a tests array); acceptance tests must be non-empty for evaluation. Rule stages determine direction. For F5 custom scanners, natural-language GenAI instructions. Keyword and regex scanners use terms and a pattern respectively.'),
   versionName: z.string(),
   versionDescription: z.string(),
 });

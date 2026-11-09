@@ -15,7 +15,44 @@ function serveWorkspace(entities: Entity[], role: Role = "User", bindings: Recor
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 }
+
+it("records V3 page navigation so browser Back returns within V3 instead of the previous V2 document", async () => {
+  window.history.replaceState({ marker: "router-state" }, "", "/v2/guardrails");
+  window.history.pushState({ marker: "router-state" }, "", "/v3/guardrails?role=user");
+  serveWorkspace([liveEntity("route-profile", "Profile")]);
+  render(<NmgrMode />);
+  fireEvent.click(await screen.findByRole("button", { name: "Configure Profiles" }));
+  expect(window.location.hash).toBe("#Profile/repository/");
+  expect(window.history.state.marker).toBe("router-state");
+  fireEvent.click(screen.getByRole("button", { name: "route-profile" }));
+  expect(window.location.hash).toBe("#Profile/repository/route-profile");
+  window.history.back();
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Back to list" })).toBeNull());
+  expect(window.location.pathname).toBe("/v3/guardrails");
+  expect(window.location.hash).toBe("#Profile/repository/");
+});
+
+it("restores a V3 Profile detail from its bookmarked URL", async () => {
+  window.history.replaceState(null, "", "/v3/guardrails?role=user#Profile/repository/bookmarked-profile");
+  serveWorkspace([liveEntity("bookmarked-profile", "Profile")]);
+  render(<NmgrMode />);
+  expect(await screen.findByRole("button", { name: "Back to list" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "bookmarked-profile" })).toBeTruthy();
+});
+
+it("keeps the current Profile detail when using Skip to content", async () => {
+  window.history.replaceState(null, "", "/v3/guardrails?role=user#Profile/repository/focused-profile");
+  serveWorkspace([liveEntity("focused-profile", "Profile")]);
+  render(<NmgrMode />);
+  await screen.findByRole("button", { name: "Back to list" });
+  fireEvent.click(screen.getByRole("link", { name: "Skip to content" }));
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(window.location.hash).toBe("#Profile/repository/focused-profile");
+  expect(screen.getByRole("button", { name: "Back to list" })).toBeTruthy();
+  expect(document.activeElement?.id).toBe("nmgr-content");
+});
 beforeEach(() => {
+  window.history.replaceState(null, "", "/v3/guardrails");
   localStorage.clear(); sessionStorage.clear();
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener() {}, removeEventListener() {} });
@@ -55,6 +92,53 @@ it("renders the shared dashboard with zero disconnected metrics, real released c
   fireEvent.click(screen.getByRole("button", { name: "New Guardrail" }));
   expect(screen.getByLabelText("Name")).toBeTruthy();
   expect(screen.queryByLabelText("ID")).toBeNull();
+});
+it.each(["Guardrail/repository/", "Profile/dashboard/"])("opens V3 Guardrail creation from %s without navigating and protects unsaved changes", async route => {
+  window.history.replaceState(null, "", `/v3/guardrails?role=user#${route}`);
+  const fetcher = serveWorkspace([]);
+  render(<NmgrMode />);
+  fireEvent.click(await screen.findByRole("button", { name: /^(New|Create) Guardrail$/ }));
+  expect(screen.getByRole("dialog", { name: "Create Guardrail" })).toBeTruthy();
+  expect(window.location.hash).toBe(`#${route}`);
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Unsaved Guardrail" } });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Unsaved Guardrail");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(window.location.hash).toBe(`#${route}`);
+  expect(fetcher.mock.calls.some(([url]) => url === "/api/nmgr/commands")).toBe(false);
+});
+it("retains the V3 drawer on create failure and closes it after a successful retry", async () => {
+  window.history.replaceState(null, "", "/v3/guardrails?role=user#Profile/dashboard/");
+  const fetcher = serveWorkspace([]);
+  const original = fetcher.getMockImplementation()!;
+  let accepted = false;
+  fetcher.mockImplementation(async (url, init) => {
+    if (url !== "/api/nmgr/commands") return original(url, init);
+    const command = JSON.parse(init!.body as string);
+    expect(command.type).toBe("create");
+    expect(command.draft.kind).toBe("Guardrail");
+    if (!accepted) return Response.json({ error: { message: "Create request rejected" } }, { status: 422 });
+    const snapshot = await (await original("/api/nmgr/workspace")).json();
+    return Response.json({ ...snapshot, revision: 2, state: { ...snapshot.state, entities: [liveEntity(command.draft.id, "Guardrail", { ...command.draft, sourcePending: true, status: "DRAFT", deployed: null })] } });
+  });
+  render(<NmgrMode />);
+  fireEvent.click(await screen.findByRole("button", { name: "New Guardrail" }));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Drawer submission" } });
+  fireEvent.change(screen.getByLabelText("Control intent"), { target: { value: "Protect confidential content" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect((await within(screen.getByRole("dialog")).findByRole("alert")).textContent).toContain("Create request rejected");
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Drawer submission");
+  expect(window.location.hash).toBe("#Profile/dashboard/");
+  accepted = true;
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("heading", { name: "Drawer submission" })).toBeTruthy();
+  expect(window.location.pathname).toBe("/v3/guardrails");
+  expect(window.location.hash).toMatch(/^#Guardrail\/repository\/gr-/);
 });
 it("shows published profile configuration without simulating runtime modes or writing backend changes", async () => {
   const fetcher = serveWorkspace([liveEntity("released-control", "Guardrail"), liveEntity("released-profile", "Profile", { refs: ["released-control"], deployedRefs: ["released-control"] })]);
@@ -246,6 +330,50 @@ it("requires Tech to choose a configured Source before saving implementation", a
   fireEvent.click(screen.getByRole("button", { name: "Save implementation" }));
   await waitFor(() => expect(sent?.provider).toBe("F5"));
   expect(sent.action).toBe("implement");
+});
+it("explains NeMo custom JSON and prevents natural-language synchronization without losing the input", async () => {
+  const fetcher = serveWorkspace([liveEntity("custom-control", "Guardrail", { deployed: null, status: "DRAFT" })], "IT Admin");
+  render(<NmgrMode />);
+  fireEvent.click(await screen.findByRole("button", { name: "custom-control" }));
+  const editor = screen.getByRole("textbox", { name: "NeMo Policy JSON" });
+  expect(screen.queryByRole("textbox", { name: /LLM prompt/ })).toBeNull();
+  expect(screen.queryByLabelText("Direction")).toBeNull();
+  fireEvent.change(editor, { target: { value: "Block private customer information" } });
+  expect(screen.getByRole("button", { name: "Save implementation" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("alert").textContent).toContain("valid NeMo Policy JSON");
+  fireEvent.click(screen.getByRole("button", { name: "Save implementation" }));
+  expect(fetcher.mock.calls.some(([url]) => url === "/api/nmgr/commands")).toBe(false);
+  expect((editor as HTMLTextAreaElement).value).toBe("Block private customer information");
+  const definition = JSON.stringify({ schema_version: 1, kind: "Policy", rules: [{ id: "control" }], tests: [] });
+  fireEvent.change(editor, { target: { value: definition } });
+  expect(screen.getByRole("button", { name: "Save implementation" }).hasAttribute("disabled")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Save implementation" }));
+  await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url === "/api/nmgr/commands")).toBe(true));
+  const call = fetcher.mock.calls.find(([url]) => url === "/api/nmgr/commands")!;
+  expect(JSON.parse(call[1]!.body as string).config.content).toBe(definition);
+});
+it("keeps F5 GenAI prompts while switching the provider-specific custom editor", async () => {
+  const snapshot = { revision: 1, sources: ["NeMo", "F5"], actor: { id: "tech", name: "Tech", role: "IT Admin", unit: "ISS" }, state: { entities: [liveEntity("source-control", "Guardrail", { deployed: null, status: "DRAFT", sourcePending: true })], audit: [] }, jobs: {}, bindings: {} };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json(url === "/api/marketplace-config?workspace=v3" ? { mode: "live" } : snapshot)));
+  render(<NmgrMode />);
+  fireEvent.click(await screen.findByRole("button", { name: "source-control" }));
+  fireEvent.change(screen.getByLabelText("Source"), { target: { value: "F5" } });
+  fireEvent.change(screen.getByRole("textbox", { name: /LLM prompt/ }), { target: { value: "Block secrets" } });
+  expect(screen.getByRole("button", { name: "Save implementation" }).hasAttribute("disabled")).toBe(false);
+  fireEvent.change(screen.getByLabelText("Source"), { target: { value: "NeMo" } });
+  expect((screen.getByRole("textbox", { name: "NeMo Policy JSON" }) as HTMLTextAreaElement).value).toBe("Block secrets");
+  expect(screen.getByRole("button", { name: "Save implementation" }).hasAttribute("disabled")).toBe(true);
+  fireEvent.change(screen.getByLabelText("Source"), { target: { value: "F5" } });
+  expect(screen.getByRole("button", { name: "Save implementation" }).hasAttribute("disabled")).toBe(false);
+});
+it("labels a saved NeMo custom definition as Policy JSON instead of an LLM prompt", async () => {
+  serveWorkspace([liveEntity("saved-custom", "Guardrail", { deployed: null, status: "TEST READY", config: { scannerType: "custom", content: '{"kind":"Policy"}', direction: "request", versionName: "v1", versionDescription: "" } })], "IT Admin");
+  render(<NmgrMode />);
+  fireEvent.click(await screen.findByRole("button", { name: "saved-custom" }));
+  expect(screen.getByRole("heading", { name: "NeMo Policy JSON" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "LLM prompt" })).toBeNull();
+  expect(screen.getByText("Custom Policy (JSON)")).toBeTruthy();
+  expect(screen.getByText("Defined by Policy rule stages")).toBeTruthy();
 });
 it("keeps source selection out of User requests even when F5 is configured", async () => {
   let sent: any;

@@ -132,6 +132,7 @@ function ShellContent({
     <>
       <a
         href="#nmgr-content"
+        onClick={identity ? event => { event.preventDefault(); document.getElementById("nmgr-content")?.focus(); } : undefined}
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:p-3"
       >
         Skip to content

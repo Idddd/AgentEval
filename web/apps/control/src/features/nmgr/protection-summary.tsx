@@ -23,7 +23,7 @@ export function ProtectionSummary({ scans, profiles, guardrails, onNewGuardrail 
             <strong>{recent.length}</strong>
           </div>
           <div className="nm-protection-results">
-            {([["Pass", "Passed"], ["Block", "Blocked"], ["Transfer", "Transferred"]] as const).map(([label, result]) => {
+            {([["Pass", "Passed"], ["Block", "Blocked"], ["Redirected", "Transferred"]] as const).map(([label, result]) => {
               const count = recent.filter((scan) => scan.result === result).length;
               return (
                 <div className="nm-protection-result" key={label}>

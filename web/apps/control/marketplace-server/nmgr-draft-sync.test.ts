@@ -65,6 +65,18 @@ it("journals ambiguous Policy creation and reconciles by stable ID without creat
   expect(f.calls.filter(c => c.method === "PUT")).toHaveLength(1);
   expect((await f.service.snapshot(user)).jobs[draft.id]?.status).toBe("done");
 });
+it("rejects prose custom configuration before changing state or calling NeMo, then accepts corrected JSON", async () => {
+  const f = fixture(); await f.command(user, { type: "create", draft });
+  const before = await f.service.snapshot(tech);
+  await expect(f.command(tech, { type: "action", id: draft.id, action: "implement", provider: "NeMo", config: { ...config, scannerType: "custom", content: "Block secrets" } })).rejects.toThrow(/valid NeMo Policy JSON/);
+  expect(await f.service.snapshot(tech)).toEqual(before);
+  expect(f.calls).toHaveLength(0);
+  const definition = { schema_version: 1, kind: "Policy", rules: [{ id: "control", stages: ["input"], detector: { ref: "text/keyword", version: "1.0.0", parameters: { detector_options: { terms: ["secret"] } } }, on_match: { action: "block" } }], tests: [] };
+  const saved = await f.command(tech, { type: "action", id: draft.id, action: "implement", provider: "NeMo", config: { ...config, scannerType: "custom", content: JSON.stringify(definition) } });
+  expect(saved.jobs[draft.id]?.status).toBe("done");
+  expect(f.policies.size).toBe(1);
+  expect([...f.policies.values()][0].definition.rules).toEqual(definition.rules);
+});
 it("creates Profile on Save and preserves its ID through approval and release setup", async () => {
   const f = fixture(); await f.command(user, { type: "create", draft });
   await f.command(tech, { type: "action", id: draft.id, action: "implement", provider: "NeMo", config });

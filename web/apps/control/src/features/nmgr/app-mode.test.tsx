@@ -36,7 +36,7 @@ it("runs the explicit mock entry locally and keeps workbench navigation in mock 
   render(<NmgrApp mock />);
   expect(screen.getByText("Mock V2")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Open Real V3" }).getAttribute("href")).toBe("/v3/guardrails");
-  expect(screen.getByRole("heading", { name: "Protection Dashboard" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Guardrail Dashboard" })).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Workbench"), { target: { value: "IT Admin" } });
   fireEvent.click(screen.getByRole("button", { name: "Guardrail Deployment" }));
   expect(window.location.pathname).toBe("/v2/guardrails");
@@ -49,7 +49,7 @@ it("shows the real entry and its mock link while real configuration is unavailab
   expect(screen.getByText("Real V3")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Open Mock V2" }).getAttribute("href")).toBe("/v2/guardrails");
   expect(await screen.findByRole("alert")).toBeTruthy();
-  expect(screen.queryByRole("heading", { name: "Protection Dashboard" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Guardrail Dashboard" })).toBeNull();
 });
 
 it("explains an API proxy serving HTML and never enters mock automatically", async () => {
@@ -59,7 +59,7 @@ it("explains an API proxy serving HTML and never enters mock automatically", asy
   expect((await screen.findByRole("alert")).textContent).toMatch(/api_response_invalid.*reverse proxy/);
   expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Open Mock workspace" }).getAttribute("href")).toBe("/v2/guardrails");
-  expect(screen.queryByRole("heading", { name: "Protection Dashboard" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Guardrail Dashboard" })).toBeNull();
 });
 
 it.each(["network", "configuration", "database", "f5"])("keeps saved Mock work usable after a real %s failure", async (failure) => {
@@ -77,7 +77,7 @@ it.each(["network", "configuration", "database", "f5"])("keeps saved Mock work u
   expect(network).not.toHaveBeenCalled();
   ui.rerender(<NmgrApp />);
   expect(await screen.findByRole("alert")).toBeTruthy();
-  expect(screen.queryByRole("heading", { name: "Protection Dashboard" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Guardrail Dashboard" })).toBeNull();
   const requests = network.mock.calls.length;
   ui.rerender(<NmgrApp mock />);
   fireEvent.click(screen.getByRole("button", { name: "Measure" }));

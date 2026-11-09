@@ -15,11 +15,17 @@ async function check(path, init = {}, status = 200) {
   const method = init.method ?? "GET";
   const response = await fetch(base + path, { ...init, headers: { ...headers, ...init.headers } });
   if (response.status !== status) throw new Error(`${method} ${path}: expected ${status}, received ${response.status}`);
-  const operation = spec.paths[path.split("?")[0]]?.[method.toLowerCase()];
+  const pathname = path.split("?")[0];
+  const template = Object.keys(spec.paths).find(template => new RegExp(`^${template.replace(/\{[^}]+\}/g, "[^/]+")}$`).test(pathname));
+  const operation = spec.paths[template ?? pathname]?.[method.toLowerCase()];
   const media = response.headers.get("content-type")?.split(";")[0];
   const schema = (operation?.responses[status] ?? operation?.responses.default)?.content?.[media]?.schema;
   if (!schema) throw new Error(`Undocumented ${method} ${path} response ${status} ${media}`);
   const body = media === "application/json" ? await response.json() : await response.text();
+  if (pathname.startsWith("/api/nmgr/")) {
+    if (!response.headers.get("X-Request-ID") || response.headers.get("X-Operation-ID") !== operation.operationId) throw new Error(`${method} ${path}: missing/mismatched request logging headers`);
+    if (body.error && body.error.requestId !== response.headers.get("X-Request-ID")) throw new Error(`${path}: error correlation mismatch`);
+  }
   const validate = ajv.compile({ ...schema, components: spec.components });
   if (!validate(body)) throw new Error(`${method} ${path}: ${JSON.stringify(validate.errors)}`);
   checked++;
@@ -41,4 +47,22 @@ for (const kind of ["Guardrail", "Profile"]) {
 for (const target of ["nemoUrl", "nemoToken", "databaseUrl"]) await check("/api/nmgr/connection/test", { method: "POST", body: JSON.stringify({ target, settings: {} }) });
 // Deliberately invalid discriminator fails validation before any workflow mutation.
 await check("/api/nmgr/commands", { method: "POST", body: JSON.stringify({ type: "schema-audit-invalid" }) }, 422);
+const prefix = "/api/nmgr/v1";
+for (const [collection, kind] of [["guardrails", "Guardrail"], ["profiles", "Profile"]]) {
+  const list = await check(`${prefix}/${collection}?pageSize=100`);
+  const expectedIds = workspace.state.entities.filter(entity => entity.kind === kind).map(entity => entity.id).sort();
+  if (list.pagination.total !== expectedIds.length || JSON.stringify(list.items.map(entity => entity.id).sort()) !== JSON.stringify(expectedIds)) throw new Error(`${collection}: legacy/resource list mismatch (audit assumes <=100 records per kind)`);
+  for (const item of list.items.slice(0, 1)) {
+    const detail = await check(`${prefix}/${collection}/${encodeURIComponent(item.id)}`);
+    if (detail.item.id !== item.id) throw new Error("Detail identity mismatch");
+    await check(`${prefix}/${collection}/${encodeURIComponent(item.id)}/backend-status`);
+  }
+}
+for (const path of ["/evaluation-candidates", "/evaluations", "/approval-requests?kind=Profile", "/approval-requests?kind=Guardrail", "/deployments", "/jobs", "/audit-events", "/dashboard/summary", "/capabilities"]) await check(prefix + path);
+const jobId = Object.keys(workspace.jobs)[0];
+if (jobId) await check(`${prefix}/jobs/${encodeURIComponent(jobId)}`);
+const run = workspace.state.entities.flatMap(entity => entity.runs)[0];
+if (run) await check(`${prefix}/evaluations/${encodeURIComponent(run.id)}`);
+await check(`${prefix}/profiles?pageSize=101`, {}, 422);
+await check(`${prefix}/profiles`, { method: "POST", body: JSON.stringify({ invalid: true }) }, 422);
 console.log(JSON.stringify({ checkedResponses: checked, schemas: Object.keys(spec.components.schemas).length, operations: inventory.items.length, pageMappings: inventory.pages.length, realResources: workspace.state.entities.length, status: "passed" }, null, 2));

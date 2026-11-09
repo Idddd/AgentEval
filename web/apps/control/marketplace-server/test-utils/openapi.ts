@@ -17,14 +17,15 @@ export function assertOpenApiSchema(name: string, value: unknown) {
 }
 export async function assertOpenApiResponse(request: Request, response: Response) {
   const path = new URL(request.url).pathname;
-  const operation = spec.paths[path]?.[request.method.toLowerCase()];
+  const template = Object.keys(spec.paths).find(template => new RegExp(`^${template.replace(/\{[^}]+\}/g, "[^/]+")}$`).test(path));
+  const operation = spec.paths[template ?? path]?.[request.method.toLowerCase()];
   if (!operation) throw new Error(`Undocumented operation ${request.method} ${path}`);
   const expected = operation.responses[response.status] ?? operation.responses.default;
   const media = response.headers.get("content-type")?.split(";")[0];
   const schema = expected?.content?.[media ?? ""]?.schema;
   if (!schema) throw new Error(`Undocumented response ${response.status} ${media} for ${path}`);
   const value = media === "application/json" ? await response.clone().json() : await response.clone().text();
-  const key = `${request.method}:${path}:${response.status}:${media}`;
+  const key = `${request.method}:${template ?? path}:${response.status}:${media}`;
   let validate = validators.get(key);
   if (!validate) { validate = ajv.compile({ ...schema, components: spec.components }); validators.set(key, validate); }
   if (!validate(value)) throw new Error(`${key}: ${JSON.stringify(validate.errors)}`);

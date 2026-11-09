@@ -5,12 +5,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { NmgrShell, type View } from "./shell";
 import { TestResultsReview } from "./test-results-review";
 import { LiveForm } from "./live-form";
+import { LiveCreateSheet } from "./live-create-sheet";
 import { ArrowLeft } from "lucide-react";
 import { LiveDashboard } from "./live-dashboard";
 import { LiveRecordList } from "./live-record-list";
 import { OperationHistory } from "./operation-history";
 import { WorkflowSteps } from "./studio";
 import { GuardrailInfo } from "./guardrail-info";
+import { nemoPolicyError, NEMO_POLICY_SAMPLE } from "./nemo-policy";
 import { UnifiedConfigForm } from "../business-demo/unified-config-form";
 import { emptyConfig, type UnifiedConfig } from "../business-demo/evaluation";
 import type { Entity, Kind, State, Role } from "./model";
@@ -20,6 +22,8 @@ import type { ResourceObservation } from "../../../marketplace-server/nmgr-obser
 import { runtimeFailure, runtimeRequest } from "@/lib/runtime-request";
 import { ConnectionSetup } from "./connection-setup";
 import { initialOwner, saveOwner } from "./demo-storage";
+import { readLiveLocation, writeLiveLocation } from "./live-navigation";
+import { useRouter } from "@tanstack/react-router";
 
 type Snapshot = { sourceErrors?: Record<string, { code: string; message: string; requestId: string }>; accessMode?: "local" | "authenticated" | "demo"; sources?: Array<"NeMo" | "F5">; revision: number; actor: NmgrActor; state: State; jobs: Record<string, NmgrJob>; bindings: Record<string, NmgrBinding> };
 function sameNemoState(before: Snapshot, after: Snapshot) {
@@ -39,7 +43,7 @@ export function NmgrMode(_props: { demo?: ReactNode } = {}) {
   const connectionRoute = (open: boolean) => {
     const url = new URL(window.location.href);
     url.hash = open ? "connection" : "";
-    window.history.replaceState(null, "", url);
+    window.history.replaceState(window.history.state, "", url);
     setEditing(open);
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
@@ -89,6 +93,7 @@ function ConnectionUnavailable({ error, onRetry, retryLabel = "Retry" }: { error
 }
 
 function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, onReconnect }: { demoRoles?: boolean; role?: Role; connectionRevision?: string | undefined; onRole?: (role: Role) => void; onReconnect?: () => void }) {
+  const router = useRouter({ warn: false });
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null), current = useRef<Snapshot | null>(null);
   const [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false), working = useRef(false);
@@ -98,14 +103,22 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
   const f5Working = useRef(new Set<string>());
   const [f5Error, setF5Error] = useState("");
   const queryAbort = useRef<AbortController | null>(null);
-  const [kind, setKind] = useState<Kind>("Guardrail"), [view, setView] = useState<View>("repository");
-  const [selected, setSelected] = useState("");
+  const [location, setLocation] = useState(readLiveLocation);
+  const { kind, view, selected } = location;
+  const setSelected = (id: string) => navigate(kind, view, id);
   const [form, setForm] = useState<"create" | "edit" | "revise" | null>(null);
+  const [createGuardrail, setCreateGuardrail] = useState(false);
   const [config, setConfig] = useState<UnifiedConfig>(emptyConfig());
   const [source, setSource] = useState<"NeMo" | "F5" | "">("");
   const [cases, setCases] = useState("[]"), [dataset, setDataset] = useState("Acceptance tests"), [reason, setReason] = useState("");
   const [remoteId, setRemoteId] = useState(""), [datasetFile, setDatasetFile] = useState("");
   const mounted = useRef(true);
+  useEffect(() => {
+    const restore = () => { setLocation(readLiveLocation()); setForm(null); setCreateGuardrail(false); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; };
+    window.addEventListener("popstate", restore);
+    window.addEventListener("hashchange", restore);
+    return () => { window.removeEventListener("popstate", restore); window.removeEventListener("hashchange", restore); };
+  }, []);
   const headers = () => ({ "Content-Type": "application/json", ...(demoRoles && role ? { "X-Marketplace-Role": role } : {}), ...(connectionRevision ? { "X-Marketplace-Connection": connectionRevision } : {}) });
   const apply = (value: Snapshot) => { if (mounted.current && (!current.current || value.revision >= current.current.revision)) { if (current.current?.revision !== value.revision) setObservations({}); current.current = value; setSnapshot(value); } };
   async function read(discover = false): Promise<Snapshot> {
@@ -232,21 +245,23 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
   const canCorrect = job?.purpose === "draft-sync" && job.status === "failed" && job.canCorrect && !job.inflight;
   const rows = state.entities.filter(e => e.kind === kind && (view === "tests" ? ["TEST READY", "TEST PASSED", "TEST FAILED"].includes(e.status) : view === "signoff" ? e.status === "SIGNOFF REQUESTED" : view === "deploy" ? e.status === "SIGNED OFF" : true));
   const binding = item ? snapshot.bindings[`${item.id}@${item.version}`] : undefined;
-  function navigate(k: Kind, v: View) { setKind(k); setView(v); setSelected(""); setForm(null); }
-  function openRecord(record: Entity) { navigate(record.kind, "repository"); setSelected(record.id); }
+  function navigate(kind: Kind, view: View, selected = "") { const next = { kind, view, selected }; writeLiveLocation(next, router?.history); setLocation(next); setForm(null); setCreateGuardrail(false); }
+  function openGuardrailCreate() { setError(""); setCreateGuardrail(true); }
+  function openRecord(record: Entity) { navigate(record.kind, "repository", record.id); }
   const implementationSource = item?.sourcePending ? source : item?.provider ?? "NeMo";
+  const implementationError = implementationSource === "NeMo" && config.scannerType === "custom" ? nemoPolicyError(config.content) : null;
   const action = (name: string) => item && execute({ type: "action", id: item.id, action: name, ...(name === "implement" ? { config, provider: implementationSource } : {}), ...(name === "reject" ? { reason } : {}) });
-  const pageTitle = form ? `${form === "create" ? "New" : form === "revise" ? "Revise" : "Edit"} ${kind}${kind === "Guardrail" && form === "create" ? " Request" : ""}` : view === "dashboard" || view === "operations" ? "Protection Dashboard" : view === "audit" || view === "logs" ? "Trace" : view === "tests" ? `${kind} Evaluation` : view === "signoff" ? `${kind} Sign-Off` : view === "deploy" ? `${kind} Deployment` : kind === "Profile" ? "Configure Profiles" : actor.role === "IT Admin" ? "Guardrail Requests" : "Guardrails";
+  const pageTitle = form ? `${form === "create" ? "New" : form === "revise" ? "Revise" : "Edit"} ${kind}${kind === "Guardrail" && form === "create" ? " Request" : ""}` : view === "dashboard" || view === "operations" ? "Guardrail Dashboard" : view === "audit" || view === "logs" ? "Trace" : view === "tests" ? `${kind} Evaluation` : view === "signoff" ? `${kind} Sign-Off` : view === "deploy" ? `${kind} Deployment` : kind === "Profile" ? "Configure Profiles" : actor.role === "IT Admin" ? "Guardrail Requests" : "Guardrails";
   return <NmgrShell kind={kind} view={view} owner={actor.role} identity={actor.name} controlUnit={actor.unit} busy={busy} allowRoleSwitch={demoRoles} onOwner={value => onRole?.(value as Role)} onNavigate={navigate}
     title={pageTitle} description={error ? "Marketplace V3 · Connection or action requires attention" : `Marketplace V3${snapshot.accessMode === "local" ? " · Local test identity" : snapshot.accessMode === "demo" ? " · Demo role switching" : ""} · Sources: ${(snapshot.sources ?? ["NeMo"]).join(" / ")}`} actions={<div className="nm-actions"><Button variant="outline" disabled={busy} onClick={() => void refreshBackend()}>{querying ? "Querying backends…" : "Refresh backend status"}</Button></div>}>
     {snapshot.sourceErrors?.F5 && <p role="alert" className="nm-callout nm-connection-error mb-4">F5 unavailable: [{snapshot.sourceErrors.F5.code}] {snapshot.sourceErrors.F5.message} Reference: {snapshot.sourceErrors.F5.requestId}. NeMo remains available.</p>}
     {f5Error && <p role="alert" className="nm-callout nm-connection-error mb-4">{f5Error}</p>}
     {importError && <p role="alert" className="nm-callout nm-connection-error mb-4">{importError}</p>}
-    {error && <p role="alert" className="nm-callout nm-connection-error mb-4">{error}</p>}{notice && <p role="status" className="nm-callout mb-4">{notice}</p>}
-    {view === "dashboard" || view === "operations" ? <LiveDashboard state={state} bindings={snapshot.bindings} role={actor.role} onCreate={() => { navigate("Guardrail", "repository"); setForm("create"); }} onOpen={openRecord} />
+    {error && !createGuardrail && <p role="alert" className="nm-callout nm-connection-error mb-4">{error}</p>}{notice && <p role="status" className="nm-callout mb-4">{notice}</p>}
+    {view === "dashboard" || view === "operations" ? <LiveDashboard state={state} bindings={snapshot.bindings} role={actor.role} onCreate={openGuardrailCreate} onOpen={openRecord} />
     : view === "audit" || view === "logs" ? <section className="nm-card"><div className="nm-card-head"><h3>Operation History</h3><span>{state.audit.length} recorded actions</span></div><p className="nm-muted nm-padding">Marketplace configuration history. Runtime traffic traces are not connected (0).</p><div className="nm-scroll"><table><thead><tr><th>Time</th><th>Record</th><th>Actor</th><th>Action</th></tr></thead><tbody>{state.audit.map(a => <tr key={a.id}><td>{new Date(a.time).toLocaleString()}</td><td>{a.entity}</td><td>{a.actor}</td><td>{a.action}</td></tr>)}</tbody></table></div>{!state.audit.length && <p className="nm-empty">No recorded actions.</p>}</section>
     : form ? <LiveForm key={`${form}:${selected}`} kind={kind} initial={form === "create" ? undefined : item} state={state} sources={snapshot.sources ?? ["NeMo"]} mode={form} controlUnit={actor.unit} busy={busy} onCancel={() => setForm(null)} onSave={async draft => { if (await execute({ type: form, draft })) { setSelected(draft.id); setForm(null); } }} />
-    : item ? <div className="space-y-5"><Button variant="ghost" onClick={() => setSelected("")}><ArrowLeft size={16} />Back to list</Button><section className="nm-card nm-padding nm-full-detail nm-live-panel"><div className="nm-detail-head"><div><h2>{item.name}</h2><p className="nm-muted">{sourceLabel(item)} · {item.imported ? "External resource" : `Revision ${item.version}`}</p></div><LiveStatus item={item} /></div>{item.imported ? <p className="nm-callout">Imported from NeMo · Managed in NeMo. Missing ownership and location metadata are not supplied by the source. Workspace scope: {item.unit}.</p> : <WorkflowSteps item={item} releaseProfile />}{item.imported ? <ImportedInfo item={item} state={state} onOpen={openRecord} /> : item.kind === "Guardrail" ? <GuardrailInfo item={item} state={state} onProfile={id => { const profile = state.entities.find(e => e.id === id); if (profile) openRecord(profile); }} /> : <div className="nm-info"><section><h3>Use Case</h3><p className="nm-info-description">{item.description}</p></section><section><h3>Ownership &amp; scope</h3><dl className="nm-info-facts">{[["Control Unit", item.unit], ["Location", item.location], ["Custodian", item.custodian], ["Published revision", item.deployed === null ? "Not published" : `v${item.deployed}`]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section></div>}
+    : item ? <div className="space-y-5"><Button variant="ghost" onClick={() => setSelected("")}><ArrowLeft size={16} />Back to list</Button><section className="nm-card nm-padding nm-full-detail nm-live-panel"><div className="nm-detail-head"><div><h2>{item.name}</h2><p className="nm-muted">{sourceLabel(item)} · {item.imported ? "External resource" : `Revision ${item.version}`}</p></div><LiveStatus item={item} /></div>{item.imported ? <p className="nm-callout">Imported from NeMo · Managed in NeMo. Missing ownership and location metadata are not supplied by the source. Workspace scope: {item.unit}.</p> : <WorkflowSteps item={item} releaseProfile />}{item.imported ? <ImportedInfo item={item} state={state} onOpen={openRecord} /> : item.kind === "Guardrail" ? <GuardrailInfo item={item} state={state} policyJson={item.provider !== "F5" && item.config?.scannerType === "custom"} onProfile={id => { const profile = state.entities.find(e => e.id === id); if (profile) openRecord(profile); }} /> : <div className="nm-info"><section><h3>Use Case</h3><p className="nm-info-description">{item.description}</p></section><section><h3>Ownership &amp; scope</h3><dl className="nm-info-facts">{[["Control Unit", item.unit], ["Location", item.location], ["Custodian", item.custodian], ["Published revision", item.deployed === null ? "Not published" : `v${item.deployed}`]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section></div>}
       {item.kind === "Profile" && <section><h3>{item.imported ? "NeMo Policy bindings (draft)" : "Guardrails"}</h3><ul className="nm-live-refs">{item.imported ? item.imported.policyBindings.map((ref, index) => {
         const target = state.entities.find(e => e.kind === "Guardrail" && Object.entries(snapshot.bindings).some(([key, b]) => key.startsWith(`${e.id}@`) && b.policyId === ref.policyId));
         return <li key={`${ref.policyId}:${index}`}>{target ? <button className="nm-link" onClick={() => openRecord(target)}>{target.name}</button> : <span>{ref.policyId} · Not available in this workspace</span>}<small>{ref.policyId} · Version {ref.policyVersion}</small></li>;
@@ -265,10 +280,11 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
       </div>}
       {!item.imported && actor.role === "User Admin" && item.status === "SIGNOFF REQUESTED" && <div className="space-y-2"><label>Reason for rejection<Textarea value={reason} onChange={e => setReason(e.target.value)} /></label><Button variant="outline" disabled={busy || !reason.trim()} onClick={() => void action("reject")}>Reject</Button></div>}
     </section>
-    {!item.imported && actor.role === "IT Admin" && item.kind === "Guardrail" && (!pending || canCorrect) && ["DRAFT", "TEST FAILED"].includes(item.status) && <section className="nm-card nm-padding nm-live-panel"><h3>Implementation</h3><label className="nm-select">Source<select aria-label="Source" value={implementationSource} disabled={busy || !item.sourcePending} onChange={event => setSource(event.target.value as "NeMo" | "F5" | "")}><option value="" disabled>Select source…</option>{[...new Set([...(snapshot.sources ?? ["NeMo"]), ...(!item.sourcePending ? [item.provider ?? "NeMo"] : [])])].map(value => <option key={value} value={value}>{value}</option>)}</select></label>{!item.sourcePending && <p className="nm-muted">The assigned source is fixed for this request and its revisions.</p>}<UnifiedConfigForm config={config} sources={[]} onSources={() => {}} onChange={setConfig} /><p className="nm-muted">{implementationSource === "F5" ? "F5 executes keywords, regex and GenAI instructions. Custom content is the detection instruction for F5 GenAI. Version names use letters, numbers, underscores or hyphens." : "Keywords and regex are executed by NeMo. Custom configuration must be a complete NeMo Policy JSON definition with acceptance tests."}</p><Button disabled={busy || !implementationSource} onClick={() => void action("implement")}>Save implementation</Button></section>}
+    {!item.imported && actor.role === "IT Admin" && item.kind === "Guardrail" && (!pending || canCorrect) && ["DRAFT", "TEST FAILED"].includes(item.status) && <section className="nm-card nm-padding nm-live-panel"><h3>Implementation</h3><label className="nm-select">Source<select aria-label="Source" value={implementationSource} disabled={busy || !item.sourcePending} onChange={event => setSource(event.target.value as "NeMo" | "F5" | "")}><option value="" disabled>Select source…</option>{[...new Set([...(snapshot.sources ?? ["NeMo"]), ...(!item.sourcePending ? [item.provider ?? "NeMo"] : [])])].map(value => <option key={value} value={value}>{value}</option>)}</select></label>{!item.sourcePending && <p className="nm-muted">The assigned source is fixed for this request and its revisions.</p>}{implementationSource && <UnifiedConfigForm config={config} sources={[]} onSources={() => {}} onChange={setConfig} customFormat={implementationSource === "NeMo" ? "nemo-policy" : "prompt"} customSample={NEMO_POLICY_SAMPLE} contentError={config.content.trim() ? implementationError : null} />}<p className="nm-muted">{implementationSource === "F5" ? "F5 executes keywords, regex and GenAI instructions. Custom content is the detection instruction for F5 GenAI. Version names use letters, numbers, underscores or hyphens." : "Keywords and regex are executed by NeMo. Custom configuration must be a complete NeMo Policy JSON definition with acceptance tests."}</p><Button disabled={busy || !implementationSource || !!implementationError} onClick={() => void action("implement")}>Save implementation</Button></section>}
     {!item.imported && actor.role === "IT Admin" && item.kind === "Guardrail" && !pending && ["TEST READY", "TEST FAILED", "TEST PASSED"].includes(item.status) && <section className="nm-card nm-padding nm-live-panel"><h3>Evaluate in {item.provider ?? "NeMo"}</h3><label>Dataset name<Input value={dataset} onChange={e => setDataset(e.target.value)} /></label>{(item.provider === "F5" || item.config?.scannerType !== "custom") ? <><p>Upload a JSON array or enter cases below. Each case needs input, expected (allow/block) and phase (input/output). Include a blocking case for each configured direction.</p><label className="nm-file-picker"><span className="nm-file-picker-button">Choose file</span><span className="nm-file-picker-name">{datasetFile || "No file selected"}</span><input aria-label="Upload acceptance dataset" type="file" accept=".json,application/json" onChange={async event => { const file = event.target.files?.[0]; if (!file) return; if (file.size > 1_000_000) { setError("Dataset must be smaller than 1 MB."); return; } setCases(await file.text()); setDataset(file.name); setDatasetFile(file.name); }} /></label><Textarea aria-label="Acceptance cases JSON" rows={9} value={cases} placeholder={'[{"input":"secret","expected":"block","phase":"input"}]'} onChange={e => setCases(e.target.value)} /></> : <p>The acceptance tests embedded in the Policy definition will run.</p>}<Button disabled={busy} onClick={() => { try { void execute({ type: "evaluate", id: item.id, dataset, cases: item.provider !== "F5" && item.config?.scannerType === "custom" ? [] : JSON.parse(cases) }); } catch { setError("Enter a valid JSON array of acceptance cases."); } }}>Run evaluation</Button></section>}
     {!item.imported && <TestResultsReview key={item.id} item={item} allowMockResults={false} />}</div>
-    : <><LiveRecordList key={`${kind}:${view}`} items={rows} kind={kind} view={view} role={actor.role} title={pageTitle} onOpen={setSelected} onCreate={() => setForm("create")} renderStatus={e => <LiveStatus item={e} />} renderBackend={e => <><BackendObservation value={observations[e.id]} />{e.imported ? <ImportedStatus item={e} /> : e.sourcePending ? <p className="nm-muted">Awaiting Tech source selection</p> : e.provider !== "F5" ? <DraftSyncStatus job={snapshot.jobs[e.id]} binding={snapshot.bindings[`${e.id}@${e.version}`]} /> : <p className="nm-muted">F5 workflow</p>}</>} />{view === "signoff" && actor.role === "User Admin" && <OperationHistory state={state} kind={kind} controlUnit={actor.unit} actor={actor.name} onOpen={setSelected} />}</>}
+    : <><LiveRecordList key={`${kind}:${view}`} items={rows} kind={kind} view={view} role={actor.role} title={pageTitle} onOpen={setSelected} onCreate={() => kind === "Guardrail" ? openGuardrailCreate() : setForm("create")} renderStatus={e => <LiveStatus item={e} />} renderBackend={e => <><BackendObservation value={observations[e.id]} />{e.imported ? <ImportedStatus item={e} /> : e.sourcePending ? <p className="nm-muted">Awaiting Tech source selection</p> : e.provider !== "F5" ? <DraftSyncStatus job={snapshot.jobs[e.id]} binding={snapshot.bindings[`${e.id}@${e.version}`]} /> : <p className="nm-muted">F5 workflow</p>}</>} />{view === "signoff" && actor.role === "User Admin" && <OperationHistory state={state} kind={kind} controlUnit={actor.unit} actor={actor.name} onOpen={setSelected} />}</>}
+    {createGuardrail && <LiveCreateSheet state={state} sources={snapshot.sources ?? ["NeMo"]} controlUnit={actor.unit} busy={busy} error={error} onClose={() => setCreateGuardrail(false)} onSave={async draft => { if (await execute({ type: "create", draft })) navigate("Guardrail", "repository", draft.id); }} />}
   </NmgrShell>;
 }
 

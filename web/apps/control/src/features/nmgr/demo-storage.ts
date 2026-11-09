@@ -46,7 +46,7 @@ export function saveOwner(owner: string) {
           ? "approver"
           : "user",
     );
-    window.history.replaceState(null, "", url);
+    window.history.replaceState(window.history.state, "", url);
   } catch {}
 }
 

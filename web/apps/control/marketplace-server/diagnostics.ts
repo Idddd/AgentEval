@@ -2,6 +2,7 @@ import { f5Trace } from "./f5-trace";
 import { randomUUID } from "node:crypto";
 import { StoreError } from "./marketplace-db";
 import { connectionErrorDetails } from "./connection-diagnostics";
+import { nmgrRequestContext } from "./nmgr-request-context";
 
 export type Component = "runtime" | "origin" | "database" | "identity" | "nemo" | "f5" | "workspace";
 export const componentSettings: Record<Component, string[]> = {
@@ -12,7 +13,7 @@ export const componentSettings: Record<Component, string[]> = {
   f5: ["F5_API_URL", "F5_API_TOKEN_FILE", "F5_API_TOKEN", "NODE_EXTRA_CA_CERTS"], workspace: ["MARKETPLACE_WORKSPACE_ID"],
 };
 export class DeploymentError extends StoreError {
-  readonly requestId = randomUUID();
+  readonly requestId = nmgrRequestContext.getStore()?.requestId ?? randomUUID();
   upstream?: { httpStatus: number; contentType: string | null; code?: string; message?: string };
   constructor(public component: Component, public code: string, message: string, public settings = componentSettings[component], status = 503, cause?: unknown) { super(status, message); if (cause !== undefined) this.cause = cause; }
 }

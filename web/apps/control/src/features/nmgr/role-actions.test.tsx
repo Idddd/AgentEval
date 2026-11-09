@@ -53,13 +53,13 @@ function openDetail(
 it("opens User dashboard by default and switches entire workbenches", () => {
   render(<NmgrApp />);
   expect(
-    screen.getByRole("heading", { name: "Protection Dashboard" }),
+    screen.getByRole("heading", { name: "Guardrail Dashboard" }),
   ).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Workbench"), {
     target: { value: "User Admin" },
   });
   expect(screen.getByRole("button", { name: "Guardrail Signoff" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Control Intents" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Configurate Guardrails" })).toBeNull();
   fireEvent.change(screen.getByLabelText("Workbench"), {
     target: { value: "IT Admin" },
   });
@@ -96,7 +96,7 @@ it.each(["sidebar", "history", "workbench"])("clears page notifications after %s
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
   expect(screen.getByText(/signoff request submitted/)).toBeTruthy();
   if (navigation === "sidebar") {
-    fireEvent.click(screen.getByRole("button", { name: "Control Intents" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configurate Guardrails" }));
   } else if (navigation === "workbench") {
     fireEvent.change(screen.getByLabelText("Workbench"), { target: { value: "User Admin" } });
   } else {
@@ -306,9 +306,41 @@ it("adds live Dashboard logs on each traffic tick and pauses them during Bypass"
   await act(async () => { vi.advanceTimersByTime(10000); });
   expect(saved().runtime.events.length).toBe(bypassed);
 });
-it("validates full-page requests and keeps success feedback until dismissed", async () => {
+it.each(["Guardrail/repository/", "Profile/dashboard/"])("opens creation from %s in a drawer and protects unsaved changes", (route) => {
+  window.history.replaceState(null, "", `/v2/guardrails?role=user#${route}`);
+  render(<NmgrApp />);
+  const originalUrl = window.location.href;
+  fireEvent.click(screen.getByRole("button", { name: "New Guardrail" }));
+  expect(screen.getByRole("dialog", { name: "Create Guardrail" })).toBeTruthy();
+  expect(window.location.href).toBe(originalUrl);
+  fireEvent.change(screen.getByLabelText("Guardrail Name"), { target: { value: "Unsaved request" } });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+  expect((screen.getByLabelText("Guardrail Name") as HTMLInputElement).value).toBe("Unsaved request");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(window.location.href).toBe(originalUrl);
+});
+it("submits a Guardrail from the repository drawer", () => {
+  window.history.replaceState(null, "", "/v2/guardrails?role=user#Guardrail/repository/");
   render(<NmgrApp />);
   fireEvent.click(screen.getByRole("button", { name: "New Guardrail" }));
+  fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+  expect(within(screen.getByRole("dialog")).getByRole("alert").textContent).toContain("required");
+  fireEvent.change(screen.getByLabelText("Guardrail Name"), { target: { value: "Drawer request" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Control Intent" }), { target: { value: "Protect personal information" } });
+  fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  const saved = JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!);
+  expect(saved.entities.find((item: { name: string }) => item.name === "Drawer request").status).toBe("DRAFT");
+  expect(window.location.pathname).toBe("/v2/guardrails");
+  expect(screen.getByRole("heading", { name: "Guardrail Details" })).toBeTruthy();
+});
+it("validates full-page requests and keeps success feedback until dismissed", async () => {
+  window.location.hash = "Guardrail/request/";
+  render(<NmgrApp />);
   expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Submit" }));
   expect(screen.getByRole("alert").textContent).toContain("required");
@@ -345,7 +377,7 @@ it.each(["RMG", "LCS", "Line 1.5", "Line 2"])("submits a new Guardrail to the se
   fireEvent.click(screen.getByRole("button", { name: "Submit" }));
   const saved = JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!);
   expect(saved.entities.find((item: { name: string }) => item.name === "Selected unit request").unit).toBe(unit);
-  expect(screen.getByText(/Request submitted!/).textContent).toContain(unit);
+  expect(screen.getByText(/Request submitted!/).textContent).toContain("implementation by Tech");
   expect(screen.queryByRole("button", { name: /Guardrail Details/ })).toBeNull();
 });
 it("does not expose another department via a detail URL", () => {
