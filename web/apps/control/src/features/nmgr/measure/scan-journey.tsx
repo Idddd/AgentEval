@@ -149,6 +149,7 @@ export function ScanJourney({
   error,
   clearError,
   onBypass,
+  dashboardOverview,
 }: {
   state: MeasureState;
   role: Role;
@@ -156,6 +157,7 @@ export function ScanJourney({
   error: string;
   clearError: () => void;
   onBypass?: () => void;
+  dashboardOverview?: ReactNode;
 }) {
   const navigation = useScanNavigation();
   const { route, previous } = navigation;
@@ -421,6 +423,7 @@ export function ScanJourney({
       setNotice("Feedback submitted.");
     }
   }
+  if (dashboardOverview && ["overview", "guardrails", "guardrail", "agents", "agent"].includes(route.view)) return <>{dashboardOverview}</>;
   if (!validScanLocation(route))
     return (
       <div className="nm-scan-journey">

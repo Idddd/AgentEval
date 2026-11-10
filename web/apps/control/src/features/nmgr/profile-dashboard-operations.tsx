@@ -1,8 +1,18 @@
 import { ProfileOperationsProvider } from "../business-demo/provider";
-import { ProfileApprovalActions, ProfileOperations } from "../business-demo/profile-operations";
+import { GuardrailActions, ProfileApprovalActions, ProfileOperations } from "../business-demo/profile-operations";
+import { guardrailMode } from "../business-demo/profile-runtime";
 import { StorageCapacityError } from "../business-demo/trace-retention";
 import type { State, Entity, Role } from "./model";
 import { operatingProfile, operatingAction, changeOperatingMode, appendOperatingTraffic } from "./profile-operations-state";
+
+export function DashboardGuardrailActions({ profile, guardrail, state, role, dirty, busy, initialTime, updateState }: {
+  profile: Entity; guardrail: Entity; state: State; role: Role; dirty: boolean; busy: boolean; initialTime: number;
+  updateState: (change: (latest: State) => State, requirePersistence?: boolean) => boolean;
+}) {
+  const adapted = operatingProfile(profile, state, initialTime);
+  return <GuardrailActions name={guardrail.name} current={guardrailMode(adapted, guardrail.id)} disabled={role !== "User" || busy || dirty || !!adapted.runtime?.bypass || adapted.runtime?.approval === "pending"}
+    onChange={mode => updateState(latest => changeOperatingMode(latest, profile.id, guardrail.id, mode, role, Date.now()), true)} />;
+}
 
 export function ProfileDashboardOperations({ profile, state, role, dirty, busy, initialTime, updateState, onGuardrail }: {
   profile: Entity; state: State; role: Role; dirty: boolean; busy: boolean; initialTime: number;

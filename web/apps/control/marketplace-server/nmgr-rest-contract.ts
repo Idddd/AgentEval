@@ -51,6 +51,7 @@ restRoutes.push(
   { method: "GET", path: "/dashboard/summary", operationId: "getDashboardSummary", tag: "Dashboard", mode: "dashboard", response: "DashboardSummary", summary: "Read published configuration counts; unavailable traffic metrics are null" },
   { method: "GET", path: "/capabilities", operationId: "getCapabilities", tag: "Capabilities", mode: "capabilities", response: "Capabilities", summary: "Read implemented and unavailable backend capabilities" },
   { method: "POST", path: "/integrations/nemo/imports", operationId: "importNemoResources", tag: "Integrations", mode: "import", body: noQuery, response: "ImportResult", summary: "Discover NeMo resources and atomically import bindings (synchronous)" },
+  { method: "POST", path: "/integrations/f5/imports", operationId: "importF5Resources", tag: "Integrations", mode: "import", body: noQuery, response: "ImportResult", summary: "Import F5 Scanners, versions, Projects and exact bindings (synchronous)" },
 );
 for (const action of ["approve", "reject", "withdraw"])
   restRoutes.push({ method: "POST", path: `/approval-requests/{id}/${action}`, operationId: `${action}ApprovalRequest`, tag: "Approvals", mode: "command", action, body: action === "reject" ? rejectBody : actionBody, response: "ResourceMutation", summary: `${action} the resource's current approval request` });

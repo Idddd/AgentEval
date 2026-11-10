@@ -6,6 +6,17 @@
   gap: 16px;
   margin-bottom: 24px;
 }
+.nm-measure-overview-columns { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 3fr); gap: 24px; align-items: start; }
+.nm-dashboard-measure .nm-scroll table { min-width: 0; width: 100%; table-layout: fixed; white-space: normal; }
+.nm-dashboard-measure table th:first-child { width: 30%; }
+.nm-dashboard-measure table th:last-child { width: 22%; }
+.nm-measure-overview-columns > :last-child table th:first-child { width: 58%; }
+.nm-measure-overview-columns > :last-child table th:last-child { width: 42%; }
+.nm-dashboard-measure td:first-child { min-width: 0; overflow-wrap: anywhere; }
+.nm-dashboard-measure th, .nm-dashboard-measure td { padding: 14px 12px; }
+.nm-dashboard-measure .nm-card-head { gap: 12px; flex-wrap: wrap; }
+.nm-dashboard-measure .nm-card-head h3 { font-size: 14px; }
+@media (max-width: 1200px) { .nm-measure-overview-columns { grid-template-columns: minmax(0, 1fr); } }
 .nm-scan-page-head h2 {
   font-size: 22px;
   margin: 6px 0 0;

@@ -65,7 +65,8 @@ import { OperationHistory, EntitySummary } from "./operation-history";
 import { EnforcementList } from "./enforcement-list";
 import { DeploymentQueues } from "./deployment-queues";
 import { EntityDetailLink } from "./entity-detail-link";
-import { ProfileDashboardOperations } from "./profile-dashboard-operations";
+import { DashboardGuardrailActions, ProfileDashboardOperations } from "./profile-dashboard-operations";
+import { DashboardMeasureOverview } from "./measure/dashboard-overview";
 import { operatingScans } from "./profile-operations-state";
 import {
   buildAlerts,
@@ -179,7 +180,7 @@ export function DemoNmgrApp() {
   const operationsStarted = useRef(Date.now());
   const [operationsNow, setOperationsNow] = useState(operationsStarted.current);
   useEffect(() => {
-    if (!["dashboard", "enforce"].includes(view)) return;
+    if (!["dashboard", "enforce", "measure"].includes(view)) return;
     const timer = window.setInterval(() => { if (document.visibilityState !== "hidden") setOperationsNow(Date.now()); }, 500);
     return () => window.clearInterval(timer);
   }, [view]);
@@ -420,7 +421,7 @@ export function DemoNmgrApp() {
         (unit === "All" || x.unit === unit),
     )
     .map(deployedEntity);
-  const scans = activeProfiles.flatMap((p) => ["dashboard", "enforce"].includes(view) ? operatingScans(p, state, operationsNow, operationsStarted.current) : profileScans(p, state));
+  const scans = activeProfiles.flatMap((p) => ["dashboard", "enforce", "measure"].includes(view) ? operatingScans(p, state, operationsNow, operationsStarted.current) : profileScans(p, state));
   const alerts = buildAlerts(activeProfiles, scans);
   const alertCountsByProfile = new Map(
     activeProfiles.map((profile) => [
@@ -834,7 +835,7 @@ export function DemoNmgrApp() {
             Guardrails
           </p>
         )}
-        {["measure", "runners", "protection"].includes(view) ? <Measure key={role} role={role} initialBusinessView="scans" technicalPlaceholders center={view === "runners" ? "runners" : view === "protection" ? "protection" : "overview"} onCenter={center => go("Profile", center === "overview" ? "measure" : center)} onDashboard={() => go("Profile", "dashboard")} onBypass={() => go("Profile", "dashboard", "default-customer-assistant")} onPolicyAdjustment={() => go("Guardrail", "repository")} /> : view === "request" ? (
+        {["measure", "runners", "protection"].includes(view) ? <Measure dashboardOverview={<DashboardMeasureOverview renderAction={(profile, guardrail) => <DashboardGuardrailActions profile={profile} guardrail={guardrail} state={state} role={role} dirty={dirty} busy={busy} initialTime={operationsStarted.current} updateState={updateState} />} state={state} profiles={activeProfiles} scans={scans} now={operationsNow} renderOperations={profile => <ProfileDashboardOperations profile={profile} state={state} role={role} dirty={dirty} busy={busy} initialTime={operationsStarted.current} updateState={updateState} onGuardrail={setMonitorGuardrail} />} />} key={role} role={role} initialBusinessView="scans" technicalPlaceholders center={view === "runners" ? "runners" : view === "protection" ? "protection" : "overview"} onCenter={center => go("Profile", center === "overview" ? "measure" : center)} onDashboard={() => go("Profile", "dashboard")} onBypass={() => go("Profile", "dashboard", "default-customer-assistant")} onPolicyAdjustment={() => go("Guardrail", "repository")} /> : view === "request" ? (
           <section className="nm-card nm-padding nm-request-page">
             {error && (
               <div role="alert" className="nm-inline-notice nm-inline-error">

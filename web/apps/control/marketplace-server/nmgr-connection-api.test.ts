@@ -159,6 +159,14 @@ it("returns only masked-state metadata and persists explicit overrides for other
   );
   expect(workspace.status).toBe(200);
 });
+it("reports unreadable Secret files as unconfigured and validates diagnostic response against Swagger", async () => {
+  const response = await connectionApi(request("connection"), { GUARD_API_TOKEN_FILE: "/missing-nemo-secret", F5_API_TOKEN_FILE: "/missing-f5-secret" }, identity, await store());
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  const body = await response.json();
+  expect(body.configured).toMatchObject({ nemoToken: false, f5Token: false });
+  expect(body.values.nemoToken.effective).toMatchObject({ status: "unreadable", code: "ENOENT" });
+  expect(identity).not.toHaveBeenCalled();
+});
 it("preserves working settings on a failed dependency check and does not expose driver details", async () => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   const saved = await store(),

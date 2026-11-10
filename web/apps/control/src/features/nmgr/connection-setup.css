@@ -124,6 +124,9 @@
   overflow-y: auto;
 }
 .nm-connection-probe { display: grid; justify-items: start; gap: 8px; }
+.nm-connection-value-status { display: grid; gap: 8px; padding: 10px 12px; background: var(--muted); border-radius: var(--radius-control); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.nm-connection-value-status code, .nm-connection-value-status .nm-connection-value-error { display: block; }
+.nm-connection-value-error { color: var(--destructive); }
 .nm-connection-result { width: 100%; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-control); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow-y: auto; font: 12px/1.6 ui-monospace, monospace; }
 .nm-connection-result.is-success { color: #047857; background: color-mix(in srgb, #047857 5%, var(--background)); }
 .nm-connection-result.is-error { color: var(--destructive); background: color-mix(in srgb, var(--destructive) 5%, var(--background)); }

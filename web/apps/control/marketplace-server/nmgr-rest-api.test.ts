@@ -21,6 +21,40 @@ async function request(path: string, method = "GET", body?: unknown, actor = "us
 }
 beforeEach(() => { storage.clear(); fetcher.mockClear(); storage.set(docKey(), { revision: 4, state: { entities: [entity("guard-one"), entity("guard-two"), entity("profile-one", "Profile"), entity("hidden-record", "Profile", "RMG")], audit: [] }, jobs: {}, bindings: {}, requests: {}, authors: { "guard-one": "user" }, requestors: {} }); });
 
+it("exposes an independent F5 import endpoint with scoped counts and a Swagger-validated catalog", async () => {
+  const f5Env = { ...env, F5_API_URL: "https://f5.internal/backend/v1", F5_API_TOKEN: "test-only-token" };
+  const remote = vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).includes("/account/identity")) return fetcher(url, init);
+    expect(init?.method).toBe("GET");
+    if (String(url).endsWith("/scanners?limit=100")) return Response.json({ scanners: [{ id: "scanner-real" }] });
+    if (String(url).endsWith("/projects?limit=100")) return Response.json({ projects: [{ id: "project-real" }] });
+    if (String(url).endsWith("/scanners/scanner-real")) return Response.json({ scanner: { id: "scanner-real", name: "External Scanner", direction: "request", versionMeta: { id: "version-real", name: "v1", published: false } } });
+    if (String(url).endsWith("/scanners/scanner-real/versions")) return Response.json({ versions: [{ id: "version-real", name: "v1", published: false }] });
+    if (String(url).endsWith("/projects/project-real")) return Response.json({ project: { id: "project-real", name: "External Project", deploymentStatus: "draft", config: { scanners: [{ id: "scanner-real", version: "version-real", enabled: false }] } } });
+    throw Error("Unexpected request");
+  });
+  const req = new Request("https://marketplace.internal/api/nmgr/v1/integrations/f5/imports", { method: "POST", headers: { Authorization: "Bearer user", Origin: "https://marketplace.internal", "Content-Type": "application/json" }, body: "{}" });
+  const response = await nmgrApi(req, f5Env, remote); await assertOpenApiResponse(req, response);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ imported: { guardrails: 1, profiles: 1 } });
+  expect(remote.mock.calls.some(([url]) => /\/(policies|guardrails)$/.test(String(url)))).toBe(false);
+  const list = new Request("https://marketplace.internal/api/nmgr/v1/profiles?provider=F5", { headers: { Authorization: "Bearer user" } });
+  const listed = await nmgrApi(list, f5Env, remote); await assertOpenApiResponse(list, listed);
+  expect(await listed.json()).toMatchObject({ items: [{ imported: { f5: { scannerBindings: [{ version: "version-real", enabled: false }] } } }] });
+});
+it("reports F5 catalog validation paths without payloads and keeps NeMo list access working", async () => {
+  const f5Env = { ...env, F5_API_URL: "https://f5.internal/backend/v1", F5_API_TOKEN: "test-only-token" };
+  const remote: typeof fetch = async (url, init) => String(url).includes("/account/identity") ? fetcher(url, init) : Response.json({ scanners: "secret-raw-payload" });
+  const req = new Request("https://marketplace.internal/api/nmgr/v1/integrations/f5/imports", { method: "POST", headers: { Authorization: "Bearer user", Origin: "https://marketplace.internal", "Content-Type": "application/json" }, body: "{}" });
+  const response = await nmgrApi(req, f5Env, remote); await assertOpenApiResponse(req, response);
+  expect(response.status).toBe(502); const error = await response.json();
+  expect(error.error).toMatchObject({ component: "f5", code: "f5_catalog_invalid", responseValidation: { endpoint: "/scanners", phase: "catalog-import" } });
+  expect(error.error.message).toContain("scanners: expected array");
+  expect(JSON.stringify(error)).not.toContain("secret-raw-payload");
+  const list = await nmgrApi(new Request("https://marketplace.internal/api/nmgr/v1/guardrails?provider=NeMo", { headers: { Authorization: "Bearer user" } }), f5Env, remote);
+  expect(list.status).toBe(200); expect((await list.json()).items).toHaveLength(2);
+});
+
 it("lists profiles with server pagination, excludes other units and ignores legacy import headers", async () => {
   const response = await request("/profiles?page=1&pageSize=1", "GET", undefined, "user", { "X-Marketplace-Import": "true" });
   expect(response.status).toBe(200);

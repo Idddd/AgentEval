@@ -15,6 +15,7 @@ export const componentSettings: Record<Component, string[]> = {
 export class DeploymentError extends StoreError {
   readonly requestId = nmgrRequestContext.getStore()?.requestId ?? randomUUID();
   upstream?: { httpStatus: number; contentType: string | null; code?: string; message?: string };
+  responseValidation?: { phase: string; endpoint: string; runStatus: string; issueCount: number; issues: Array<{ path: string; expected: string; received: string }> };
   constructor(public component: Component, public code: string, message: string, public settings = componentSettings[component], status = 503, cause?: unknown) { super(status, message); if (cause !== undefined) this.cause = cause; }
 }
 
@@ -65,8 +66,8 @@ export function reportFailure(error: unknown, component: Component, operation: s
     error instanceof StoreError ? `${component}_${error.status}` : `${component}_unavailable`,
     error instanceof StoreError && !["nemo", "f5"].includes(component) ? error.message : fallback, componentSettings[component], error instanceof StoreError ? error.status : 503);
   const details = connectionErrorDetails(error, failure.component === "f5");
-  const metadata = { code: failure.code, component: failure.component, settings: failure.settings, requestId: failure.requestId, ...(details ? { details } : {}) };
-  console.error(JSON.stringify({ time: new Date().toISOString(), level: "error", service: "marketplace", event: "dependency_failure", ...(failure.component === "f5" ? f5Trace.getStore() : {}), operation, status: failure.status, ...metadata }));
+  const metadata = { code: failure.code, component: failure.component, settings: failure.settings, requestId: failure.requestId, ...(details ? { details } : {}), ...(failure.responseValidation ? { responseValidation: failure.responseValidation } : {}) };
+  console.error(JSON.stringify({ time: new Date().toISOString(), level: "error", service: "marketplace", event: "dependency_failure", ...(failure.component === "f5" ? f5Trace.getStore() : {}), operation, status: failure.status, ...(failure.responseValidation ? { message: failure.message } : {}), ...metadata }));
   return { ...metadata, message: failure.message, status: failure.status };
 }
 export function diagnosticResponse(error: unknown, component: Component, operation: string, fallback: string) {

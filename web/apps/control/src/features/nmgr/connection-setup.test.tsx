@@ -39,6 +39,19 @@ const status = {
   persistence: "pod",
   manualConfiguration: true,
 };
+it("shows Secret read failures and both masked deployment and saved values without submitting previews", async () => {
+  const token = { source: "Saved settings", status: "loaded", preview: "••••••••2222", length: 20 };
+  const deployment = { source: "GUARD_API_TOKEN_FILE", status: "unreadable", preview: "", path: "/run/secrets/nemo", code: "ENOENT" };
+  const fetcher = vi.fn(async () => Response.json({ ...status, values: { nemoToken: { effective: token, deployment, overridden: true } } }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<ConnectionSetup onConnected={() => {}} onRetry={() => {}} />);
+  expect(await screen.findByText(/ENOENT/)).toBeTruthy();
+  expect(screen.getByText(/••••••••2222/)).toBeTruthy();
+  expect(screen.getByText(/Deployment value is overridden/)).toBeTruthy();
+  expect((screen.getByLabelText("NeMo Token") as HTMLInputElement).value).toBe("");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh configuration status" }));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+});
 it("tests individual entered settings without saving or entering the workspace and clears stale results on edit", async () => {
   const connected = vi.fn();
   const fetcher = vi.fn(async (path: string, init?: RequestInit) => path.endsWith("/test")

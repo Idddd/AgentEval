@@ -62,3 +62,19 @@ it("does not treat malformed responses or unpublished versions as successful pub
   f.f5.request.mockResolvedValue({ scanner: { id: "another-scanner" } });
   expect(await f.service.resourceStatus(actor, "control", f.remote)).toMatchObject({ status: "unavailable" });
 });
+it("compares imported F5 Project binding flags and current Scanner version without changing the snapshot", async () => {
+  const f = fixture("F5"), entity = f.doc.state.entities[0]!;
+  const ref = { id: "scanner", version: "old-version", enabled: false, blocking: false };
+  entity.kind = "Profile"; entity.imported = { remoteId: "project", available: true, checkedAt: "now", policyBindings: [], f5: { versions: [], scannerBindings: [ref], packageBindings: [], deploymentStatus: "draft" } };
+  f.doc.bindings["control@1"] = { f5: { sourceId: "f5-instance", projectId: "project" } };
+  f.f5.request.mockResolvedValue({ project: { id: "project", config: { scanners: [ref] }, deploymentStatus: "draft" } });
+  expect(await f.service.resourceStatus(actor, "control", f.remote)).toMatchObject({ status: "available" });
+  f.f5.request.mockResolvedValue({ project: { id: "project", config: { scanners: [{ ...ref, enabled: true }] }, deploymentStatus: "draft" } });
+  expect(await f.service.resourceStatus(actor, "control", f.remote)).toMatchObject({ status: "changed" });
+  entity.kind = "Guardrail";
+  f.doc.bindings["control@1"] = { f5: { sourceId: "f5-instance", scannerId: "scanner-id", versionId: "v1" } };
+  f.f5.request.mockResolvedValue({ scanner: { id: "scanner-id", versionMeta: { id: "v2" } } });
+  expect(await f.service.resourceStatus(actor, "control", f.remote)).toMatchObject({ status: "changed" });
+  expect(f.f5.request).toHaveBeenLastCalledWith("/scanners/scanner-id", "GET");
+  expect(f.write).not.toHaveBeenCalled();
+});

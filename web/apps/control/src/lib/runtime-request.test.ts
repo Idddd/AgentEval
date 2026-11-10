@@ -24,3 +24,11 @@ it("classifies network failures without exposing raw errors or repeating writes"
   expect(fetcher).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(log.mock.calls)).not.toMatch(/secret|private body/);
 });
+it("allows a longer read-only catalog deadline without changing the default API timeout", async () => {
+  const timeout = vi.spyOn(AbortSignal, "timeout");
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: true })));
+  await runtimeRequest("/api/nmgr/v1/integrations/f5/imports", { method: "POST", body: "{}" }, 120_000);
+  expect(timeout).toHaveBeenLastCalledWith(120_000);
+  await runtimeRequest("/api/nmgr/workspace");
+  expect(timeout).toHaveBeenLastCalledWith(30_000);
+});

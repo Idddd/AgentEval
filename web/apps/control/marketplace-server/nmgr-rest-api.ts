@@ -50,7 +50,7 @@ export async function nmgrRestApi(request: Request, invoke: Legacy): Promise<Res
     const call = async (path: string, command?: unknown, discover = false) => {
       const headers = new Headers(request.headers);
       headers.delete("content-length"); headers.delete("x-marketplace-import");
-      if (discover) headers.set("X-Marketplace-Import", "true");
+      if (discover) headers.set("X-Marketplace-Import", route.operationId === "importF5Resources" ? "f5" : "true");
       if (command !== undefined) headers.set("Content-Type", "application/json");
       const response = await invoke(new Request(new URL(`/api/nmgr/${path}`, url), { method: command !== undefined ? "POST" : "GET", headers, signal: request.signal, ...(command !== undefined ? { body: JSON.stringify(command) } : {}) }));
       if (!response.ok) throw new UpstreamResponse(response);
@@ -59,7 +59,11 @@ export async function nmgrRestApi(request: Request, invoke: Legacy): Promise<Res
     // The existing API owns authentication, control-unit visibility and backend isolation.
     const snapshot: Snapshot = await call("workspace", undefined, route.mode === "import");
     const meta = context(snapshot);
-    if (route.mode === "import") return json({ ...meta, imported: { guardrails: snapshot.state.entities.filter(e => e.kind === "Guardrail" && e.imported?.available).length, profiles: snapshot.state.entities.filter(e => e.kind === "Profile" && e.imported?.available).length } });
+    if (route.mode === "import") {
+      const provider = route.operationId === "importF5Resources" ? "F5" : "NeMo";
+      const imported = snapshot.state.entities.filter(e => e.provider === provider && e.imported?.available);
+      return json({ ...meta, imported: { guardrails: imported.filter(e => e.kind === "Guardrail").length, profiles: imported.filter(e => e.kind === "Profile").length } });
+    }
     if (route.mode === "command") {
       const target = route.action === "create" ? undefined : resource(snapshot, id, route.kind);
       const envelope = { requestId: body.requestId, expectedRevision: body.expectedRevision };

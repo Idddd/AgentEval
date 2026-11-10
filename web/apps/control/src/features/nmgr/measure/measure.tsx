@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Role } from "../model";
 import { actorNames } from "../workbench";
 import {
@@ -30,6 +30,7 @@ export function Measure({
   onCenter,
   initialBusinessView = "activity",
   technicalPlaceholders = false,
+  dashboardOverview,
 }: {
   role: Role;
   onPolicyAdjustment?: () => void;
@@ -39,6 +40,7 @@ export function Measure({
   onCenter?: (center: MeasureCenter) => void;
   initialBusinessView?: "scans" | "activity";
   technicalPlaceholders?: boolean;
+  dashboardOverview?: ReactNode;
 }) {
   const [state, setState] = useState<MeasureState>(seedMeasure);
   const [error, setError] = useState("");
@@ -114,6 +116,7 @@ export function Measure({
         />
       ) : initialBusinessView === "scans" ? (
         <ScanJourney
+          dashboardOverview={dashboardOverview}
           key={role}
           state={state}
           role={role}

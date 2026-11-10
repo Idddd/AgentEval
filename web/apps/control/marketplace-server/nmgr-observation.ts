@@ -16,7 +16,7 @@ export async function observeResource(e: Entity, binding: NmgrBinding | undefine
       const id = e.kind === "Guardrail" ? b?.scannerId : b?.projectId;
       if (!id) return result("local_only", "No backend resource linked to this revision");
       if (e.kind === "Guardrail") {
-        const scanner = (await f5.request(`/scanners/${encodeURIComponent(id)}${b?.versionId ? `?version=${encodeURIComponent(b.versionId)}` : ""}`, "GET"))?.scanner;
+        const scanner = (await f5.request(`/scanners/${encodeURIComponent(id)}${b?.versionId && !e.imported ? `?version=${encodeURIComponent(b.versionId)}` : ""}`, "GET"))?.scanner;
         if (scanner?.id !== id || typeof scanner.versionMeta?.id !== "string") throw new Error("Invalid scanner response");
         const version = scanner.versionMeta.id;
         if (b?.versionId && version !== b.versionId || binding?.released && scanner.versionMeta.published !== true) return changed(version);
@@ -24,6 +24,13 @@ export async function observeResource(e: Entity, binding: NmgrBinding | undefine
       }
       const project = (await f5.request(`/projects/${encodeURIComponent(id)}`, "GET"))?.project;
       if (project?.id !== id || !Array.isArray(project.config?.scanners)) throw new Error("Invalid project response");
+      if (e.imported?.f5) {
+        const normalize = (rows: Record<string, unknown>[], keys: string[]) => rows.map(row => JSON.stringify(Object.fromEntries(keys.map(key => [key, row[key]])))).sort();
+        const equal = (left: Record<string, unknown>[], right: Record<string, unknown>[], keys: string[]) => JSON.stringify(normalize(left, keys)) === JSON.stringify(normalize(right, keys));
+        const info = e.imported.f5;
+        if (!equal(info.scannerBindings, project.config.scanners, ["id", "version", "direction", "enabled", "blocking", "mode", "force"]) ||
+          !equal(info.packageBindings, project.config.packages ?? [], ["id", "version", "enabled"]) || info.deploymentStatus !== project.deploymentStatus) return changed();
+      }
       const refs = Object.values(binding?.publishedRefs ?? {}).map(ref => ref.f5);
       if (refs.some(ref => !ref || project.config.scanners.filter((s: any) => s.id === ref.id).length !== 1 || !project.config.scanners.some((s: any) => Object.entries(ref).every(([key, value]) => s[key] === value)))) return changed();
       return result("available", "Backend resource readable");

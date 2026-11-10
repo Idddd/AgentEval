@@ -11,6 +11,8 @@
 
 ## 按页面接入
 
+F5 真实目录导入新增 `POST /api/nmgr/v1/integrations/f5/imports`（请求体 `{}`），与 NeMo 导入独立；随后用 `GET /guardrails?provider=F5`、`GET /profiles?provider=F5` 获取列表。版本及精确绑定见 `item.imported.f5`。详情与故障隔离说明见 [F5 真实资源导入](f5-catalog-import.md)。
+
 下表路径省略 `/api/nmgr/v1`。所有 ID 均为 Marketplace 本地 ID，只有 `/evaluations/{id}` 使用评测 run ID。
 
 | 页面 / 操作 | 方法与路径 | 关键返回 / 注意事项 |

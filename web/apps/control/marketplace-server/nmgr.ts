@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
+import { evaluationResults } from "./nmgr-evaluation-results";
 import { addEntity, editEntity, reviseEntity, transition, type Entity, type State, type Role } from "../src/features/nmgr/model";
 import { commandSchema, caseSchema } from "./nmgr-contract";
 import { StoreError } from "./marketplace-db";
@@ -9,6 +10,8 @@ import type { F5Remote, F5ScannerRef } from "./f5-client";
 import { observeResource } from "./nmgr-observation";
 import { emptyNemoPolicy, nemoDraftStep } from "./nmgr-draft-sync";
 import { discoverNemo, mergeNemo } from "./nmgr-import";
+import { catalogFingerprint, discoverF5, mergeF5 } from "./nmgr-f5-import";
+import { addRequestMetadata, nmgrRequestContext } from "./nmgr-request-context";
 import { f5Trace, logF5 } from "./f5-trace";
 import { parseNemoPolicy } from "../src/features/nmgr/nemo-policy";
 
@@ -16,7 +19,7 @@ export type NmgrActor = { id: string; name: string; role: Role; unit: string };
 type PolicyBinding = { policyId: string; policyVersion: string; enabledRuleIds: string[]; enabledRails: string[]; f5?: F5ScannerRef };
 export type NmgrBinding = { draftSyncedAt?: string; f5?: F5Binding; policyId?: string; revision?: number; publishedVersion?: string; ruleIds?: string[]; rails?: string[]; guardrailId?: string; draftRevision?: number; version?: string; publishedRefs?: Record<string, PolicyBinding>; released?: boolean };
 export type NmgrJob = { traceId?: string; leaseUntil?: number; canCorrect?: boolean; canResume?: boolean; purpose?: "draft-sync"; expectedRevision?: number; f5?: F5Work; actor: string; phase: string; status: "pending" | "failed" | "uncertain" | "done"; started: string; inflight?: boolean; message?: string; runId?: string; dataset?: string; definition?: any; profile?: any };
-export type NmgrDocument = { revision: number; state: State; requests: Record<string, string>; jobs: Record<string, NmgrJob>; bindings: Record<string, NmgrBinding>; authors: Record<string, string>; requestors: Record<string, string> };
+export type NmgrDocument = { revision: number; catalogRevisions?: Partial<Record<"NeMo" | "F5", number>>; state: State; requests: Record<string, string>; jobs: Record<string, NmgrJob>; bindings: Record<string, NmgrBinding>; authors: Record<string, string>; requestors: Record<string, string> };
 export interface NmgrPersistence {
   exclusive<T>(fn: () => Promise<T>): Promise<T>;
   readDocument<T>(id: string): Promise<T | undefined>;
@@ -41,20 +44,46 @@ export class NmgrService {
   private async load() { return await this.db.readDocument<NmgrDocument>(this.documentId) ?? empty(); }
   private async save(doc: NmgrDocument) { doc.revision++; await this.db.writeDocument(this.documentId, doc); }
   private view(doc: NmgrDocument, actor: NmgrActor) {
-    const entities = doc.state.entities.filter(e => scope(e, actor)), ids = new Set(entities.map(e => e.id));
+    const entities = doc.state.entities.filter(e => scope(e, actor) && (!e.imported || e.provider !== "F5" || e.sourceInstanceId === this.f5?.sourceId)), ids = new Set(entities.map(e => e.id));
     return { revision: doc.revision, actor, ...(this.sourceErrors ? { sourceErrors: this.sourceErrors } : {}), sources: this.f5 ? ["NeMo", "F5"] : ["NeMo"], state: { entities, audit: doc.state.audit.filter(a => ids.has(a.entity)) },
       jobs: Object.fromEntries(Object.entries(doc.jobs).filter(([id]) => ids.has(id)).map(([id, job]) => [id, { ...job, canResume: job.purpose === "draft-sync" ? actor.role === "IT Admin" || actor.role === "User" && doc.authors[id] === actor.id : actor.role === "IT Admin" && job.actor === actor.id, definition: undefined, profile: undefined, f5: undefined, leaseUntil: undefined }])),
       bindings: Object.fromEntries(Object.entries(doc.bindings).filter(([key]) => ids.has(key.split("@")[0]!))) };
   }
   async snapshot(actor: NmgrActor) { return this.db.exclusive(async () => this.view(await this.load(), actor)); }
   async importResources(actor: NmgrActor, remote: NmgrRemote) {
-    const revision = (await this.snapshot(actor)).revision;
+    const fingerprint = await this.db.exclusive(async () => catalogFingerprint(await this.load(), "NeMo"));
     const resources = await discoverNemo(remote);
     return this.db.exclusive(async () => {
       const doc = await this.load();
-      if (doc.revision !== revision) fail(409, "Workspace changed during import. Refresh again to read the latest NeMo resources.");
+      if (catalogFingerprint(doc, "NeMo") !== fingerprint) fail(409, "Workspace changed during import. Refresh again to read the latest NeMo resources.");
       mergeNemo(doc, actor, resources);
+      (doc.catalogRevisions ??= {}).NeMo = (doc.catalogRevisions.NeMo ?? 0) + 1;
       await this.save(doc); return this.view(doc, actor);
+    });
+  }
+  async importF5Resources(actor: NmgrActor) {
+    if (!this.f5) throw new DeploymentError("f5", "f5_not_configured", "Configure the F5 API URL and token before importing.");
+    const remote = this.f5, operationId = randomUUID(), started = Date.now();
+    addRequestMetadata({ operationReference: operationId });
+    return f5Trace.run({ operationId, workspace: this.workspace, actorId: actor.id, resourceId: "catalog", phase: "catalog-import" }, async () => {
+      logF5("f5_import_started", { sourceId: remote.sourceId, requestId: nmgrRequestContext.getStore()?.requestId });
+      try {
+        const fingerprint = await this.db.exclusive(async () => catalogFingerprint(await this.load(), "F5"));
+        const resources = await discoverF5(remote);
+        const result = await this.db.exclusive(async () => {
+          const doc = await this.load();
+          if (catalogFingerprint(doc, "F5") !== fingerprint) throw new DeploymentError("f5", "f5_import_conflict", "F5 state changed during import. Refresh again to read the latest F5 resources.", undefined, 409);
+          mergeF5(doc, actor, remote.sourceId, resources);
+          (doc.catalogRevisions ??= {}).F5 = (doc.catalogRevisions.F5 ?? 0) + 1;
+          await this.save(doc); return this.view(doc, actor);
+        });
+        logF5("f5_import_completed", { sourceId: remote.sourceId, count: resources.length, durationMs: Date.now() - started });
+        return result;
+      } catch (error) {
+        const failure = error instanceof DeploymentError ? error : new DeploymentError("f5", "f5_import_failed", "F5 catalog import failed. Existing records were retained. Check the error reference and F5 connection.", undefined, 502, error);
+        logF5("f5_import_failed", { sourceId: remote.sourceId, durationMs: Date.now() - started, code: failure.code, errorReference: failure.requestId, ...(failure.responseValidation ? { message: failure.message, endpoint: failure.responseValidation.endpoint } : {}) });
+        throw failure;
+      }
     });
   }
   async resourceStatus(actor: NmgrActor, id: string, remote: NmgrRemote) {
@@ -76,7 +105,7 @@ export class NmgrService {
       const id = "draft" in cmd ? cmd.draft.id : cmd.id;
       let e = doc.state.entities.find(e => e.id === id && scope(e, actor));
       if (cmd.type !== "create" && !e) fail(404, "Record not found.");
-      if (e?.imported) fail(403, "This resource is managed in NeMo. Refresh to import its latest changes.");
+      if (e?.imported) fail(403, `This resource is managed in ${e.provider ?? "NeMo"}. Refresh to import its latest changes.`);
       const job = doc.jobs[id];
       let syncAfterSave = false;
       if (cmd.type === "advance" || cmd.type === "reconcile") {
@@ -173,7 +202,12 @@ export class NmgrService {
             }
             if (e!.kind === "Profile" && cmd.action === "approve") this.profileBindings(doc, e!, true);
             const previous = { deployed: e!.deployed, deployedAt: e!.deployedAt, deployedRefs: e!.deployedRefs };
-            this.changeUnit(doc, e!.unit, state => transition(state, id, cmd.action, actor.role, { actorName: actor.name, ...(cmd.reason ? { reason: cmd.reason } : {}), ...(cmd.config ? { config: cmd.config } : {}), policies: [e!.description], provider: e!.provider ?? "NeMo" }), e!.provider);
+            this.changeUnit(doc, e!.unit, state => {
+              const validationState = e!.kind === "Profile" && e!.provider === "F5" && cmd.action === "approve" ? this.profileReferenceState(doc, e!, true) : state;
+              const changed = transition(validationState, id, cmd.action, actor.role, { actorName: actor.name, ...(cmd.reason ? { reason: cmd.reason } : {}), ...(cmd.config ? { config: cmd.config } : {}), policies: [e!.description], provider: e!.provider ?? "NeMo" });
+              // Historical-version availability is a validation view only, never a new Scanner publication.
+              return { ...changed, entities: state.entities.map(item => item.id === id ? changed.entities.find(value => value.id === id)! : item) };
+            }, e!.provider);
             e = doc.state.entities.find(e => e.id === id)!;
             if (cmd.action === "implement") e.sourcePending = false;
             // Demo profiles activate on approval; live profiles require actual
@@ -259,7 +293,7 @@ export class NmgrService {
         job.canCorrect = true; e.status = "DRAFT"; delete e.signedBy;
       }
       const failure = reportFailure(error, e.provider === "F5" ? "f5" : "nemo", `job.${job.phase}`, "Connection lost or incompatible backend response. Reconcile the remote result before retrying.");
-      job.message = `[${failure.code}] ${failure.message} Check: ${failure.settings.join(", ")}. Reference: ${failure.requestId}${failure.details ? `\n${JSON.stringify(failure.details, null, 2)}` : ""}`;
+      job.message = `[${failure.code}] ${failure.message}${failure.settings.length ? ` Check: ${failure.settings.join(", ")}.` : ""} Reference: ${failure.requestId}${failure.details ? `\n${JSON.stringify(failure.details, null, 2)}` : ""}`;
       this.audit(doc, e, actor, `${job.phase}: ${job.status}`);
     }
     await persist(doc);
@@ -276,10 +310,24 @@ export class NmgrService {
       doc.state = { ...changed, entities: [...changed.entities, ...others] };
     } catch (error) { if (error instanceof StoreError) throw error; fail(422, error instanceof Error ? error.message : "Invalid lifecycle change."); }
   }
-  private profileBindings(doc: NmgrDocument, e: Entity, pinned = false) {
+  private profileReferenceState(doc: NmgrDocument, e: Entity, pinned = false): State {
+    const entities = doc.state.entities.filter(g => g.unit === e.unit && (g.provider ?? "NeMo") === (e.provider ?? "NeMo"));
+    if (!pinned || e.provider !== "F5") return { ...doc.state, entities };
+    const saved = doc.bindings[keyFor(e)]?.publishedRefs;
+    return { ...doc.state, entities: entities.map(g => {
+      if (!g.imported || g.kind !== "Guardrail" || !e.refs.includes(g.id)) return g;
+      const ref = saved?.[g.id]?.f5;
+      const version = g.imported.f5?.versions.find(v => v.id === ref?.version);
+      if (!ref || g.sourceInstanceId !== this.f5?.sourceId || !g.imported.available || g.imported.remoteId !== ref.id || !version?.published || version.direction && version.direction !== ref.direction)
+        fail(409, "The frozen F5 Scanner version is unavailable, unpublished or changed. Refresh and review the Profile bindings.");
+      return { ...g, deployed: g.version };
+    }) };
+  }
+  private profileBindings(doc: NmgrDocument, e: Entity, pinned = false): PolicyBinding[] {
     // Re-run mandatory/jurisdiction and released-reference validation at release.
     if (e.provider === "F5" && !this.f5) fail(503, "F5 is not configured.");
-    try { addEntity({ ...doc.state, entities: doc.state.entities.filter(g => g.id !== e.id && g.unit === e.unit && (g.provider ?? "NeMo") === (e.provider ?? "NeMo")) }, e); }
+    const validationState = this.profileReferenceState(doc, e, pinned);
+    try { addEntity({ ...validationState, entities: validationState.entities.filter(g => g.id !== e.id) }, e); }
     catch (error) { fail(422, error instanceof Error ? error.message : "Invalid profile bindings."); }
     if (pinned) {
       const saved = doc.bindings[keyFor(e)]?.publishedRefs;
@@ -287,13 +335,15 @@ export class NmgrService {
       if (e.provider === "F5" && (doc.bindings[keyFor(e)]?.f5?.sourceId !== this.f5!.sourceId || e.refs.some(id => !saved[id]?.f5))) fail(409, "F5 source instance changed or approved Scanner versions are missing.");
       return e.refs.map(id => saved[id]!);
     }
-    return e.refs.map(id => {
+    return e.refs.map<PolicyBinding>(id => {
       const guardrail = doc.state.entities.find(g => g.id === id)!;
       const binding = doc.bindings[`${id}@${guardrail.deployed}`];
       if (e.provider === "F5") {
         if (!binding?.released || !binding.f5?.scannerId || !binding.f5.versionId || binding.f5.sourceId !== this.f5!.sourceId) fail(409, "Referenced Guardrails require a published version in this F5 source instance.");
         const version = guardrail.revisions?.[guardrail.deployed!] ?? guardrail;
-        return { policyId: binding.f5.scannerId, policyVersion: binding.f5.versionId, enabledRuleIds: [], enabledRails: [], f5: { id: binding.f5.scannerId, version: binding.f5.versionId, direction: version.config!.direction, enabled: true as const, blocking: true as const, mode: "block" as const } };
+        const direction = guardrail.imported ? guardrail.imported.f5?.direction : version.config?.direction;
+        if (guardrail.imported && (!guardrail.imported.available || !guardrail.imported.bindable) || direction !== "request" && direction !== "response" && direction !== "both") fail(409, "Referenced F5 Scanner requires an available published version and supported direction.");
+        return { policyId: binding.f5.scannerId, policyVersion: binding.f5.versionId, enabledRuleIds: [], enabledRails: [], f5: { id: binding.f5.scannerId, version: binding.f5.versionId, direction, enabled: true as const, blocking: true as const, mode: "block" as const } };
       }
       if (!binding?.policyId || !binding.publishedVersion || !binding.released) fail(409, "Referenced Guardrails must have a published NeMo version.");
       if (!binding.ruleIds?.length || !binding.rails?.length) fail(409, "Published policy rules and directions are missing. Evaluate and publish a new revision.");
@@ -362,7 +412,7 @@ export class NmgrService {
     } else fail(409, "Unknown pending operation.");
   }
   private recordRun(e: Entity, job: NmgrJob, run: any) {
-    const results = z.array(z.object({ caseId: z.string(), passed: z.boolean(), actualDecision: z.string().optional(), reason: z.string().optional() }).passthrough()).parse(run.results);
+    const results = evaluationResults(run, job.phase);
     const complete = !job.definition || job.definition.tests.length === results.length && job.definition.tests.every((t: any) => results.some(r => r.caseId === t.id));
     const passed = run.status === "passed" && complete && results.length > 0 && results.every(r => r.passed);
     e.runs = [{ id: run.id, version: e.version, configurationRevision: e.configurationRevision ?? 0, base: e.deployed, dataset: job.dataset ?? `NeMo ${job.phase}`, passed, start: job.started, end: now(), cases: results.length, tester: "IT Admin", evidence: { source: "NeMo", status: run.status, results, failureReason: run.failureReason ?? null } }, ...e.runs.filter(r => r.id !== run.id)];

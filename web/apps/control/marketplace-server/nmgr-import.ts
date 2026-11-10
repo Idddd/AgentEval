@@ -63,7 +63,7 @@ export function mergeNemo(doc: NmgrDocument, actor: NmgrActor, resources: Discov
     if (existing) Object.assign(existing, entity); else doc.state.entities.push(entity);
     doc.bindings[`${localId}@1`] = resource.binding;
   }
-  for (const entity of doc.state.entities.filter(e => e.imported && e.unit === actor.unit)) {
+  for (const entity of doc.state.entities.filter(e => e.imported && (e.provider ?? "NeMo") === "NeMo" && e.unit === actor.unit)) {
     if (!seen.has(entity.id)) {
       entity.imported!.available = false; entity.imported!.checkedAt = timestamp;
       entity.deployed = null; entity.status = "DRAFT";

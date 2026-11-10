@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConnectionField } from "./connection-field";
+import { ConnectionValueStatus } from "./connection-value-status";
+import type { ConnectionValues } from "./connection-values";
 import { runtimeRequest } from "@/lib/runtime-request";
 import "./connection-setup.css";
 
@@ -24,6 +26,7 @@ const probeFields: Record<Probe, Array<Field | Option>> = {
   f5Token: ["f5Url", "f5Token", "f5Mode", "caMode", "caPem"],
 };
 type Status = {
+  values?: ConnectionValues;
   saved?: boolean;
   configured?: Partial<Record<Field, boolean>>;
   connectionRevision?: string;
@@ -163,6 +166,15 @@ export function ConnectionSetup({
       setBusy(false);
     }
   }
+  async function refreshStatus() {
+    setLoading(true);
+    setResults({});
+    try {
+      setStatus(await runtimeRequest<Status>("/api/nmgr/connection", { cache: "no-store" }));
+      setError("");
+    } catch (error) { setError(error instanceof Error ? error.message : "Could not read configuration status."); }
+    finally { setLoading(false); }
+  }
   async function test(target: Probe) {
     if (busy || testing) return;
     setTesting(target);
@@ -198,6 +210,8 @@ export function ConnectionSetup({
           setResults({});
         }}
       >
+        <ConnectionValueStatus value={status?.values?.[key]} />
+        {key === "databaseUrl" && <ConnectionValueStatus value={status?.values?.databasePassword} />}
         {key in probeFields && <div className="nm-connection-probe">
           <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void test(key as Probe)}>
             {testing === key ? "Testing…" : `Test ${definition.label}`}
@@ -250,6 +264,10 @@ export function ConnectionSetup({
             <p className="nm-muted">Demo integration connection</p>
           </div>
         </header>
+        <div className="nm-connection-probe">
+          <Button type="button" variant="outline" size="sm" disabled={loading || busy || !!testing} onClick={() => void refreshStatus()}>Refresh configuration status</Button>
+          <p className="nm-muted">Values received by this server. Tokens are masked; read success does not confirm authentication. Test the connection to verify.</p>
+        </div>
         {error && (
           <p role="alert" className="nm-callout nm-connection-error">
             {error}
@@ -282,7 +300,11 @@ export function ConnectionSetup({
               {field("f5Url")}
               {field("f5Token")}
               {field("f5AdminIds")}
-            </> : <p className="nm-muted">Enable F5 to configure its URL and API token.</p>}
+            </> : <>
+              <p className="nm-muted">Enable F5 to configure its URL and API token.</p>
+              <ConnectionValueStatus value={status?.values?.f5Url} />
+              <ConnectionValueStatus value={status?.values?.f5Token} />
+            </>}
           </fieldset>
           <fieldset className="nm-connection-group">
             <legend>Database connection</legend>

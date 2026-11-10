@@ -77,6 +77,66 @@ it("keeps existing records visible with an import error when discovery fails", a
   expect(await screen.findByRole("button", { name: "saved-policy" })).toBeTruthy();
   expect(screen.getByRole("alert").textContent).toContain("NeMo import failed");
 });
+it("imports F5 in the background, leaves NeMo usable while pending, and shows a separate failure", async () => {
+  const fetcher = serveWorkspace([liveEntity("nemo-visible", "Guardrail")]);
+  const original = fetcher.getMockImplementation()!;
+  let resolve!: (value: Response) => void;
+  fetcher.mockImplementation(async (url, init) => {
+    if (url === "/api/nmgr/v1/integrations/f5/imports") return new Promise<Response>(done => { resolve = done; });
+    const response = await original(url, init), data = await response.json();
+    return Response.json({ ...data, sources: ["NeMo", "F5"] });
+  });
+  render(<NmgrMode />);
+  fireEvent.click(await screen.findByRole("button", { name: "nemo-visible" }));
+  expect(screen.getByRole("heading", { name: "nemo-visible" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Back to list" }).hasAttribute("disabled")).toBe(false);
+  await waitFor(() => expect(resolve).toBeTypeOf("function"));
+  resolve(Response.json({ error: { code: "f5_http_403", message: "F5 catalog denied", requestId: "f5-reference" } }, { status: 403 }));
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("F5 import failed"));
+  expect(screen.getByRole("heading", { name: "nemo-visible" })).toBeTruthy();
+});
+it("shows real F5 versions and exact disabled Project bindings with read-only drilldown", async () => {
+  const meta = { available: true, checkedAt: "2026-11-09T00:00:00Z", policyBindings: [] };
+  const scanner = liveEntity("external-scanner", "Guardrail", { provider: "F5", sourceInstanceId: "f5", imported: { ...meta, remoteId: "remote-scanner", f5: { currentVersionId: "v2-id", versions: [{ id: "v1-id", name: "Version One", published: true }, { id: "v2-id", name: "Version Two", published: false }], scannerBindings: [], packageBindings: [] } } });
+  const project = liveEntity("external-project", "Profile", { provider: "F5", sourceInstanceId: "f5", deployed: null, refs: [scanner.id], imported: { ...meta, remoteId: "remote-project", f5: { versions: [], deploymentStatus: "draft", scannerBindings: [{ id: "remote-scanner", version: "v1-id", direction: "response", enabled: false, blocking: false, mode: "monitor" }], packageBindings: [] } } });
+  window.history.replaceState(null, "", "/v3/guardrails#Profile/repository/external-project");
+  serveWorkspace([scanner, project]); render(<NmgrMode />);
+  const table = await screen.findByRole("table", { name: "F5 Scanner bindings" });
+  expect(within(table).getByText("v1-id")).toBeTruthy(); expect(within(table).getAllByText("No")).toHaveLength(2);
+  expect(screen.queryByText("NeMo Policy bindings (draft)")).toBeNull();
+  expect(screen.getByText(/Managed in F5/)).toBeTruthy();
+  fireEvent.click(within(table).getByRole("button", { name: "external-scanner" }));
+  expect(await screen.findByRole("table", { name: "F5 Scanner versions" })).toBeTruthy();
+  expect(screen.getByText("Version Two")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Create revision" })).toBeNull();
+});
+it.each(["before", "after"])("retains NeMo backend observations when F5 import finishes %s the status query", async timing => {
+  let revision = 1, imports = 0, readRevision = 0;
+  let finishImport!: () => void;
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url === "/api/marketplace-config?workspace=v3") return Response.json({ mode: "live" });
+    if (url === "/api/nmgr/v1/integrations/f5/imports") {
+      imports++;
+      if (imports === 2 && timing === "after") await new Promise<void>(resolve => { finishImport = resolve; });
+      revision++; return Response.json({ revision, imported: { guardrails: 0, profiles: 0 } });
+    }
+    if (url.includes("?resource=")) return Response.json({ id: "stable-nemo", revision, checkedAt: "2026-11-09T00:00:00Z", status: "available", message: "Backend resource readable" });
+    readRevision = revision;
+    return Response.json({ revision, sources: ["NeMo", "F5"], actor: { id: "u", name: "User", role: "User", unit: "ISS" }, state: { entities: [liveEntity("stable-nemo", "Guardrail")], audit: [] }, jobs: {}, bindings: {} });
+  }));
+  render(<NmgrMode />);
+  await screen.findByRole("button", { name: "stable-nemo" });
+  await waitFor(() => expect(readRevision).toBe(2));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh backend status" }));
+  if (timing === "after") {
+    await screen.findByText("Backend resource readable");
+    finishImport();
+  }
+  await waitFor(() => expect(readRevision).toBe(3));
+  await waitFor(() => expect(screen.getByText("Backend resource readable")).toBeTruthy());
+  expect(screen.queryByText(/Workspace changed during the query/)).toBeNull();
+});
 it("renders the shared dashboard with zero disconnected metrics, real released counts, and working create navigation", async () => {
   serveWorkspace([liveEntity("published-control", "Guardrail"), liveEntity("draft-control", "Guardrail", { deployed: null, status: "DRAFT" }), liveEntity("published-profile", "Profile", { refs: ["published-control"], deployedRefs: ["published-control"] })]);
   render(<NmgrMode />);

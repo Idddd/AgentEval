@@ -18,6 +18,7 @@ import { withConnectionDiagnostics } from "./connection-diagnostics";
 import { probeConnection, type ProbeTarget } from "./connection-probe";
 import { connectionTestSchema } from "./nmgr-contract";
 import { withNmgrRequestLog } from "./nmgr-request-log";
+import { connectionValues } from "./connection-values";
 
 const stores = new Map<string, ConnectionStore>();
 const locks = new WeakMap<ConnectionStore, Promise<unknown>>();
@@ -198,9 +199,13 @@ export async function connectionApi(
     if (testing && request.method !== "POST") throw new DeploymentError("runtime", "connection_method_invalid", "Use POST to test a connection.", [], 405);
     if (request.method === "GET") {
       const saved = await savedFor(env, store);
-      return json(
-        state(connectionEnvironment(request, env, saved ?? {}), saved),
-      );
+      const effective = connectionEnvironment(request, env, saved ?? {});
+      const result = state(effective, saved);
+      const values = connectionValues(effective, connectionEnvironment(request, env), saved);
+      for (const key of ["nemoToken", "f5Token"] as const)
+        if (key !== "nemoToken" || effective.MARKETPLACE_NEMO_AUTH_MODE !== "password")
+          result.configured[key] = values[key]!.effective.status === "loaded";
+      return json({ ...result, values });
     }
     if (!["POST", "DELETE"].includes(request.method))
       throw new DeploymentError(

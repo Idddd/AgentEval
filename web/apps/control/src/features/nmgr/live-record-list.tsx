@@ -31,7 +31,7 @@ export function LiveRecordList({ items, kind, view, role, title, onOpen, onCreat
         <td>{renderStatus(item)}</td><td>{item.unit}</td><td>{item.imported && <small>Last imported</small>}<time dateTime={item.updated}>{new Date(item.updated).toLocaleString("en-GB", { timeZone: "Asia/Shanghai" })}</time></td>
         <td className="nm-live-backend-status">{renderBackend(item)}</td><td><Button size="icon" variant="ghost" aria-label={`View ${item.name}`} onClick={() => onOpen(item.id)}><ChevronRight size={16} /></Button></td>
       </tr>)}</tbody></table></div>
-      {!rows.length && <p className="nm-empty">No matching records. Connect and refresh to import existing NeMo resources, or create a new request.</p>}
+      {!rows.length && <p className="nm-empty">No matching records. Connect and refresh to import existing NeMo or F5 resources, or create a new request.</p>}
       <footer className="nm-pagination"><span>{rows.length ? `${(current - 1) * 6 + 1}–${Math.min(current * 6, rows.length)}` : "0"} of {rows.length}</span><Button size="sm" variant="outline" disabled={current === 1} onClick={() => setPage(current - 1)}>Previous</Button><span>Page {current} / {pages}</span><Button size="sm" variant="outline" disabled={current === pages} onClick={() => setPage(current + 1)}>Next</Button></footer>
     </section>}
   </>;

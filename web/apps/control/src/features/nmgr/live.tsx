@@ -1,3 +1,4 @@
+import { F5CatalogDetails } from "./f5-catalog-info";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,16 @@ import { readLiveLocation, writeLiveLocation } from "./live-navigation";
 import { useRouter } from "@tanstack/react-router";
 
 type Snapshot = { sourceErrors?: Record<string, { code: string; message: string; requestId: string }>; accessMode?: "local" | "authenticated" | "demo"; sources?: Array<"NeMo" | "F5">; revision: number; actor: NmgrActor; state: State; jobs: Record<string, NmgrJob>; bindings: Record<string, NmgrBinding> };
+function sameObservationTarget(before: Snapshot | null, after: Snapshot | null, id: string) {
+  if (!before || !after) return false;
+  const target = (snapshot: Snapshot) => {
+    const entity = snapshot.state.entities.find(e => e.id === id);
+    if (!entity) return undefined;
+    return JSON.stringify({ entity: { ...entity, updated: undefined, imported: entity.imported ? { ...entity.imported, checkedAt: undefined } : undefined }, binding: snapshot.bindings[`${id}@${entity.version}`] });
+  };
+  const previous = target(before);
+  return previous !== undefined && previous === target(after);
+}
 function sameNemoState(before: Snapshot, after: Snapshot) {
   const select = (value: Snapshot) => {
     const entities = value.state.entities.filter(e => e.provider !== "F5");
@@ -102,6 +113,8 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
   const [importError, setImportError] = useState("");
   const f5Working = useRef(new Set<string>());
   const [f5Error, setF5Error] = useState("");
+  const [f5ImportError, setF5ImportError] = useState("");
+  const f5ImportAbort = useRef<AbortController | null>(null);
   const queryAbort = useRef<AbortController | null>(null);
   const [location, setLocation] = useState(readLiveLocation);
   const { kind, view, selected } = location;
@@ -120,7 +133,13 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
     return () => { window.removeEventListener("popstate", restore); window.removeEventListener("hashchange", restore); };
   }, []);
   const headers = () => ({ "Content-Type": "application/json", ...(demoRoles && role ? { "X-Marketplace-Role": role } : {}), ...(connectionRevision ? { "X-Marketplace-Connection": connectionRevision } : {}) });
-  const apply = (value: Snapshot) => { if (mounted.current && (!current.current || value.revision >= current.current.revision)) { if (current.current?.revision !== value.revision) setObservations({}); current.current = value; setSnapshot(value); } };
+  const apply = (value: Snapshot) => {
+    if (mounted.current && (!current.current || value.revision >= current.current.revision)) {
+      const previous = current.current;
+      if (previous?.revision !== value.revision) setObservations(observations => Object.fromEntries(Object.entries(observations).filter(([id]) => sameObservationTarget(previous, value, id))));
+      current.current = value; setSnapshot(value);
+    }
+  };
   async function read(discover = false): Promise<Snapshot> {
     let value: Snapshot;
     try {
@@ -133,6 +152,15 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
     }
     if (!Number.isSafeInteger(value.revision) || !value.actor || !Array.isArray(value.state?.entities) || !value.jobs || !value.bindings) throw new Error("[workspace_response_invalid] API response is incompatible. Check the deployed UI/API release versions and /api routing.");
     return value as Snapshot;
+  }
+  function importF5(base: Snapshot) {
+    if (!mounted.current || f5ImportAbort.current || !base.sources?.includes("F5")) return;
+    const controller = new AbortController(); f5ImportAbort.current = controller;
+    // This request never takes the workspace busy lock or delays NeMo interaction.
+    void runtimeRequest("/api/nmgr/v1/integrations/f5/imports", { method: "POST", headers: headers(), body: "{}", signal: controller.signal }, 120_000)
+      .then(async () => { if (mounted.current && !controller.signal.aborted) { await refreshSnapshot(); setF5ImportError(""); } })
+      .catch(error => { if (mounted.current && !controller.signal.aborted) setF5ImportError(`F5 import failed. Existing records are retained. ${error instanceof Error ? error.message : "Retry backend refresh."}`); })
+      .finally(() => { if (f5ImportAbort.current === controller) f5ImportAbort.current = null; });
   }
   async function send(command: Record<string, unknown>, base = current.current) {
     if (!mounted.current) throw new Error("Workspace closed. Reopen it before making changes.");
@@ -168,9 +196,11 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
     if (working.current || !mounted.current) return;
     working.current = true;
     try {
-      const value = await read(!current.current);
+      const initial = !current.current;
+      const value = await read(initial);
       if (!mounted.current) return;
       apply(value);
+      if (initial) importF5(value);
       const pending = Object.entries(value.jobs).find(([, j]) => (j.canResume ?? j.actor === value.actor.id) && j.status === "pending" && !j.inflight);
       if (advance && pending) {
         const command = { type: "advance", id: pending[0] };
@@ -187,7 +217,7 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
     const controller = new AbortController(); queryAbort.current = controller;
     let ownsWorkspace = true;
     try {
-      const base = await read(true); apply(base);
+      const base = await read(true); apply(base); importF5(base);
       working.current = false; ownsWorkspace = false; setBusy(false);
       let next = 0, completed = 0, stale = false;
       const active = () => mounted.current && !controller.signal.aborted;
@@ -197,17 +227,19 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
           let observation: ResourceObservation;
           try {
             observation = await runtimeRequest(`/api/nmgr/workspace?resource=${encodeURIComponent(entity.id)}`, { headers: headers(), cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(25000)]) });
-            if (observation.id !== entity.id || observation.revision !== base.revision) { stale = true; continue; }
+            if (observation.id !== entity.id) { stale = true; continue; }
+            if (observation.revision !== base.revision && observation.revision !== current.current?.revision) await refreshSnapshot();
+            if (observation.revision !== base.revision && observation.revision !== current.current?.revision || !sameObservationTarget(base, current.current, entity.id)) { stale = true; continue; }
           } catch (error) {
             observation = { id: entity.id, revision: base.revision, checkedAt: new Date().toISOString(), status: "unavailable", message: error instanceof Error ? error.message : "Query failed; check permissions and connection" };
           }
-          if (active() && current.current?.revision === base.revision) {
+          if (active() && sameObservationTarget(base, current.current, entity.id)) {
             setObservations(previous => ({ ...previous, [entity.id]: observation }));
             setNotice(`Queried ${++completed} of ${base.state.entities.length} records. Results are read-only observations.`);
           }
         }
       }));
-      if (active() && stale) { setObservations({}); setNotice("Workspace changed during the query. Refresh backend status again."); await refreshSnapshot(); }
+      if (active() && stale) { setNotice("Workspace changed during the query. Refresh backend status again."); await refreshSnapshot(); }
       else if (active() && !base.state.entities.length) setNotice("No resources were returned by the configured backend.");
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "Cannot query backend status."); }
     finally { if (queryAbort.current === controller) { queryAbort.current = null; if (mounted.current) { if (ownsWorkspace) { working.current = false; setBusy(false); } setQuerying(false); } } }
@@ -217,7 +249,7 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
     try { sessionStorage.removeItem("marketplace-v2-token"); } catch {}
     mounted.current = true; void refresh();
     const timer = window.setInterval(() => { if (current.current && document.visibilityState !== "hidden") void refresh(true); }, 2500);
-    return () => { mounted.current = false; queryAbort.current?.abort(); window.clearInterval(timer); };
+    return () => { mounted.current = false; queryAbort.current?.abort(); f5ImportAbort.current?.abort(); f5ImportAbort.current = null; window.clearInterval(timer); };
   }, []);
   useEffect(() => {
     const item = snapshot?.state.entities.find(e => e.id === selected);
@@ -255,14 +287,16 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
   return <NmgrShell kind={kind} view={view} owner={actor.role} identity={actor.name} controlUnit={actor.unit} busy={busy} allowRoleSwitch={demoRoles} onOwner={value => onRole?.(value as Role)} onNavigate={navigate}
     title={pageTitle} description={error ? "Marketplace V3 · Connection or action requires attention" : `Marketplace V3${snapshot.accessMode === "local" ? " · Local test identity" : snapshot.accessMode === "demo" ? " · Demo role switching" : ""} · Sources: ${(snapshot.sources ?? ["NeMo"]).join(" / ")}`} actions={<div className="nm-actions"><Button variant="outline" disabled={busy} onClick={() => void refreshBackend()}>{querying ? "Querying backends…" : "Refresh backend status"}</Button></div>}>
     {snapshot.sourceErrors?.F5 && <p role="alert" className="nm-callout nm-connection-error mb-4">F5 unavailable: [{snapshot.sourceErrors.F5.code}] {snapshot.sourceErrors.F5.message} Reference: {snapshot.sourceErrors.F5.requestId}. NeMo remains available.</p>}
+    {f5ImportError && <p role="alert" className="nm-callout nm-connection-error mb-4">{f5ImportError}</p>}
     {f5Error && <p role="alert" className="nm-callout nm-connection-error mb-4">{f5Error}</p>}
     {importError && <p role="alert" className="nm-callout nm-connection-error mb-4">{importError}</p>}
     {error && !createGuardrail && <p role="alert" className="nm-callout nm-connection-error mb-4">{error}</p>}{notice && <p role="status" className="nm-callout mb-4">{notice}</p>}
     {view === "dashboard" || view === "operations" ? <LiveDashboard state={state} bindings={snapshot.bindings} role={actor.role} onCreate={openGuardrailCreate} onOpen={openRecord} />
     : view === "audit" || view === "logs" ? <section className="nm-card"><div className="nm-card-head"><h3>Operation History</h3><span>{state.audit.length} recorded actions</span></div><p className="nm-muted nm-padding">Marketplace configuration history. Runtime traffic traces are not connected (0).</p><div className="nm-scroll"><table><thead><tr><th>Time</th><th>Record</th><th>Actor</th><th>Action</th></tr></thead><tbody>{state.audit.map(a => <tr key={a.id}><td>{new Date(a.time).toLocaleString()}</td><td>{a.entity}</td><td>{a.actor}</td><td>{a.action}</td></tr>)}</tbody></table></div>{!state.audit.length && <p className="nm-empty">No recorded actions.</p>}</section>
     : form ? <LiveForm key={`${form}:${selected}`} kind={kind} initial={form === "create" ? undefined : item} state={state} sources={snapshot.sources ?? ["NeMo"]} mode={form} controlUnit={actor.unit} busy={busy} onCancel={() => setForm(null)} onSave={async draft => { if (await execute({ type: form, draft })) { setSelected(draft.id); setForm(null); } }} />
-    : item ? <div className="space-y-5"><Button variant="ghost" onClick={() => setSelected("")}><ArrowLeft size={16} />Back to list</Button><section className="nm-card nm-padding nm-full-detail nm-live-panel"><div className="nm-detail-head"><div><h2>{item.name}</h2><p className="nm-muted">{sourceLabel(item)} · {item.imported ? "External resource" : `Revision ${item.version}`}</p></div><LiveStatus item={item} /></div>{item.imported ? <p className="nm-callout">Imported from NeMo · Managed in NeMo. Missing ownership and location metadata are not supplied by the source. Workspace scope: {item.unit}.</p> : <WorkflowSteps item={item} releaseProfile />}{item.imported ? <ImportedInfo item={item} state={state} onOpen={openRecord} /> : item.kind === "Guardrail" ? <GuardrailInfo item={item} state={state} policyJson={item.provider !== "F5" && item.config?.scannerType === "custom"} onProfile={id => { const profile = state.entities.find(e => e.id === id); if (profile) openRecord(profile); }} /> : <div className="nm-info"><section><h3>Use Case</h3><p className="nm-info-description">{item.description}</p></section><section><h3>Ownership &amp; scope</h3><dl className="nm-info-facts">{[["Control Unit", item.unit], ["Location", item.location], ["Custodian", item.custodian], ["Published revision", item.deployed === null ? "Not published" : `v${item.deployed}`]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section></div>}
-      {item.kind === "Profile" && <section><h3>{item.imported ? "NeMo Policy bindings (draft)" : "Guardrails"}</h3><ul className="nm-live-refs">{item.imported ? item.imported.policyBindings.map((ref, index) => {
+    : item ? <div className="space-y-5"><Button variant="ghost" onClick={() => setSelected("")}><ArrowLeft size={16} />Back to list</Button><section className="nm-card nm-padding nm-full-detail nm-live-panel"><div className="nm-detail-head"><div><h2>{item.name}</h2><p className="nm-muted">{sourceLabel(item)} · {item.imported ? "External resource" : `Revision ${item.version}`}</p></div><LiveStatus item={item} /></div>{item.imported ? <p className="nm-callout">Imported from {item.provider ?? "NeMo"} · Managed in {item.provider ?? "NeMo"}. Missing ownership and location metadata are not supplied by the source. Workspace scope: {item.unit}.</p> : <WorkflowSteps item={item} releaseProfile />}{item.imported ? <ImportedInfo item={item} state={state} onOpen={openRecord} /> : item.kind === "Guardrail" ? <GuardrailInfo item={item} state={state} policyJson={item.provider !== "F5" && item.config?.scannerType === "custom"} onProfile={id => { const profile = state.entities.find(e => e.id === id); if (profile) openRecord(profile); }} /> : <div className="nm-info"><section><h3>Use Case</h3><p className="nm-info-description">{item.description}</p></section><section><h3>Ownership &amp; scope</h3><dl className="nm-info-facts">{[["Control Unit", item.unit], ["Location", item.location], ["Custodian", item.custodian], ["Published revision", item.deployed === null ? "Not published" : `v${item.deployed}`]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section></div>}
+      {item.imported?.f5 && <F5CatalogDetails item={item} state={state} bindings={snapshot.bindings} onOpen={openRecord} />}
+      {item.kind === "Profile" && !item.imported?.f5 && <section><h3>{item.imported ? "NeMo Policy bindings (draft)" : "Guardrails"}</h3><ul className="nm-live-refs">{item.imported ? item.imported.policyBindings.map((ref, index) => {
         const target = state.entities.find(e => e.kind === "Guardrail" && Object.entries(snapshot.bindings).some(([key, b]) => key.startsWith(`${e.id}@`) && b.policyId === ref.policyId));
         return <li key={`${ref.policyId}:${index}`}>{target ? <button className="nm-link" onClick={() => openRecord(target)}>{target.name}</button> : <span>{ref.policyId} · Not available in this workspace</span>}<small>{ref.policyId} · Version {ref.policyVersion}</small></li>;
       }) : item.refs.map(id => <li key={id}><button className="nm-link" onClick={() => { const target = state.entities.find(e => e.id === id); if (target) openRecord(target); }}>{state.entities.find(e => e.id === id)?.name ?? id}</button><small>{id}</small></li>)}</ul></section>}
@@ -290,15 +324,15 @@ function LiveWorkspace({ demoRoles = false, role, connectionRevision, onRole, on
 
 function ImportedInfo({ item, state, onOpen }: { item: Entity; state: State; onOpen: (item: Entity) => void }) {
   const profiles = state.entities.filter(e => e.kind === "Profile" && e.refs.includes(item.id));
-  return <div className="nm-info"><section><h3>Description</h3><p className="nm-info-description">{item.description}</p></section><section><h3>Source information</h3><dl className="nm-info-facts">{[["NeMo resource ID", item.imported?.remoteId], ["Workspace control unit", item.unit], ["Custodian", "—"], ["Target regions", "—"], ["Last imported", item.imported?.checkedAt ? new Date(item.imported.checkedAt).toLocaleString() : "—"]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>{item.kind === "Guardrail" && <section><h3>Used by Profiles</h3>{profiles.length ? profiles.map(profile => <button className="nm-link block" key={profile.id} onClick={() => onOpen(profile)}>{profile.name}</button>) : <p className="nm-muted">No Profile references in this workspace.</p>}</section>}</div>;
+  return <div className="nm-info"><section><h3>Description</h3><p className="nm-info-description">{item.description}</p></section><section><h3>Source information</h3><dl className="nm-info-facts">{[[`${item.provider ?? "NeMo"} resource ID`, item.imported?.remoteId], ["Workspace control unit", item.unit], ["Custodian", "—"], ["Target regions", "—"], ["Last imported", item.imported?.checkedAt ? new Date(item.imported.checkedAt).toLocaleString() : "—"]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>{item.kind === "Guardrail" && <section><h3>Used by Profiles</h3>{profiles.length ? profiles.map(profile => <button className="nm-link block" key={profile.id} onClick={() => onOpen(profile)}>{profile.name}</button>) : <p className="nm-muted">No Profile references in this workspace.</p>}</section>}</div>;
 }
 
 function ImportedStatus({ item }: { item: Entity }) {
-  return <div className="nm-live-draft-sync"><p>{item.imported?.available ? "Imported from NeMo" : "No longer available in NeMo"}</p><small>NeMo {item.kind === "Guardrail" ? "Policy" : "Guardrail"}: {item.imported?.remoteId}</small></div>;
+  return <div className="nm-live-draft-sync"><p>{item.imported?.available ? `Imported from ${item.provider ?? "NeMo"}` : `No longer available in ${item.provider ?? "NeMo"}`}</p><small>{item.provider ?? "NeMo"} {item.provider === "F5" ? item.kind === "Guardrail" ? "Scanner" : "Project" : item.kind === "Guardrail" ? "Policy" : "Guardrail"}: {item.imported?.remoteId}</small></div>;
 }
 
 function LiveStatus({ item }: { item: Entity }) {
-  if (item.imported) return <span className={`nm-badge ${item.deployed !== null ? "good" : ""}`}>{!item.imported.available ? "Unavailable" : item.deployed !== null ? "Published in NeMo" : "NeMo draft"}</span>;
+  if (item.imported) return <span className={`nm-badge ${item.deployed !== null ? "good" : ""}`}>{!item.imported.available ? "Unavailable" : item.provider === "F5" && item.kind === "Profile" ? `F5 · ${item.imported.f5?.deploymentStatus ?? "Imported"}` : item.deployed !== null ? `Published in ${item.provider ?? "NeMo"}` : `${item.provider ?? "NeMo"} draft`}</span>;
   const tone = ["DEPLOYED", "SIGNED OFF", "TEST PASSED"].includes(item.status) ? "good" : item.status === "TEST FAILED" ? "bad" : item.status === "SIGNOFF REQUESTED" ? "warning" : "";
   return <span className={`nm-badge ${tone}`}>{item.status === "DEPLOYED" ? `Released to ${item.provider ?? "NeMo"}` : item.status.toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase())}</span>;
 }

@@ -272,6 +272,24 @@ it("bypasses a Dashboard Profile and resumes the same configuration in Monitorin
   await waitFor(() => expect(within(screen.getByRole("table", { name: "Enforce & Prevent" })).getByText("Monitoring")).toBeTruthy());
 });
 
+it("uses Dashboard data and the same operating-mode menu on Measure, retaining the draft in Dashboard", async () => {
+  const state = seed(), profile = state.entities.find(item => item.id === "default-customer-assistant")!;
+  const guard = state.entities.find(item => item.id === profile.deployedRefs[0])!;
+  window.location.hash = "Profile/measure/";
+  render(<NmgrApp />);
+  expect(screen.getByText("High-Hits Agents")).toBeTruthy();
+  expect(screen.getByRole("button", { name: profile.name })).toBeTruthy();
+  expect(screen.queryByText("Guardrail XXXX")).toBeNull();
+  await act(async () => { fireEvent.keyDown(screen.getByRole("button", { name: `Actions for ${guard.name}` }), { key: "ArrowDown" }); });
+  expect(screen.getByRole("menuitem", { name: "Switch to Preventing" })).toBeTruthy();
+  await act(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "Switch to Monitoring" })); });
+  const saved = JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!).entities.find((item: { id: string }) => item.id === profile.id);
+  expect(saved.runtime.draftModes[guard.id]).toBe("monitoring");
+  fireEvent.click(screen.getAllByRole("button", { name: "Kill Instance" })[0]!);
+  expect(screen.getByRole("button", { name: "Submit for approval" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Bypass" })).toBeTruthy();
+});
+
 it("submits Dashboard mode changes for approval and lets the Approver apply them", async () => {
   const state = seed(), profile = state.entities.find((item) => item.id === "default-customer-assistant")!;
   const guard = state.entities.find((item) => item.id === profile.deployedRefs[0])!;

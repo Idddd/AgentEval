@@ -31,8 +31,16 @@ export type Run = {
   end: string;
   cases: number;
 };
+export type F5CatalogInfo = {
+  currentVersionId?: string;
+  direction?: string;
+  versions: Array<{ id: string; name: string; published: boolean; description?: string | undefined; createdAt?: string | undefined; direction?: string | undefined }>;
+  deploymentStatus?: string;
+  scannerBindings: Array<{ id: string; version?: string | undefined; direction?: string | undefined; enabled?: boolean | undefined; blocking?: boolean | undefined; mode?: string | undefined; force?: boolean | undefined }>;
+  packageBindings: Array<{ id: string; version?: string | undefined; enabled?: boolean | undefined }>;
+};
 export type Entity = {
-  imported?: { remoteId: string; available: boolean; publishedVersion?: string; bindable?: boolean; checkedAt: string; policyBindings: Array<{ policyId: string; policyVersion: string; enabledRuleIds: string[]; enabledRails: string[] }> };
+  imported?: { remoteId: string; available: boolean; publishedVersion?: string; bindable?: boolean; checkedAt: string; f5?: F5CatalogInfo; policyBindings: Array<{ policyId: string; policyVersion: string; enabledRuleIds: string[]; enabledRails: string[] }> };
   sourcePending?: boolean;
   sourceInstanceId?: string;
   provider?: "NeMo" | "F5";

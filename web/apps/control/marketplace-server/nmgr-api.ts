@@ -127,6 +127,11 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
       return result;
     } };
     if (!write) {
+      if (!resource && request.headers.get("x-marketplace-import") === "f5") {
+        component = "f5";
+        if (config.f5Error) throw new DeploymentError("f5", config.f5Error.code, config.f5Error.message);
+        return reply({ ...await service.importF5Resources(actor), accessMode: config.demo ? "demo" : config.localAccess ? "local" : "authenticated" });
+      }
       if (!resource && request.headers.get("x-marketplace-import") === "true") {
         component = "nemo";
         try { return reply({ ...await service.importResources(actor, remote), accessMode: config.demo ? "demo" : config.localAccess ? "local" : "authenticated" }); }

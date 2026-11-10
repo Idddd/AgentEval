@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { NmgrService, type NmgrDocument, type NmgrPersistence, type NmgrActor } from "./nmgr";
 
 const user: NmgrActor = { id: "u", name: "Author", role: "User", unit: "ISS" };
@@ -23,6 +23,39 @@ async function command(f: ReturnType<typeof fixture>, actor: NmgrActor, input: R
   return f.service.command(actor, { requestId: crypto.randomUUID(), expectedRevision: snapshot.revision, ...input }, f.remote);
 }
 describe("V2 authoritative workflow", () => {
+  it.each([
+    [undefined, "results: expected array, received missing"],
+    [null, "results: expected array, received null"],
+    [[{ caseId: "case-1", passed: "private-response-text", reason: "secret-content" }], "results[0].passed: expected boolean, received string"],
+  ])("reports safe evaluation schema details for %j", async (results, expected) => {
+    const f = fixture();
+    await command(f, user, { type: "create", draft });
+    const doc = (await f.db.readDocument<NmgrDocument>("nmgr:test"))!;
+    const entity = doc.state.entities[0]!;
+    entity.sourcePending = false; entity.status = "TEST READY";
+    doc.bindings[`${draft.id}@1`] = { policyId: "remote-policy", revision: 2 };
+    doc.jobs[draft.id] = { actor: tech.id, phase: "policy-poll", status: "pending", started: new Date().toISOString(), runId: "remote-run" };
+    await f.db.writeDocument("nmgr:test", doc);
+    f.remote.request = async () => ({ id: "remote-run", policyId: "remote-policy", revision: 2, status: "failed", results, failureReason: "Bearer private-token" });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await command(f, tech, { type: "advance", id: draft.id });
+      const snapshot = await f.service.snapshot(tech);
+      const job = snapshot.jobs[draft.id]!;
+      expect(job.status).toBe("uncertain");
+      expect(job.message).toContain("nemo_response_schema_invalid");
+      expect(job.message).toContain("policy-poll");
+      expect(job.message).toContain(expected);
+      expect(job.message).toContain("run status: failed");
+      expect(job.message).toContain("Reference:");
+      expect(snapshot.state.entities[0]!.runs).toHaveLength(0);
+      const logged = JSON.parse(log.mock.calls[0]![0]);
+      expect(logged.operation).toBe("job.policy-poll");
+      expect(logged.message).toContain(expected);
+      expect(logged.responseValidation.issues[0].path).toMatch(/^results/);
+      expect(JSON.stringify([job, logged])).not.toMatch(/private-response-text|secret-content|private-token/);
+    } finally { log.mockRestore(); }
+  });
   it("does not require another unit's invisible mandatory Guardrail", async () => {
     const f = fixture(), rmg = { ...user, id: "rmg-author", unit: "RMG" };
     await command(f, user, { type: "create", draft: { ...draft, mandatory: true } });

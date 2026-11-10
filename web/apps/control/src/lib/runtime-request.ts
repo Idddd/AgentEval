@@ -7,15 +7,15 @@ export function runtimeFailure(details: Failure, path: string, status?: number) 
 
 // A SPA host can answer /api with HTML and HTTP 200. Do not treat it as data,
 // display its content, silently simulate results, or retry an uncertain POST.
-export async function runtimeRequest<T = any>(path: string, init: RequestInit = {}): Promise<T> {
+export async function runtimeRequest<T = any>(path: string, init: RequestInit = {}, timeoutMs = 30_000): Promise<T> {
   let response: Response;
   try {
-    const timeout = AbortSignal.timeout(30_000);
+    const timeout = AbortSignal.timeout(timeoutMs);
     response = await fetch(path, { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
   } catch (error) {
     if (init.signal?.aborted) throw error;
     const timedOut = error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name);
-    throw runtimeFailure({ code: timedOut ? "api_timeout" : "api_unreachable", component: "network", message: `Cannot reach the Marketplace API${timedOut ? " within 30 seconds" : ""}. Check the server, /api reverse proxy, network and TLS.${init.method && init.method !== "GET" ? " Reconcile the saved result before retrying a write." : ""}` }, path);
+    throw runtimeFailure({ code: timedOut ? "api_timeout" : "api_unreachable", component: "network", message: `Cannot reach the Marketplace API${timedOut ? ` within ${timeoutMs / 1000} seconds` : ""}. Check the server, /api reverse proxy, network and TLS.${init.method && init.method !== "GET" ? " Reconcile the saved result before retrying a write." : ""}` }, path);
   }
   let value: any;
   try {
