@@ -39,7 +39,7 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           image_tag="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
           storage=browser
-          chart_version="0.2.28-dev.${GITHUB_RUN_NUMBER}"
+          chart_version="0.2.29-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${image_tag}")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tags+=("${image}:pr-${{ github.event.pull_request.number }}")
@@ -53,7 +53,7 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.2.28-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.29-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
@@ -218,3 +218,59 @@ jobs:
           printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           helm push "artifacts/tali-ui-demo-${CHART_VERSION}.tgz" "$CHART_REGISTRY"
           helm show chart "${CHART_REGISTRY}/tali-ui-demo" --version "$CHART_VERSION"
+
+  release:
+    name: Package GitHub release
+    needs: build
+    if: github.ref_type == 'tag' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: marketplace-release-*
+          merge-multiple: true
+          path: artifacts
+      - uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package verified image, chart and source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          repository="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
+          image="${repository}:sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
+          image_version="${repository}:${version}"
+          bundle="marketplace-v3-${version//./-}-offline"
+          mkdir -p release "offline/${bundle}"
+          docker pull "$image"
+          docker tag "$image" "$image_version"
+          docker image inspect "$image" --format '{{json .RepoDigests}}' > release/image-digests.json
+          cp "artifacts/tali-ui-demo-${version}.tgz" release/
+          cp artifacts/project-source.zip "release/AgentEval-v${version}-source.zip"
+          (cd release && sha256sum "AgentEval-v${version}-source.zip" > "AgentEval-v${version}-source.zip.sha256")
+          cp artifacts/isolation-test-results.json release/
+          cp docs/uat/2026-11-10-v0.2.29-release-validation.md release/release-validation.md
+          cp docs/marketplace-release.md release/deployment.md
+          cp docs/integration-api.md docs/resource-api.md release/
+          cp deploy/v2/UAT-token-config.md release/UAT-Helm-upgrade.md
+          cp -R deploy/helm/tali-ui-demo "offline/${bundle}/helm"
+          sed -i "s|tag: dev|tag: ${version}|" "offline/${bundle}/helm/values.yaml"
+          cp deploy/values.uat.example.yaml "offline/${bundle}/values.uat.yaml"
+          cp deploy/v2/check-nemo.mjs "offline/${bundle}/"
+          cp release/*.md release/image-digests.json release/isolation-test-results.json "offline/${bundle}/"
+          docker save --output "offline/${bundle}/marketplace-v2.tar" "$image_version"
+          (cd "offline/${bundle}" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          (cd offline && zip -q -r "../release/${bundle}.zip" "$bundle")
+          (cd release && sha256sum "${bundle}.zip" > "${bundle}.zip.sha256")
+          (cd release && find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" release/* --verify-tag \
+            --title "AI Marketplace ${GITHUB_REF_NAME}" --notes-file docs/uat/2026-11-10-v0.2.29-release-validation.md

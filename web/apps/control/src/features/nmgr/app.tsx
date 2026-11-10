@@ -65,9 +65,9 @@ import { OperationHistory, EntitySummary } from "./operation-history";
 import { EnforcementList } from "./enforcement-list";
 import { DeploymentQueues } from "./deployment-queues";
 import { EntityDetailLink } from "./entity-detail-link";
-import { DashboardGuardrailActions, ProfileDashboardOperations } from "./profile-dashboard-operations";
+import { ProfileDashboardOperations } from "./profile-dashboard-operations";
 import { DashboardMeasureOverview } from "./measure/dashboard-overview";
-import { operatingScans } from "./profile-operations-state";
+import { operatingScans, appendOperatingTraffic } from "./profile-operations-state";
 import {
   buildAlerts,
   profileAlertCounts,
@@ -422,6 +422,33 @@ export function DemoNmgrApp() {
     )
     .map(deployedEntity);
   const scans = activeProfiles.flatMap((p) => ["dashboard", "enforce", "measure"].includes(view) ? operatingScans(p, state, operationsNow, operationsStarted.current) : profileScans(p, state));
+  const measureTraffic = useRef({ activeProfiles, busy, dirty, updateState });
+  measureTraffic.current = { activeProfiles, busy, dirty, updateState };
+  useEffect(() => {
+    if (!ready || view !== "measure" || !["User", "User Admin"].includes(role)) return;
+    let tick = 0, paused = false;
+    const generate = () => {
+      const current = measureTraffic.current;
+      if (paused || document.visibilityState === "hidden" || current.busy || current.dirty) return;
+      const ids = new Set(current.activeProfiles.map(profile => profile.id));
+      const now = Date.now();
+      const scenarios = ["risk", "safe", "error"] as const;
+      try {
+        const saved = current.updateState(latest => latest.entities
+          .filter(profile => ids.has(profile.id) && !profile.runtime?.bypass && profile.mode !== "Pass all")
+          .reduce((next, profile, index) => appendOperatingTraffic(next, profile.id, scenarios[(tick + index) % scenarios.length]!, now), latest), true);
+        paused = !saved;
+        tick++;
+      } catch (error) {
+        paused = true;
+        setNotice(error instanceof Error ? error.message : "Mock traffic could not be saved.");
+      }
+    };
+    generate();
+    const timer = window.setInterval(generate, 5000);
+    document.addEventListener("visibilitychange", generate);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", generate); };
+  }, [ready, view, role]);
   const alerts = buildAlerts(activeProfiles, scans);
   const alertCountsByProfile = new Map(
     activeProfiles.map((profile) => [
@@ -835,7 +862,7 @@ export function DemoNmgrApp() {
             Guardrails
           </p>
         )}
-        {["measure", "runners", "protection"].includes(view) ? <Measure dashboardOverview={<DashboardMeasureOverview renderAction={(profile, guardrail) => <DashboardGuardrailActions profile={profile} guardrail={guardrail} state={state} role={role} dirty={dirty} busy={busy} initialTime={operationsStarted.current} updateState={updateState} />} state={state} profiles={activeProfiles} scans={scans} now={operationsNow} renderOperations={profile => <ProfileDashboardOperations profile={profile} state={state} role={role} dirty={dirty} busy={busy} initialTime={operationsStarted.current} updateState={updateState} onGuardrail={setMonitorGuardrail} />} />} key={role} role={role} initialBusinessView="scans" technicalPlaceholders center={view === "runners" ? "runners" : view === "protection" ? "protection" : "overview"} onCenter={center => go("Profile", center === "overview" ? "measure" : center)} onDashboard={() => go("Profile", "dashboard")} onBypass={() => go("Profile", "dashboard", "default-customer-assistant")} onPolicyAdjustment={() => go("Guardrail", "repository")} /> : view === "request" ? (
+        {["measure", "runners", "protection"].includes(view) ? <Measure dashboardOverview={<DashboardMeasureOverview renderBypass={profile => <ProfileDashboardOperations bypassOnly bypassRequiresApproval profile={profile} state={state} role={role} dirty={dirty} busy={busy} initialTime={operationsStarted.current} updateState={updateState} onGuardrail={setMonitorGuardrail} />} state={state} profiles={activeProfiles} scans={scans} now={operationsNow} renderOperations={profile => <ProfileDashboardOperations bypassRequiresApproval profile={profile} state={state} role={role} dirty={dirty} busy={busy} initialTime={operationsStarted.current} updateState={updateState} onGuardrail={setMonitorGuardrail} />} />} key={role} role={role} initialBusinessView="scans" technicalPlaceholders center={view === "runners" ? "runners" : view === "protection" ? "protection" : "overview"} onCenter={center => go("Profile", center === "overview" ? "measure" : center)} onDashboard={() => go("Profile", "dashboard")} onBypass={() => go("Profile", "dashboard", "default-customer-assistant")} onPolicyAdjustment={() => go("Guardrail", "repository")} /> : view === "request" ? (
           <section className="nm-card nm-padding nm-request-page">
             {error && (
               <div role="alert" className="nm-inline-notice nm-inline-error">

@@ -8,6 +8,21 @@ const fixture = () => {
   const profile = state.entities.find((item) => item.kind === "Profile")!;
   return { state, id: profile.id, guardrail: profile.deployedRefs[0]! };
 };
+it("keeps Bypass inactive until approved and preserves protection when rejected", () => {
+  const { state, id } = fixture(), now = Date.now();
+  const pending = operatingAction(state, id, "request-bypass", "User", now);
+  const requested = pending.entities.find(item => item.id === id)!;
+  expect(requested.runtime).toMatchObject({approval:"pending",pendingAction:"bypass",requestedBy:"User",requestedAt:now});
+  expect(requested.runtime?.bypass).not.toBe(true);
+  expect(() => operatingAction(pending, id, "approve", "User", now + 1)).toThrow(/Approver/);
+  expect(() => operatingAction(pending, id, "request-bypass", "User", now + 1)).toThrow(/pending/);
+  const rejected = operatingAction(pending, id, "reject", "User Admin", now + 2).entities.find(item => item.id === id)!;
+  expect(rejected.runtime?.approval).toBe("rejected");
+  expect(rejected.runtime?.bypass).not.toBe(true);
+  const approved = operatingAction(pending, id, "approve", "User Admin", now + 2).entities.find(item => item.id === id)!;
+  expect(approved.runtime).toMatchObject({bypass:true,approval:"approved",reviewedBy:"Admin"});
+  expect(approved.mode).toBe("Pass all");
+});
 it("keeps mode changes pending until the approver approves the same Profile configuration", () => {
   const { state, id, guardrail } = fixture(), now = Date.now();
   const before = operatingProfile(state.entities.find((item) => item.id === id)!, state, now);

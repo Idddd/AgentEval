@@ -22,30 +22,41 @@ export function GuardrailActions({name,current,disabled,onChange}:{name:string;c
    {(['monitoring','active'] as const).map(value=><DropdownMenuItem key={value} aria-label={`Switch to ${modeLabel(value)}`} onSelect={()=>onChange(value)} className="items-start gap-3 py-3">{value==='monitoring'?<Eye className="mt-0.5 size-4 text-blue-700" />:<ShieldCheck className="mt-0.5 size-4 text-emerald-700" />}<span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2 font-medium">Switch to {modeLabel(value)}{current===value&&<span className="text-[10px] font-normal text-muted-foreground">Current</span>}</span><span className="mt-1 block text-xs text-muted-foreground">{value==='monitoring'?'Detect and record only':'Block detected risks'}</span></span></DropdownMenuItem>)}
   </DropdownMenuContent></DropdownMenu>;
 }
-export function ProfileApprovalActions({profile,dirty,canBypass=true,canRequest=true}:{profile:Entity;dirty:boolean;canBypass?:boolean;canRequest?:boolean}) {
+export function ProfileApprovalActions({profile,dirty,canBypass=true,canRequest=true,bypassRequiresApproval=false,bypassOnly=false}:{profile:Entity;dirty:boolean;canBypass?:boolean;canRequest?:boolean;bypassRequiresApproval?:boolean;bypassOnly?:boolean}) {
  const {profileAction,currentOwner,busy}=useBusinessDemo();
  const [pending,setPending]=useState(false),[error,setError]=useState("");
  const [confirmBypass,setConfirmBypass]=useState(false);
+ const [reviewKill,setReviewKill]=useState(false);
  const approval=profile.runtime?.approval??"off",draftModes=profile.runtime?.draftModes;
  const bypass=!!profile.runtime?.bypass;
+ const canReviewKill=bypassOnly&&approval==="pending"&&profile.runtime?.pendingAction==="bypass"&&currentOwner==="Admin";
  const modeChanges=profile.policies.filter(r=>draftModes?.[r.policyId]&&draftModes[r.policyId]!==guardrailMode(profile,r.policyId));
  async function action(value:ProfileAction){
   if(!profileAction||pending)return;
   setPending(true);setError("");
-  try{await profileAction(profile.id,value);if(value==="bypass")setConfirmBypass(false)}catch(e){setError(e instanceof Error?e.message:"Unable to save.")}finally{setPending(false)}
+  try{await profileAction(profile.id,value);if(value==="bypass"||value==="request-bypass")setConfirmBypass(false);if(value==="approve"||value==="reject")setReviewKill(false)}catch(e){setError(e instanceof Error?e.message:"Unable to save.")}finally{setPending(false)}
  }
  return <div className="space-y-2"> <div className="flex flex-wrap items-center justify-end gap-2">
- <Button size="sm" variant="outline" className={bypass?"border-amber-300 bg-amber-50 text-amber-800":""} disabled={!canBypass||busy||pending||dirty} onClick={()=>bypass?void action("resume"):setConfirmBypass(true)}>{bypass?"Resume monitoring":"Bypass"}</Button>
+ {canReviewKill?<Button size="sm" variant="outline" className="border-amber-300 bg-amber-50 text-amber-800" disabled={busy||pending||dirty} onClick={()=>{setError("");setReviewKill(true)}}>Pending approval</Button>:<Button size="sm" variant="outline" className={bypass?"border-amber-300 bg-amber-50 text-amber-800":""} disabled={!canBypass||busy||pending||dirty||(bypassRequiresApproval&&approval==="pending")} onClick={()=>bypass?void action("resume"):setConfirmBypass(true)}>{bypass?"Resume monitoring":bypassOnly&&approval==="pending"?"Pending approval":bypassOnly?"Kill agent":"Bypass"}</Button>}
  {approval==="rejected"&&<span className="text-xs text-amber-700">Request rejected</span>}
- {approval==="pending"?<><span className="text-sm text-amber-700">Profile pending approval</span>{currentOwner==="Admin"&&<><Button size="sm" variant="outline" disabled={bypass||busy||pending} onClick={()=>action("reject")}>Reject</Button><Button size="sm" disabled={bypass||busy||pending||dirty} onClick={()=>action("approve")}>Approve Profile</Button></>}</>:<><Button size="sm" variant="outline" disabled={!canRequest||bypass||busy||pending||dirty||!modeChanges.length||!profile.policies.length} onClick={()=>action("request")}>Submit for approval</Button></>}
+ {!bypassOnly&&(approval==="pending"?<><span className="text-sm text-amber-700">{profile.runtime?.pendingAction==="bypass"?"Bypass pending approval":"Profile pending approval"}</span>{currentOwner==="Admin"&&<><Button size="sm" variant="outline" disabled={bypass||busy||pending} onClick={()=>action("reject")}>Reject</Button><Button size="sm" disabled={bypass||busy||pending||dirty} onClick={()=>action("approve")}>Approve Profile</Button></>}</>:<><Button size="sm" variant="outline" disabled={!canRequest||bypass||busy||pending||dirty||!modeChanges.length||!profile.policies.length} onClick={()=>action("request")}>Submit for approval</Button></>)}
  </div>{error&&!confirmBypass&&<p role="alert" className="text-xs text-red-700">{error}</p>}
  <Dialog open={confirmBypass} onOpenChange={open=>{if(!pending){setConfirmBypass(open);setError("")}}}>
  <DialogContent className="sm:max-w-md" showCloseButton={!pending}>
- <div className="space-y-3 p-6"><DialogTitle className="pr-8 text-lg font-semibold">Bypass this profile?</DialogTitle>
- <DialogDescription className="text-sm leading-6 text-muted-foreground">All guardrails in <strong className="font-semibold text-foreground">{profile.name}</strong> will be skipped. Requests will go directly to the original upstream service, without checks, blocking, or new traces.</DialogDescription>
- <p className="text-xs text-muted-foreground">Existing history is kept. Resume returns all guardrails to Monitoring. Preventing requires a new approval.</p>
+ <div className="space-y-3 p-6"><DialogTitle className="pr-8 text-lg font-semibold">{bypassOnly?"Kill agent?":"Bypass this profile?"}</DialogTitle>
+ {bypassRequiresApproval&&<p className="text-sm font-medium">{bypassOnly?"Submit a kill agent request for approval. The request stays pending until approved.":"Submit Bypass for approval. Current protection stays active until approved."}</p>}
+ <DialogDescription className="text-sm leading-6 text-muted-foreground">{bypassOnly?<>Request to kill <strong className="font-semibold text-foreground">{profile.name}</strong>.</>:<>All guardrails in <strong className="font-semibold text-foreground">{profile.name}</strong> will be skipped. Requests will go directly to the original upstream service, without checks, blocking, or new traces.</>}</DialogDescription>
+ <p className="text-xs text-muted-foreground">{bypassOnly?"Existing history will be kept.":"Existing history is kept. Resume returns all guardrails to Monitoring. Preventing requires a new approval."}</p>
  {error&&<p role="alert" className="text-sm text-red-700">{error}</p>}</div>
- <div className="flex justify-end gap-2 border-t bg-muted/30 px-6 py-4"><Button variant="outline" disabled={pending} onClick={()=>setConfirmBypass(false)}>Cancel</Button><Button className="bg-amber-600 text-white hover:bg-amber-700" disabled={pending||busy||dirty} onClick={()=>void action("bypass")}>{pending?"Applying…":"Confirm bypass"}</Button></div>
+ <div className="flex justify-end gap-2 border-t bg-muted/30 px-6 py-4"><Button variant="outline" disabled={pending} onClick={()=>setConfirmBypass(false)}>Cancel</Button><Button className="bg-amber-600 text-white hover:bg-amber-700" disabled={pending||busy||dirty} onClick={()=>void action(bypassRequiresApproval?"request-bypass":"bypass")}>{pending?"Submitting…":bypassOnly?"Confirm kill agent":"Confirm bypass"}</Button></div>
+ </DialogContent></Dialog>
+ <Dialog open={reviewKill} onOpenChange={open=>{if(!pending){setReviewKill(open);setError("")}}}>
+ <DialogContent className="sm:max-w-md" showCloseButton={!pending}>
+ <div className="space-y-4 p-6"><DialogTitle className="pr-8 text-lg font-semibold">Review kill agent request</DialogTitle>
+ <DialogDescription className="text-sm leading-6">Kill agent request for <strong className="font-semibold text-foreground">{profile.name}</strong>.</DialogDescription>
+ <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm"><dt className="text-muted-foreground">Requested by</dt><dd>{profile.runtime?.requestedBy??"—"}</dd><dt className="text-muted-foreground">Requested at</dt><dd>{profile.runtime?.requestedAt!==undefined?stamp(profile.runtime.requestedAt):"—"}</dd></dl>
+ {error&&<p role="alert" className="text-sm text-red-700">{error}</p>}</div>
+ <div className="flex justify-end gap-2 border-t bg-muted/30 px-6 py-4"><Button variant="outline" disabled={pending} onClick={()=>setReviewKill(false)}>Cancel</Button><Button variant="outline" disabled={!canReviewKill||busy||pending||dirty} onClick={()=>void action("reject")}>Reject</Button><Button className="bg-amber-600 text-white hover:bg-amber-700" disabled={!canReviewKill||busy||pending||dirty} onClick={()=>void action("approve")}>{pending?"Saving…":"Approve kill agent"}</Button></div>
  </DialogContent></Dialog></div>;
 }
 export function ProfileOperations({profile,dirty,onOpenGuardrail,showSummary=true,showProvider=false,layout="table"}:{profile:Entity;dirty:boolean;onOpenGuardrail:(id:string,version:string|number)=>void;showSummary?:boolean;showProvider?:boolean;layout?:"table"|"cards"}) {

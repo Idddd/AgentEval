@@ -75,6 +75,7 @@ export const profileRuntimeSchema = z.object({
   bypass: z.boolean().optional(),
   bypassChangedAt: z.number().optional(),
   bypassChangedBy: z.string().optional(),
+  pendingAction: z.literal("bypass").optional(),
   approval: z.enum(["off", "pending", "approved", "rejected"]),
   modes: z.record(z.string(),z.enum(["monitoring","active"])).optional(),
   draftModes: z.record(z.string(),z.enum(["monitoring","active"])).optional(),
@@ -87,7 +88,7 @@ export const profileRuntimeSchema = z.object({
   events: z.array(scanEventSchema).default([]),
 });
 export type ScanEvent = z.infer<typeof scanEventSchema>;
-export type ProfileAction = "request" | "approve" | "reject" | "deactivate" | "bypass" | "resume";
+export type ProfileAction = "request" | "request-bypass" | "approve" | "reject" | "deactivate" | "bypass" | "resume";
 export function initializeProfileRuntime(p: Entity, now: number): Entity {
   if (p.kind !== "guardrails" || p.runtime) return p;
   return {
@@ -131,6 +132,10 @@ export function transitionProfile(
     return {...p,status:"Ready",runtime:{...runtime,bypass:false,bypassChangedAt:now,bypassChangedBy:actor,modes,approval:"off",draftModes:undefined,snapshot:undefined,requestedBy:undefined,requestedAt:undefined,reviewedBy:undefined,reviewedAt:undefined,stages:switchStage(p,modes,now)}};
   }
   if(runtime.bypass)throw new Error("Resume this profile before changing its configuration.");
+  if (action === "request-bypass") {
+    if (runtime.approval === "pending") throw new Error("A request is already pending approval.");
+    return {...p,runtime:{...runtime,pendingAction:"bypass",approval:"pending",snapshot:profileSnapshot(p),requestedBy:actor,requestedAt:now,reviewedBy:undefined,reviewedAt:undefined}};
+  }
   if (action === "request") {
     if (
       (p.status !== "Ready" && p.status !== "Active") ||
@@ -143,6 +148,7 @@ export function transitionProfile(
       runtime: {
         ...runtime,
         approval: "pending",
+        pendingAction: undefined,
         snapshot: profileSnapshot({...p,runtime:{...runtime,draftModes:runtime.draftModes??Object.fromEntries(p.policies.map(r=>[r.policyId,"active" as const]))}}),
         draftModes: runtime.draftModes??Object.fromEntries(p.policies.map(r=>[r.policyId,"active" as const])),
         requestedBy: actor,
@@ -160,6 +166,9 @@ export function transitionProfile(
     throw new Error("Only Admin can approve or reject Preventing mode.");
   if (runtime.approval !== "pending" || runtime.snapshot !== profileSnapshot(p))
     throw new Error("Configuration changed. Request approval again.");
+  if (runtime.pendingAction === "bypass") {
+    return {...p,runtime:{...runtime,pendingAction:undefined,approval:action === "approve" ? "approved" : "rejected",...(action === "approve" ? {bypass:true,bypassChangedAt:now,bypassChangedBy:actor} : {}),reviewedBy:actor,reviewedAt:now}};
+  }
   const modes=runtime.draftModes??Object.fromEntries(modeRefs(p).map(r=>[r.policyId,r.mode]));
   return {
     ...p,

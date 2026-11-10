@@ -50,7 +50,11 @@ it.each(["User", "User Admin", "IT Admin"])(
     if (role !== "IT Admin") {
       expect(screen.queryByRole("tab", { name: "Breach Monitor" })).toBeNull();
     }
-    expect(localStorage.getItem("nmgr-v2-mock-state")).toBe(before);
+    const after = JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!);
+    const previous = JSON.parse(before!);
+    // Measure now produces mock traffic, while business configuration and audit stay intact.
+    const configuration = (workspace: typeof after) => ({...workspace, entities: workspace.entities.map(({runtime, ...entity}: {runtime?: unknown; [key: string]: unknown}) => entity)});
+    expect(configuration(after)).toEqual(configuration(previous));
     expect(network).not.toHaveBeenCalled();
   },
 );

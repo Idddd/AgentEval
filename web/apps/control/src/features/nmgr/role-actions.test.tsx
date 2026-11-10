@@ -272,7 +272,7 @@ it("bypasses a Dashboard Profile and resumes the same configuration in Monitorin
   await waitFor(() => expect(within(screen.getByRole("table", { name: "Enforce & Prevent" })).getByText("Monitoring")).toBeTruthy());
 });
 
-it("uses Dashboard data and the same operating-mode menu on Measure, retaining the draft in Dashboard", async () => {
+it("opens Dashboard operations from Measure and submits Agent Bypass for approval", async () => {
   const state = seed(), profile = state.entities.find(item => item.id === "default-customer-assistant")!;
   const guard = state.entities.find(item => item.id === profile.deployedRefs[0])!;
   window.location.hash = "Profile/measure/";
@@ -280,14 +280,113 @@ it("uses Dashboard data and the same operating-mode menu on Measure, retaining t
   expect(screen.getByText("High-Hits Agents")).toBeTruthy();
   expect(screen.getByRole("button", { name: profile.name })).toBeTruthy();
   expect(screen.queryByText("Guardrail XXXX")).toBeNull();
-  await act(async () => { fireEvent.keyDown(screen.getByRole("button", { name: `Actions for ${guard.name}` }), { key: "ArrowDown" }); });
-  expect(screen.getByRole("menuitem", { name: "Switch to Preventing" })).toBeTruthy();
-  await act(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "Switch to Monitoring" })); });
+  expect(screen.getAllByRole("columnheader", {name:"Hits"})).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: `Actions for ${guard.name}` }));
+  const drawer = screen.getByRole("dialog", { name: guard.name });
+  expect(within(drawer).getAllByRole("button", { name: "Bypass" }).length).toBeGreaterThan(0);
+  fireEvent.click(within(drawer).getByRole("button", { name: "Close" }));
+  const row = screen.getByRole("button", { name: profile.name }).closest("tr")!;
+  fireEvent.click(within(row).getByRole("button", { name: "Kill agent" }));
+  expect(screen.getByRole("dialog", { name: "Kill agent?" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(within(row).queryByRole("button", { name: "Pending approval" })).toBeNull();
+  fireEvent.click(within(row).getByRole("button", { name: "Kill agent" }));
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirm kill agent" })); });
+  expect(within(row).getByRole("button", { name: "Pending approval" }).hasAttribute("disabled")).toBe(true);
   const saved = JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!).entities.find((item: { id: string }) => item.id === profile.id);
-  expect(saved.runtime.draftModes[guard.id]).toBe("monitoring");
-  fireEvent.click(screen.getAllByRole("button", { name: "Kill Instance" })[0]!);
-  expect(screen.getByRole("button", { name: "Submit for approval" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Bypass" })).toBeTruthy();
+  expect(saved.runtime).toMatchObject({ pendingAction: "bypass", approval: "pending" });
+  expect(saved.runtime.bypass).not.toBe(true);
+});
+
+it("switches between linked Profiles in Measure without mixing their operating drafts", async () => {
+  const state=seed();
+  const profiles=state.entities.filter(item=>item.kind==="Profile"&&item.deployed!==null&&item.unit==="ISS");
+  const shared=state.entities.find(item=>item.kind==="Guardrail"&&profiles.every(profile=>profile.deployedRefs.includes(item.id)))!;
+  window.location.hash="Profile/measure/";
+  render(<NmgrApp />);
+  fireEvent.click(screen.getByRole("button",{name:`Actions for ${shared.name}`}));
+  const drawer=within(screen.getByRole("dialog",{name:shared.name}));
+  expect(drawer.getAllByRole("button",{name:/^Open operations for/})).toHaveLength(profiles.length);
+  const first=profiles[0]!,second=profiles[1]!;
+  fireEvent.click(drawer.getByRole("button",{name:`Open operations for ${first.name}`}));
+  let workspace=within(drawer.getByRole("region",{name:`Profile operations: ${first.name}`}));
+  await act(async()=>{fireEvent.keyDown(workspace.getByRole("button",{name:`Actions for ${shared.name}`}),{key:"ArrowDown"});});
+  await act(async()=>{fireEvent.click(screen.getByRole("menuitem",{name:"Switch to Monitoring"}));});
+  fireEvent.click(drawer.getByRole("button",{name:`Open operations for ${second.name}`}));
+  expect(drawer.queryByRole("region",{name:`Profile operations: ${first.name}`})).toBeNull();
+  expect(drawer.getByRole("region",{name:`Profile operations: ${second.name}`})).toBeTruthy();
+  const saved=JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!).entities;
+  expect(saved.find((item:{id:string})=>item.id===first.id).runtime.draftModes[shared.id]).toBe("monitoring");
+  expect(saved.find((item:{id:string})=>item.id===second.id).runtime.draftModes?.[shared.id]).toBeUndefined();
+  fireEvent.change(drawer.getByRole("textbox",{name:"Search linked Profiles"}),{target:{value:first.name}});
+  expect(drawer.getAllByRole("button",{name:/^Open operations for/})).toHaveLength(1);
+  expect(drawer.getByRole("region",{name:`Profile operations: ${second.name}`})).toBeTruthy();
+});
+
+it("keeps mock Agent hits updating on Measure without opening a drawer, pausing when hidden or killed", async () => {
+  vi.useFakeTimers();
+  window.history.replaceState(null, "", "/v2/guardrails?role=approver#Profile/measure/");
+  render(<NmgrApp />);
+  const saved = () => JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!).entities.find((item:{id:string}) => item.id === "default-customer-assistant");
+  const count = () => saved().runtime.events.length;
+  const initialCount = count();
+  await act(async()=>{vi.advanceTimersByTime(6000);});
+  expect(count()).toBeGreaterThan(initialCount);
+  const row = screen.getByRole("button", {name:"Customer Banking Assistant"}).closest("tr")!;
+  expect(Number(within(row).getAllByRole("cell")[1]!.textContent)).toBeGreaterThan(0);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  const hiddenCount = count();
+  await act(async()=>{vi.advanceTimersByTime(6000);});
+  expect(count()).toBe(hiddenCount);
+  visibility.mockReturnValue("visible");
+  act(()=>{document.dispatchEvent(new Event("visibilitychange"));});
+  expect(count()).toBeGreaterThan(hiddenCount);
+  visibility.mockRestore();
+  // Complete the real request/approval flow before checking traffic stops.
+  fireEvent.change(screen.getByLabelText("Workbench"), {target:{value:"User"}});
+  fireEvent.click(screen.getByRole("button", {name:"Measure"}));
+  const userRow=screen.getByRole("button", {name:"Customer Banking Assistant"}).closest("tr")!;
+  fireEvent.click(within(userRow).getByRole("button", {name:"Kill agent"}));
+  await act(async()=>{fireEvent.click(screen.getByRole("button", {name:"Confirm kill agent"}));});
+  fireEvent.change(screen.getByLabelText("Workbench"), {target:{value:"User Admin"}});
+  fireEvent.click(screen.getByRole("button", {name:"Measure"}));
+  fireEvent.click(screen.getByRole("button", {name:"Pending approval"}));
+  await act(async()=>{fireEvent.click(screen.getByRole("button", {name:"Approve kill agent"}));});
+  const killedCount=count();
+  await act(async()=>{vi.advanceTimersByTime(10000);});
+  expect(count()).toBe(killedCount);
+  expect(screen.queryByRole("button", {name:"Customer Banking Assistant"})).toBeNull();
+});
+
+it.each(["approve", "reject"] as const)("lets the Measure Approver %s a kill request and retains the result after reload", async decision => {
+  const profileName = "Customer Banking Assistant";
+  window.history.replaceState(null, "", "/v2/guardrails?role=user#Profile/measure/");
+  render(<NmgrApp />);
+  const userRow = screen.getByRole("button", {name:profileName}).closest("tr")!;
+  fireEvent.click(within(userRow).getByRole("button", {name:"Kill agent"}));
+  await act(async()=>{fireEvent.click(screen.getByRole("button", {name:"Confirm kill agent"}));});
+  fireEvent.change(screen.getByLabelText("Workbench"), {target:{value:"User Admin"}});
+  fireEvent.click(screen.getByRole("button", {name:"Measure"}));
+  const approverRow = screen.getByRole("button", {name:profileName}).closest("tr")!;
+  expect(within(approverRow).getByRole("button", {name:"Pending approval"}).hasAttribute("disabled")).toBe(false);
+  fireEvent.click(within(approverRow).getByRole("button", {name:"Pending approval"}));
+  const review = within(screen.getByRole("dialog", {name:"Review kill agent request"}));
+  expect(review.getByText("User")).toBeTruthy();
+  fireEvent.click(review.getByRole("button", {name:"Cancel"}));
+  expect(screen.getByRole("button", {name:profileName})).toBeTruthy();
+  fireEvent.click(within(approverRow).getByRole("button", {name:"Pending approval"}));
+  await act(async()=>{fireEvent.click(screen.getByRole("button", {name:decision==="approve"?"Approve kill agent":"Reject"}));});
+  expect(screen.queryByRole("dialog", {name:"Review kill agent request"})).toBeNull();
+  const saved = JSON.parse(localStorage.getItem("nmgr-v2-mock-state")!).entities.find((item:{id:string})=>item.id==="default-customer-assistant");
+  expect(saved.runtime.approval).toBe(decision==="approve"?"approved":"rejected");
+  expect(saved.runtime.reviewedBy).toBe("Admin");
+  if(decision==="approve")expect(screen.queryByRole("button", {name:profileName})).toBeNull();
+  else expect(screen.getByRole("button", {name:profileName})).toBeTruthy();
+  cleanup();
+  render(<NmgrApp />);
+  if(decision==="approve")expect(screen.queryByRole("button", {name:profileName})).toBeNull();
+  else expect(screen.getByRole("button", {name:profileName})).toBeTruthy();
 });
 
 it("submits Dashboard mode changes for approval and lets the Approver apply them", async () => {
