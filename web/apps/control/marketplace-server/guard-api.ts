@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { DeploymentError, diagnosticResponse } from "./diagnostics";
+import { demoEvaluationRefs, evaluationEnabled } from "./guardrail-evaluation";
+import { configuredMarketplaceOrigin } from "./marketplace-origin";
 
 export type GuardMode = "mock" | "live" | "auto";
 export function guardConfig(env = process.env) {
@@ -16,10 +18,7 @@ export function guardConfig(env = process.env) {
         throw new Error("Invalid upstream URL");
     } catch { throw new DeploymentError("nemo", "nemo_url_invalid", `Configure a valid HTTP(S) ${setting} without credentials, query or fragment.`, [setting]); }
   }
-  const publicOrigin = env.MARKETPLACE_PUBLIC_ORIGIN || undefined;
-  try {
-    if (publicOrigin && (!/^https?:\/\//.test(publicOrigin) || new URL(publicOrigin).origin !== publicOrigin)) throw new Error();
-  } catch { throw new DeploymentError("origin", "public_origin_invalid", "MARKETPLACE_PUBLIC_ORIGIN must be the browser HTTP(S) origin without a path or trailing slash."); }
+  const publicOrigin = configuredMarketplaceOrigin(env);
   const demoToken = env.MARKETPLACE_DEMO_TOKEN?.trim();
   const loopback = (host: string) => ["127.0.0.1", "localhost", "::1", "[::1]"].includes(host);
   if (demoToken && (
@@ -56,6 +55,7 @@ export function runtimeResponse(env = process.env, liveRequired = false) {
         f5Mock: env.MARKETPLACE_F5_MOCK === "true",
         marketplaceDb: !!(env.MARKETPLACE_DATABASE_URL || env.MARKETPLACE_DB_FILE),
         autoConnect: !!config.demoToken,
+        ...(liveRequired ? { independentEvaluation: evaluationEnabled(env) } : { demoEvaluationRefs: demoEvaluationRefs(env) }),
       },
       { headers: { "Cache-Control": "no-store" } },
     );

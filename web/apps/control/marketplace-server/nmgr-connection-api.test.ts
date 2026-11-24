@@ -59,6 +59,113 @@ it("tests NeMo URL without a token or database and never saves the candidate", a
   expect(await response.json()).toMatchObject({ ok: true, target: "nemoUrl", httpStatus: 401 });
   expect(await saved.read()).toBeNull();
 });
+it("accepts connection probes and workspace requests through an ingress that rewrites Host", async () => {
+  const saved = await store();
+  const runtime = { ...env, MARKETPLACE_V3_DEMO: "true", MARKETPLACE_PUBLIC_ORIGIN: "https://ui.internal" };
+  const proxy = "http://marketplace-service:8080";
+  const headers = { Origin: runtime.MARKETPLACE_PUBLIC_ORIGIN, "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" };
+  const probe = (origin: string) => new Request(`${proxy}/api/nmgr/connection/test`, {
+    method: "POST", headers: { ...headers, Origin: origin },
+    body: JSON.stringify({ target: "nemoUrl", settings: { nemoUrl: env.GUARD_API_URL } }),
+  });
+  const fetcher = vi.fn<typeof fetch>(async () => Response.json({}, { status: 401 }));
+  const success = await nmgrRequest(probe(runtime.MARKETPLACE_PUBLIC_ORIGIN), runtime, fetcher, saved);
+  expect(success.status).toBe(200);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  const reject = await nmgrRequest(probe("https://untrusted.internal"), runtime, fetcher, saved);
+  expect(reject.status).toBe(403);
+  expect((await reject.json()).error.code).toBe("origin_mismatch");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(await saved.read()).toBeNull();
+  const workspace = await nmgrRequest(new Request(`${proxy}/api/nmgr/workspace`, { headers }), runtime, identity, saved);
+  expect(workspace.status).toBe(200);
+});
+it("tests an approved Evaluate address without NeMo, writes no settings, and returns a sanitized activity log", async () => {
+  const saved = await store();
+  const settings = { MARKETPLACE_EVALUATION_ALLOWED_URLS: "https://eval.internal" };
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    expect(String(url)).toBe("https://eval.internal/api/v1/evaluations/targets?limit=1");
+    expect(init?.method).toBe("GET");
+    expect(new Headers(init?.headers).get("Authorization")).toBeNull();
+    return Response.json({ total: 1, items: [{ id: "guard-one", private: "omitted contents" }] });
+  });
+  expect((await nmgrRequest(testConnection("evaluationUrl", { evaluationUrl: "https://eval.internal" }), settings, fetcher, saved)).status).toBe(200);
+  const rejected = await nmgrRequest(testConnection("evaluationUrl", { evaluationUrl: "https://other.internal" }), settings, fetcher, saved);
+  expect(rejected.status).toBe(422);
+  expect((await rejected.json()).error.code).toBe("evaluation_url_not_allowed");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(await saved.read()).toBeNull();
+  const status = await (await nmgrRequest(request("connection"), settings, fetcher, saved)).json();
+  expect(status.evaluationLogs).toMatchObject([{ action: "test", status: 422, code: "evaluation_url_not_allowed", requestId: expect.any(String) }, { action: "test", status: 200 }]);
+  expect(JSON.stringify(status.evaluationLogs)).not.toMatch(/other\.internal|omitted contents/);
+});
+it("pins an Evaluate deployment Token to its URL and saves only a validated Evaluate connection", async () => {
+  const saved = await store();
+  const settings = { ...env, MARKETPLACE_EVALUATION_URL: "https://eval.internal", MARKETPLACE_EVALUATION_ALLOWED_URLS: "https://other.internal", MARKETPLACE_EVALUATION_TOKEN: "server-eval-only" };
+  let bad = true;
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith("/account/identity")) return identity(url, init);
+    expect(String(url)).toBe("https://eval.internal/api/v1/evaluations/targets?limit=1");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer server-eval-only");
+    return bad ? Response.json({ detail: "upstream body must not be logged" }, { status: 403 }) : Response.json({ items: [], total: 0 });
+  });
+  const other = await nmgrRequest(testConnection("evaluationUrl", { evaluationUrl: "https://other.internal" }), settings, fetcher, saved);
+  expect((await other.json()).error.code).toBe("evaluation_token_destination");
+  expect(fetcher).not.toHaveBeenCalled();
+  const blocked = await nmgrRequest(save({ evaluationUrl: "https://eval.internal" }), settings, fetcher, saved);
+  expect(blocked.status).toBe(502);
+  expect((await blocked.json()).error.code).toBe("evaluation_credentials");
+  expect(await saved.read()).toBeNull();
+  bad = false;
+  expect((await nmgrRequest(save({ evaluationUrl: "https://eval.internal" }), settings, fetcher, saved)).status).toBe(200);
+  expect(await saved.read()).toEqual({ evaluationUrl: "https://eval.internal" });
+  const status = await (await nmgrRequest(request("connection"), settings, fetcher, saved)).json();
+  expect(status.configured.evaluationUrl).toBe(true);
+  expect(status.evaluationLogs).toMatchObject([{ action: "save", status: 200 }, { action: "save", status: 502, code: "evaluation_credentials" }, { action: "test", status: 422, code: "evaluation_token_destination" }]);
+  expect(JSON.stringify(status)).not.toMatch(/server-eval-only|upstream body/);
+});
+it("switches between a deployment URL and an explicit Evaluate fallback without checking or replacing NeMo and database settings", async () => {
+  const saved = await store();
+  const otherSettings = { databaseUrl: "postgres://test:test@db.private/marketplace", nemoUrl: "https://nemo.private/api/v1", nemoToken: "existing-private-token" };
+  await saved.save(otherSettings);
+  const settings = { MARKETPLACE_EVALUATION_URL: "https://primary.internal", MARKETPLACE_EVALUATION_ALLOWED_URLS: "https://backup.internal" };
+  const fetcher = vi.fn<typeof fetch>(async url => {
+    expect(String(url)).toBe("https://backup.internal/api/v1/evaluations/targets?limit=1");
+    return Response.json({ items: [], total: 0 });
+  });
+  const modify = (method: string, revision?: string, body?: object) =>
+    new Request("https://ui.internal/api/nmgr/connection/evaluation", { method, headers: {
+      Origin: "https://ui.internal", "Content-Type": "application/json",
+      ...(revision ? { "X-Marketplace-Connection": revision } : {}),
+    }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const current = () => nmgrRequest(request("connection"), settings, fetcher, saved).then(response => response.json());
+  const before = await current();
+  expect(before.values.evaluationUrl).toMatchObject({ overridden: false, effective: { preview: "https://primary.internal/api/v1/evaluations" } });
+  const fallback = await nmgrRequest(modify("POST", before.connectionRevision, { evaluationUrl: "https://backup.internal" }), settings, fetcher, saved);
+  expect(fallback.status).toBe(200);
+  expect(await saved.read()).toEqual({ ...otherSettings, evaluationUrl: "https://backup.internal" });
+  const active = await current();
+  expect(active.values.evaluationUrl).toMatchObject({ overridden: true, effective: { preview: "https://backup.internal/api/v1/evaluations" } });
+  expect((await nmgrRequest(modify("DELETE", before.connectionRevision), settings, fetcher, saved)).status).toBe(409);
+  expect((await nmgrRequest(modify("DELETE", active.connectionRevision), settings, fetcher, saved)).status).toBe(200);
+  expect(await saved.read()).toEqual(otherSettings);
+  expect((await current()).values.evaluationUrl).toEqual(before.values.evaluationUrl);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("keeps V3 online when a saved fallback is no longer approved, without silently using the deployment backend", async () => {
+  const saved = await store();
+  await saved.save({ evaluationUrl: "https://retired.internal", workspaceId: "kept" });
+  const settings = { ...env, MARKETPLACE_EVALUATION_URL: "https://primary.internal" };
+  const status = await (await nmgrRequest(request("connection"), settings, identity, saved)).json();
+  expect(status.values.evaluationUrl).toMatchObject({ overridden: true, effective: { status: "invalid", code: "evaluation_fallback_unavailable" } });
+  expect((await (await v3RuntimeResponse(request("workspace"), settings, saved)).json()).independentEvaluation).toBe(false);
+  expect((await nmgrRequest(request("workspace", "IT Admin"), settings, identity, saved)).status).toBe(200);
+  const restore = new Request("https://ui.internal/api/nmgr/connection/evaluation", { method: "DELETE", headers: { Origin: "https://ui.internal" } });
+  expect((await nmgrRequest(restore, settings, identity, saved)).status).toBe(200);
+  expect(await saved.read()).toEqual({ workspaceId: "kept" });
+  expect((await (await v3RuntimeResponse(request("workspace"), settings, saved)).json()).independentEvaluation).toBe(true);
+});
 it("tests Token independently, rejects HTML and does not accept identity without policies/guardrails write access", async () => {
   const saved = await store();
   for (const upstream of [new Response("<html>login</html>", { headers: { "Content-Type": "text/html" } }), Response.json({ userId: "u", effectivePermissions: { policies: "read" } })]) {

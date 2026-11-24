@@ -40,6 +40,20 @@ it("restores a V3 Profile detail from its bookmarked URL", async () => {
   expect(screen.getByRole("heading", { name: "bookmarked-profile" })).toBeTruthy();
 });
 
+it("opens independent evaluation for a deployed guardrail from the V3 Evaluation list", async () => {
+  window.history.replaceState(null, "", "/v3/guardrails#Guardrail/tests/");
+  const record = liveEntity("ne-mo-live", "Guardrail");
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url === "/api/marketplace-config?workspace=v3") return Response.json({ mode: "live", independentEvaluation: true });
+    if (url.includes("/guardrail-evaluation?")) return Response.json({ setup: { revision: "1", target: record.id, endpoint: "local-nemo", demo: false, datasets: [] }, history: [] });
+    return Response.json({ revision: 1, actor: { id: "tech", name: "Tech", role: "IT Admin", unit: "ISS" }, state: { entities: [record], audit: [] }, jobs: {}, bindings: {} });
+  }));
+  render(<NmgrMode />);
+  fireEvent.click(await screen.findByRole("button", { name: "ne-mo-live" }));
+  const evaluation = await screen.findByRole("region", { name: "Independent evaluation" });
+  expect(await within(evaluation).findByRole("button", { name: "Run evaluation" })).toBeTruthy();
+});
+
 it("keeps the current Profile detail when using Skip to content", async () => {
   window.history.replaceState(null, "", "/v3/guardrails?role=user#Profile/repository/focused-profile");
   serveWorkspace([liveEntity("focused-profile", "Profile")]);

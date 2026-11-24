@@ -46,6 +46,7 @@ type Props = {
   actions?: ReactNode;
   enableMeasure?: boolean;
   allowRoleSwitch?: boolean;
+  sharedEvaluation?: boolean;
   onOwner: (owner: string) => void;
   onNavigate: (kind: Kind, view: View) => void;
   children: ReactNode;
@@ -72,6 +73,7 @@ function ShellContent({
   actions,
   enableMeasure = false,
   allowRoleSwitch = false,
+  sharedEvaluation = false,
   onOwner,
   onNavigate,
   children,
@@ -182,6 +184,7 @@ function ShellContent({
                             : FileText,
                     ),
                   )}
+                  {sharedEvaluation && role !== "IT Admin" && nav("Guardrail", "tests", "Guardrail Evaluation", FileText)}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

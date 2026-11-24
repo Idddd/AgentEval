@@ -1,0 +1,21 @@
+# Only for the local, disposable UAT network. No port is published.
+services:
+  marketplace-nemo-eval-bridge:
+    image: agenteval-guard-controller:9a1971b
+    command: ["node", "/run/uat/bridge.mjs"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - ../scripts/uat/nemo-evaluation-bridge.mjs:/run/uat/bridge.mjs:ro
+      - ${NEMO_LOCAL_SECRETS_DIR:?Required}/nemo-endpoint.json:/run/uat/nemo-endpoint.json:ro
+      - ${EVAL_LOCAL_SECRET_DIR:?Required}/guardrail_token:/run/uat/eval-token:ro
+    networks: [nemo, evaluation]
+networks:
+  nemo:
+    external: true
+    name: agenteval-uat-nemo-compatible_default
+  evaluation:
+    external: true
+    name: agenteval-native-local

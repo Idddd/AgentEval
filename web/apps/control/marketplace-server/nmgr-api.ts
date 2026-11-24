@@ -10,6 +10,7 @@ import { openDatabase } from "./storage/database";
 import { NmgrService, type NmgrActor, type NmgrRemote } from "./nmgr";
 import { createF5Client, f5Configuration } from "./f5-client";
 import { nmgrRestApi } from "./nmgr-rest-api";
+import { EvaluationError, guardrailEvaluation } from "./guardrail-evaluation";
 
 const stores = new Map<string, ReturnType<typeof openDatabase>>();
 const accountSchema = z.record(z.string().min(1), z.object({ name: z.string().min(1).max(160), role: z.enum(["User", "User Admin", "IT Admin"]), unit: z.string().min(1).max(100) }).strict());
@@ -58,16 +59,19 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
   try {
     const config = nmgrConfiguration(env), url = new URL(request.url);
     const resource = url.searchParams.get("resource");
-    if (url.search && (url.pathname !== "/api/nmgr/workspace" || [...url.searchParams].length !== 1 || !resource || !/^[a-z][a-z0-9-]{2,63}$/.test(resource)) || !["/api/nmgr/workspace", "/api/nmgr/commands", "/api/nmgr/ready"].includes(url.pathname)) throw new StoreError(404, "Route not found.");
+    const evaluation = url.pathname === "/api/nmgr/guardrail-evaluation";
+    if (!evaluation && (url.search && (url.pathname !== "/api/nmgr/workspace" || [...url.searchParams].length !== 1 || !resource || !/^[a-z][a-z0-9-]{2,63}$/.test(resource)) || !["/api/nmgr/workspace", "/api/nmgr/commands", "/api/nmgr/ready"].includes(url.pathname))) throw new StoreError(404, "Route not found.");
     if (url.pathname === "/api/nmgr/ready" && request.method === "GET") {
       component = "database";
       await (await store(env)).readDocument(`nmgr:${config.workspace}`);
       return reply({ ready: true, workspace: "v3", backend: "configured", checks: { database: "reachable", nemo: "not_probed", f5: config.f5Error ? "configuration_error" : config.f5 ? "not_probed" : "not_configured", identity: "mapping_configured" } });
     }
-    const write = url.pathname === "/api/nmgr/commands";
+    const write = url.pathname === "/api/nmgr/commands" || evaluation && request.method === "POST";
     if (request.method !== (write ? "POST" : "GET")) throw new StoreError(405, "Method not allowed.");
     if (request.headers.get("origin") && request.headers.get("origin") !== config.publicOrigin || request.headers.get("sec-fetch-site") === "cross-site") throw new DeploymentError("origin", "origin_mismatch", "Cross-origin requests are not allowed. Check MARKETPLACE_PUBLIC_ORIGIN and the browser URL.", undefined, 403);
     if (config.localAccess && (url.origin !== config.publicOrigin || write && request.headers.get("origin") !== config.publicOrigin)) throw new DeploymentError("origin", "origin_mismatch", "Local test requests must use the configured origin.", undefined, 403);
+    if (evaluation && config.demo && write && request.headers.get("origin") !== config.publicOrigin)
+      throw new DeploymentError("origin", "origin_mismatch", "Start a shared Demo evaluation from the Marketplace origin.", undefined, 403);
     component = "nemo";
     const serviceFetch = config.demo || config.localAccess || hasNemoCredentials(env) ? nemoServiceFetch(env, fetcher) : undefined;
     let actor: NmgrActor;
@@ -113,6 +117,19 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
     }
     component = "database";
     const service = new NmgrService(await store(env), config.workspace, config.f5 ? createF5Client(config.f5, fetcher) : undefined, config.f5Error ? { F5: config.f5Error } : undefined);
+    if (evaluation) {
+      if (!config.demo && actor.role !== "IT Admin") throw new StoreError(403, "Only Tech may run or view independent Guardrail evaluations in strict V3.");
+      const snapshot = await service.snapshot(actor);
+      return guardrailEvaluation(request, env, input => {
+        const item = snapshot.state.entities.find(record => record.id === input.guardrail && record.version === input.version && record.kind === "Guardrail" && !record.imported);
+        const job = item ? snapshot.jobs[item.id] : undefined;
+        if (!item || item.sourcePending || !item.provider || !["TEST READY", "TEST PASSED", "TEST FAILED", "DEPLOYED"].includes(item.status))
+          throw new EvaluationError(404, "evaluation_guardrail_missing", "The implemented guardrail revision was not found.");
+        if (write && job && (job.status === "pending" || job.status === "uncertain" || job.inflight || job.purpose === "draft-sync" && job.status !== "done"))
+          throw new EvaluationError(409, "evaluation_guardrail_pending", "Wait for the Guardrail revision to finish synchronizing before starting an evaluation.");
+        return { provider: item.provider, workspace: config.workspace };
+      }, fetcher);
+    }
     const remote: NmgrRemote = { async request(path, method = "GET", body) {
       // Paths originate exclusively in the workflow, never from client input.
       let response: Response;

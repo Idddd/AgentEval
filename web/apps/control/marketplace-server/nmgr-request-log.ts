@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { matchRestRoute, restBase } from "./nmgr-rest-contract";
 import { nmgrRequestContext, type RequestContext } from "./nmgr-request-context";
-const legacy: Record<string, string> = { "/api/nmgr/workspace": "getWorkspace", "/api/nmgr/commands": "executeCommand", "/api/nmgr/ready": "databaseReadiness", "/api/nmgr/connection": "connectionSettings", "/api/nmgr/connection/test": "testConnection" };
+const legacy: Record<string, string> = { "/api/nmgr/workspace": "getWorkspace", "/api/nmgr/commands": "executeCommand", "/api/nmgr/ready": "databaseReadiness", "/api/nmgr/connection": "connectionSettings", "/api/nmgr/connection/test": "testConnection", "/api/nmgr/connection/evaluation": "saveEvaluationFallback", "/api/nmgr/guardrail-evaluation": "getIndependentEvaluation" };
 export async function withNmgrRequestLog(request: Request, run: () => Promise<Response>) {
   const path = new URL(request.url).pathname;
   let matched: ReturnType<typeof matchRestRoute>;
   try { matched = path.startsWith(`${restBase}/`) ? matchRestRoute(path, request.method) : undefined; } catch { /* Invalid URL identifiers are handled by the API. */ }
   const connectionOperations: Record<string, string> = { GET: "getConnection", POST: "saveConnection", DELETE: "clearConnection" };
-  const context: RequestContext = { requestId: randomUUID(), operationId: matched?.route.operationId ?? (path === "/api/nmgr/connection" ? connectionOperations[request.method] : legacy[path]) ?? "unknownNmgrOperation", route: matched ? restBase + matched.route.path : legacy[path] ? path : "/api/nmgr/<unknown>" };
+  const operationId = path === "/api/nmgr/connection" ? connectionOperations[request.method] :
+    path === "/api/nmgr/connection/evaluation" && request.method === "DELETE" ? "restoreDeploymentEvaluation" :
+    path === "/api/nmgr/guardrail-evaluation" && request.method === "POST" ? "startIndependentEvaluation" : legacy[path];
+  const context: RequestContext = { requestId: randomUUID(), operationId: matched?.route.operationId ?? operationId ?? "unknownNmgrOperation", route: matched ? restBase + matched.route.path : legacy[path] ? path : "/api/nmgr/<unknown>" };
   if (matched?.id && /^[a-zA-Z0-9-]{1,128}$/.test(matched.id)) context.resourceId = matched.id;
   const started = performance.now();
   return nmgrRequestContext.run(context, async () => {

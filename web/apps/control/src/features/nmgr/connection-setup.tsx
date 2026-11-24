@@ -15,16 +15,20 @@ type Field =
   | "caPem"
   | "f5Url"
   | "f5Token"
-  | "f5AdminIds";
+  | "f5AdminIds"
+  | "evaluationUrl";
 type Option = "databaseTls" | "caMode" | "f5Mode" | "nemoTls";
-type Probe = "nemoUrl" | "nemoToken" | "databaseUrl" | "f5Url" | "f5Token";
+type Probe = "nemoUrl" | "nemoToken" | "databaseUrl" | "f5Url" | "f5Token" | "evaluationUrl";
 const probeFields: Record<Probe, Array<Field | Option>> = {
   nemoUrl: ["nemoUrl", "nemoTls", "caMode", "caPem"],
   nemoToken: ["nemoUrl", "nemoToken", "nemoTls", "caMode", "caPem"],
   databaseUrl: ["databaseUrl", "databaseTls", "caMode", "caPem"],
   f5Url: ["f5Url", "f5Mode", "caMode", "caPem"],
   f5Token: ["f5Url", "f5Token", "f5Mode", "caMode", "caPem"],
+  evaluationUrl: ["evaluationUrl", "caMode", "caPem"],
 };
+type EvaluationLog = { time: string; action: "test" | "save" | "restore" | "start"; status: number; durationMs: number; requestId: string; code?: string };
+const evaluationActions = { test: "Test connection", save: "Save connection", restore: "Use deployment URL", start: "Start evaluation" };
 type Status = {
   values?: ConnectionValues;
   saved?: boolean;
@@ -33,6 +37,7 @@ type Status = {
   manualConfiguration?: boolean;
   persistence?: string;
   advanced?: Partial<Record<Option, string>>;
+  evaluationLogs?: EvaluationLog[];
 };
 const fields: Array<{ key: Field; label: string; hint: string }> = [
   {
@@ -58,7 +63,7 @@ const fields: Array<{ key: Field; label: string; hint: string }> = [
   {
     key: "caPem",
     label: "Trusted CA certificate",
-    hint: "PEM certificate bundle for verified NeMo, F5 and database TLS connections.",
+    hint: "PEM certificate bundle for verified NeMo, F5, Evaluate and database TLS connections.",
   },
   {
     key: "f5Url",
@@ -75,6 +80,11 @@ const fields: Array<{ key: Field; label: string; hint: string }> = [
     label: "F5 project admin IDs",
     hint: "Comma-separated F5 user IDs, when required by your token for project creation",
   },
+  {
+    key: "evaluationUrl",
+    label: "Evaluate URL",
+    hint: "Enter an approved service URL or its /api/v1/evaluations address. Token and project, if required, are managed by the deployment.",
+  },
 ];
 const emptyValues: Record<Field, string> = {
   nemoUrl: "",
@@ -85,6 +95,7 @@ const emptyValues: Record<Field, string> = {
   f5Url: "",
   f5Token: "",
   f5AdminIds: "",
+  evaluationUrl: "",
 };
 const emptyOptions: Record<Option, string> = {
   nemoTls: "",
@@ -111,6 +122,7 @@ export function ConnectionSetup({
     [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
   const [testing, setTesting] = useState<Probe | null>(null);
+  const [savingEvaluation, setSavingEvaluation] = useState<"save" | "restore" | null>(null);
   const [results, setResults] = useState<Partial<Record<Probe, { ok: boolean; message: string }>>>({});
   const [values, setValues] = useState(emptyValues),
     [options, setOptions] = useState(emptyOptions);
@@ -131,7 +143,7 @@ export function ConnectionSetup({
     };
   }, []);
   async function apply(remove = false) {
-    if (busy || testing) return;
+    if (busy || testing || savingEvaluation) return;
     setBusy(true);
     setError("");
     try {
@@ -148,7 +160,7 @@ export function ConnectionSetup({
               body: JSON.stringify(
                 Object.fromEntries(
                   Object.entries({ ...values, ...options }).filter(
-                    ([, value]) => !!value.trim(),
+                    ([key, value]) => key !== "evaluationUrl" && !!value.trim(),
                   ),
                 ),
               ),
@@ -176,7 +188,7 @@ export function ConnectionSetup({
     finally { setLoading(false); }
   }
   async function test(target: Probe) {
-    if (busy || testing) return;
+    if (busy || testing || savingEvaluation) return;
     setTesting(target);
     setResults(current => ({ ...current, [target]: undefined }));
     try {
@@ -189,9 +201,44 @@ export function ConnectionSetup({
       setResults(current => ({ ...current, [target]: { ok: true, message: `${result.message} (${result.durationMs} ms)` } }));
     } catch (error) {
       setResults(current => ({ ...current, [target]: { ok: false, message: error instanceof Error ? error.message : "Connection test failed." } }));
-    } finally { setTesting(null); }
+    } finally {
+      if (target === "evaluationUrl") {
+        // Keep the test result even if refreshing the optional log fails.
+        try {
+          const next = await runtimeRequest<Status>("/api/nmgr/connection", { cache: "no-store" });
+          setStatus(next);
+        } catch { /* The preceding result is still valid. */ }
+      }
+      setTesting(null);
+    }
   }
-  const disabled = busy || !!testing || loading || status?.manualConfiguration === false;
+  async function updateEvaluation(restore = false) {
+    if (busy || testing || savingEvaluation || (!restore && !values.evaluationUrl.trim())) return;
+    setSavingEvaluation(restore ? "restore" : "save");
+    setResults(current => {
+      const next = { ...current };
+      delete next.evaluationUrl;
+      return next;
+    });
+    try {
+      await runtimeRequest<Status>("/api/nmgr/connection/evaluation", {
+        method: restore ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json", ...(status?.connectionRevision ? { "X-Marketplace-Connection": status.connectionRevision } : {}) },
+        ...(!restore ? { body: JSON.stringify({ evaluationUrl: values.evaluationUrl.trim() }) } : {}),
+      });
+      setValues(current => ({ ...current, evaluationUrl: "" }));
+      setResults(current => ({ ...current, evaluationUrl: { ok: true, message: restore ? "Saved fallback cleared. See the deployment URL below." : "Evaluate fallback verified and saved. It is now active for this workspace." } }));
+    } catch (error) {
+      setResults(current => ({ ...current, evaluationUrl: { ok: false, message: error instanceof Error ? error.message : "Evaluate settings could not be updated." } }));
+    } finally {
+      try { setStatus(await runtimeRequest<Status>("/api/nmgr/connection", { cache: "no-store" })); }
+      catch { /* Retain the response from the update. */ }
+      setSavingEvaluation(null);
+    }
+  }
+  const working = busy || !!testing || !!savingEvaluation;
+  const disabled = working || loading || status?.manualConfiguration === false;
+  const evaluationOverride = status?.values?.evaluationUrl;
   const field = (key: Field) => {
     const definition = fields.find((item) => item.key === key)!;
     return (
@@ -265,7 +312,7 @@ export function ConnectionSetup({
           </div>
         </header>
         <div className="nm-connection-probe">
-          <Button type="button" variant="outline" size="sm" disabled={loading || busy || !!testing} onClick={() => void refreshStatus()}>Refresh configuration status</Button>
+          <Button type="button" variant="outline" size="sm" disabled={loading || working} onClick={() => void refreshStatus()}>Refresh configuration status</Button>
           <p className="nm-muted">Values received by this server. Tokens are masked; read success does not confirm authentication. Test the connection to verify.</p>
         </div>
         {error && (
@@ -307,6 +354,34 @@ export function ConnectionSetup({
             </>}
           </fieldset>
           <fieldset className="nm-connection-group">
+            <legend>Independent Evaluate</legend>
+            {field("evaluationUrl")}
+            {status?.manualConfiguration !== false && <>
+              <p className="nm-muted">{evaluationOverride?.overridden
+                ? evaluationOverride.effective.status === "invalid" ? "Saved fallback is no longer allowed. Restore the deployment URL or save another approved address." : "Using the saved fallback for Evaluate."
+                : "Using deployment settings. Enter an approved URL to test and save a manual fallback."}</p>
+              <div className="nm-actions">
+                <Button type="button" variant="outline" size="sm" disabled={disabled || !values.evaluationUrl.trim()} onClick={() => void updateEvaluation()}>
+                  {savingEvaluation === "save" ? "Saving Evaluate…" : "Save Evaluate fallback"}
+                </Button>
+                {evaluationOverride?.overridden && <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => void updateEvaluation(true)}>
+                  {savingEvaluation === "restore" ? "Restoring…" : "Use deployment Evaluate URL"}
+                </Button>}
+              </div>
+            </>}
+            {status?.manualConfiguration !== false && <p className="nm-muted">Shared Demo: anyone who can access this workspace can run evaluations and view its reports. Use a dedicated test project.</p>}
+            {status?.manualConfiguration !== false && <details className="nm-evaluation-log">
+              <summary>Evaluate activity log{status?.evaluationLogs?.length ? ` · ${status.evaluationLogs.length}` : ""}</summary>
+              {!status?.evaluationLogs?.length ? <p className="nm-muted">No events on this server yet.</p> : <ul aria-label="Evaluate activity">
+                {status.evaluationLogs.map((entry, index) => <li key={`${entry.requestId}:${index}`}>
+                  <strong>{evaluationActions[entry.action]}</strong>
+                  <span className={entry.status < 400 ? "nm-connection-configured" : "nm-connection-value-error"}>{entry.status < 400 ? "Success" : "Failed"} · HTTP {entry.status} · {entry.durationMs} ms</span>
+                  <small>{new Date(entry.time).toLocaleString()} · <code>{entry.requestId}</code>{entry.code ? ` · ${entry.code}` : ""}</small>
+                </li>)}
+              </ul>}
+            </details>}
+          </fieldset>
+          <fieldset className="nm-connection-group">
             <legend>Database connection</legend>
             {field("databaseUrl")}
           </fieldset>
@@ -342,7 +417,7 @@ export function ConnectionSetup({
             <Button
               type="button"
               variant="outline"
-              disabled={busy || !!testing}
+              disabled={working}
               onClick={onRetry}
             >
               {retryLabel}
@@ -351,7 +426,7 @@ export function ConnectionSetup({
               <Button
                 type="button"
                 variant="ghost"
-                disabled={busy || !!testing}
+                disabled={working}
                 onClick={onCancel}
               >
                 Cancel

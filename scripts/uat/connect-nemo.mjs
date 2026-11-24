@@ -6,7 +6,9 @@ const root = resolve(import.meta.dirname, "../..");
 const directory = resolve(root, ".artifacts/uat-nemo");
 const nemo = parseEnv(readFileSync(resolve(directory, ".env"), "utf8"));
 const db = parseEnv(readFileSync(resolve(root, ".artifacts/uat-mariadb/.env"), "utf8"));
-const base = "http://127.0.0.1:18083";
+const port = Number(process.env.NEMO_LOCAL_PORT ?? 18083);
+if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("NEMO_LOCAL_PORT must be a valid port.");
+const base = `http://127.0.0.1:${port}`;
 async function json(path, options = {}) {
   const response = await fetch(base + path, { ...options, signal: AbortSignal.timeout(20000) });
   if (!response.ok) throw new Error(`NeMo ${path} returned HTTP ${response.status}`);
@@ -20,7 +22,20 @@ if (issued) {
   if (!response.ok) issued = null;
 }
 if (!issued) {
-  const login = await json("/api/auth/sign-in/email", { method: "POST", headers: { "Content-Type": "application/json", Origin: base }, body: JSON.stringify({ email: "user@marketplace.local", password: nemo.NEMO_USER_PASSWORD }) });
+  const loginRequest = (email, password) => ({ method: "POST", headers: { "Content-Type": "application/json", Origin: base }, body: JSON.stringify({ email, password }), signal: AbortSignal.timeout(20000) });
+  const email = "user@marketplace.local", credentials = loginRequest(email, nemo.NEMO_USER_PASSWORD);
+  let response = await fetch(base + "/api/auth/sign-in/email", credentials);
+  if (response.status === 401) {
+    // Published NeMo images bootstrap an administrator, not a business user.
+    const admin = await json("/api/auth/sign-in/email", loginRequest("admin@marketplace.local", nemo.NEMO_ADMIN_PASSWORD));
+    const adminCookie = admin.response.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
+    if (!adminCookie) throw new Error("NeMo did not issue an administrator session");
+    await json("/api/auth/admin/create-user", { method: "POST", headers: { "Content-Type": "application/json", Origin: base, Cookie: adminCookie }, body: JSON.stringify({ email, password: nemo.NEMO_USER_PASSWORD, name: "Marketplace Local User", role: "user" }) });
+    await new Promise(resolve => setTimeout(resolve, 11000));
+    response = await fetch(base + "/api/auth/sign-in/email", loginRequest(email, nemo.NEMO_USER_PASSWORD));
+  }
+  if (!response.ok) throw new Error(`NeMo business account sign-in returned HTTP ${response.status}`);
+  const login = { response };
   const cookie = login.response.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
   if (!cookie) throw new Error("NeMo did not issue a login session");
   issued = (await json("/api/v1/account/access-tokens", { method: "POST", headers: { "Content-Type": "application/json", Origin: base, Cookie: cookie }, body: JSON.stringify({ name: "Marketplace local UAT", expiresInDays: 30, permissions: { policies: "write", guardrails: "write", playground: "write", runtime: "read", runners: "read", routers: "write", endpoints: "write" } }) })).data;

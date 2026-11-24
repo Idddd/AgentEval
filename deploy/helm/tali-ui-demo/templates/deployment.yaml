@@ -99,6 +99,23 @@ spec:
               value: {{ .Values.marketplace.policyAuthoringUrl | quote }}
             - name: MARKETPLACE_PUBLIC_ORIGIN
               value: {{ .Values.marketplace.publicOrigin | quote }}
+            {{- if or .Values.marketplace.evaluationUrl .Values.marketplace.evaluationAllowedUrls }}
+            - name: MARKETPLACE_EVALUATION_URL
+              value: {{ .Values.marketplace.evaluationUrl | quote }}
+            - name: MARKETPLACE_EVALUATION_ALLOWED_URLS
+              value: {{ .Values.marketplace.evaluationAllowedUrls | default (list) | join "," | quote }}
+            - name: MARKETPLACE_EVALUATION_PROJECT_ID
+              value: {{ .Values.marketplace.evaluationProjectId | quote }}
+            - name: MARKETPLACE_EVALUATION_BINDINGS
+              value: {{ .Values.marketplace.evaluationBindings | toJson | quote }}
+            {{- if .Values.marketplace.evaluationTokenSecret }}
+            - name: MARKETPLACE_EVALUATION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.marketplace.evaluationTokenSecret | quote }}
+                  key: {{ .Values.marketplace.evaluationTokenKey | quote }}
+            {{- end }}
+            {{- end }}
             - name: MARKETPLACE_CRUD_ONLY
               value: {{ .Values.marketplace.crudOnly | quote }}
             - name: MARKETPLACE_F5_MOCK

@@ -39,7 +39,7 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           image_tag="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
           storage=browser
-          chart_version="0.2.29-dev.${GITHUB_RUN_NUMBER}"
+          chart_version="0.2.30-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${image_tag}")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tags+=("${image}:pr-${{ github.event.pull_request.number }}")
@@ -53,7 +53,7 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.2.29-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.30-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
@@ -136,9 +136,9 @@ jobs:
             curl --fail http://127.0.0.1:18082/api/docs | grep 'SwaggerUIBundle'
             curl --fail http://127.0.0.1:18082/api/docs/swagger-ui-bundle.js > /dev/null
             curl --fail http://127.0.0.1:18082/api/docs/swagger-ui.css > /dev/null
-            curl --fail http://127.0.0.1:18082/api/openapi.json | jq -e '.openapi == "3.1.0" and .paths["/api/nmgr/connection/test"].post != null'
+            curl --fail http://127.0.0.1:18082/api/openapi.json | jq -e '.openapi == "3.1.0" and .paths["/api/nmgr/connection/test"].post != null and .paths["/api/nmgr/connection/evaluation"].delete != null'
             curl --fail http://127.0.0.1:18082/api/endpoints > /dev/null
-            curl --fail http://127.0.0.1:18082/api/nmgr/connection | jq -e '.advanced.nemoTls == "skip"'
+            curl --fail http://127.0.0.1:18082/api/nmgr/connection | jq -e '.advanced.nemoTls == "skip" and .configured.evaluationUrl == false'
             docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" "artifacts/tali-ui-demo-${CHART_VERSION}.tgz"
             docker cp "$container:/opt/tali/source/project-source.zip" artifacts/project-source.zip
             docker cp "$container:/opt/tali/source/project-source.zip.sha256" artifacts/project-source.zip.sha256
@@ -148,6 +148,7 @@ jobs:
             unzip -l artifacts/project-source.zip | grep 'project/scripts/uat/verify-ui-isolation.mjs'
             unzip -l artifacts/project-source.zip | grep 'project/docs/integration-api.md'
             unzip -l artifacts/project-source.zip | grep 'project/web/apps/control/marketplace-server/openapi.ts'
+            unzip -l artifacts/project-source.zip | grep 'project/deploy/values.evaluation.example.yaml'
             unzip -l artifacts/project-source.zip | grep 'project/web/apps/control/marketplace-server/fixtures/connection-tls/localhost-test-key.txt'
             docker exec "$container" test -f /opt/marketplace/check-nemo.mjs
             docker rm -f "$container"
@@ -180,6 +181,8 @@ jobs:
           grep -A1 'name: MARKETPLACE_NEMO_TLS' artifacts/mock.yaml | grep 'value: "skip"'
           helm template tali-ui-demo "$chart" --set marketplace.nemoTls=verify > artifacts/nemo-tls-verify.yaml
           grep -A1 'name: MARKETPLACE_NEMO_TLS' artifacts/nemo-tls-verify.yaml | grep 'value: "verify"'
+          helm template tali-ui-demo "$chart" -f deploy/values.evaluation.example.yaml > artifacts/evaluation.yaml
+          grep -A1 'name: MARKETPLACE_EVALUATION_URL' artifacts/evaluation.yaml | grep 'value: "http://evaluation-api.evaluation.svc.cluster.local:8001"'
           helm template tali-ui-demo "$chart" --set openshift.enabled=true > artifacts/ocp.yaml
           if grep -Eq 'PersistentVolumeClaim|claimName:|runAsUser:|fsGroup:' artifacts/ocp.yaml; then
             echo 'OCP template unexpectedly requires a PVC or fixed UID'; exit 1
@@ -246,6 +249,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
+          notes="docs/uat/v${version}-release-validation.md"
           repository="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           image="${repository}:sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
           image_version="${repository}:${version}"
@@ -258,13 +262,16 @@ jobs:
           cp artifacts/project-source.zip "release/AgentEval-v${version}-source.zip"
           (cd release && sha256sum "AgentEval-v${version}-source.zip" > "AgentEval-v${version}-source.zip.sha256")
           cp artifacts/isolation-test-results.json release/
-          cp docs/uat/2026-11-10-v0.2.29-release-validation.md release/release-validation.md
+          cp "$notes" release/release-validation.md
           cp docs/marketplace-release.md release/deployment.md
+          cp docs/marketplace-guardrail-evaluation.md release/
           cp docs/integration-api.md docs/resource-api.md release/
           cp deploy/v2/UAT-token-config.md release/UAT-Helm-upgrade.md
           cp -R deploy/helm/tali-ui-demo "offline/${bundle}/helm"
           sed -i "s|tag: dev|tag: ${version}|" "offline/${bundle}/helm/values.yaml"
           cp deploy/values.uat.example.yaml "offline/${bundle}/values.uat.yaml"
+          cp deploy/values.evaluation.example.yaml "offline/${bundle}/values.evaluation.yaml"
+          cp deploy/values.evaluation.example.yaml release/values.evaluation.example.yaml
           cp deploy/v2/check-nemo.mjs "offline/${bundle}/"
           cp release/*.md release/image-digests.json release/isolation-test-results.json "offline/${bundle}/"
           docker save --output "offline/${bundle}/marketplace-v2.tar" "$image_version"
@@ -273,4 +280,4 @@ jobs:
           (cd release && sha256sum "${bundle}.zip" > "${bundle}.zip.sha256")
           (cd release && find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
           gh release create "$GITHUB_REF_NAME" release/* --verify-tag \
-            --title "AI Marketplace ${GITHUB_REF_NAME}" --notes-file docs/uat/2026-11-10-v0.2.29-release-validation.md
+            --title "AI Marketplace ${GITHUB_REF_NAME}" --notes-file "$notes"

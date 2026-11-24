@@ -15,24 +15,24 @@ services:
       timeout: 5s
       retries: 20
   controller:
-    image: agenteval-guard-controller:9a1971b
+    image: "${NEMO_CONTROLLER_IMAGE:-agenteval-guard-controller:9a1971b}"
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "127.0.0.1:18083:8080"
+      - "127.0.0.1:${NEMO_LOCAL_PORT:-18083}:8080"
     environment:
       NODE_ENV: production
       # Local Docker network only; OCP must use the service TLS configuration.
       CONTROLLER_GRPC_TRANSPORT: plaintext
       CONTROLLER_DATABASE_URL: postgresql://guard_uat:${NEMO_DB_PASSWORD}@postgres:5432/guard_uat
-      CONTROLLER_PUBLIC_URL: http://127.0.0.1:18083
+      CONTROLLER_PUBLIC_URL: "http://127.0.0.1:${NEMO_LOCAL_PORT:-18083}"
       CONTROLLER_RUNTIME_SERVICE_URL: http://runner:8091
-      CONTROLLER_RUNTIME_PUBLIC_URL: http://127.0.0.1:18091
+      CONTROLLER_RUNTIME_PUBLIC_URL: "http://127.0.0.1:${NEMO_RUNNER_PORT:-18091}"
       CONTROLLER_RUNNER_TOKEN: ${NEMO_RUNNER_TOKEN:?Required}
       CONTROLLER_METRICS_TOKEN: ${NEMO_METRICS_TOKEN:?Required}
       BETTER_AUTH_SECRET: ${NEMO_AUTH_SECRET:?Required}
-      BETTER_AUTH_TRUSTED_ORIGINS: http://127.0.0.1:18083
+      BETTER_AUTH_TRUSTED_ORIGINS: "http://127.0.0.1:${NEMO_LOCAL_PORT:-18083}"
       CONTROLLER_BOOTSTRAP_ADMIN_EMAIL: admin@marketplace.local
       CONTROLLER_BOOTSTRAP_ADMIN_PASSWORD: ${NEMO_ADMIN_PASSWORD:?Required}
       CONTROLLER_BOOTSTRAP_ADMIN_NAME: Marketplace Local Admin
@@ -50,12 +50,12 @@ services:
       retries: 30
       start_period: 30s
   runner:
-    image: agenteval-guard-runner:9a1971b
+    image: "${NEMO_RUNNER_IMAGE:-agenteval-guard-runner:9a1971b}"
     depends_on:
       controller:
         condition: service_healthy
     ports:
-      - "127.0.0.1:18091:8091"
+      - "127.0.0.1:${NEMO_RUNNER_PORT:-18091}:8091"
     environment:
       GUARD_RUNNER_ID: marketplace-uat-local-1
       GUARD_RUNNER_POOL_ID: default

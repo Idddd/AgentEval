@@ -39,6 +39,55 @@ const status = {
   persistence: "pod",
   manualConfiguration: true,
 };
+it("tests Evaluate without saving and refreshes its activity log", async () => {
+  const connected = vi.fn();
+  let tested = false;
+  const fetcher = vi.fn(async (path: string, init?: RequestInit) => {
+    if (path.endsWith("/test")) {
+      tested = true;
+      expect(JSON.parse(String(init?.body))).toEqual({ target: "evaluationUrl", settings: { evaluationUrl: "https://evaluate.internal" } });
+      return Response.json({ ok: true, target: "evaluationUrl", message: "Evaluate API reachable.", durationMs: 5 });
+    }
+    return Response.json({ ...status, evaluationLogs: tested ? [{ time: "2026-11-24T00:00:00Z", action: "test", status: 200, durationMs: 5, requestId: "reference-test" }] : [] });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<ConnectionSetup onConnected={connected} onRetry={() => {}} />);
+  const input = await screen.findByLabelText("Evaluate URL");
+  await waitFor(() => expect((input as HTMLInputElement).disabled).toBe(false));
+  fireEvent.change(input, { target: { value: "https://evaluate.internal" } });
+  fireEvent.click(screen.getByRole("button", { name: "Test Evaluate URL" }));
+  expect(await screen.findByText("Evaluate API reachable. (5 ms)")).toBeTruthy();
+  fireEvent.click(await screen.findByText("Evaluate activity log · 1"));
+  expect(screen.getByText("reference-test")).toBeTruthy();
+  expect(connected).not.toHaveBeenCalled();
+});
+it("saves and restores only Evaluate from the fallback controls", async () => {
+  let saved = false;
+  const connected = vi.fn();
+  const fetcher = vi.fn(async (path: string, init?: RequestInit) => {
+    if (path.endsWith("/evaluation")) {
+      saved = init?.method === "POST";
+      if (saved) expect(JSON.parse(String(init?.body))).toEqual({ evaluationUrl: "https://backup.internal" });
+      else expect(init?.body).toBeUndefined();
+    }
+    const deployment = { source: "MARKETPLACE_EVALUATION_URL", status: "loaded", preview: "https://primary.internal" };
+    const effective = saved ? { ...deployment, source: "Saved settings", preview: "https://backup.internal" } : deployment;
+    return Response.json({ ...status, values: { evaluationUrl: { effective, deployment, overridden: saved } } });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<ConnectionSetup onConnected={connected} onRetry={() => {}} />);
+  await screen.findByText(/Using deployment settings/);
+  fireEvent.change(screen.getByLabelText("NeMo URL"), { target: { value: "https://leave-this-alone.internal/api/v1" } });
+  fireEvent.change(screen.getByLabelText("Evaluate URL"), { target: { value: "https://backup.internal" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Evaluate fallback" }));
+  const restore = await screen.findByRole("button", { name: "Use deployment Evaluate URL" });
+  await waitFor(() => expect((restore as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(restore);
+  await screen.findByText(/Saved fallback cleared/);
+  expect((screen.getByLabelText("NeMo URL") as HTMLInputElement).value).toBe("https://leave-this-alone.internal/api/v1");
+  expect(connected).not.toHaveBeenCalled();
+  expect(fetcher.mock.calls.filter(([path]) => path.endsWith("/evaluation")).map(([, init]) => init?.method)).toEqual(["POST", "DELETE"]);
+});
 it("shows Secret read failures and both masked deployment and saved values without submitting previews", async () => {
   const token = { source: "Saved settings", status: "loaded", preview: "••••••••2222", length: 20 };
   const deployment = { source: "GUARD_API_TOKEN_FILE", status: "unreadable", preview: "", path: "/run/secrets/nemo", code: "ENOENT" };

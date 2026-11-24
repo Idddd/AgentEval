@@ -4,7 +4,9 @@ import { randomBytes } from "node:crypto";
 import { parseEnv } from "node:util";
 import { resolve } from "node:path";
 const root = resolve(import.meta.dirname, "../.."), directory = resolve(root, ".artifacts/uat-nemo");
-const env = parseEnv(readFileSync(resolve(directory, ".env"), "utf8")), base = "http://127.0.0.1:18083";
+const port = Number(process.env.NEMO_LOCAL_PORT ?? 18083);
+if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("NEMO_LOCAL_PORT must be a valid port.");
+const env = parseEnv(readFileSync(resolve(directory, ".env"), "utf8")), base = `http://127.0.0.1:${port}`;
 async function call(path, body, cookie) {
   const response = await fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json", Origin: base, ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
   if (!response.ok) throw new Error(`NeMo ${path}: HTTP ${response.status}`);

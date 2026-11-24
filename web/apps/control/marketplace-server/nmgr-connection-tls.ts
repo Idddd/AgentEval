@@ -1,5 +1,6 @@
 import { Agent } from "undici";
 import { rootCertificates } from "node:tls";
+import { evaluationApiBase } from "./evaluation-connection";
 
 // Per-operation TLS policy. The demo bypass is scoped to the configured NeMo API;
 // never change process-wide TLS, F5, database, or Mock behavior.
@@ -33,6 +34,9 @@ export function connectionTransport(
       const f5 = new URL(env.F5_API_URL!);
       if (target.origin === f5.origin && target.pathname.startsWith(f5.pathname.replace(/\/+$/, "") + "/")) isNemo = false;
     } catch { /* F5 is optional; never apply its configuration to a NeMo request. */ }
+    try {
+      if (target.href.startsWith(evaluationApiBase(env.MARKETPLACE_EVALUATION_URL!) + "/")) isNemo = false;
+    } catch { /* Evaluate is optional; it never uses the NeMo TLS bypass. */ }
     if (!isNemo && !env.MARKETPLACE_CONNECTION_CA_MODE) return fetcher(input, init);
     return fetcher(input, { ...init, ...(isNemo && insecure ? { redirect: "manual" } : {}), dispatcher: isNemo && insecure ? insecure : agent } as RequestInit);
   };

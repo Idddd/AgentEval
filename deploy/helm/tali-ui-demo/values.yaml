@@ -41,7 +41,19 @@ marketplace:
   nemoTokenSecret: tali
   nemoTokenKey: tali-guard-bootstrap-user-ini
   policyAuthoringUrl: ""
+  # Browser-facing HTTP(S) origin, without a path. Set when Ingress rewrites Host.
   publicOrigin: ""
+  # Optional independent Guardrail evaluation. In shared Demo, every visitor
+  # can evaluate and view reports; use a dedicated UAT project.
+  evaluationUrl: ""
+  # Additional Evaluate base URLs selectable from the shared connection page.
+  # A deployment Token, if set, may only be used with evaluationUrl.
+  evaluationAllowedUrls: []
+  evaluationProjectId: ""
+  evaluationBindings: {}
+  # Existing Secret, if required by the evaluation service.
+  evaluationTokenSecret: ""
+  evaluationTokenKey: MARKETPLACE_EVALUATION_TOKEN
   crudOnly: false
   # Existing database Secret; never put credentials here.
   databaseSecret: tali

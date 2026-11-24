@@ -21,6 +21,29 @@ async function request(path: string, method = "GET", body?: unknown, actor = "us
 }
 beforeEach(() => { storage.clear(); fetcher.mockClear(); storage.set(docKey(), { revision: 4, state: { entities: [entity("guard-one"), entity("guard-two"), entity("profile-one", "Profile"), entity("hidden-record", "Profile", "RMG")], audit: [] }, jobs: {}, bindings: {}, requests: {}, authors: { "guard-one": "user" }, requestors: {} }); });
 
+it("allows all V3 Demo roles to start managed evaluations behind an intranet proxy, without changing strict authorization", async () => {
+  const doc = storage.get(docKey())!;
+  doc.state.entities[0].status = "TEST READY";
+  const shared = { ...env, HOST: "0.0.0.0", MARKETPLACE_V3_DEMO: "true", GUARD_API_TOKEN: "fixture-demo-token", MARKETPLACE_EVALUATION_URL: "https://eval.internal" };
+  const handler = vi.fn<typeof fetch>(async (url, init) => {
+    const path = new URL(String(url)).pathname;
+    if (path.endsWith("/account/identity")) return fetcher(url, init);
+    if (path.endsWith("/config")) return Response.json({ id: "guard-one", version: 1, revision: "1:1", execution_mode: "guardrail", data_source: "published", default_endpoint: { provider: "nemo guardrail", guardrail_id: "nemo" }, datasets: [{ dataset_id: "suite", dataset_version: 1 }] });
+    if (path.endsWith("/runs")) return Response.json({ id: "eval-a", experiment_id: "exp-a", status: "RUNNING", phase: "QUEUED", completed: 0, sample_count: 1, created_at: "2026-11-24", execution_mode: "guardrail", target_id: "guard-one", guardrail_provider: "nemo guardrail", guardrail_instance_id: "nemo", snapshot: { target: { version: 1 } } });
+    return Response.json({ items: [] });
+  });
+  const endpoint = "http://marketplace-service:8080/api/nmgr/guardrail-evaluation?guardrail=guard-one&version=1";
+  for (const role of ["User", "User Admin", "IT Admin"]) {
+    const headers = { Origin: env.MARKETPLACE_PUBLIC_ORIGIN, "X-Marketplace-Role": role, "Idempotency-Key": randomUUID() };
+    expect((await nmgrApi(new Request(endpoint, { headers }), shared, handler)).status).toBe(200);
+    expect((await nmgrApi(new Request(endpoint + "&revision=1%3A1", { method: "POST", headers }), shared, handler)).status).toBe(202);
+  }
+  const unrelated = new Request(endpoint + "&revision=1%3A1", { method: "POST", headers: { Origin: "https://elsewhere.internal" } });
+  expect((await nmgrApi(unrelated, shared, handler)).status).toBe(403);
+  expect((await nmgrApi(new Request(endpoint, { headers: { authorization: "Bearer user" } }), { ...env, MARKETPLACE_EVALUATION_URL: "https://eval.internal" }, handler)).status).toBe(403);
+  expect(handler.mock.calls.filter(([url, init]) => String(url).endsWith("/runs") && init?.method === "POST")).toHaveLength(3);
+});
+
 it("exposes an independent F5 import endpoint with scoped counts and a Swagger-validated catalog", async () => {
   const f5Env = { ...env, F5_API_URL: "https://f5.internal/backend/v1", F5_API_TOKEN: "test-only-token" };
   const remote = vi.fn<typeof fetch>(async (url, init) => {

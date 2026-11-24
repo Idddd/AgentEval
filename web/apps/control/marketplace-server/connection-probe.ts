@@ -4,12 +4,17 @@ import { databaseConfig } from "./storage/config";
 import { nemoServiceFetch } from "./nemo-session";
 import { DeploymentError, upstreamFailure } from "./diagnostics";
 import { f5Configuration, createF5Client, probeF5 } from "./f5-client";
+import { probeEvaluation } from "./guardrail-evaluation";
 
-export type ProbeTarget = "nemoUrl" | "nemoToken" | "databaseUrl" | "f5Url" | "f5Token";
+export type ProbeTarget = "nemoUrl" | "nemoToken" | "databaseUrl" | "f5Url" | "f5Token" | "evaluationUrl";
 export async function probeConnection(target: ProbeTarget, env: NodeJS.ProcessEnv, fetcher: typeof fetch) {
   const started = Date.now();
   let message: string, httpStatus: number | undefined;
-  if (target === "databaseUrl") {
+  if (target === "evaluationUrl") {
+    await probeEvaluation(env, fetcher);
+    message = "Evaluate API reachable. Target list is readable; no evaluation was started.";
+    httpStatus = 200;
+  } else if (target === "databaseUrl") {
     let config: ReturnType<typeof databaseConfig>;
     try { config = databaseConfig(env); }
     catch { throw new DeploymentError("database", "database_config_invalid", "Provide a PostgreSQL or MariaDB URL including credentials and valid TLS settings."); }

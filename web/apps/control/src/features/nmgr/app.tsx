@@ -67,6 +67,7 @@ import { DeploymentQueues } from "./deployment-queues";
 import { EntityDetailLink } from "./entity-detail-link";
 import { ProfileDashboardOperations } from "./profile-dashboard-operations";
 import { DashboardMeasureOverview } from "./measure/dashboard-overview";
+import { IndependentEvaluation } from "./independent-evaluation";
 import { operatingScans, appendOperatingTraffic } from "./profile-operations-state";
 import {
   buildAlerts,
@@ -126,6 +127,23 @@ export function NmgrApp({ mock = false }: { mock?: boolean }) {
 }
 export function DemoNmgrApp() {
   const { state, ready, updateState } = useDemoState(setNotice);
+  const [demoEvaluationRefs, setDemoEvaluationRefs] = useState<string[]>([]);
+  useEffect(() => {
+    // Ordinary V2 Mock remains browser-only. The linked local UAT session is
+    // explicitly opted in to the separate, loopback-only evaluation service.
+    if (!["127.0.0.1", "localhost", "[::1]"].includes(window.location.hostname) ||
+        new URLSearchParams(window.location.search).get("independentEvaluation") !== "1") return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch("/api/marketplace-config", { cache: "no-store", signal: controller.signal });
+        const config = response.ok ? await response.json() : null;
+        if (!controller.signal.aborted && Array.isArray(config?.demoEvaluationRefs)) setDemoEvaluationRefs(config.demoEvaluationRefs);
+      } catch { /* The optional UAT connection does not affect browser-only Mock. */ }
+    })();
+    return () => controller.abort();
+  }, []);
+  const independent = (item: Entity) => item.kind === "Guardrail" && demoEvaluationRefs.includes(`${item.id}@${item.version}`);
   const [owner, setOwner] = useState(initialOwner);
   const role = roleForOwner(owner);
   const controlUnit = "ISS";
@@ -378,7 +396,7 @@ export function DemoNmgrApp() {
       (x) =>
         x.kind === kind &&
         (view === "tests"
-          ? ["TEST READY", "TEST FAILED", "TEST PASSED"].includes(x.status)
+          ? ["TEST READY", "TEST FAILED", "TEST PASSED"].includes(x.status) || independent(x)
           : view === "signoff"
             ? x.status === "SIGNOFF REQUESTED"
             : view === "deploy"
@@ -503,7 +521,7 @@ export function DemoNmgrApp() {
       const options =
         field.key === "status"
           ? view === "tests"
-            ? ["TEST READY", "TEST FAILED", "TEST PASSED"]
+            ? ["TEST READY", "TEST FAILED", "TEST PASSED", ...(demoEvaluationRefs.length ? ["DEPLOYED"] : [])]
             : view === "signoff"
               ? ["SIGNOFF REQUESTED"]
               : view === "deploy"
@@ -711,14 +729,14 @@ export function DemoNmgrApp() {
                 }
               </Button>
             ))}
-          {allowed(e, "test-pass", role) && (
+          {(allowed(e, "test-pass", role) || role === "IT Admin" && independent(e)) && (
             <Button
               onClick={() =>
                 view === "tests" ? open("test-pass") : go(kind, "tests", e.id)
               }
             >
               <FlaskConical size={16} />
-              {view === "tests" ? "Run Evaluation" : "Go Evaluate"}
+              {view === "tests" ? independent(e) ? "Evaluate" : "Run Evaluation" : "Go Evaluate"}
             </Button>
           )}
         </div>
@@ -740,7 +758,7 @@ export function DemoNmgrApp() {
       <WorkflowSteps item={e} />
       <WorkflowNotice item={e} role={role} />
       {view === "tests" ? (
-        runs(e)
+        independent(e) ? null : runs(e)
       ) : (
         <>
           <div className="nm-tabs">
@@ -1145,8 +1163,8 @@ export function DemoNmgrApp() {
                                 onClick={() => go(kind, view, item.id)}
                               >
                                 {view === "tests"
-                                  ? item.status === "TEST READY" &&
-                                    allowed(item, "test-pass", role)
+                                  ? (item.status === "TEST READY" && allowed(item, "test-pass", role)) ||
+                                    (role === "IT Admin" && independent(item))
                                     ? "Go Evaluate"
                                     : "View"
                                   : view === "signoff" &&
@@ -1357,7 +1375,9 @@ export function DemoNmgrApp() {
                 ? "This clears this workspace and restores default records."
                 : modal === "report"
                   ? "Results for this recorded revision."
-                  : "Review the current revision before confirming this action."}
+                  : modal === "test-pass" && e && independent(e)
+                    ? e.name
+                    : "Review the current revision before confirming this action."}
           </SheetDescription>
           {confirmClose && (
             <div
@@ -1452,7 +1472,7 @@ export function DemoNmgrApp() {
             </div>
           ) : e ? (
             <>
-              <div className="nm-callout">
+              {!(modal === "test-pass" && independent(e)) && <div className="nm-callout">
                 <strong>{e.name}</strong>
                 <p>
                   Target {version(e.version)} · Base{" "}
@@ -1462,7 +1482,7 @@ export function DemoNmgrApp() {
                   Control Unit: {e.unit} · Location: {e.location} ·
                   Approver: {e.approver}
                 </small>
-              </div>
+              </div>}
               {modal === "request" && (
                 <>
                   <p>Requestor: {actorNames[role]}</p>
@@ -1571,7 +1591,10 @@ export function DemoNmgrApp() {
                   </p>
                 </div>
               )}
-              {modal === "test-pass" && (
+              {modal === "test-pass" && role === "IT Admin" && independent(e) && (
+                <IndependentEvaluation key={`${e.id}@${e.version}`} guardrail={e.id} version={e.version} demo />
+              )}
+              {modal === "test-pass" && !independent(e) && (
                 <>
                   <Select
                     label="Dataset"
@@ -1667,7 +1690,7 @@ export function DemoNmgrApp() {
                       : "Block all traffic matching this profile."}
                 </p>
               )}
-              <div className="nm-actions">
+              {!(modal === "test-pass" && independent(e)) && <div className="nm-actions">
                 <Button variant="outline" disabled={busy} onClick={closeModal}>
                   Cancel
                 </Button>
@@ -1683,7 +1706,7 @@ export function DemoNmgrApp() {
                       ? "Run Evaluation"
                       : "Confirm"}
                 </Button>
-              </div>
+              </div>}
             </>
           ) : null}
           {error && (

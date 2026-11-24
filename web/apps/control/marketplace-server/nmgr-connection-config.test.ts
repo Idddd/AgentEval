@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { connectionEnvironment } from "./nmgr-connection-config";
+import { connectionEnvironment, connectionOrigin } from "./nmgr-connection-config";
 import { nmgrConfiguration } from "./nmgr-api";
 import { rootCertificates } from "node:tls";
 import { databaseConfig } from "./storage/config";
@@ -104,15 +104,24 @@ it("accepts a matching browser HTTPS origin behind TLS termination without trust
     ),
   ).toThrow(/origin/i);
 });
-it.each(["invalid", "https://stale.internal"])(
-  "derives demo origin instead of requiring the old publicOrigin setting: %s",
+it.each(["true", "false"])("pins the browser origin across host rewriting (V3 demo=%s)", (mode) => {
+  const cfg = { ...settings, MARKETPLACE_V3_DEMO: mode, MARKETPLACE_PUBLIC_ORIGIN: "https://ui.internal:8443" };
+  const url = "http://marketplace-service:8080/api/nmgr/connection";
+  expect(connectionEnvironment(new Request(url), cfg).MARKETPLACE_PUBLIC_ORIGIN).toBe(cfg.MARKETPLACE_PUBLIC_ORIGIN);
+  expect(connectionOrigin(new Request(url, { headers: { Origin: cfg.MARKETPLACE_PUBLIC_ORIGIN, Forwarded: "host=untrusted.internal;proto=http" } }), cfg))
+    .toBe(cfg.MARKETPLACE_PUBLIC_ORIGIN);
+  for (const observed of ["http://ui.internal:8443", "https://ui.internal", "https://other.internal:8443", "null", "", "http://marketplace-service:8080"]) {
+    expect(() => connectionOrigin(new Request(url, { headers: { Origin: observed, "X-Forwarded-Host": "ui.internal:8443", "X-Forwarded-Proto": "https" } }), cfg))
+      .toThrow(/this Marketplace origin/);
+  }
+  expect(() => connectionOrigin(new Request(url, { headers: { Origin: cfg.MARKETPLACE_PUBLIC_ORIGIN, "Sec-Fetch-Site": "cross-site" } }), cfg))
+    .toThrow(/this Marketplace origin/);
+});
+it.each(["invalid", "https://ui.internal/", "https://ui.internal/v3", "https://ui.internal?x=1"])(
+  "rejects malformed deployment origins rather than ignoring them in demo mode: %s",
   (configured) => {
-    expect(
-      connectionEnvironment(
-        new Request("https://ui.internal/api/nmgr/workspace"),
-        { ...settings, MARKETPLACE_PUBLIC_ORIGIN: configured },
-      ).MARKETPLACE_PUBLIC_ORIGIN,
-    ).toBe("https://ui.internal");
+    expect(() => connectionEnvironment(new Request("https://ui.internal/api/nmgr/workspace"), { ...settings, MARKETPLACE_PUBLIC_ORIGIN: configured }))
+      .toThrow(/MARKETPLACE_PUBLIC_ORIGIN must be the browser/);
   },
 );
 it("preserves explicitly configured public origin and strict identity mode", () => {

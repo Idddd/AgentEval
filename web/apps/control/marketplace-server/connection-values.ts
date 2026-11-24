@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import type { ConnectionValue, ConnectionValues } from "../src/features/nmgr/connection-values";
 import type { ConnectionSettings } from "./nmgr-connection-config";
+import { evaluationApiBase } from "./evaluation-connection";
 
 type Kind = "token" | "password" | "url" | "database" | "text";
 const definitions: Array<[string, string, Kind, string?]> = [
@@ -8,6 +9,7 @@ const definitions: Array<[string, string, Kind, string?]> = [
   ["nemoToken", "GUARD_API_TOKEN", "token", "GUARD_API_TOKEN_FILE"],
   ["f5Url", "F5_API_URL", "url"],
   ["f5Token", "F5_API_TOKEN", "token", "F5_API_TOKEN_FILE"],
+  ["evaluationUrl", "MARKETPLACE_EVALUATION_URL", "url"],
   ["databaseUrl", "MARKETPLACE_DATABASE_URL", "database"],
   ["databasePassword", "MARKETPLACE_DATABASE_PASSWORD", "password"],
   ["workspaceId", "MARKETPLACE_WORKSPACE_ID", "text"],
@@ -54,6 +56,7 @@ function inspect(env: NodeJS.ProcessEnv, key: string, kind: Kind, fileKey?: stri
     try {
       const url = new URL(value);
       if (kind === "url") {
+        if (key === "MARKETPLACE_EVALUATION_URL") return { ...result, preview: evaluationApiBase(value) };
         const suffix = key === "F5_API_URL" ? "/backend/v1" : "/api/v1";
         if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.search || url.hash || !url.pathname.replace(/\/$/, "").endsWith(suffix) || key === "F5_API_URL" && url.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) throw new Error();
         result.preview = url.toString();
@@ -73,8 +76,10 @@ function inspect(env: NodeJS.ProcessEnv, key: string, kind: Kind, fileKey?: stri
 /** Diagnostic projection only: never modifies credentials or calls a remote service. */
 export function connectionValues(effective: NodeJS.ProcessEnv, deployment: NodeJS.ProcessEnv, saved: ConnectionSettings | null): ConnectionValues {
   return Object.fromEntries(definitions.map(([field, key, kind, fileKey]) => {
-    const current = inspect(effective, key, kind, fileKey);
+    let current = inspect(effective, key, kind, fileKey);
     const overridden = !!saved?.[field as keyof ConnectionSettings] || field.startsWith("f5") && saved?.f5Mode === "disabled";
+    if (field === "evaluationUrl" && overridden && !effective.MARKETPLACE_EVALUATION_URL)
+      current = { ...current, status: "invalid", code: "evaluation_fallback_unavailable" };
     if (overridden) current.source = "Saved settings";
     return [field, { effective: current, deployment: inspect(deployment, key, kind, fileKey), overridden }];
   }));

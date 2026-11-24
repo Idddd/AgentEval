@@ -14,7 +14,7 @@ function redactor(env: NodeJS.ProcessEnv) {
   for (const key of ["GUARD_API_TOKEN_FILE", "GUARD_PASSWORD_FILE", "F5_API_TOKEN_FILE"]) {
     try { if (env[key]) add(readFileSync(env[key], "utf8").trim()); } catch { /* No secret contents in a failed read. */ }
   }
-  for (const key of ["MARKETPLACE_DATABASE_URL", "GUARD_API_URL", "F5_API_URL"]) {
+  for (const key of ["MARKETPLACE_DATABASE_URL", "GUARD_API_URL", "F5_API_URL", "MARKETPLACE_EVALUATION_URL"]) {
     try {
       const url = new URL(env[key]!);
       add(url.username); add(url.password); add(decodeURIComponent(url.username)); add(decodeURIComponent(url.password));
@@ -59,7 +59,7 @@ const hints: Record<string, string> = {
 };
 
 // Include causal diagnostics, not arbitrary exception properties, SQL, headers or stack dumps.
-export function connectionErrorDetails(error: unknown, f5 = false) {
+export function connectionErrorDetails(error: unknown, f5 = false, evaluation = false) {
   const active = context.getStore();
   if (!active) return undefined;
   const clean = redactor(active.env);
@@ -78,10 +78,10 @@ export function connectionErrorDetails(error: unknown, f5 = false) {
   const upstream = error && typeof error === "object" && "upstream" in error ? error.upstream as Record<string, unknown> : undefined;
   return {
     operation: active.operation,
-    certificateVerification: f5 ? "F5 enabled" : active.env.MARKETPLACE_NEMO_TLS === "skip" ? "NeMo skipped" : "NeMo enabled",
+    certificateVerification: evaluation ? "Evaluate enabled" : f5 ? "F5 enabled" : active.env.MARKETPLACE_NEMO_TLS === "skip" ? "NeMo skipped" : "NeMo enabled",
     ...(upstream ? { httpStatus: typeof upstream.httpStatus === "number" ? upstream.httpStatus : undefined,
       contentType: clean(upstream.contentType), upstreamCode: f5 ? undefined : clean(upstream.code), upstreamMessage: f5 ? undefined : clean(upstream.message) } : {}),
     causes,
-    hints: [...new Set(causes.map(c => (f5 && c.code === "DEPTH_ZERO_SELF_SIGNED_CERT" ? "F5 certificate is self-signed. Supply its trusted CA; F5 certificate verification remains enabled." : hints[String(c.code)] || hints[String(c.name)])).filter(Boolean))],
+    hints: [...new Set(causes.map(c => ((f5 || evaluation) && c.code === "DEPTH_ZERO_SELF_SIGNED_CERT" ? "The certificate is self-signed. Supply its trusted CA; verification remains enabled." : hints[String(c.code)] || hints[String(c.name)])).filter(Boolean))],
   };
 }

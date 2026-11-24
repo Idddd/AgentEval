@@ -1,0 +1,21 @@
+# Use with compose.nemo-local.yml for the published Controller/Runner images.
+services:
+  controller:
+    environment:
+      CONTROLLER_GRPC_TRANSPORT: mtls
+      CONTROLLER_GRPC_TLS_CERT_PATH: /run/guard-tls/controller.crt
+      CONTROLLER_GRPC_TLS_KEY_PATH: /run/guard-tls/controller.key
+      CONTROLLER_GRPC_TLS_CLIENT_CA_PATH: /run/guard-tls/ca.crt
+    volumes:
+      - ${NEMO_LOCAL_SECRETS_DIR:?Required}/mtls/controller.crt:/run/guard-tls/controller.crt:ro
+      - ${NEMO_LOCAL_SECRETS_DIR:?Required}/mtls/controller.key:/run/guard-tls/controller.key:ro
+      - ${NEMO_LOCAL_SECRETS_DIR:?Required}/mtls/ca.crt:/run/guard-tls/ca.crt:ro
+  runner:
+    environment:
+      GUARD_CONTROLLER_CA_PATH: /run/guard-tls/ca.crt
+      GUARD_RUNNER_CLIENT_CERT_PATH: /run/guard-tls/runner.crt
+      GUARD_RUNNER_CLIENT_KEY_PATH: /run/guard-tls/runner.key
+    volumes:
+      - ${NEMO_LOCAL_SECRETS_DIR:?Required}/mtls/runner.crt:/run/guard-tls/runner.crt:ro
+      - ${NEMO_LOCAL_SECRETS_DIR:?Required}/mtls/runner.key:/run/guard-tls/runner.key:ro
+      - ${NEMO_LOCAL_SECRETS_DIR:?Required}/mtls/ca.crt:/run/guard-tls/ca.crt:ro

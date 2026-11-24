@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { DeploymentError } from "./diagnostics";
 import { createSecureContext } from "node:tls";
+import { configuredMarketplaceOrigin, parseHttpOrigin } from "./marketplace-origin";
+import { selectEvaluationUrl } from "./evaluation-connection";
 
 export const connectionSettingsSchema = z
   .object({
@@ -20,6 +22,7 @@ export const connectionSettingsSchema = z
     f5Url: z.string().trim().max(2048).optional(),
     f5Token: z.string().trim().max(4096).optional(),
     f5AdminIds: z.string().trim().max(4096).optional(),
+    evaluationUrl: z.string().trim().max(2048).optional(),
   })
   .strict();
 export type ConnectionSettings = z.infer<typeof connectionSettingsSchema>;
@@ -27,10 +30,10 @@ export type ConnectionSettings = z.infer<typeof connectionSettingsSchema>;
 export function connectionOrigin(request: Request, env: NodeJS.ProcessEnv) {
   const url = new URL(request.url),
     supplied = request.headers.get("origin");
-  const configured =
-    env.MARKETPLACE_V3_DEMO === "false"
-      ? env.MARKETPLACE_PUBLIC_ORIGIN
-      : undefined;
+  // Use a deployment-pinned origin in both modes. Gateways may replace the
+  // request host with an internal Service host; never trust forwarded headers
+  // from the request as an alternative source of authority.
+  const configured = configuredMarketplaceOrigin(env);
   const rejected = () =>
     new DeploymentError(
       "origin",
@@ -40,19 +43,9 @@ export function connectionOrigin(request: Request, env: NodeJS.ProcessEnv) {
       403,
     );
   if (request.headers.get("sec-fetch-site") === "cross-site") throw rejected();
-  if (supplied) {
-    let origin: URL;
-    try {
-      origin = new URL(supplied);
-    } catch {
-      throw rejected();
-    }
-    if (
-      !/^https?:$/.test(origin.protocol) ||
-      origin.origin !== supplied ||
-      (configured ? supplied !== configured : origin.host !== url.host)
-    )
-      throw rejected();
+  if (supplied !== null) {
+    const origin = parseHttpOrigin(supplied);
+    if (!origin || (configured ? supplied !== configured : origin.host !== url.host)) throw rejected();
   }
   return configured || supplied || url.origin;
 }
@@ -61,6 +54,7 @@ export function connectionEnvironment(
   request: Request,
   env: NodeJS.ProcessEnv,
   overrides: ConnectionSettings = {},
+  savedEvaluation = false,
 ): NodeJS.ProcessEnv {
   const mode = env.MARKETPLACE_V3_DEMO ?? "true";
   if (!["true", "false"].includes(mode))
@@ -82,6 +76,15 @@ export function connectionEnvironment(
     MARKETPLACE_NEMO_AUTH_MODE: "token",
     MARKETPLACE_NEMO_TLS: overrides.nemoTls || env.MARKETPLACE_NEMO_TLS || "skip",
   };
+  if (overrides.evaluationUrl) {
+    try { effective.MARKETPLACE_EVALUATION_URL = selectEvaluationUrl(overrides.evaluationUrl, env, origin); }
+    catch (error) {
+      if (!savedEvaluation || !(error instanceof DeploymentError) || error.component !== "evaluation") throw error;
+      // A deployment change can invalidate yesterday's override. Keep the
+      // workspace online, but do not silently send evaluation traffic elsewhere.
+      effective.MARKETPLACE_EVALUATION_URL = "";
+    }
+  }
   if (!["skip", "verify"].includes(effective.MARKETPLACE_NEMO_TLS!))
     throw new DeploymentError("nemo", "nemo_tls_invalid", "Choose skip or verify for NeMo certificate verification.", ["MARKETPLACE_NEMO_TLS"], 422);
   // Default V3 does not use V1/V2 authoring, fixed actors or automatic browser tokens.

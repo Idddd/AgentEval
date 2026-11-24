@@ -4,13 +4,14 @@ import { StoreError } from "./marketplace-db";
 import { connectionErrorDetails } from "./connection-diagnostics";
 import { nmgrRequestContext } from "./nmgr-request-context";
 
-export type Component = "runtime" | "origin" | "database" | "identity" | "nemo" | "f5" | "workspace";
+export type Component = "runtime" | "origin" | "database" | "identity" | "nemo" | "f5" | "evaluation" | "workspace";
 export const componentSettings: Record<Component, string[]> = {
   runtime: ["MARKETPLACE_DATA_MODE"], origin: ["MARKETPLACE_PUBLIC_ORIGIN"],
   database: ["MARKETPLACE_DATABASE_URL", "MARKETPLACE_DATABASE_PASSWORD", "MARKETPLACE_DB_TLS", "MARKETPLACE_DB_CA_FILE"],
   identity: ["MARKETPLACE_V2_ACCOUNTS_FILE", "MARKETPLACE_V2_ACCOUNTS_JSON", "MARKETPLACE_V2_LOCAL_ACTOR_ID"],
   nemo: ["GUARD_API_URL", "GUARD_API_TOKEN_FILE", "GUARD_API_TOKEN", "GUARD_USERNAME", "GUARD_PASSWORD_FILE", "GUARD_PASSWORD", "GUARD_AUTH_ORIGIN", "NODE_EXTRA_CA_CERTS"],
   f5: ["F5_API_URL", "F5_API_TOKEN_FILE", "F5_API_TOKEN", "NODE_EXTRA_CA_CERTS"], workspace: ["MARKETPLACE_WORKSPACE_ID"],
+  evaluation: ["MARKETPLACE_EVALUATION_URL", "MARKETPLACE_EVALUATION_TOKEN", "MARKETPLACE_EVALUATION_PROJECT_ID"],
 };
 export class DeploymentError extends StoreError {
   readonly requestId = nmgrRequestContext.getStore()?.requestId ?? randomUUID();
@@ -65,7 +66,7 @@ export function reportFailure(error: unknown, component: Component, operation: s
   const failure = categorized instanceof DeploymentError ? categorized : new DeploymentError(component,
     error instanceof StoreError ? `${component}_${error.status}` : `${component}_unavailable`,
     error instanceof StoreError && !["nemo", "f5"].includes(component) ? error.message : fallback, componentSettings[component], error instanceof StoreError ? error.status : 503);
-  const details = connectionErrorDetails(error, failure.component === "f5");
+  const details = connectionErrorDetails(error, failure.component === "f5", failure.component === "evaluation");
   const metadata = { code: failure.code, component: failure.component, settings: failure.settings, requestId: failure.requestId, ...(details ? { details } : {}), ...(failure.responseValidation ? { responseValidation: failure.responseValidation } : {}) };
   console.error(JSON.stringify({ time: new Date().toISOString(), level: "error", service: "marketplace", event: "dependency_failure", ...(failure.component === "f5" ? f5Trace.getStore() : {}), operation, status: failure.status, ...(failure.responseValidation ? { message: failure.message } : {}), ...metadata }));
   return { ...metadata, message: failure.message, status: failure.status };

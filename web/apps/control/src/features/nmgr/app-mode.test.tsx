@@ -43,6 +43,16 @@ it("runs the explicit mock entry locally and keeps workbench navigation in mock 
   expect(network).not.toHaveBeenCalled();
 });
 
+it("loads independent evaluation refs only after opting in on loopback", async () => {
+  window.history.replaceState(null, "", "/v2/guardrails?role=tech&independentEvaluation=1#Guardrail/tests/");
+  const fetcher = vi.fn(async () => Response.json({ demoEvaluationRefs: ["default-banking-restrictions@1"] }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<NmgrApp mock />);
+  expect(await screen.findByRole("link", { name: /^Customer-Facing Banking Assistant Restrictions$/ })).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher).toHaveBeenCalledWith("/api/marketplace-config", expect.anything());
+});
+
 it("shows the real entry and its mock link while real configuration is unavailable", async () => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Runtime unavailable")));
   render(<NmgrApp />);

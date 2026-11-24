@@ -18,6 +18,6 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ ...envelope, type: z.enum(["advance", "reconcile"]), id: z.string(), remoteId: z.string().uuid().optional() }).strict(),
 ]);
 export const connectionTestSchema = z.object({
-  target: z.enum(["nemoUrl", "nemoToken", "databaseUrl", "f5Url", "f5Token"]),
+  target: z.enum(["nemoUrl", "nemoToken", "databaseUrl", "f5Url", "f5Token", "evaluationUrl"]),
   settings: connectionSettingsSchema.optional(),
 }).strict();
