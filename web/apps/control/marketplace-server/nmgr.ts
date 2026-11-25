@@ -19,7 +19,7 @@ export type NmgrActor = { id: string; name: string; role: Role; unit: string };
 type PolicyBinding = { policyId: string; policyVersion: string; enabledRuleIds: string[]; enabledRails: string[]; f5?: F5ScannerRef };
 export type NmgrBinding = { draftSyncedAt?: string; f5?: F5Binding; policyId?: string; revision?: number; publishedVersion?: string; ruleIds?: string[]; rails?: string[]; guardrailId?: string; draftRevision?: number; version?: string; publishedRefs?: Record<string, PolicyBinding>; released?: boolean };
 export type NmgrJob = { traceId?: string; leaseUntil?: number; canCorrect?: boolean; canResume?: boolean; purpose?: "draft-sync"; expectedRevision?: number; f5?: F5Work; actor: string; phase: string; status: "pending" | "failed" | "uncertain" | "done"; started: string; inflight?: boolean; message?: string; runId?: string; dataset?: string; definition?: any; profile?: any };
-export type NmgrDocument = { revision: number; catalogRevisions?: Partial<Record<"NeMo" | "F5", number>>; state: State; requests: Record<string, string>; jobs: Record<string, NmgrJob>; bindings: Record<string, NmgrBinding>; authors: Record<string, string>; requestors: Record<string, string> };
+export type NmgrDocument = { revision: number; resourceRevisions?: { baseline: number; through: number; byId: Record<string, number> }; catalogRevisions?: Partial<Record<"NeMo" | "F5", number>>; state: State; requests: Record<string, string>; jobs: Record<string, NmgrJob>; bindings: Record<string, NmgrBinding>; authors: Record<string, string>; requestors: Record<string, string> };
 export interface NmgrPersistence {
   exclusive<T>(fn: () => Promise<T>): Promise<T>;
   readDocument<T>(id: string): Promise<T | undefined>;
@@ -41,8 +41,21 @@ function subset(expected: any, actual: any): boolean {
 export class NmgrService {
   constructor(private db: NmgrPersistence, private workspace: string, private f5?: F5Remote, private sourceErrors?: Record<string, { code: string; component: string; message: string; requestId: string; settings: string[] }>) {}
   private get documentId() { return `nmgr:${this.workspace}`; }
-  private async load() { return await this.db.readDocument<NmgrDocument>(this.documentId) ?? empty(); }
-  private async save(doc: NmgrDocument) { doc.revision++; await this.db.writeDocument(this.documentId, doc); }
+  private async load() {
+    const doc = await this.db.readDocument<NmgrDocument>(this.documentId) ?? empty();
+    // A pre-upgrade writer only advances the workspace revision. Its affected
+    // IDs are unknown, so use its snapshot as the baseline for every record.
+    if (doc.resourceRevisions?.through !== doc.revision) {
+      doc.resourceRevisions = { baseline: doc.revision, through: doc.revision, byId: {} };
+    }
+    return doc;
+  }
+  private async save(doc: NmgrDocument, changedId?: string) {
+    const revisions = doc.resourceRevisions!;
+    revisions.through = ++doc.revision;
+    if (changedId !== undefined) revisions.byId[changedId] = doc.revision;
+    await this.db.writeDocument(this.documentId, doc);
+  }
   private view(doc: NmgrDocument, actor: NmgrActor) {
     const entities = doc.state.entities.filter(e => scope(e, actor) && (!e.imported || e.provider !== "F5" || e.sourceInstanceId === this.f5?.sourceId)), ids = new Set(entities.map(e => e.id));
     return { revision: doc.revision, actor, ...(this.sourceErrors ? { sourceErrors: this.sourceErrors } : {}), sources: this.f5 ? ["NeMo", "F5"] : ["NeMo"], state: { entities, audit: doc.state.audit.filter(a => ids.has(a.entity)) },
@@ -101,10 +114,15 @@ export class NmgrService {
         if (doc.requests[requestKey] !== fingerprint) fail(409, "Idempotency key was already used for different content.");
         return this.view(doc, actor);
       }
-      if (doc.revision !== cmd.expectedRevision) throw new DeploymentError("workspace", "workspace_revision_changed", "Workspace changed. Refresh and review before retrying.", [], 409);
       const id = "draft" in cmd ? cmd.draft.id : cmd.id;
       let e = doc.state.entities.find(e => e.id === id && scope(e, actor));
       if (cmd.type !== "create" && !e) fail(404, "Record not found.");
+      if (cmd.type !== "create") {
+        const { baseline, byId } = doc.resourceRevisions!;
+        const lastChange = Object.hasOwn(byId, id) ? byId[id]! : baseline;
+        if (cmd.expectedRevision < lastChange || cmd.expectedRevision > doc.revision)
+          throw new DeploymentError("workspace", "workspace_revision_changed", "This record changed or the supplied revision is newer than the workspace. Refresh the record and review before retrying.", [], 409);
+      }
       if (e?.imported) fail(403, `This resource is managed in ${e.provider ?? "NeMo"}. Refresh to import its latest changes.`);
       const job = doc.jobs[id];
       let syncAfterSave = false;
@@ -124,7 +142,7 @@ export class NmgrService {
           await this.db.writeDocument(leaseKey, { traceId: job.traceId, until: job.leaseUntil });
           doc.requests[requestKey] = fingerprint;
           this.audit(doc, e!, actor, `${job.phase}: started · Reference: ${job.traceId}`);
-          await this.save(doc);
+          await this.save(doc, id);
           deferred = { doc: structuredClone(doc), id, traceId: job.traceId, leaseKey, recovering: cmd.type === "reconcile", remoteId: cmd.remoteId };
           return this.view(doc, actor);
         }
@@ -222,7 +240,7 @@ export class NmgrService {
       }
       const priorIds = new Set(priorAudit.map(a => a.id));
       doc.state.audit = [...doc.state.audit.filter(a => !priorIds.has(a.id)), ...priorAudit];
-      await this.save(doc);
+      await this.save(doc, id);
       if (syncAfterSave) {
         for (let step = 0; step < 2 && doc.jobs[id]?.status === "pending"; step++) await this.runJob(doc, doc.state.entities.find(item => item.id === id)!, doc.jobs[id]!, actor, remote, false);
       }
@@ -249,7 +267,7 @@ export class NmgrService {
       latest.jobs[work.id] = job;
       latest.bindings[keyFor(entity)] = work.doc.bindings[keyFor(entity)]!;
       latest.state.audit = [...work.doc.state.audit.filter(a => !priorAudit.has(a.id)), ...latest.state.audit];
-      await this.save(latest);
+      await this.save(latest, work.id);
       await this.db.writeDocument(work.leaseKey, { traceId: work.traceId, until: 0 });
       logF5("f5_phase_persisted", { operationId: work.traceId, workspace: this.workspace, actorId: actor.id, resourceId: entity.id, phase, outcome: job.status });
       return this.view(latest, actor);
@@ -267,7 +285,7 @@ export class NmgrService {
     } else { job.expectedRevision = binding.draftRevision ?? 0; job.profile = this.profileDraft(e, this.profileBindings(doc, e, pinned)); }
     doc.jobs[e.id] = job;
   }
-  private async runJob(doc: NmgrDocument, e: Entity, job: NmgrJob, actor: NmgrActor, remote: NmgrRemote, recovering: boolean, remoteId?: string, persist = (value: NmgrDocument) => this.save(value)) {
+  private async runJob(doc: NmgrDocument, e: Entity, job: NmgrJob, actor: NmgrActor, remote: NmgrRemote, recovering: boolean, remoteId?: string, persist = (value: NmgrDocument) => this.save(value, e.id)) {
     const unresolved = !!job.inflight || job.status === "uncertain";
     job.inflight = true; delete job.canCorrect; await persist(doc);
     try {

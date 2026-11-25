@@ -86,6 +86,10 @@ export type Revision = Pick<
   | "config"
   | "provider"
 > & { threshold?: number; thresholdMetric?: Entity["thresholdMetric"]; thresholdWindow?: number | undefined };
+export function profilesUsingGuardrail(state: State, id: string) {
+  return state.entities.filter(profile => profile.kind === "Profile" &&
+    (profile.refs.includes(id) || (profile.deployed !== null && profile.deployedRefs.includes(id))));
+}
 export const sourceLabel = (item: Entity) => item.sourcePending ? "Pending Tech selection" : item.provider ?? "NeMo";
 export function deployedEntity(item: Entity): Entity {
   const saved =

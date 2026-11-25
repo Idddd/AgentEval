@@ -3,7 +3,7 @@ import { StoreError } from "./marketplace-db";
 import { diagnosticResponse } from "./diagnostics";
 import { matchRestRoute, noQuery } from "./nmgr-rest-contract";
 import type { NmgrService } from "./nmgr";
-import type { Entity } from "../src/features/nmgr/model";
+import { profilesUsingGuardrail, type Entity } from "../src/features/nmgr/model";
 import { addRequestMetadata } from "./nmgr-request-context";
 
 type Snapshot = Awaited<ReturnType<NmgrService["snapshot"]>> & { accessMode?: string };
@@ -13,7 +13,28 @@ const fail = (status: number, message: string): never => { throw new StoreError(
 const json = (value: unknown, status = 200, headers = {}) => Response.json(value, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const context = (s: Snapshot) => ({ revision: s.revision, actor: s.actor, sources: s.sources, ...(s.accessMode ? { accessMode: s.accessMode } : {}), ...(s.sourceErrors ? { sourceErrors: s.sourceErrors } : {}) });
 const resource = (s: Snapshot, id: string | undefined, kind?: string) => s.state.entities.find(e => e.id === id && (!kind || e.kind === kind)) ?? fail(404, "Resource not found.");
-const details = (s: Snapshot, e: Entity) => ({ ...context(s), item: e, job: s.jobs[e.id] ?? null, binding: s.bindings[`${e.id}@${e.version}`] ?? null, relatedGuardrails: e.kind === "Profile" ? s.state.entities.filter(ref => ref.kind === "Guardrail" && e.refs.includes(ref.id)) : [] });
+function details(s: Snapshot, e: Entity) {
+  return {
+    ...context(s), item: e, job: s.jobs[e.id] ?? null, binding: s.bindings[`${e.id}@${e.version}`] ?? null,
+    relatedGuardrails: e.kind === "Profile" ? s.state.entities.filter(ref => ref.kind === "Guardrail" && e.refs.includes(ref.id)) : [],
+    usedByProfiles: e.kind === "Guardrail" ? profilesUsingGuardrail(s.state, e.id).map(profile => ({
+      id: profile.id, name: profile.name, draftReference: profile.refs.includes(e.id),
+      deployedReference: profile.deployed !== null && profile.deployedRefs.includes(e.id),
+    })) : [],
+  };
+}
+
+function businessVersions(s: Snapshot, e: Entity) {
+  const versions = new Set([e.version, ...e.runs.map(run => run.version)]);
+  if (e.deployed !== null) versions.add(e.deployed);
+  for (const version of Object.keys(e.revisions ?? {})) versions.add(Number(version));
+  const prefix = e.id + "@";
+  for (const key of Object.keys(s.bindings)) {
+    if (key.startsWith(prefix)) versions.add(Number(key.slice(prefix.length)));
+  }
+  return [...versions].filter(v => Number.isSafeInteger(v) && v > 0).sort((a, b) => b - a)
+    .map(version => ({ version, isCurrent: version === e.version, isDeployed: version === e.deployed }));
+}
 function paginate<T>(items: T[], query: any) {
   const { page, pageSize } = query;
   return { items: items.slice((page - 1) * pageSize, page * pageSize), pagination: { page, pageSize, total: items.length, totalPages: Math.ceil(items.length / pageSize) } };
@@ -83,6 +104,7 @@ export async function nmgrRestApi(request: Request, invoke: Legacy): Promise<Res
       return json({ ...details(saved, item), jobId: job ? item.id : null, jobUrl }, status, jobUrl && pending ? { Location: jobUrl } : {});
     }
     if (route.mode === "observe") { const e = resource(snapshot, id, route.kind); return json(await call(`workspace?resource=${encodeURIComponent(e.id)}`)); }
+    if (route.mode === "versions") return json({ ...meta, items: businessVersions(snapshot, resource(snapshot, id, route.kind)) });
     if (route.mode === "detail") return json(details(snapshot, resource(snapshot, id, route.kind)));
     if (["entities", "candidates", "approvals", "deployments"].includes(route.mode)) {
       let entities = snapshot.state.entities.filter(e => !route.kind || e.kind === route.kind);
@@ -102,7 +124,7 @@ export async function nmgrRestApi(request: Request, invoke: Legacy): Promise<Res
     if (route.mode === "evaluations" || route.mode === "evaluation") {
       const runs = snapshot.state.entities.flatMap(e => e.runs.map(run => ({ ...run, resourceId: e.id, resourceName: e.name })));
       if (route.mode === "evaluation") return json({ ...meta, item: runs.find(run => run.id === id) ?? fail(404, "Evaluation not found.") });
-      const filtered = runs.filter(run => (!query.resourceId || run.resourceId === query.resourceId) && (!query.q || `${run.resourceName} ${run.dataset}`.toLowerCase().includes(query.q.toLowerCase())))
+      const filtered = runs.filter(run => (!query.version || run.version === query.version) && (!query.resourceId || run.resourceId === query.resourceId) && (!query.q || `${run.resourceName} ${run.dataset}`.toLowerCase().includes(query.q.toLowerCase())))
         .sort((a, b) => (compare(a.start, b.start) || compare(a.id, b.id)) * (query.order === "asc" ? 1 : -1));
       return json({ ...meta, ...paginate(filtered, query) });
     }

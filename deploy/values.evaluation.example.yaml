@@ -1,3 +1,4 @@
+# Shared V3 supports first-time HTTPS setup in Connections with this file left blank.
 # Copy outside the source repository and fill in the actual Evaluate API URL
 # when configuring the running deployment. Keep Tokens in Secrets.
 marketplace:

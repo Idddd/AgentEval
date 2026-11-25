@@ -17,7 +17,7 @@ import { nemoPolicyError, NEMO_POLICY_SAMPLE } from "./nemo-policy";
 import { UnifiedConfigForm } from "../business-demo/unified-config-form";
 import { emptyConfig, type UnifiedConfig } from "../business-demo/evaluation";
 import type { Entity, Kind, State, Role } from "./model";
-import { sourceLabel, roleForOwner } from "./model";
+import { profilesUsingGuardrail, sourceLabel, roleForOwner } from "./model";
 import type { NmgrActor, NmgrBinding, NmgrJob } from "../../../marketplace-server/nmgr";
 import type { ResourceObservation } from "../../../marketplace-server/nmgr-observation";
 import { runtimeFailure, runtimeRequest } from "@/lib/runtime-request";
@@ -334,7 +334,7 @@ function LiveWorkspace({ demoRoles = false, role, independentEvaluation = false,
 }
 
 function ImportedInfo({ item, state, onOpen }: { item: Entity; state: State; onOpen: (item: Entity) => void }) {
-  const profiles = state.entities.filter(e => e.kind === "Profile" && e.refs.includes(item.id));
+  const profiles = profilesUsingGuardrail(state, item.id);
   return <div className="nm-info"><section><h3>Description</h3><p className="nm-info-description">{item.description}</p></section><section><h3>Source information</h3><dl className="nm-info-facts">{[[`${item.provider ?? "NeMo"} resource ID`, item.imported?.remoteId], ["Workspace control unit", item.unit], ["Custodian", "—"], ["Target regions", "—"], ["Last imported", item.imported?.checkedAt ? new Date(item.imported.checkedAt).toLocaleString() : "—"]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>{item.kind === "Guardrail" && <section><h3>Used by Profiles</h3>{profiles.length ? profiles.map(profile => <button className="nm-link block" key={profile.id} onClick={() => onOpen(profile)}>{profile.name}</button>) : <p className="nm-muted">No Profile references in this workspace.</p>}</section>}</div>;
 }
 

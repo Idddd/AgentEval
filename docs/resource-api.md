@@ -35,6 +35,8 @@ V3 Demo 的 **Connection backup** 可导出已保存的手动连接设置，再�
 
 ## 按页面接入
 
+在 Swagger 的请求或响应中展开 **Schema**，可查看字段用途及 **UI usage**。前端 AI 可读取 `/api/openapi.json`，用 `x-page-coverage` 找到页面对应的操作，再读取字段、参数和响应头上的 `x-ui-usage`。按 schema 的枚举、必填和可空规则生成请求和渲染逻辑。
+
 前端初始化时调用 `GET /api/nmgr/v1/me`（Swagger 操作 `getCurrentMarketplaceActor`）。响应包含 `actor.id`、`actor.name`、`actor.role`、`actor.unit` 和 `accessMode`。严格 V3 由 NeMo 验证用户 Token，再通过服务端账号映射确定角色和控制单元。前端用 `actor.role === "User Admin"` 显示 Control Unit Approver 工作台。待审批记录由 `GET /api/nmgr/v1/approval-requests?kind=Guardrail` 或 `?kind=Profile` 查询。审批接口会继续校验角色、控制单元、流程状态及审批人与申请人是否独立。
 
 F5 真实目录导入新增 `POST /api/nmgr/v1/integrations/f5/imports`（请求体 `{}`），与 NeMo 导入独立；随后用 `GET /guardrails?provider=F5`、`GET /profiles?provider=F5` 获取列表。版本及精确绑定见 `item.imported.f5`。详情与故障隔离说明见 [F5 真实资源导入](f5-catalog-import.md)。
@@ -44,7 +46,8 @@ F5 真实目录导入新增 `POST /api/nmgr/v1/integrations/f5/imports`（请求
 | 页面 / 操作 | 方法与路径 | 关键返回 / 注意事项 |
 |---|---|---|
 | Configurate Guardrails / Tech Requests | `GET /guardrails` | `items`、`pagination`、当前页的 `jobs/bindings` |
-| Guardrail 详情 | `GET /guardrails/{id}` | `item`、`job`、`binding` |
+| Guardrail 详情 | `GET /guardrails/{id}` | `item`、`job`、`binding`。Used by Profiles 读取顶层 `usedByProfiles[]`，含 Profile 的 `id`、`name`、`draftReference`、`deployedReference` |
+| All versions | `GET /guardrails/{id}/versions` 或 `GET /profiles/{id}/versions` | 从 `items[]` 读取业务版本号 `version`、当前标志 `isCurrent` 和部署标志 `isDeployed`；按版本降序。远端原生版本请从详情的 `item.imported` 或 `binding` 读取 |
 | Configure Profiles | `GET /profiles` | 真实 Profile 列表；NeMo Guardrail 映射成这里的 Profile |
 | Profile 详情 | `GET /profiles/{id}` | `item.refs`、`relatedGuardrails`、`binding` |
 | 主动查询后端状态 | `GET /guardrails/{id}/backend-status`、`GET /profiles/{id}/backend-status` | 实时查询 NeMo/F5；200 也可能是 `status=unavailable`，不得显示连接正常 |
@@ -72,6 +75,14 @@ F5 真实目录导入新增 `POST /api/nmgr/v1/integrations/f5/imports`（请求
 
 所有资源列表都只返回当前身份可见范围。外部导入资源可读，不开放修改、审批和发布。
 
+### 前端字段对照
+
+- **Control Unit** 读 `item.unit`。创建时后端按身份分配。`item.attributes.bu` 是业务分类。
+- **Version / Current** 读 `item.version`。**Deployed Ver. / Active Ver.** 读 `item.deployed`，为 `null` 时显示未部署。
+- **创建 Profile** 将选中的 Marketplace Guardrail ID 以字符串数组传入 `draft.refs`。编辑从 `item.refs` 回填，已部署引用读 `item.deployedRefs`。选择已发布、可绑定、同来源的 Guardrail，并包含适用的必选项。
+- **角色** 在严格模式通过登录用户的 Bearer token 确定。演示模式同源请求用 `X-Marketplace-Role` 请求头。Tech 可以跨控制单元；User 和 Approver 限定在自己的控制单元。列表不接受 `?role=...`。
+- **Evaluation Records / All versions** 调用 `GET /evaluations?resourceId={id}` 取各版本运行记录，选定版本时追加正整数 `version`。没有运行记录的版本依然可以出现在业务版本列表。
+
 ### NeMo Custom 与 F5 GenAI 配置
 
 `scannerType=custom` 的 `config.content` 随 provider 不同而不同：NeMo 要求 **JSON 编码的 Policy definition 字符串**，包含 `kind: "Policy"`、`schema_version: 1`、非空 `rules` 和 `tests` 数组；F5 接受自然语言检测指令。不能把 User 提交的业务需求直接当作 NeMo 可执行实现，也不会自动生成或伪造规则。
@@ -84,7 +95,7 @@ NeMo 的关键词和正则实现可直接选择 `keyword` 或 `regex`，后端�
 
 - Guardrail/Profile、审批、发布、评测候选：另支持 `sort=id|name|updated`（默认 updated）、`status`、`kind`、`provider=NeMo|F5`、`unit`。
 - Jobs：另支持 `status=pending|failed|uncertain|done`、`resourceId`，按 started 排序。
-- Evaluations：另支持 `resourceId`，按 start 排序。
+- Evaluations：另支持 `resourceId`、`version`，按 start 排序。
 - Audit：另支持 `resourceId`、`actor`、`from/to`（含时区的 ISO 时间），按 time 排序。
 - 无结果返回 `items: []`、`total: 0`；不生成 placeholder 业务记录。
 - 非法、未知或重复查询参数返回 422。稳定排序以 ID 为第二排序键。多个请求间发生写入时 revision 可能改变，必要时重新获取列表。
@@ -97,7 +108,7 @@ const response = await fetch('/api/nmgr/v1/profiles?page=1&pageSize=20', {
 const result = await response.json();
 if (!response.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
 renderProfiles(result.items, result.pagination);
-// 保存 result.revision，下一次业务操作传 expectedRevision。
+// 保存 result.revision，编辑这些记录时传入对应快照的 expectedRevision。
 ```
 
 列表返回顶层 revision、actor、sources、可选 sourceErrors/accessMode。详情返回 item、job/binding（无值为 null）以及 Profile 的 relatedGuardrails。
@@ -105,7 +116,11 @@ renderProfiles(result.items, result.pagination);
 
 ## 修改与任务语义
 
-所有业务修改必须传 `requestId`（UUID）和 `expectedRevision`（最近查询的工作区 revision）。新逻辑操作用新 UUID；网络重试复用完全相同的 UUID 与内容。409 后先重新查询/对账，不能直接用新 UUID 重放远端写入。
+创建 Guardrail 或 Profile 时只需传 `requestId`（UUID）及 `draft`，可以直接 POST，无需先查询列表。兼容已有客户端传入的 `expectedRevision`。不同 ID 可以从同一快照创建，同一 ID 的不同创建请求返回 409。网络重试使用原 UUID 和完全相同的请求体。
+
+修改已有记录、审批、部署或推进任务时，传入用户已查看的列表或详情最外层的 `revision` 作为 `expectedRevision`。后端检查目标记录自那次读取以来是否有写入。其他记录的写入和独立的目录刷新均可并行提交。升级前的数据以升级后首次保存前的工作区版本作为初始基准。
+
+收到 `409 workspace_revision_changed` 时，该次命令尚未执行。保留表单，重新读取目标详情，核对后用新的版本提交。如果上游写入的结果未知，应先对账。业务版本 `item.version` 与并发校验使用的快照版本各自独立。
 
 ```json
 {

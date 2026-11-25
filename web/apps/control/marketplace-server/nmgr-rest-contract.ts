@@ -11,12 +11,12 @@ const paging = { page, pageSize, q: z.string().trim().max(200).optional(), order
 export const entityQuery = z.object({ ...paging, sort: z.enum(["id", "name", "updated"]).default("updated"), status: z.enum(["DRAFT", "TEST READY", "TEST FAILED", "TEST PASSED", "SIGNOFF REQUESTED", "SIGNED OFF", "DEPLOYED"]).optional(), kind: z.enum(["Guardrail", "Profile"]).optional(), provider: z.enum(["NeMo", "F5"]).optional(), unit: z.string().max(100).optional() }).strict();
 export const auditQuery = z.object({ ...paging, resourceId: z.string().regex(/^[a-z][a-z0-9-]{2,63}$/).optional(), actor: z.string().max(160).optional(), from: z.iso.datetime({ offset: true }).optional(), to: z.iso.datetime({ offset: true }).optional() }).strict();
 export const jobQuery = z.object({ ...paging, status: z.enum(["pending", "failed", "uncertain", "done"]).optional(), resourceId: z.string().regex(/^[a-z][a-z0-9-]{2,63}$/).optional() }).strict();
-export const evaluationQuery = z.object({ ...paging, resourceId: z.string().regex(/^[a-z][a-z0-9-]{2,63}$/).optional() }).strict();
+export const evaluationQuery = z.object({ ...paging, version: z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().positive()).optional(), resourceId: z.string().regex(/^[a-z][a-z0-9-]{2,63}$/).optional() }).strict();
 export const noQuery = z.object({}).strict();
 export const mutationEnvelope = { requestId: z.uuid(), expectedRevision: z.number().int().nonnegative() };
 const createDraft = draftSchema.omit({ kind: true });
 const updateDraft = createDraft.omit({ id: true });
-export const createBody = z.object({ ...mutationEnvelope, draft: createDraft }).strict();
+export const createBody = z.object({ ...mutationEnvelope, expectedRevision: mutationEnvelope.expectedRevision.optional(), draft: createDraft }).strict();
 export const updateBody = z.object({ ...mutationEnvelope, draft: updateDraft }).strict();
 export const actionBody = z.object(mutationEnvelope).strict();
 export const rejectBody = z.object({ ...mutationEnvelope, reason: z.string().trim().min(1).max(2000) }).strict();
@@ -30,6 +30,7 @@ for (const [collection, kind] of [["guardrails", "Guardrail"], ["profiles", "Pro
   const add = (route: Omit<RestRoute, "tag" | "kind">) => restRoutes.push({ ...route, tag, kind });
   add({ method: "GET", path, operationId: `list${tag}`, mode: "entities", query: entityQuery, response: "ResourceList", summary: `List ${collection} with server-side filtering and pagination` });
   add({ method: "GET", path: `${path}/{id}`, operationId: `get${kind}`, mode: "detail", response: "ResourceDetail", summary: `Read ${kind} configuration, references and synchronization state` });
+  add({ method: "GET", path: `${path}/{id}/versions`, operationId: `list${kind}Versions`, mode: "versions", response: "BusinessVersionList", summary: `List recorded Marketplace business versions of this ${kind}, newest first` });
   add({ method: "GET", path: `${path}/{id}/backend-status`, operationId: `observe${kind}`, mode: "observe", response: "ResourceObservation", summary: `Query the linked NeMo/F5 ${kind} without changing it` });
   add({ method: "POST", path, operationId: `create${kind}`, mode: "command", action: "create", body: createBody, response: "ResourceMutation", summary: `Create a ${kind} through the existing workflow` });
   add({ method: "PUT", path: `${path}/{id}`, operationId: `edit${kind}`, mode: "command", action: "edit", body: updateBody, response: "ResourceMutation", summary: `Replace editable ${kind} draft fields` });

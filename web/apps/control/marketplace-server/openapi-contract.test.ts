@@ -32,6 +32,34 @@ it("compiles all component schemas and validates every command example", () => {
   const validate = validator("Command");
   for (const example of Object.values(commandExamples)) expect(validate(example.value), JSON.stringify(validate.errors)).toBe(true);
 });
+
+it("documents every structured field and parameter with its UI use", () => {
+  const spec = contract(), missing: string[] = [];
+  const check = (field: any, path: string) => {
+    if (!field.description?.trim() || !field["x-ui-usage"]?.trim()) missing.push(path);
+  };
+  const checkSchema = (schema: any, path: string) => {
+    if (!schema || typeof schema !== "object") return;
+    for (const [name, field] of Object.entries(schema.properties ?? {})) {
+      check(field, `${path}.${name}`);
+      checkSchema(field, `${path}.${name}`);
+    }
+    for (const key of ["items", "additionalProperties"]) checkSchema(schema[key], `${path}.${key}`);
+    for (const key of ["anyOf", "oneOf", "allOf"]) schema[key]?.forEach((child: unknown) => checkSchema(child, path));
+  };
+  for (const [name, schema] of Object.entries(spec.components.schemas)) checkSchema(schema, name);
+  for (const operation of Object.values(spec.paths).flatMap((path: any) => Object.values(path)) as any[]) {
+    operation.parameters?.forEach((parameter: any) => check(parameter, `${operation.operationId}.${parameter.name}`));
+    for (const media of Object.values(operation.requestBody?.content ?? {}) as any[]) checkSchema(media.schema, operation.operationId);
+    for (const response of Object.values(operation.responses) as any[]) {
+      for (const [name, header] of Object.entries(response.headers ?? {})) check(header, `${operation.operationId}.${name}`);
+      for (const media of Object.values(response.content ?? {}) as any[]) checkSchema(media.schema, operation.operationId);
+    }
+  }
+  expect(missing).toEqual([]);
+  expect(spec.components.schemas.Actor.properties.role["x-ui-usage"]).toMatch(/Workbench/);
+  expect(spec.paths["/api/nmgr/guardrail-evaluation"].post.responses["202"]).toBeDefined();
+});
 it("documents strict-mode bearer authentication and every visible live navigation view", () => {
   const spec = contract(), inventory = apiInventory() as any;
   expect(spec.components.securitySchemes?.bearerAuth).toMatchObject({ type: "http", scheme: "bearer" });

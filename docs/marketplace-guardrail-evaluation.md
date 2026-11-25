@@ -15,7 +15,9 @@ When submission is not acknowledged, retrying reuses the original request ID. If
 
 ### V3 Demo connection page
 
-The [Evaluate Helm values template](../deploy/values.evaluation.example.yaml) leaves the service URL empty. Copy it to a deployment values file outside the source repository, fill in the actual API URL, then apply that values file to the running release. The resulting deployment URL is active immediately after rollout and can be tested from Connections.
+With empty Evaluate deployment settings, open **Connections → Independent Evaluate**, enter the HTTPS service hostname or its complete API base on port 443, then choose **Test Evaluate URL** and **Save Evaluate URL**. The server probes the target catalog before saving to the existing connection store. Refreshing the page reads the saved selection. Deployment URL, destination allowlist and Evaluate token may all remain blank. The manual setup uses verified TLS and a DNS hostname; loopback and link-local destinations are excluded for shared deployments.
+
+For an operator-managed default, copy the [Evaluate Helm values template](../deploy/values.evaluation.example.yaml) outside the source repository and set the real API URL in the deployment. Strict mode uses deployment-managed settings. Configuring a destination list restricts the shared page to those destinations and the deployment URL. A configured Evaluate token pins requests to the deployment URL.
 
 If the deployment URL is unavailable, open **Connections → Independent Evaluate**. Enter a deployment-approved alternate address and select **Test Evaluate URL**. If it works, select **Save Evaluate fallback** to validate and activate it. **Use deployment Evaluate URL** removes only that override. Both actions leave NeMo, F5, and database settings untouched. The connection test only reads the target catalog; it does not start an evaluation or verify downstream scanning. An invalid or no longer approved saved fallback disables only Evaluate until explicitly changed or restored.
 
@@ -23,7 +25,7 @@ Configure `marketplace.evaluationAllowedUrls` (environment: comma-separated `MAR
 
 The **Evaluate activity log** shows the last 20 tests, saves, restores and submissions on the current server, with time, HTTP status, duration and request reference. It resets on server restart; structured server logs include the same events. It contains no credentials or test contents. For proxy deployments, set `marketplace.publicOrigin` to the browser-facing Marketplace origin and serve `/api` from the same address.
 
-If the page reports `evaluation_url_not_allowed`, Marketplace blocked the address before sending a request. Set `marketplace.evaluationUrl` to the API base reachable from the Marketplace Pod, or add an exact alternate to `marketplace.evaluationAllowedUrls` when using a manual fallback without a deployment Token. The browser origin whitelist controls inbound access to Marketplace and does not approve Evaluate destinations.
+If the page reports `evaluation_url_not_allowed`, check the HTTPS hostname and port for direct setup, or the destination policy when configured. Set `marketplace.evaluationUrl` to the API base reachable from the Marketplace Pod, or add an exact alternate to `marketplace.evaluationAllowedUrls` when using a manual fallback without a deployment Token. The browser origin whitelist controls inbound access to Marketplace and does not approve Evaluate destinations.
 
 After applying the deployment values, run **Test Evaluate URL**. The probe reads `/api/v1/evaluations/targets?limit=1` and expects a JSON object with `items` and `total`. The activity log distinguishes a local rejection, DNS or TLS failure, an upstream HTTP error, and an incompatible response. An upstream redirect or HTML response indicates that the configured route may serve the web UI or a login page. Use the API service or a gateway route that serves the API directly.
 

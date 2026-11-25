@@ -2,7 +2,7 @@ import { z } from "zod";
 import { DeploymentError } from "./diagnostics";
 import { createSecureContext } from "node:tls";
 import { configuredMarketplaceOrigin, parseHttpOrigin } from "./marketplace-origin";
-import { selectEvaluationUrl } from "./evaluation-connection";
+import { evaluationPolicyStatus, selectEvaluationUrl } from "./evaluation-connection";
 
 export const connectionSettingsSchema = z
   .object({
@@ -85,7 +85,11 @@ export function connectionEnvironment(
     MARKETPLACE_NEMO_TLS: overrides.nemoTls || env.MARKETPLACE_NEMO_TLS || "skip",
   };
   if (overrides.evaluationUrl) {
-    try { effective.MARKETPLACE_EVALUATION_URL = selectEvaluationUrl(overrides.evaluationUrl, env, origin); }
+    try {
+      effective.MARKETPLACE_EVALUATION_URL = selectEvaluationUrl(overrides.evaluationUrl, env, origin);
+      if (evaluationPolicyStatus(env).manualSetup && !["localhost", "127.0.0.1", "[::1]"].includes(new URL(effective.MARKETPLACE_EVALUATION_URL).hostname))
+        effective.MARKETPLACE_EVALUATION_MANUAL_TLS = "true";
+    }
     catch (error) {
       if (!savedEvaluation || !(error instanceof DeploymentError) || error.component !== "evaluation") throw error;
       // A deployment change can invalidate yesterday's override. Keep the

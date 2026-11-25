@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { demoGuardrailEvaluation, guardrailEvaluation } from "./guardrail-evaluation";
+import { assertOpenApiResponse } from "./test-utils/openapi";
 
 const origin = "http://127.0.0.1:18082";
 const env = {
@@ -41,10 +42,13 @@ describe("independent Guardrail evaluation", () => {
     const report = { evaluation_id: "exp-b", status: "COMPLETED", total: 1, overall: { TP: 0, TN: 0, FP: 0, FN: 1, errors: 0 },
       results: [{ caseid: "sample", status: "FAIL", input: "never forwarded", reference: "private", guardrail_result: { http_status: 200, classifications: [{ expected: "unsafe", predicted: "safe" }] } }] };
     const upstream = vi.fn(async (url: string) => Response.json(url.includes("/reports/exp-b?") ? report : run));
-    const response = await guardrailEvaluation(request("&run=eval-a&report=true"), env, () => ({ workspace: "internal", provider: "F5" }), upstream as typeof fetch);
+    const readReport = new Request(`${origin}/api/nmgr/guardrail-evaluation?guardrail=banking&version=1&run=eval-a&report=true`);
+    const response = await guardrailEvaluation(readReport, env, () => ({ workspace: "internal", provider: "F5" }), upstream as typeof fetch);
+    await assertOpenApiResponse(readReport, response);
     expect(await response.json()).toEqual({ report: { status: "COMPLETED", total: 1, offset: 0, matched: 0, mismatches: 1, errors: 0, rows: [{ id: "sample", status: "FAIL", httpStatus: 200, labels: [{ expected: "unsafe", observed: "safe" }] }] } });
-    const wrongProvider = await guardrailEvaluation(request("&run=eval-a&report=true"), env, () => ({ workspace: "internal", provider: "NeMo" }), upstream as typeof fetch);
+    const wrongProvider = await guardrailEvaluation(readReport, env, () => ({ workspace: "internal", provider: "NeMo" }), upstream as typeof fetch);
     expect(wrongProvider.status).toBe(404);
+    await assertOpenApiResponse(readReport, wrongProvider);
     expect(upstream).toHaveBeenCalledTimes(3);
   });
 

@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { DeploymentError } from "./diagnostics";
 
 const setting = "MARKETPLACE_EVALUATION_URL";
@@ -22,13 +23,16 @@ function evaluationPolicy(env: NodeJS.ProcessEnv) {
     if (!value.trim()) continue;
     try { alternates.add(evaluationApiBase(value)); } catch { invalidAlternates++; }
   }
-  return { raw, base, alternates, invalidAlternates, tokenPinned: !!env.MARKETPLACE_EVALUATION_TOKEN?.trim() };
+  const tokenPinned = !!env.MARKETPLACE_EVALUATION_TOKEN?.trim();
+  const manualSetup = !raw && !env[allowlist]?.trim() && !tokenPinned;
+  return { raw, base, alternates, invalidAlternates, tokenPinned, manualSetup };
 }
 
 export function evaluationPolicyStatus(env: NodeJS.ProcessEnv) {
-  const { raw, base, alternates, invalidAlternates, tokenPinned } = evaluationPolicy(env);
+  const { raw, base, alternates, invalidAlternates, tokenPinned, manualSetup } = evaluationPolicy(env);
   return {
     deploymentUrl: base ? "configured" : raw ? "invalid" : "missing",
+    manualSetup,
     approvedAlternates: alternates.size,
     invalidAlternates,
     tokenPinned,
@@ -41,7 +45,7 @@ export function selectEvaluationUrl(value: string, env: NodeJS.ProcessEnv, publi
   catch {
     throw new DeploymentError("evaluation", "evaluation_url_invalid", "Enter an HTTP(S) evaluation service URL without credentials, query or fragment.", [setting], 422);
   }
-  const { base, raw, alternates, tokenPinned } = evaluationPolicy(env);
+  const { base, raw, alternates, tokenPinned, manualSetup } = evaluationPolicy(env);
   if (target === base) return target;
   if (tokenPinned)
     throw new DeploymentError("evaluation", "evaluation_token_destination", base
@@ -50,6 +54,13 @@ export function selectEvaluationUrl(value: string, env: NodeJS.ProcessEnv, publi
     [setting, "MARKETPLACE_EVALUATION_TOKEN"], 422);
   const local = loopback(env.NITRO_HOST ?? env.HOST ?? "") && loopback(new URL(publicOrigin).hostname) && loopback(new URL(target).hostname);
   if (alternates.has(target) || local) return target;
+  if (manualSetup) {
+    const url = new URL(target);
+    const host = url.hostname;
+    if (url.protocol === "https:" && !url.port && host.includes(".") && /^[a-z0-9.-]+$/i.test(host) &&
+        !host.endsWith(".") && !host.endsWith(".localhost") && !isIP(host)) return target;
+    throw new DeploymentError("evaluation", "evaluation_url_not_allowed", "Enter an HTTPS service hostname on port 443, or configure this exact destination in the deployment.", [setting, allowlist], 422);
+  }
   const reason = !base && !alternates.size
     ? raw ? "The deployment Evaluate URL is invalid and no valid fallback addresses were received." : "Marketplace did not receive a deployment Evaluate URL or any approved fallback addresses."
     : "The address does not match the deployment Evaluate URL or an approved fallback.";

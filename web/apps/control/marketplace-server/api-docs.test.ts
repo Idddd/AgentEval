@@ -13,6 +13,19 @@ it("serves a same-origin OpenAPI contract without NeMo or database configuration
   }
   expect(spec.paths["/api/f5/policies"]).toBeUndefined(); // legacy simulation is not the real integration API
   expect(spec.components.schemas.ConnectionSettings.properties.nemoToken.writeOnly).toBe(true);
+  for (const collection of ["guardrails", "profiles"]) {
+    const create = spec.paths[`/api/nmgr/v1/${collection}`].post.requestBody.content["application/json"];
+    expect(create.schema.required).not.toContain("expectedRevision");
+    expect(create.example).not.toHaveProperty("expectedRevision");
+    const edit = spec.paths[`/api/nmgr/v1/${collection}/{id}`].put.requestBody.content["application/json"];
+    expect(edit.schema.required).toContain("expectedRevision");
+  }
+  const implementation = spec.paths["/api/nmgr/v1/guardrails/{id}/implementation"].post;
+  expect(implementation.requestBody.content["application/json"].schema.properties.config.properties.content).toMatchObject({
+    description: expect.stringContaining("NeMo custom requires a JSON-encoded Policy"),
+    "x-ui-usage": expect.stringContaining("Implementation"),
+  });
+  expect(implementation.responses["409"].description).toContain("workspace_revision_changed");
   const examples = spec.paths["/api/nmgr/commands"].post.requestBody.content["application/json"].examples;
   for (const example of Object.values(examples) as Array<{ value: unknown }>) expect(commandSchema.safeParse(example.value).success).toBe(true);
   expect(Object.keys(examples)).toEqual(expect.arrayContaining(["create", "implementNeMo", "implementF5", "evaluate", "approve", "deploy", "advance", "reconcile"]));

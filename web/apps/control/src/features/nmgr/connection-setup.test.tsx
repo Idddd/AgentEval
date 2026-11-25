@@ -121,6 +121,17 @@ it("tests Evaluate without saving and refreshes its activity log", async () => {
   expect(screen.getByText("reference-test")).toBeTruthy();
   expect(connected).not.toHaveBeenCalled();
 });
+it("offers direct Evaluate setup when deployment destinations are empty", async () => {
+  const fetcher = vi.fn(async () => Response.json({ ...status, evaluationPolicy: {
+    manualSetup: true, deploymentUrl: "missing", approvedAlternates: 0, invalidAlternates: 0, tokenPinned: false,
+  } }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<ConnectionSetup onConnected={() => {}} onRetry={() => {}} />);
+  const button = await screen.findByRole("button", { name: "Save Evaluate URL" });
+  fireEvent.change(screen.getByLabelText("Evaluate URL"), { target: { value: "https://eval.example.invalid" } });
+  fireEvent.click(button);
+  await waitFor(() => expect(fetcher).toHaveBeenCalledWith("/api/nmgr/connection/evaluation", expect.objectContaining({ method: "POST", body: JSON.stringify({ evaluationUrl: "https://eval.example.invalid" }) })));
+});
 it("saves and restores only Evaluate from the fallback controls", async () => {
   let saved = false;
   const connected = vi.fn();

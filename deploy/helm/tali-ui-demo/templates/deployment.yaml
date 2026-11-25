@@ -101,7 +101,7 @@ spec:
               value: {{ .Values.marketplace.publicOrigin | quote }}
             - name: MARKETPLACE_ALLOWED_BROWSER_ORIGINS
               value: {{ .Values.marketplace.allowedBrowserOrigins | default (list) | toJson | quote }}
-            {{- if or .Values.marketplace.evaluationUrl .Values.marketplace.evaluationAllowedUrls }}
+            {{- if or .Values.marketplace.evaluationUrl .Values.marketplace.evaluationAllowedUrls .Values.marketplace.evaluationTokenSecret .Values.marketplace.evaluationProjectId .Values.marketplace.evaluationBindings }}
             - name: MARKETPLACE_EVALUATION_URL
               value: {{ .Values.marketplace.evaluationUrl | quote }}
             - name: MARKETPLACE_EVALUATION_ALLOWED_URLS

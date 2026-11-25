@@ -93,7 +93,7 @@ describe("V2 authoritative workflow", () => {
     await f.service.command(user, input, f.remote);
     expect((await f.service.snapshot(user)).state.entities).toHaveLength(1);
     await expect(f.service.command(user, { ...input, draft: { ...draft, name: "different" } }, f.remote)).rejects.toThrow(/key/);
-    await expect(f.service.command(user, { ...input, requestId: crypto.randomUUID() }, f.remote)).rejects.toThrow(/changed/);
+    await expect(f.service.command(user, { ...input, requestId: crypto.randomUUID() }, f.remote)).rejects.toThrow(/ID is already used/);
     const other = { ...user, id: "other", unit: "RMG" };
     expect((await f.service.snapshot(other)).state.entities).toHaveLength(0);
     await expect(command(f, other, { type: "action", id: draft.id, action: "withdraw" })).rejects.toThrow(/found/);

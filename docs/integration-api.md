@@ -63,7 +63,7 @@ NeMo 最小配置仍是 Controller API URL、业务用户 PAT、Marketplace DB U
 
 1. GET `/api/nmgr/connection`，保存非敏感的 `connectionRevision`。
 2. GET `/api/nmgr/workspace`，头部发送角色；从结果读取 `revision`。
-3. POST `/api/nmgr/commands`，每个新命令生成 UUID `requestId`，`expectedRevision` 使用最近快照的 revision。也发送 `X-Marketplace-Connection`，防止后台共享连接更改后命令误发到另一实例。
+3. POST `/api/nmgr/commands`，每个新命令生成 UUID `requestId`。创建时可省略 `expectedRevision`。操作已有记录时，传入查看该记录时所得快照的 `revision`，其他记录的写入不会使这次操作过期。也发送 `X-Marketplace-Connection`，防止后台共享连接更改后命令误发到另一实例。
 4. 使用响应更新本地快照。HTTP 200 仍需检查 `jobs[id].status`。`pending` 的任务由调用方发送 `advance` 逐步推进；查询快照不会推进任务，本服务没有自动执行所有步骤的后台 worker。
 5. `failed`/`uncertain` 时展示 `job.message`，使用 `reconcile` 核实远端结果。不要重新创建资源或盲目重发一次新的发布。
 

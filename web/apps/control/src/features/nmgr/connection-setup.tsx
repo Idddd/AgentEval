@@ -47,7 +47,7 @@ type Status = {
   persistence?: string;
   advanced?: Partial<Record<Option, string>>;
   evaluationLogs?: EvaluationLog[];
-  evaluationPolicy?: { deploymentUrl: "missing" | "invalid" | "configured"; approvedAlternates: number; invalidAlternates: number; tokenPinned: boolean };
+  evaluationPolicy?: { manualSetup?: boolean; deploymentUrl: "missing" | "invalid" | "configured"; approvedAlternates: number; invalidAlternates: number; tokenPinned: boolean };
 };
 const fields: Array<{ key: Field; label: string; hint: string }> = [
   {
@@ -93,7 +93,7 @@ const fields: Array<{ key: Field; label: string; hint: string }> = [
   {
     key: "evaluationUrl",
     label: "Evaluate URL",
-    hint: "Enter an approved service URL or its /api/v1/evaluations address. Token and project, if required, are managed by the deployment.",
+    hint: "Enter the service URL or its /api/v1/evaluations address. Token and project, if required, are managed by the deployment.",
   },
 ];
 const emptyValues: Record<Field, string> = {
@@ -241,7 +241,7 @@ export function ConnectionSetup({
         ...(!restore ? { body: JSON.stringify({ evaluationUrl: values.evaluationUrl.trim() }) } : {}),
       });
       setValues(current => ({ ...current, evaluationUrl: "" }));
-      setResults(current => ({ ...current, evaluationUrl: { ok: true, message: restore ? "Saved fallback cleared. See the deployment URL below." : "Evaluate fallback verified and saved. It is now active for this workspace." } }));
+      setResults(current => ({ ...current, evaluationUrl: { ok: true, message: restore ? (status?.evaluationPolicy?.manualSetup ? "Saved Evaluate URL cleared." : "Saved fallback cleared. See the deployment URL below.") : "Evaluate URL verified and saved. It is now active for this workspace." } }));
     } catch (error) {
       setResults(current => ({ ...current, evaluationUrl: { ok: false, message: error instanceof Error ? error.message : "Evaluate settings could not be updated." } }));
     } finally {
@@ -401,17 +401,17 @@ export function ConnectionSetup({
             <legend>Independent Evaluate</legend>
             {field("evaluationUrl")}
             {status?.manualConfiguration !== false && <>
-              {status?.evaluationPolicy && <p className="nm-muted">
+              {status?.evaluationPolicy && !status.evaluationPolicy.manualSetup && <p className="nm-muted">
                 Deployment Evaluate URL {status.evaluationPolicy.deploymentUrl} · {status.evaluationPolicy.approvedAlternates} approved fallback addresses
                 {status.evaluationPolicy.invalidAlternates ? ` · ${status.evaluationPolicy.invalidAlternates} invalid entries` : ""}
                 {status.evaluationPolicy.tokenPinned ? " · Token restricted to the deployment URL" : ""}
               </p>}
               <p className="nm-muted">{evaluationOverride?.overridden
-                ? evaluationOverride.effective.status === "invalid" ? "Saved fallback is no longer allowed. Restore the deployment URL or save another approved address." : "Using the saved fallback for Evaluate."
-                : "Using deployment settings. Enter an approved URL to test and save a manual fallback."}</p>
+                ? evaluationOverride.effective.status === "invalid" ? "Saved fallback is no longer allowed. Restore the deployment URL or save another approved address." : "Using the saved Evaluate URL."
+                : status?.evaluationPolicy?.manualSetup ? "Enter the HTTPS service hostname or API base on port 443, then test and save." : "Using deployment settings. Enter an approved URL to test and save a manual fallback."}</p>
               <div className="nm-actions">
                 <Button type="button" variant="outline" size="sm" disabled={disabled || !values.evaluationUrl.trim()} onClick={() => void updateEvaluation()}>
-                  {savingEvaluation === "save" ? "Saving Evaluate…" : "Save Evaluate fallback"}
+                  {savingEvaluation === "save" ? "Saving Evaluate…" : status?.evaluationPolicy?.manualSetup ? "Save Evaluate URL" : "Save Evaluate fallback"}
                 </Button>
                 {evaluationOverride?.overridden && <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => void updateEvaluation(true)}>
                   {savingEvaluation === "restore" ? "Restoring…" : "Use deployment Evaluate URL"}

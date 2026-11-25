@@ -53,6 +53,15 @@ it("trusts a supplied CA for this operation while built-in trust still rejects t
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+it("blocks manual Evaluate DNS results on loopback at socket connection time", async () => {
+  const base = "https://localhost/api/v1/evaluations";
+  const transport = connectionTransport({ MARKETPLACE_EVALUATION_URL: base, MARKETPLACE_EVALUATION_MANUAL_TLS: "true" }, fetch);
+  try {
+    await expect(transport.fetcher(base + "/targets?limit=1")).rejects.toMatchObject({
+      cause: { message: "Evaluate hostname resolved to a reserved destination" },
+    });
+  } finally { await transport.close(); }
+});
 it("releases an unconsumed upstream error body when the operation ends", async () => {
   const cert = readFileSync(
     new URL("./fixtures/connection-tls/localhost-test.crt", import.meta.url),

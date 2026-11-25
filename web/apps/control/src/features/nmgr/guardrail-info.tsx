@@ -1,4 +1,4 @@
-import { sourceLabel } from "./model";
+import { profilesUsingGuardrail, sourceLabel } from "./model";
 import { ChevronRight } from "lucide-react";
 import type { Entity, State } from "./model";
 
@@ -13,11 +13,7 @@ export function GuardrailInfo({
   onProfile: (id: string) => void;
   policyJson?: boolean;
 }) {
-  const profiles = state.entities.filter(
-    (p) =>
-      p.kind === "Profile" &&
-      (p.refs.includes(item.id) || p.deployedRefs.includes(item.id)),
-  );
+  const profiles = profilesUsingGuardrail(state, item.id);
   return (
     <div className="nm-info">
       <section aria-label="Control Intent">

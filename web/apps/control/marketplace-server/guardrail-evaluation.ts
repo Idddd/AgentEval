@@ -87,7 +87,7 @@ export function evaluationInput(request: Request): Input {
 }
 
 function apiBase(env: Env) {
-  if (!evaluationEnabled(env)) return fail(503, "evaluation_not_configured", "No Evaluate URL is active. Enter an approved address to test, or set marketplace.evaluationUrl in the deployment. No request was sent.");
+  if (!evaluationEnabled(env)) return fail(503, "evaluation_not_configured", "No Evaluate URL is active. Configure the service in V3 Connections or set marketplace.evaluationUrl in the deployment. No request was sent.");
   try { return evaluationApiBase(env.MARKETPLACE_EVALUATION_URL!); }
   catch { return fail(503, "evaluation_url_invalid", "Configure a valid HTTP(S) MARKETPLACE_EVALUATION_URL without credentials, query or fragment."); }
 }

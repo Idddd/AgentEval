@@ -85,7 +85,7 @@ it("creates Profile on Save and preserves its ID through approval and release se
   Object.assign(doc.bindings[`${draft.id}@1`]!, { released: true, publishedVersion: "published-1", ruleIds: ["control"], rails: ["input"] });
   await f.db.writeDocument("nmgr:test", doc);
   const p = { ...draft, id: "sync-profile", kind: "Profile", refs: [draft.id] };
-  const s = await f.command(user, { type: "create", draft: p });
+  const s = await f.service.command(user, { type: "create", requestId: crypto.randomUUID(), draft: p }, f.remote);
   expect(f.profiles.size).toBe(1); const id = s.bindings["sync-profile@1"]!.guardrailId;
   await f.command(user, { type: "action", id: p.id, action: "request" });
   await f.command(approver, { type: "action", id: p.id, action: "approve" });

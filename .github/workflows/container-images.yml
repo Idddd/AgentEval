@@ -40,7 +40,7 @@ jobs:
           image_tag="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
           embedded_image_tag="$image_tag"
           storage=browser
-          chart_version="0.2.32-dev.${GITHUB_RUN_NUMBER}"
+          chart_version="0.2.33-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${image_tag}")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tags+=("${image}:pr-${{ github.event.pull_request.number }}")
@@ -55,7 +55,7 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.2.32-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.33-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
@@ -140,7 +140,8 @@ jobs:
             curl --fail http://127.0.0.1:18082/api/docs | grep 'SwaggerUIBundle'
             curl --fail http://127.0.0.1:18082/api/docs/swagger-ui-bundle.js > /dev/null
             curl --fail http://127.0.0.1:18082/api/docs/swagger-ui.css > /dev/null
-            curl --fail http://127.0.0.1:18082/api/openapi.json | jq -e '.openapi == "3.1.0" and .paths["/api/nmgr/connection/test"].post != null and .paths["/api/nmgr/connection/evaluation"].delete != null'
+            curl --fail http://127.0.0.1:18082/api/openapi.json > artifacts/openapi.json
+            jq -e '.openapi == "3.1.0" and .paths["/api/nmgr/connection/test"].post != null and .paths["/api/nmgr/connection/evaluation"].delete != null and .paths["/api/nmgr/v1/guardrails/{id}/versions"].get and .components.schemas.ConnectionStatus.properties.evaluationPolicy.properties.manualSetup["x-ui-usage"]' artifacts/openapi.json
             curl --fail http://127.0.0.1:18082/api/endpoints > /dev/null
             curl --fail http://127.0.0.1:18082/api/nmgr/connection | jq -e '.advanced.nemoTls == "skip" and .configured.evaluationUrl == false'
             docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" "artifacts/tali-ui-demo-${CHART_VERSION}.tgz"
@@ -279,6 +280,7 @@ jobs:
           cp artifacts/project-source.zip "release/AgentEval-v${version}-source.zip"
           (cd release && sha256sum "AgentEval-v${version}-source.zip" > "AgentEval-v${version}-source.zip.sha256")
           cp artifacts/isolation-test-results.json release/
+          cp artifacts/openapi.json release/
           cp "$notes" release/release-validation.md
           cp docs/marketplace-release.md release/deployment.md
           cp docs/marketplace-guardrail-evaluation.md release/
@@ -290,7 +292,7 @@ jobs:
           cp deploy/values.evaluation.example.yaml "offline/${bundle}/values.evaluation.yaml"
           cp deploy/values.evaluation.example.yaml release/values.evaluation.example.yaml
           cp deploy/v2/check-nemo.mjs "offline/${bundle}/"
-          cp release/*.md release/image-digests.json release/isolation-test-results.json "offline/${bundle}/"
+          cp release/*.md release/openapi.json release/image-digests.json release/isolation-test-results.json "offline/${bundle}/"
           docker save --output "offline/${bundle}/marketplace-v2.tar" "$image_version"
           (cd "offline/${bundle}" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
           (cd offline && zip -q -r "../release/${bundle}.zip" "$bundle")

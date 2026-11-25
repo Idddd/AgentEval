@@ -195,18 +195,37 @@ it.each([true, false])("accepts same-origin requests through an ingress that rew
   const workspace = await nmgrRequest(new Request(`${proxy}/api/nmgr/workspace`, { headers }), runtime, identity, saved);
   expect(workspace.status).toBe(200);
 });
-it("distinguishes missing deployment policy from a probe reaching the wrong API route", async () => {
+it("saves a first Evaluate URL from V3 with empty deployment settings and verifies it before committing", async () => {
+  const saved = await store();
+  const address = "https://eval.example.invalid";
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    expect(String(url)).toBe(address + "/api/v1/evaluations/targets?limit=1");
+    expect(new Headers(init?.headers).get("authorization")).toBeNull();
+    expect(init?.redirect).toBe("manual");
+    return Response.json({ items: [], total: 0 });
+  });
+  expect((await nmgrRequest(testConnection("evaluationUrl", { evaluationUrl: address }), {}, fetcher, saved)).status).toBe(200);
+  expect(await saved.read()).toBeNull();
+  const submit = () => new Request("https://ui.internal/api/nmgr/connection/evaluation", {
+    method: "POST", headers: { Origin: "https://ui.internal", "Content-Type": "application/json" }, body: JSON.stringify({ evaluationUrl: address }),
+  });
+  expect((await nmgrRequest(submit(), {}, fetcher, saved)).status).toBe(200);
+  expect(await saved.read()).toMatchObject({ evaluationUrl: address });
+  const status = await (await nmgrRequest(request("connection"), {}, fetcher, saved)).json();
+  expect(status).toMatchObject({ configured: { evaluationUrl: true }, evaluationPolicy: { manualSetup: true } });
+  for (const url of ["http://eval.example.invalid", "https://127.0.0.1", "https://localhost", "https://[::1]", "https://169.254.169.254"]) {
+    expect((await nmgrRequest(testConnection("evaluationUrl", { evaluationUrl: url }), {}, fetcher, saved)).status).toBe(422);
+  }
+  for (const policy of [{ MARKETPLACE_EVALUATION_URL: "invalid" }, { MARKETPLACE_EVALUATION_ALLOWED_URLS: "invalid" }]) {
+    expect((await nmgrRequest(testConnection("evaluationUrl", { evaluationUrl: address }), policy, fetcher, saved)).status).toBe(422);
+  }
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+it("distinguishes a probe reaching the wrong API route from upstream connection failures", async () => {
   const saved = await store();
   const address = "https://evaluation-ui.internal/api/v1/evaluations";
   const probe = () => testConnection("evaluationUrl", { evaluationUrl: address });
   const upstream = vi.fn<typeof fetch>(async () => new Response("<html>private login page</html>", { headers: { "Content-Type": "text/html; charset=utf-8" } }));
-  const rejected = await nmgrRequest(probe(), {}, upstream, saved);
-  expect((await rejected.json()).error).toMatchObject({ code: "evaluation_url_not_allowed", message: expect.stringContaining("No request was sent") });
-  expect(upstream).not.toHaveBeenCalled();
-  const unconfigured = await (await nmgrRequest(request("connection"), {}, upstream, saved)).json();
-  expect(unconfigured.evaluationPolicy).toMatchObject({ deploymentUrl: "missing", approvedAlternates: 0 });
-  expect(unconfigured.evaluationLogs[0]).toMatchObject({ stage: "destination", code: "evaluation_url_not_allowed" });
-
   const envWithDefault = { MARKETPLACE_EVALUATION_URL: address };
   const html = await nmgrRequest(probe(), envWithDefault, upstream, saved);
   expect((await html.json()).error).toMatchObject({
