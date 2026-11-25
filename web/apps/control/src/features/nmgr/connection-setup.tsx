@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConnectionField } from "./connection-field";
 import { ConnectionValueStatus } from "./connection-value-status";
+import { BrowserOriginsSettings } from "./browser-origins-settings";
 import type { ConnectionValues } from "./connection-values";
 import { runtimeRequest } from "@/lib/runtime-request";
+import { downloadJson } from "@/lib/file-download";
 import "./connection-setup.css";
 
 type Field =
@@ -27,8 +29,15 @@ const probeFields: Record<Probe, Array<Field | Option>> = {
   f5Token: ["f5Url", "f5Token", "f5Mode", "caMode", "caPem"],
   evaluationUrl: ["evaluationUrl", "caMode", "caPem"],
 };
-type EvaluationLog = { time: string; action: "test" | "save" | "restore" | "start"; status: number; durationMs: number; requestId: string; code?: string };
+type EvaluationLog = {
+  time: string; action: "test" | "save" | "restore" | "start"; status: number; durationMs: number; requestId: string; code?: string;
+  stage?: keyof typeof evaluationStages; message?: string; upstreamStatus?: number; contentType?: string; networkCode?: string;
+};
 const evaluationActions = { test: "Test connection", save: "Save connection", restore: "Use deployment URL", start: "Start evaluation" };
+const evaluationStages = {
+  configuration: "Configuration", destination: "Blocked before request", network: "Network or TLS",
+  upstream: "Upstream HTTP", response: "Response validation", completed: "Completed",
+};
 type Status = {
   values?: ConnectionValues;
   saved?: boolean;
@@ -38,6 +47,7 @@ type Status = {
   persistence?: string;
   advanced?: Partial<Record<Option, string>>;
   evaluationLogs?: EvaluationLog[];
+  evaluationPolicy?: { deploymentUrl: "missing" | "invalid" | "configured"; approvedAlternates: number; invalidAlternates: number; tokenPinned: boolean };
 };
 const fields: Array<{ key: Field; label: string; hint: string }> = [
   {
@@ -123,9 +133,13 @@ export function ConnectionSetup({
   const [error, setError] = useState(initialError);
   const [testing, setTesting] = useState<Probe | null>(null);
   const [savingEvaluation, setSavingEvaluation] = useState<"save" | "restore" | null>(null);
+  const [backupAction, setBackupAction] = useState<"export" | "import" | null>(null);
+  const [backupNotice, setBackupNotice] = useState("");
+  const backupInput = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<Partial<Record<Probe, { ok: boolean; message: string }>>>({});
   const [values, setValues] = useState(emptyValues),
     [options, setOptions] = useState(emptyOptions);
+  const working = busy || !!testing || !!savingEvaluation || !!backupAction;
   useEffect(() => {
     let active = true;
     runtimeRequest<Status>("/api/nmgr/connection", { cache: "no-store" })
@@ -143,7 +157,7 @@ export function ConnectionSetup({
     };
   }, []);
   async function apply(remove = false) {
-    if (busy || testing || savingEvaluation) return;
+    if (working) return;
     setBusy(true);
     setError("");
     try {
@@ -188,7 +202,7 @@ export function ConnectionSetup({
     finally { setLoading(false); }
   }
   async function test(target: Probe) {
-    if (busy || testing || savingEvaluation) return;
+    if (working) return;
     setTesting(target);
     setResults(current => ({ ...current, [target]: undefined }));
     try {
@@ -213,7 +227,7 @@ export function ConnectionSetup({
     }
   }
   async function updateEvaluation(restore = false) {
-    if (busy || testing || savingEvaluation || (!restore && !values.evaluationUrl.trim())) return;
+    if (working || (!restore && !values.evaluationUrl.trim())) return;
     setSavingEvaluation(restore ? "restore" : "save");
     setResults(current => {
       const next = { ...current };
@@ -236,7 +250,37 @@ export function ConnectionSetup({
       setSavingEvaluation(null);
     }
   }
-  const working = busy || !!testing || !!savingEvaluation;
+  async function transferBackup(action: "export" | "import", file?: File) {
+    if (working || (action === "import" && !file)) return;
+    setBackupAction(action);
+    setBackupNotice("");
+    setError("");
+    try {
+      if (file && file.size > 165_000) throw new Error("The connection backup JSON exceeds the size limit.");
+      const body = file ? await file.text() : undefined;
+      const result = await runtimeRequest("/api/nmgr/connection/backup", {
+        method: file ? "POST" : "GET",
+        cache: "no-store",
+        headers: {
+          ...(file ? { "Content-Type": "application/json" } : {}),
+          ...(status?.connectionRevision ? { "X-Marketplace-Connection": status.connectionRevision } : {}),
+        },
+        ...(body !== undefined ? { body } : {}),
+      });
+      if (file) {
+        setValues(emptyValues);
+        setOptions(emptyOptions);
+        onConnected();
+      } else {
+        downloadJson(result, "marketplace-connection-backup.json");
+        setBackupNotice("Saved connection settings exported.");
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not import or export the connection backup.");
+    } finally {
+      setBackupAction(null);
+    }
+  }
   const disabled = working || loading || status?.manualConfiguration === false;
   const evaluationOverride = status?.values?.evaluationUrl;
   const field = (key: Field) => {
@@ -357,6 +401,11 @@ export function ConnectionSetup({
             <legend>Independent Evaluate</legend>
             {field("evaluationUrl")}
             {status?.manualConfiguration !== false && <>
+              {status?.evaluationPolicy && <p className="nm-muted">
+                Deployment Evaluate URL {status.evaluationPolicy.deploymentUrl} · {status.evaluationPolicy.approvedAlternates} approved fallback addresses
+                {status.evaluationPolicy.invalidAlternates ? ` · ${status.evaluationPolicy.invalidAlternates} invalid entries` : ""}
+                {status.evaluationPolicy.tokenPinned ? " · Token restricted to the deployment URL" : ""}
+              </p>}
               <p className="nm-muted">{evaluationOverride?.overridden
                 ? evaluationOverride.effective.status === "invalid" ? "Saved fallback is no longer allowed. Restore the deployment URL or save another approved address." : "Using the saved fallback for Evaluate."
                 : "Using deployment settings. Enter an approved URL to test and save a manual fallback."}</p>
@@ -375,7 +424,9 @@ export function ConnectionSetup({
               {!status?.evaluationLogs?.length ? <p className="nm-muted">No events on this server yet.</p> : <ul aria-label="Evaluate activity">
                 {status.evaluationLogs.map((entry, index) => <li key={`${entry.requestId}:${index}`}>
                   <strong>{evaluationActions[entry.action]}</strong>
-                  <span className={entry.status < 400 ? "nm-connection-configured" : "nm-connection-value-error"}>{entry.status < 400 ? "Success" : "Failed"} · HTTP {entry.status} · {entry.durationMs} ms</span>
+                  <span className={entry.status < 400 ? "nm-connection-configured" : "nm-connection-value-error"}>{entry.status < 400 ? "Success" : "Failed"} · Marketplace HTTP {entry.status} · {entry.durationMs} ms</span>
+                  {entry.stage && <small>{evaluationStages[entry.stage]}{entry.upstreamStatus ? ` · Upstream HTTP ${entry.upstreamStatus}` : ""}{entry.contentType ? ` · ${entry.contentType}` : ""}{entry.networkCode ? ` · ${entry.networkCode}` : ""}</small>}
+                  {entry.message && <small>{entry.message}</small>}
                   <small>{new Date(entry.time).toLocaleString()} · <code>{entry.requestId}</code>{entry.code ? ` · ${entry.code}` : ""}</small>
                 </li>)}
               </ul>}
@@ -401,8 +452,28 @@ export function ConnectionSetup({
                 ["custom", "Add a trusted CA certificate"],
               ])}
               {caMode === "custom" && field("caPem")}
+              {status?.manualConfiguration === false && <BrowserOriginsSettings />}
             </div>
           </details>
+          {status?.manualConfiguration === true && <fieldset className="nm-connection-group">
+            <legend>Connection backup</legend>
+            <p className="nm-muted">Export saved manual settings as encrypted JSON. Import validates the backup and replaces saved settings. Use an instance with the same connection key.</p>
+            <input ref={backupInput} hidden type="file" accept=".json,application/json" aria-label="Choose connection backup JSON"
+              onChange={event => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                void transferBackup("import", file);
+              }} />
+            <div className="nm-actions">
+              <Button type="button" size="sm" variant="outline" disabled={disabled || !status.saved} onClick={() => void transferBackup("export")}>
+                {backupAction === "export" ? "Exporting…" : "Export saved JSON"}
+              </Button>
+              <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => backupInput.current?.click()}>
+                {backupAction === "import" ? "Checking backup…" : "Import connection JSON"}
+              </Button>
+            </div>
+            {backupNotice && <p role="status">{backupNotice}</p>}
+          </fieldset>}
           <p className="nm-connection-note nm-muted">
             Saved for all users of this demo instance. Secret and YAML values
             are not overwritten.{" "}

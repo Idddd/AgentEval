@@ -99,6 +99,8 @@ spec:
               value: {{ .Values.marketplace.policyAuthoringUrl | quote }}
             - name: MARKETPLACE_PUBLIC_ORIGIN
               value: {{ .Values.marketplace.publicOrigin | quote }}
+            - name: MARKETPLACE_ALLOWED_BROWSER_ORIGINS
+              value: {{ .Values.marketplace.allowedBrowserOrigins | default (list) | toJson | quote }}
             {{- if or .Values.marketplace.evaluationUrl .Values.marketplace.evaluationAllowedUrls }}
             - name: MARKETPLACE_EVALUATION_URL
               value: {{ .Values.marketplace.evaluationUrl | quote }}

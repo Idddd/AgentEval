@@ -57,7 +57,12 @@ export const responseSchemas = {
   }, ["revision", "actor", "sources", "state", "jobs", "bindings"]),
   ConnectionValue: obj({ source: text, status: choice("missing", "empty", "unreadable", "invalid", "loaded"), preview: text, code: text, path: text, length: integer, trimmed: bool }, ["source", "status", "preview"]),
   ConnectionStatus: obj({ ...connectionProperties, values: map(obj({ effective: ref("ConnectionValue"), deployment: ref("ConnectionValue"), overridden: bool })),
-    evaluationLogs: list(obj({ time: text, action: choice("test", "save", "restore", "start"), status: integer, durationMs: integer, requestId: text, code: text }, ["time", "action", "status", "durationMs", "requestId"])) }, Object.keys(connectionProperties)),
+    evaluationPolicy: obj({ deploymentUrl: choice("missing", "invalid", "configured"), approvedAlternates: integer, invalidAlternates: integer, tokenPinned: bool }),
+    evaluationLogs: list(obj({
+      time: text, action: choice("test", "save", "restore", "start"), status: integer, durationMs: integer, requestId: text, code: text,
+      stage: choice("configuration", "destination", "network", "upstream", "response", "completed"), message: text,
+      upstreamStatus: integer, contentType: text, networkCode: text,
+    }, ["time", "action", "status", "durationMs", "requestId", "stage"])) }, Object.keys(connectionProperties)),
   RuntimeStatus: obj({ ...connectionProperties, mode: { type: "string", const: "live" }, sharedDemo: bool, browserDemo: bool, sourceId: text, policyAuthoring: bool, crudOnly: bool, f5Mock: bool, marketplaceDb: bool, autoConnect: bool, independentEvaluation: bool }),
   ProbeResult: obj({ ok: { type: "boolean", const: true }, target: choice("nemoUrl", "nemoToken", "databaseUrl", "f5Url", "f5Token", "evaluationUrl"), message: text, durationMs: integer, httpStatus: { type: "integer", minimum: 100, maximum: 599 } }, ["ok", "target", "message", "durationMs"]),
   Readiness: obj({ ready: { type: "boolean", const: true }, workspace: { type: "string", const: "v3" }, backend: { type: "string", const: "configured" }, checks: obj({ database: { type: "string", const: "reachable" }, nemo: { type: "string", const: "not_probed" }, f5: choice("not_probed", "not_configured", "configuration_error"), identity: { type: "string", const: "mapping_configured" } }) }),

@@ -4,6 +4,8 @@ import { pageCoverage, pageCoverageMarkdown } from "./api-page-coverage";
 import { commandSchema, connectionTestSchema } from "./nmgr-contract";
 import { connectionSettingsSchema } from "./nmgr-connection-config";
 import { restOpenApi, restResponseSchemas } from "./nmgr-rest-openapi";
+import { browserOriginsPath, browserOriginsSchema, browserOriginsStatusSchema } from "./nmgr-browser-origins";
+import { connectionBackupPath, connectionBackupSchema } from "./nmgr-connection-store";
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const string = { type: "string" };
@@ -51,6 +53,15 @@ export function createOpenApi() {
     tags: [{ name: "Connections", description: "Shared encrypted connection settings and read-only independent probes" }, { name: "Workflow", description: "Real NeMo/F5 business workflow; HTTP 200 is not proof a background job succeeded" }, { name: "Operations" }, { name: "Documentation" }],
     paths: {
       ...restOpenApi([role, revision], errorResponses),
+      [connectionBackupPath]: {
+        get: { tags: ["Connections"], operationId: "exportConnectionBackup", summary: "Export saved Demo connection settings", description: "Returns an encrypted JSON backup of saved manual settings, bound to the original credential destinations. Deployment credentials are excluded. Keep the deployment connection key to restore the backup.", parameters: [revision], responses: responses(ref("ConnectionBackup")) },
+        post: { tags: ["Connections"], operationId: "importConnectionBackup", summary: "Validate and restore saved Demo connection settings", description: "Same-origin only. Restores a backup encrypted with this deployment's key. The saved settings are replaced only when validation succeeds.", parameters: [revision], requestBody: { required: true, content: json(ref("ConnectionBackup")) }, responses: responses(ref("ConnectionStatus")) },
+      },
+      [browserOriginsPath]: {
+        get: { tags: ["Connections"], operationId: "getBrowserOrigins", summary: "Read the effective and deployment browser origin lists", description: "Same-origin access by authenticated Tech in strict V3.", security: [{ bearerAuth: [] }], responses: responses(ref("BrowserOriginsStatus")) },
+        put: { tags: ["Connections"], operationId: "saveBrowserOrigins", summary: "Override deployment browser origins", description: "Same-origin access by authenticated Tech in strict V3. Lists exact origins for Bearer-authenticated requests to /api/nmgr/v1/*. An empty list revokes browser cross-origin access.", security: [{ bearerAuth: [] }], requestBody: { required: true, content: json(ref("BrowserOrigins")) }, responses: responses(ref("BrowserOriginsStatus")) },
+        delete: { tags: ["Connections"], operationId: "restoreBrowserOrigins", summary: "Restore deployment browser origins", description: "Same-origin access by authenticated Tech in strict V3. Removes the saved override and reactivates the deployment list.", security: [{ bearerAuth: [] }], responses: responses(ref("BrowserOriginsStatus")) },
+      },
       "/api/health": { get: { tags: ["Operations"], operationId: "health", summary: "UI/API process health", description: "Independent of database, NeMo and F5. Suitable for Kubernetes probes; does not prove integration readiness.", responses: responses(ref("Health")) } },
       "/api/marketplace-config": { get: { tags: ["Connections"], operationId: "v3Runtime", summary: "Read V3 runtime flags and connection revision", parameters: [{ name: "workspace", in: "query", required: true, schema: { type: "string", enum: ["v3"] } }], responses: responses(ref("RuntimeStatus")) } },
       "/api/nmgr/connection": {
@@ -71,7 +82,9 @@ export function createOpenApi() {
       "/api/docs": { get: { tags: ["Documentation"], operationId: "swagger", summary: "Open offline interactive Swagger UI", responses: { "200": { description: "Swagger UI HTML; all assets served under /api/docs/", content: { "text/html": { schema: string } } } } } },
     },
     components: { securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", description: "Strict mode: authenticated NeMo business-user token mapped to a Marketplace role. Workspace reads require policies and guardrails read/write grants; commands require both write grants. The demo/local alternatives use server credentials and do not require this header. Role switching is not authentication." } }, schemas: {
-      Command: inputSchema(commandSchema), ConnectionSettings: connection,
+      Command: inputSchema(commandSchema), ConnectionSettings: connection, BrowserOrigins: inputSchema(browserOriginsSchema),
+      BrowserOriginsStatus: inputSchema(browserOriginsStatusSchema),
+      ConnectionBackup: inputSchema(connectionBackupSchema),
       ConnectionTest: { ...inputSchema(connectionTestSchema), properties: { target: { type: "string", enum: ["nemoUrl", "nemoToken", "databaseUrl", "f5Url", "f5Token", "evaluationUrl"] }, settings: ref("ConnectionSettings") } },
       ...responseSchemas,
       ...restResponseSchemas,

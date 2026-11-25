@@ -1,22 +1,26 @@
-# V3 demo connection defaults for v0.2.30.
+# V3 demo connection defaults for v0.2.31.
 # Deploy Marketplace only. Use existing NeMo and PostgreSQL (or MariaDB).
 replicaCount: 1
 fullnameOverride: marketplace-v2
 image:
   repository: registry.example.internal/marketplace-ui
-  tag: "0.2.30"
+  tag: "0.2.31"
 openshift:
   enabled: true
   route:
     # Enable only when there is no existing Istio/Ingress domain route.
     enabled: false
-    host: marketplace-uat.example.internal
+    host: ""
 marketplace:
   dataMode: live
   v2Live: true
-  guardApiUrl: https://nemo.example.internal/api/v1
+  # Fill with the deployed NeMo Controller URL when configuring UAT.
+  guardApiUrl: ""
   # If Ingress rewrites Host, pin the actual browser-facing Marketplace origin:
-  # publicOrigin: "https://marketplace-uat.example.internal"
+  # publicOrigin: ""
+  # Optional for authenticated strict V3 (demoRoles: false).
+  # List the external frontend's exact origin, including any non-default port.
+  # allowedBrowserOrigins: []
   # Default V3 skips certificate verification only for the NeMo API.
   # Set nemoTls: verify to require trusted certificates. F5/DB TLS is unchanged.
   # The chart defaults read both credentials from the existing Secret `tali`:

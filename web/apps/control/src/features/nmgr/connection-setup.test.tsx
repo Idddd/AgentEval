@@ -10,6 +10,8 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ConnectionSetup } from "./connection-setup";
 import { NmgrMode } from "./live";
+import { downloadJson } from "@/lib/file-download";
+vi.mock("@/lib/file-download", () => ({ downloadJson: vi.fn() }));
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
@@ -39,6 +41,64 @@ const status = {
   persistence: "pod",
   manualConfiguration: true,
 };
+function jsonFile(value: unknown) {
+  const text = JSON.stringify(value);
+  return Object.assign(new File([text], "backup.json", { type: "application/json" }), { text: async () => text });
+}
+
+it("downloads saved settings and imports a backup without requiring fields to be entered again", async () => {
+  const connected = vi.fn();
+  const backup = { format: "marketplace-connection", version: 1, data: "encrypted" };
+  vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+    if (!path.endsWith("/backup")) return Response.json(status);
+    if (init?.method === "POST") {
+      expect(JSON.parse(String(init.body))).toEqual(backup);
+      expect(new Headers(init.headers).get("X-Marketplace-Connection")).toBe(status.connectionRevision);
+      return Response.json(status);
+    }
+    return Response.json(backup);
+  }));
+  render(<ConnectionSetup onConnected={connected} onRetry={() => {}} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Export saved JSON" }));
+  await waitFor(() => expect(downloadJson).toHaveBeenCalledWith(backup, "marketplace-connection-backup.json"));
+  fireEvent.change(screen.getByLabelText("Choose connection backup JSON"), { target: { files: [jsonFile(backup)] } });
+  await waitFor(() => expect(connected).toHaveBeenCalledOnce());
+});
+
+it("manages the strict browser origin list from Advanced settings without saving other connections", async () => {
+  const connected = vi.fn();
+  const fetcher = vi.fn(async (path: string, request?: RequestInit) => {
+    if (!path.endsWith("/allowed-origins")) return Response.json({ ...status, manualConfiguration: false });
+    expect(new Headers(request?.headers).get("Authorization")).toBe("Bearer tech-user-token");
+    const deploymentOrigins = ["https://old.portal.internal"];
+    return Response.json(request?.method === "PUT"
+      ? { ...JSON.parse(String(request.body)), deploymentOrigins, source: "saved" }
+      : { origins: deploymentOrigins, deploymentOrigins, source: "deployment" });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<ConnectionSetup onConnected={connected} onRetry={() => {}} />);
+  fireEvent.click(screen.getByText("Advanced settings (optional)"));
+  fireEvent.change(await screen.findByLabelText("Tech user token"), { target: { value: "tech-user-token" } });
+  fireEvent.click(screen.getByRole("button", { name: "Load allowed origins" }));
+  await screen.findByText("Allowed origins loaded.");
+  fireEvent.change(screen.getByLabelText("Allowed frontend origins"), { target: { value: "https://portal.internal:8443" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save allowed origins" }));
+  await screen.findByText("Allowed origins saved.");
+  const saved = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
+  expect(JSON.parse(String(saved?.[1]?.body))).toEqual({ origins: ["https://portal.internal:8443"] });
+  expect(screen.getByText("Using a saved override.")).toBeTruthy();
+  const exportFile = { format: "marketplace-browser-origins", version: 1, origins: ["https://portal.internal:8443"] };
+  fireEvent.click(screen.getByRole("button", { name: "Export origins JSON" }));
+  expect(downloadJson).toHaveBeenCalledWith(exportFile, "marketplace-allowed-origins.json");
+  fireEvent.click(screen.getByRole("button", { name: "Restore deployment origins" }));
+  await screen.findByText("Deployment origins restored.");
+  expect((screen.getByLabelText("Allowed frontend origins") as HTMLTextAreaElement).value).toBe("https://old.portal.internal");
+  expect(screen.getByText("Using deployment settings.")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Choose allowed origins JSON"), { target: { files: [jsonFile(exportFile)] } });
+  await screen.findByText("Allowed origins saved.");
+  expect((screen.getByLabelText("Allowed frontend origins") as HTMLTextAreaElement).value).toBe("https://portal.internal:8443");
+  expect(connected).not.toHaveBeenCalled();
+});
 it("tests Evaluate without saving and refreshes its activity log", async () => {
   const connected = vi.fn();
   let tested = false;

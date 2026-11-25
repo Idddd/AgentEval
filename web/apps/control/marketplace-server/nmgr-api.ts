@@ -11,6 +11,7 @@ import { NmgrService, type NmgrActor, type NmgrRemote } from "./nmgr";
 import { createF5Client, f5Configuration } from "./f5-client";
 import { nmgrRestApi } from "./nmgr-rest-api";
 import { EvaluationError, guardrailEvaluation } from "./guardrail-evaluation";
+import { browserOriginsDocument, browserOriginsPath, browserOriginsSchema, browserOriginsStatus, crossOriginResource, deploymentBrowserOrigins } from "./nmgr-browser-origins";
 
 const stores = new Map<string, ReturnType<typeof openDatabase>>();
 const accountSchema = z.record(z.string().min(1), z.object({ name: z.string().min(1).max(160), role: z.enum(["User", "User Admin", "IT Admin"]), unit: z.string().min(1).max(100) }).strict());
@@ -54,24 +55,46 @@ export async function closeNmgrDatabase(env: NodeJS.ProcessEnv) {
   await (await opening).close?.();
 }
 export async function nmgrApi(request: Request, env = process.env, fetcher: typeof fetch = fetch): Promise<Response> {
-  if (new URL(request.url).pathname.startsWith("/api/nmgr/v1/")) return nmgrRestApi(request, legacy => nmgrApi(legacy, env, fetcher));
+  const url = new URL(request.url);
   let component: Component = "runtime";
   try {
-    const config = nmgrConfiguration(env), url = new URL(request.url);
+    const origin = request.headers.get("origin");
+    const crossSite = request.headers.get("sec-fetch-site") === "cross-site";
+    if (url.pathname.startsWith("/api/nmgr/v1/")) {
+      const dispatch = (accepted: Request) => nmgrRestApi(accepted, legacy => nmgrApi(legacy, env, fetcher));
+      if (env.MARKETPLACE_V3_DEMO === "false" && env.MARKETPLACE_V2_LOCAL_ACCESS !== "true"
+          && (request.method === "OPTIONS" || crossSite || origin !== null && origin !== env.MARKETPLACE_PUBLIC_ORIGIN)) {
+        const config = nmgrConfiguration(env);
+        return await crossOriginResource(request, async () => {
+          const deployment = deploymentBrowserOrigins(env);
+          const saved = await (await store(env)).readDocument(browserOriginsDocument(config.workspace));
+          return browserOriginsStatus(deployment, saved).origins;
+        }, dispatch);
+      }
+      return dispatch(request);
+    }
+    const config = nmgrConfiguration(env);
+    const origins = url.pathname === browserOriginsPath;
+    const saveOrigins = origins && request.method === "PUT";
+    const restoreOrigins = origins && request.method === "DELETE";
+    const updateOrigins = saveOrigins || restoreOrigins;
     const resource = url.searchParams.get("resource");
     const evaluation = url.pathname === "/api/nmgr/guardrail-evaluation";
-    if (!evaluation && (url.search && (url.pathname !== "/api/nmgr/workspace" || [...url.searchParams].length !== 1 || !resource || !/^[a-z][a-z0-9-]{2,63}$/.test(resource)) || !["/api/nmgr/workspace", "/api/nmgr/commands", "/api/nmgr/ready"].includes(url.pathname))) throw new StoreError(404, "Route not found.");
+    if (origins && (config.demo || config.localAccess)) throw new StoreError(403, "Only authenticated Tech can configure browser origins in strict V3.");
+    if (!evaluation && (url.search && (url.pathname !== "/api/nmgr/workspace" || [...url.searchParams].length !== 1 || !resource || !/^[a-z][a-z0-9-]{2,63}$/.test(resource)) || !["/api/nmgr/workspace", "/api/nmgr/commands", "/api/nmgr/ready", browserOriginsPath].includes(url.pathname))) throw new StoreError(404, "Route not found.");
     if (url.pathname === "/api/nmgr/ready" && request.method === "GET") {
       component = "database";
       await (await store(env)).readDocument(`nmgr:${config.workspace}`);
       return reply({ ready: true, workspace: "v3", backend: "configured", checks: { database: "reachable", nemo: "not_probed", f5: config.f5Error ? "configuration_error" : config.f5 ? "not_probed" : "not_configured", identity: "mapping_configured" } });
     }
-    const write = url.pathname === "/api/nmgr/commands" || evaluation && request.method === "POST";
-    if (request.method !== (write ? "POST" : "GET")) throw new StoreError(405, "Method not allowed.");
+    const write = url.pathname === "/api/nmgr/commands" || evaluation && request.method === "POST" || updateOrigins;
+    if (!updateOrigins && request.method !== (write ? "POST" : "GET")) throw new StoreError(405, "Method not allowed.");
     if (request.headers.get("origin") && request.headers.get("origin") !== config.publicOrigin || request.headers.get("sec-fetch-site") === "cross-site") throw new DeploymentError("origin", "origin_mismatch", "Cross-origin requests are not allowed. Check MARKETPLACE_PUBLIC_ORIGIN and the browser URL.", undefined, 403);
     if (config.localAccess && (url.origin !== config.publicOrigin || write && request.headers.get("origin") !== config.publicOrigin)) throw new DeploymentError("origin", "origin_mismatch", "Local test requests must use the configured origin.", undefined, 403);
     if (evaluation && config.demo && write && request.headers.get("origin") !== config.publicOrigin)
       throw new DeploymentError("origin", "origin_mismatch", "Start a shared Demo evaluation from the Marketplace origin.", undefined, 403);
+    if (updateOrigins && origin !== config.publicOrigin)
+      throw new DeploymentError("origin", "origin_mismatch", "Save browser origins from the Marketplace origin.", undefined, 403);
     component = "nemo";
     const serviceFetch = config.demo || config.localAccess || hasNemoCredentials(env) ? nemoServiceFetch(env, fetcher) : undefined;
     let actor: NmgrActor;
@@ -116,6 +139,23 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
       actor = { id: identity.userId, ...mapping };
     }
     component = "database";
+    if (origins) {
+      if (actor.role !== "IT Admin") throw new StoreError(403, "Only Tech can configure browser origins.");
+      const deployment = deploymentBrowserOrigins(env);
+      let candidate: { origins: string[] } | null = null;
+      if (saveOrigins) {
+        if (!request.headers.get("content-type")?.startsWith("application/json")) throw new StoreError(415, "JSON is required.");
+        const raw = await request.text();
+        if (Buffer.byteLength(raw) > 18_000) throw new StoreError(413, "Origin settings exceed the size limit.");
+        try { candidate = browserOriginsSchema.parse(JSON.parse(raw)); }
+        catch { throw new StoreError(422, "Enter up to 32 distinct HTTPS origins without paths or trailing slashes. Local loopback HTTP is allowed."); }
+      }
+      const database = await store(env);
+      const key = browserOriginsDocument(config.workspace);
+      if (!updateOrigins) return reply(browserOriginsStatus(deployment, await database.readDocument(key)));
+      await database.writeDocument(key, candidate);
+      return reply(browserOriginsStatus(deployment, candidate));
+    }
     const service = new NmgrService(await store(env), config.workspace, config.f5 ? createF5Client(config.f5, fetcher) : undefined, config.f5Error ? { F5: config.f5Error } : undefined);
     if (evaluation) {
       if (!config.demo && actor.role !== "IT Admin") throw new StoreError(403, "Only Tech may run or view independent Guardrail evaluations in strict V3.");

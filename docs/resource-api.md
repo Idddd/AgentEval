@@ -9,6 +9,30 @@
 
 `GET /api/nmgr/connection` 返回 `connectionRevision`，后续请求可通过 `X-Marketplace-Connection` 携带它，后端连接变化后旧请求返回 409。原 `/api/nmgr/workspace`、`/commands`、配置和探测接口全部保留，内置 V3 继续作为兼容客户端。新接口与旧接口共用身份、数据库、权限、工作流、幂等和 NeMo/F5 adapter。
 
+## 其他前端直接调用 Marketplace API
+
+浏览器跨源调用只支持严格 V3 的 `/api/nmgr/v1/*`。在部署的 Helm values 中配置 Marketplace 自身地址和允许调用 API 的前端来源，例如：
+
+```yaml
+marketplace:
+  dataMode: live
+  demoRoles: false
+  publicOrigin: ""
+  guardApiUrl: ""
+  accountsConfigMap: "marketplace-accounts"
+  allowedBrowserOrigins: []
+```
+
+在仓库外的部署配置中填入实际地址，保留已有数据库和 NeMo 凭据配置。直接配置环境变量或使用 Docker Compose 时，`MARKETPLACE_ALLOWED_BROWSER_ORIGINS` 的值为 JSON 数组。前端来源包含协议、主机和非默认端口。
+
+Tech 可从 Marketplace 自身域名打开 `/v3/guardrails#connection`，进入 **Advanced settings → Allowed browser origins**。用已映射的 Tech 用户 Token 读取当前配置，逐行编辑并保存。保存列表会替换部署列表，保存空列表会关闭跨源访问。**Restore deployment origins** 重新启用部署列表。保存值按工作区存入 Marketplace 数据库，不需要修改 Helm 或重启服务。
+
+外部前端使用用户 Bearer Token 调用资源 API。网关转发 `OPTIONS`、`Origin` 和 `Authorization`，并保留 Marketplace 的 CORS 响应头。使用 Marketplace 同源网关转发 `/api` 时可保留空白名单。
+
+严格 V3 的白名单支持导出或导入 JSON，导入使用当前 Tech 用户 Token 校验并替换名单。文件只包含来源列表。
+
+V3 Demo 的 **Connection backup** 可导出已保存的手动连接设置，再选择该 JSON 验证和恢复。文件包含加密的手动凭据和设置，部署 Secret 继续从部署读取。恢复需要保留同一部署的 `connection.key`。例如 Pod 替换后仍需导入时，使用持久化连接存储。连接校验失败时保留原设置。
+
 ## 按页面接入
 
 F5 真实目录导入新增 `POST /api/nmgr/v1/integrations/f5/imports`（请求体 `{}`），与 NeMo 导入独立；随后用 `GET /guardrails?provider=F5`、`GET /profiles?provider=F5` 获取列表。版本及精确绑定见 `item.imported.f5`。详情与故障隔离说明见 [F5 真实资源导入](f5-catalog-import.md)。

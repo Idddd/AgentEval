@@ -1,15 +1,13 @@
-# AI Marketplace deployment — v0.2.30
+# AI Marketplace deployment — v0.2.31
 
-Image: `ghcr.io/idddd/tali-ui-demo:0.2.30` (Linux amd64).
-Chart: `oci://ghcr.io/idddd/charts/tali-ui-demo`, version `0.2.30`.
+Image: `ghcr.io/idddd/tali-ui-demo:0.2.31` (Linux amd64).
+Chart: `oci://ghcr.io/idddd/charts/tali-ui-demo`, version `0.2.31`.
 
-Version 0.2.30 adds independent Guardrail evaluation in V3, with progress,
-per-case results, and report recovery after refresh. The connection page supports
-an Evaluate URL supplied by Helm or a verified, explicitly saved fallback.
-It also shows connection and submission activity without exposing credentials.
-Shared V3 Demo retains role switching and permits independent evaluations for
-all visitors to its workspace; use a dedicated internal UAT project. Strict V3
-still requires an authenticated Tech account. No database migration is required.
+Version 0.2.31 improves Evaluate connection diagnostics and adds encrypted JSON
+backup and restore for saved V3 Demo connection settings. Strict V3 supports
+configuring exact external frontend origins for authenticated resource API
+requests. Deployment templates leave service addresses blank for manual
+configuration. No database migration is required.
 
 V3 now needs only a NeMo API URL, business API token and full PostgreSQL/MariaDB URL. The default demo keeps role switching, with no extra SSO/account map. The same V3 connection page supports masked manual fallbacks, optional TLS/CA/workspace/F5 settings and encrypted shared server storage. Failed saves retain the last valid connection. Mock remains independent of real dependencies.
 
@@ -23,22 +21,22 @@ V3 now needs only a NeMo API URL, business API token and full PostgreSQL/MariaDB
 ## Start or upgrade
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.30
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.31
 docker run -d --name ai-marketplace -p 18082:8080 \
   -v marketplace-connections:/var/lib/marketplace/connection \
   -e MARKETPLACE_CONNECTION_DIR=/var/lib/marketplace/connection \
   -e MARKETPLACE_CONNECTION_PERSISTENT=true \
-  ghcr.io/idddd/tali-ui-demo:0.2.30
+  ghcr.io/idddd/tali-ui-demo:0.2.31
 ```
 
 Open `/v3/guardrails` to configure connections, or `/v2/guardrails` for Mock.
 
 ```sh
 helm upgrade --install tali-ui-demo oci://ghcr.io/idddd/charts/tali-ui-demo \
-  --version 0.2.30 --namespace YOUR_NAMESPACE -f values.uat.yaml
+  --version 0.2.31 --namespace YOUR_NAMESPACE -f values.uat.yaml
 ```
 
-Keep the existing release name, namespace, registry, Istio and resource settings. Preserve `workspaceId` and NeMo URL to retain the same workspace. The new chart defaults read token/DB URL from existing Secret `tali`, keys `tali-guard-bootstrap-user-ini` and `tali-guard-postgresql-init`. Override Secret references only when names differ. Credentials do not belong in values. For independent evaluation, add a separate `-f values.evaluation.yaml` using the [Evaluate values example](../deploy/values.evaluation.example.yaml).
+Keep the existing release name, namespace, registry, Istio and resource settings. Preserve `workspaceId` and NeMo URL to retain the same workspace. The new chart defaults read token/DB URL from existing Secret `tali`, keys `tali-guard-bootstrap-user-ini` and `tali-guard-postgresql-init`. Override Secret references only when names differ. Credentials belong in Secrets. For independent evaluation, fill in the actual service address in a deployment values file outside the source repository using the [Evaluate values template](../deploy/values.evaluation.example.yaml).
 
 ## Internal Helm delta
 
@@ -49,7 +47,7 @@ Follow the complete [internal upgrade instructions](../deploy/v2/UAT-token-confi
 - Use optional integration Secret/ConfigMap references; remove old template requirements for account mapping or missing real connections.
 - Default `emptyDir` keeps manual settings across browser sessions and in-Pod container restarts. Optional `marketplace.connectionStorage.existingClaim` retains them across Pod replacement. Keep data and key together and preserve compatible file ownership. Default single-replica deployment is retained.
 
-No extra account ConfigMap, `dataMode`, `v2Live`, `crudOnly` or local actor setup is required for default V3. If an internal gateway rewrites the request host to a Service name, set `marketplace.publicOrigin` to the exact browser-facing origin (for example `https://marketplace.example.internal`, without a path or trailing slash). V3 honors this value in both modes; when it is unset, Demo still validates against the received host. Serve the page and `/api` from that same browser-facing address. Explicit `demoRoles: false` retains strict identity mode and ignores stored demo overrides.
+No extra account ConfigMap, `dataMode`, `v2Live`, `crudOnly` or local actor setup is required for default V3. If an internal gateway rewrites the request host to a Service name, V3 Demo can use the browser origin when the browser marks the request same-origin. For an explicit pin, set `marketplace.publicOrigin` to the exact browser-facing Marketplace origin without a path or trailing slash. Strict V3 cross-site resource requests use the separately configured browser origin allowlist. Serve the page and `/api` from that same browser-facing address. Explicit `demoRoles: false` retains strict identity mode and ignores stored demo overrides.
 
 ## Credentials, diagnostics and persistence
 
@@ -64,9 +62,9 @@ V3 failures include component, code, setting names and Reference matching `X-Req
 ## Internal registry and offline artifacts
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.30
-docker tag ghcr.io/idddd/tali-ui-demo:0.2.30 INTERNAL_REGISTRY/tali-ui:0.2.30
-docker push INTERNAL_REGISTRY/tali-ui:0.2.30
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.31
+docker tag ghcr.io/idddd/tali-ui-demo:0.2.31 INTERNAL_REGISTRY/tali-ui:0.2.31
+docker push INTERNAL_REGISTRY/tali-ui:0.2.31
 ```
 
 The published image embeds its matching chart and sanitized source archive:
@@ -77,8 +75,8 @@ The published image embeds its matching chart and sanitized source archive:
 - `/opt/marketplace/check-nemo.mjs`
 
 ```sh
-container=$(docker create ghcr.io/idddd/tali-ui-demo:0.2.30)
-docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" ./tali-ui-demo-0.2.30.tgz
+container=$(docker create ghcr.io/idddd/tali-ui-demo:0.2.31)
+docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" ./tali-ui-demo-0.2.31.tgz
 docker cp "$container:/opt/tali/source/project-source.zip" ./project-source.zip
 docker cp "$container:/opt/tali/source/project-source.zip.sha256" ./project-source.zip.sha256
 docker rm "$container"
@@ -87,7 +85,7 @@ sha256sum -c project-source.zip.sha256
 
 Source excludes real credentials, local environment files, databases, logs, dependencies and generated output. Public localhost TLS fixtures are test-only. The release workflow verifies startup, embedded source/chart integrity, Helm templates and 16 synthetic dependency failures before publishing the OCI chart. Release assets include checksums; validate offline archives before importing.
 
-See [v0.2.30 verification](uat/v0.2.30-release-validation.md) and [F5 deployment and troubleshooting](uat/2026-11-05-f5-integration.md).
+See [v0.2.31 verification](uat/v0.2.31-release-validation.md) and [F5 deployment and troubleshooting](uat/2026-11-05-f5-integration.md).
 
 ## Independent evaluation
 

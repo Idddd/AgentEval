@@ -39,7 +39,7 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           image_tag="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
           storage=browser
-          chart_version="0.2.30-dev.${GITHUB_RUN_NUMBER}"
+          chart_version="0.2.31-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${image_tag}")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tags+=("${image}:pr-${{ github.event.pull_request.number }}")
@@ -53,7 +53,7 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.2.30-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.31-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
@@ -181,8 +181,15 @@ jobs:
           grep -A1 'name: MARKETPLACE_NEMO_TLS' artifacts/mock.yaml | grep 'value: "skip"'
           helm template tali-ui-demo "$chart" --set marketplace.nemoTls=verify > artifacts/nemo-tls-verify.yaml
           grep -A1 'name: MARKETPLACE_NEMO_TLS' artifacts/nemo-tls-verify.yaml | grep 'value: "verify"'
-          helm template tali-ui-demo "$chart" -f deploy/values.evaluation.example.yaml > artifacts/evaluation.yaml
-          grep -A1 'name: MARKETPLACE_EVALUATION_URL' artifacts/evaluation.yaml | grep 'value: "http://evaluation-api.evaluation.svc.cluster.local:8001"'
+          helm template tali-ui-demo "$chart" -f deploy/values.evaluation.example.yaml > artifacts/evaluation-defaults.yaml
+          if grep -q 'name: MARKETPLACE_EVALUATION_URL' artifacts/evaluation-defaults.yaml; then
+            echo 'The evaluation template must leave the deployment URL unset'
+            exit 1
+          fi
+          evaluation_test_url="https://evaluate.example.invalid/api/v1/evaluations"
+          helm template tali-ui-demo "$chart" -f deploy/values.evaluation.example.yaml \
+            --set-string "marketplace.evaluationUrl=$evaluation_test_url" > artifacts/evaluation.yaml
+          grep -A1 'name: MARKETPLACE_EVALUATION_URL' artifacts/evaluation.yaml | grep -F "value: \"$evaluation_test_url\""
           helm template tali-ui-demo "$chart" --set openshift.enabled=true > artifacts/ocp.yaml
           if grep -Eq 'PersistentVolumeClaim|claimName:|runAsUser:|fsGroup:' artifacts/ocp.yaml; then
             echo 'OCP template unexpectedly requires a PVC or fixed UID'; exit 1

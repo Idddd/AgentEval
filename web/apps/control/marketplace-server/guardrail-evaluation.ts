@@ -47,7 +47,8 @@ export type EvaluationInput = Input;
 export type EvaluationScope = { provider?: string | undefined; demo?: boolean | undefined; workspace: string };
 
 export class EvaluationError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) { super(message); }
+  upstream?: DeploymentError["upstream"];
+  constructor(readonly status: number, readonly code: string, message: string, options?: ErrorOptions) { super(message, options); }
 }
 const fail = (status: number, code: string, message: string): never => { throw new EvaluationError(status, code, message); };
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
@@ -86,30 +87,33 @@ export function evaluationInput(request: Request): Input {
 }
 
 function apiBase(env: Env) {
-  if (!evaluationEnabled(env)) return fail(503, "evaluation_not_configured", "The independent evaluation service is not configured.");
+  if (!evaluationEnabled(env)) return fail(503, "evaluation_not_configured", "No Evaluate URL is active. Enter an approved address to test, or set marketplace.evaluationUrl in the deployment. No request was sent.");
   try { return evaluationApiBase(env.MARKETPLACE_EVALUATION_URL!); }
   catch { return fail(503, "evaluation_url_invalid", "Configure a valid HTTP(S) MARKETPLACE_EVALUATION_URL without credentials, query or fragment."); }
 }
 
 export async function probeEvaluation(env: Env, fetcher: typeof fetch) {
   try {
-    const get = client(env, fetcher);
+    const get = client(env, fetcher, true);
     await get("/targets?limit=1", z.object({ items: z.array(z.object({ id })), total: count }));
   } catch (error) {
-    if (error instanceof EvaluationError)
-      throw new DeploymentError("evaluation", error.code, error.message, ["MARKETPLACE_EVALUATION_URL"], error.status);
+    if (error instanceof EvaluationError) {
+      const failure = new DeploymentError("evaluation", error.code, error.message, undefined, error.status, error.cause);
+      if (error.upstream) failure.upstream = error.upstream;
+      throw failure;
+    }
     throw new DeploymentError("evaluation", "evaluation_response_invalid", "Evaluate did not return a valid target list. Use the evaluation API service URL, not the web UI.", ["MARKETPLACE_EVALUATION_URL"], 502);
   }
 }
 
-function client(env: Env, fetcher: typeof fetch) {
+function client(env: Env, fetcher: typeof fetch, probing = false) {
   const base = apiBase(env);
   return async <T>(path: string, schema: z.ZodType<T>, init?: { key: string; configRevision: string }) => {
     let response: Response;
     const requestId = nmgrRequestContext.getStore()?.requestId;
     try {
       response = await fetcher(base + path, {
-        method: init ? "POST" : "GET", redirect: "error", signal: AbortSignal.timeout(12_000),
+        method: init ? "POST" : "GET", redirect: probing ? "manual" : "error", signal: AbortSignal.timeout(12_000),
         headers: {
           Accept: "application/json",
           ...(requestId ? { "X-Request-ID": requestId } : {}),
@@ -120,20 +124,31 @@ function client(env: Env, fetcher: typeof fetch) {
         ...(init ? { body: JSON.stringify({ config_revision: init.configRevision }) } : {}),
       });
     } catch (error) {
-      return fail(503, "evaluation_unreachable", error instanceof Error && error.name === "TimeoutError"
+      throw new EvaluationError(503, "evaluation_unreachable", error instanceof Error && error.name === "TimeoutError"
         ? "The evaluation service timed out. Check its health, network and logs."
-        : "Cannot reach the evaluation service. Check its URL, network and trusted TLS settings.");
+        : "Cannot reach the evaluation service. Check its URL, network and trusted TLS settings.", { cause: error });
     }
+    const type = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+    const contentType = type && /^[a-z0-9.+-]{1,40}\/[a-z0-9.+-]{1,48}$/.test(type) ? type : null;
+    const reject = (status: number, code: string, message: string): never => {
+      const error = new EvaluationError(status, code, message);
+      error.upstream = { httpStatus: response.status, contentType };
+      throw error;
+    };
+    if (!response.ok || contentType !== "application/json") void response.body?.cancel().catch(() => {});
     if (!response.ok) {
-      if ([401, 403].includes(response.status)) return fail(502, "evaluation_credentials", "The evaluation service rejected Marketplace credentials. Check its token and project access.");
-      if (response.status === 404) return fail(404, "evaluation_not_found", "The evaluation target, run or report was not found in the configured project.");
-      if (response.status === 409) return fail(409, "evaluation_changed", "The evaluation configuration changed or the service rejected the request as conflicting. Reload before starting a new run.");
-      if (response.status === 422) return fail(422, "evaluation_rejected", "The evaluation service rejected the configuration. Check the published datasets, runner and guardrail endpoint.");
-      if (response.status === 429 || response.status >= 500) return fail(503, "evaluation_busy", `The evaluation service is temporarily unavailable (HTTP ${response.status}).`);
-      return fail(502, "evaluation_api_error", `The evaluation service returned HTTP ${response.status}. Check gateway routing and service logs.`);
+      if (response.status >= 300 && response.status < 400) return reject(502, "evaluation_redirect", "The Evaluate API redirected the request. Verify that the URL serves the API directly rather than a login page.");
+      if ([401, 403].includes(response.status)) return reject(502, "evaluation_credentials", "The evaluation service rejected Marketplace credentials. Check its token and project access.");
+      if (response.status === 404) return reject(404, "evaluation_not_found", probing ? "The Evaluate target catalog route was not found. Check the API base URL and gateway routing." : "The evaluation target, run or report was not found in the configured project.");
+      if (response.status === 409) return reject(409, "evaluation_changed", "The evaluation configuration changed or the service rejected the request as conflicting. Reload before starting a new run.");
+      if (response.status === 422) return reject(422, "evaluation_rejected", "The evaluation service rejected the configuration. Check the published datasets, runner and guardrail endpoint.");
+      if (response.status === 429 || response.status >= 500) return reject(503, "evaluation_busy", `The evaluation service is temporarily unavailable (HTTP ${response.status}).`);
+      return reject(502, "evaluation_api_error", `The evaluation service returned HTTP ${response.status}. Check gateway routing and service logs.`);
     }
-    if (!response.headers.get("content-type")?.includes("application/json")) throw new Error("Expected JSON");
-    return schema.parse(await response.json());
+    if (contentType !== "application/json")
+      return reject(502, "evaluation_response_invalid", "Evaluate returned a non-JSON response. Check whether the URL routes to the API, a web page, or an authentication gateway.");
+    try { return schema.parse(await response.json()); }
+    catch { return reject(502, "evaluation_response_invalid", "Evaluate returned an incompatible JSON response. Check the API version and gateway routing."); }
   };
 }
 

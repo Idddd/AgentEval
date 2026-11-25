@@ -42,10 +42,18 @@ export function connectionOrigin(request: Request, env: NodeJS.ProcessEnv) {
       ["MARKETPLACE_PUBLIC_ORIGIN"],
       403,
     );
-  if (request.headers.get("sec-fetch-site") === "cross-site") throw rejected();
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite === "cross-site") throw rejected();
   if (supplied !== null) {
     const origin = parseHttpOrigin(supplied);
-    if (!origin || (configured ? supplied !== configured : origin.host !== url.host)) throw rejected();
+    if (!origin) throw rejected();
+    if (configured) {
+      if (supplied !== configured) throw rejected();
+    } else if (origin.host !== url.host) {
+      // A browser sets this header based on the public URL before an ingress
+      // rewrites Host. Keep the fallback scoped to unpinned V3 Demo requests.
+      if (env.MARKETPLACE_V3_DEMO === "false" || fetchSite !== "same-origin") throw rejected();
+    }
   }
   return configured || supplied || url.origin;
 }

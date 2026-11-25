@@ -1,16 +1,10 @@
-# Merge after your existing Marketplace Helm values:
-#   -f values.uat.yaml -f values.evaluation.yaml
-# Replace the hosts with the browser-facing Marketplace origin and the
-# Evaluate APIs reachable from the Marketplace Pod. Keep Tokens in Secrets.
+# Copy outside the source repository and fill in the actual Evaluate API URL
+# when configuring the running deployment. Keep Tokens in Secrets.
 marketplace:
-  demoRoles: true
-  publicOrigin: "https://marketplace.example.internal"
-  evaluationUrl: "http://evaluation-api.evaluation.svc.cluster.local:8001"
+  evaluationUrl: ""
   # Optional. An explicitly saved fallback can be selected from V3 Connections.
   # Leave empty if the deployment URL is the only approved Evaluate backend.
   evaluationAllowedUrls: []
-  # evaluationAllowedUrls:
-  #   - "http://evaluation-backup.evaluation.svc.cluster.local:8001"
   evaluationBindings: {}
   # evaluationBindings:
   #   my-guardrail@2: my-evaluation-suite

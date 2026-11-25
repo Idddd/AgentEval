@@ -10,3 +10,7 @@ export function downloadBlob(blob: Blob, filename: string): void {
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+export function downloadJson(value: unknown, filename: string): void {
+  downloadBlob(new Blob([JSON.stringify(value, null, 2) + "\n"], { type: "application/json" }), filename);
+}

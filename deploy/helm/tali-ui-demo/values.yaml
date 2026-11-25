@@ -43,6 +43,9 @@ marketplace:
   policyAuthoringUrl: ""
   # Browser-facing HTTP(S) origin, without a path. Set when Ingress rewrites Host.
   publicOrigin: ""
+  # Exact frontend origins allowed to call the resource API in strict V3.
+  # An authenticated Tech can override this list in Connections.
+  allowedBrowserOrigins: []
   # Optional independent Guardrail evaluation. In shared Demo, every visitor
   # can evaluate and view reports; use a dedicated UAT project.
   evaluationUrl: ""

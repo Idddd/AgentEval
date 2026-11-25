@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { ConnectionStore } from "./nmgr-connection-store";
+import { ConnectionStore, connectionBackupPath } from "./nmgr-connection-store";
 import {
   connectionEnvironment,
   connectionOrigin,
@@ -20,21 +20,44 @@ import { connectionTestSchema } from "./nmgr-contract";
 import { withNmgrRequestLog } from "./nmgr-request-log";
 import { connectionValues } from "./connection-values";
 import { nmgrRequestContext } from "./nmgr-request-context";
+import { evaluationPolicyStatus } from "./evaluation-connection";
 
 const stores = new Map<string, ConnectionStore>();
 const locks = new WeakMap<ConnectionStore, Promise<unknown>>();
 const revisionKey = randomBytes(32);
 type EvaluationAction = "test" | "save" | "restore" | "start";
-type EvaluationLog = { time: string; action: EvaluationAction; status: number; durationMs: number; requestId: string; code?: string };
+type EvaluationStage = "configuration" | "destination" | "network" | "upstream" | "response" | "completed";
+type EvaluationLog = {
+  time: string; action: EvaluationAction; status: number; durationMs: number; requestId: string;
+  stage: EvaluationStage; code?: string; message?: string; upstreamStatus?: number; contentType?: string; networkCode?: string;
+};
 const evaluationLogs = new WeakMap<ConnectionStore, EvaluationLog[]>();
 async function logEvaluation(store: ConnectionStore, action: EvaluationAction, response: Response, started: number) {
-  let code: unknown;
-  if (!response.ok) code = await response.clone().json().then(body => body?.error?.code).catch(() => undefined);
+  const error = response.ok ? undefined : await response.clone().json().then(body => body?.error).catch(() => undefined);
+  const code = typeof error?.code === "string" && /^[a-z0-9_]{1,96}$/.test(error.code) ? error.code as string : undefined;
+  const upstream = error?.details?.httpStatus;
+  const media = error?.details?.contentType;
+  const upstreamStatus = Number.isInteger(upstream) && upstream >= 100 && upstream <= 599 ? upstream as number : undefined;
+  const contentType = typeof media === "string" && /^[a-z0-9.+-]{1,40}\/[a-z0-9.+-]{1,48}$/.test(media) ? media : undefined;
+  const stage: EvaluationStage = response.ok ? "completed"
+    : code === "evaluation_url_not_allowed" || code === "evaluation_token_destination" ? "destination"
+    : code === "evaluation_unreachable" ? "network"
+    : code === "evaluation_response_invalid" ? "response"
+    : upstreamStatus !== undefined ? "upstream" : "configuration";
+  const networkCode = stage === "network" && Array.isArray(error?.details?.causes)
+    ? error.details.causes.map((cause: { code?: unknown }) => cause?.code)
+      .find((value: unknown) => typeof value === "string" && /^[A-Z][A-Z0-9_]{1,79}$/.test(value)) as string | undefined
+    : undefined;
   const entry: EvaluationLog = {
     time: new Date().toISOString(), action, status: response.status,
     durationMs: Math.round(performance.now() - started),
     requestId: response.headers.get("X-Request-ID") ?? nmgrRequestContext.getStore()?.requestId ?? randomUUID(),
-    ...(typeof code === "string" && /^[a-z0-9_]{1,96}$/.test(code) ? { code } : {}),
+    stage,
+    ...(code ? { code } : {}),
+    ...(code?.startsWith("evaluation_") && typeof error.message === "string" ? { message: error.message.slice(0, 600) } : {}),
+    ...(upstreamStatus !== undefined ? { upstreamStatus } : {}),
+    ...(contentType ? { contentType } : {}),
+    ...(networkCode ? { networkCode } : {}),
   };
   evaluationLogs.set(store, [entry, ...(evaluationLogs.get(store) ?? [])].slice(0, 20));
   console.info(JSON.stringify({ event: "evaluation_activity", service: "marketplace", component: "evaluation", ...entry }));
@@ -187,11 +210,14 @@ async function handleNmgrRequest(
   fetcher: typeof fetch = fetch,
   store = defaultStore(env),
 ) {
-  if (["/api/nmgr/connection", "/api/nmgr/connection/test", "/api/nmgr/connection/evaluation"].includes(new URL(request.url).pathname))
+  if (["/api/nmgr/connection", "/api/nmgr/connection/test", "/api/nmgr/connection/evaluation", connectionBackupPath].includes(new URL(request.url).pathname))
     return connectionApi(request, env, fetcher, store);
   try {
     const saved = await savedFor(env, store),
-      effective = connectionEnvironment(request, env, saved ?? {}, true);
+      // Strict resource requests validate their browser origin and any CORS
+      // preflight in nmgrApi. Other routes keep the same-origin boundary here.
+      effective = env.MARKETPLACE_V3_DEMO === "false" && new URL(request.url).pathname.startsWith("/api/nmgr/v1/")
+        ? env : connectionEnvironment(request, env, saved ?? {}, true);
     assertRevision(request, effective);
     const transport = connectionTransport(effective, fetcher);
     try {
@@ -221,6 +247,7 @@ export async function connectionApi(
   const path = new URL(request.url).pathname;
   const testing = path === "/api/nmgr/connection/test";
   const evaluationOnly = path === "/api/nmgr/connection/evaluation";
+  const backup = path === connectionBackupPath;
   let target: ProbeTarget | undefined;
   let evaluationAction: EvaluationAction | undefined;
   const started = performance.now();
@@ -228,6 +255,22 @@ export async function connectionApi(
   try {
     const origin = connectionOrigin(request, env);
     if (testing && request.method !== "POST") throw new DeploymentError("runtime", "connection_method_invalid", "Use POST to test a connection.", [], 405);
+    if (backup) {
+      if (env.MARKETPLACE_V3_DEMO === "false")
+        throw new DeploymentError("runtime", "manual_configuration_disabled", "Connection backups are available for saved Demo settings.", [], 403);
+      if (!["GET", "POST"].includes(request.method))
+        throw new DeploymentError("runtime", "connection_method_invalid", "Use GET to export and POST to import a connection backup.", [], 405);
+      if (request.method === "POST" && request.headers.get("origin") !== origin)
+        throw new DeploymentError("origin", "origin_mismatch", "Import a connection backup from the Marketplace origin.", undefined, 403);
+      if (request.method === "GET") {
+        const settings = await store.read();
+        if (!settings || !Object.keys(settings).length)
+          throw new DeploymentError("runtime", "connection_backup_empty", "Save manual connection settings before exporting a backup.", [], 404);
+        const effective = connectionEnvironment(request, env, settings, true);
+        assertRevision(request, effective);
+        return json(await store.exportBackup({ settings, nemoUrl: effective.GUARD_API_URL, f5Url: effective.F5_API_URL }));
+      }
+    }
     if (request.method === "GET" && !evaluationOnly) {
       const saved = await savedFor(env, store);
       const effective = connectionEnvironment(request, env, saved ?? {}, true);
@@ -237,7 +280,10 @@ export async function connectionApi(
         if (key !== "nemoToken" || effective.MARKETPLACE_NEMO_AUTH_MODE !== "password")
           result.configured[key] = values[key]!.effective.status === "loaded";
       result.configured.evaluationUrl = values.evaluationUrl!.effective.status === "loaded";
-      return json({ ...result, values, ...(result.manualConfiguration ? { evaluationLogs: evaluationLogs.get(store) ?? [] } : {}) });
+      return json({
+        ...result, values,
+        ...(result.manualConfiguration ? { evaluationPolicy: evaluationPolicyStatus(env), evaluationLogs: evaluationLogs.get(store) ?? [] } : {}),
+      });
     }
     if (!["POST", "DELETE"].includes(request.method))
       throw new DeploymentError(
@@ -256,6 +302,7 @@ export async function connectionApi(
         403,
       );
     let input: ConnectionSettings = {};
+    let snapshot: Awaited<ReturnType<ConnectionStore["importBackup"]>> | undefined;
     if (request.method === "POST") {
       if (!request.headers.get("content-type")?.startsWith("application/json"))
         throw new DeploymentError(
@@ -266,7 +313,7 @@ export async function connectionApi(
           415,
         );
       const raw = await request.text();
-      if (Buffer.byteLength(raw) > 100_000)
+      if (Buffer.byteLength(raw) > (backup ? 165_000 : 100_000))
         throw new DeploymentError(
           "runtime",
           "connection_fields_invalid",
@@ -276,7 +323,10 @@ export async function connectionApi(
         );
       try {
         const payload = JSON.parse(raw);
-        if (testing) {
+        if (backup) {
+          snapshot = await store.importBackup(payload);
+          input = snapshot.settings;
+        } else if (testing) {
           const parsed = connectionTestSchema.parse(payload);
           target = parsed.target;
           input = Object.fromEntries(Object.entries(parsed.settings ?? {}).filter(([key]) => probeFields[target!].includes(key)));
@@ -284,7 +334,11 @@ export async function connectionApi(
           input = connectionSettingsSchema.parse(payload);
           if (evaluationOnly && (!input.evaluationUrl || Object.keys(input).length !== 1)) throw new Error("Expected only the Evaluate URL");
         }
-      } catch {
+      } catch (error) {
+        if (backup) {
+          if (error instanceof DeploymentError) throw error;
+          throw new DeploymentError("runtime", "connection_backup_invalid", "Choose a valid Marketplace connection backup JSON file.", [], 422);
+        }
         throw new DeploymentError(
           "runtime",
           "connection_fields_invalid",
@@ -313,6 +367,7 @@ export async function connectionApi(
       }
       const previous = connectionEnvironment(request, env, saved ?? {}, true);
       assertRevision(request, previous);
+      const credentialSource = backup ? env : previous;
       if (evaluationOnly) {
         const candidate = { ...saved };
         if (request.method === "DELETE") delete candidate.evaluationUrl;
@@ -343,7 +398,7 @@ export async function connectionApi(
         input.nemoUrl &&
         target !== "nemoUrl" &&
         input.nemoUrl.replace(/\/+$/, "") !==
-          previous.GUARD_API_URL?.replace(/\/+$/, "") &&
+          credentialSource.GUARD_API_URL?.replace(/\/+$/, "") &&
         !input.nemoToken
       )
         throw new DeploymentError(
@@ -353,7 +408,7 @@ export async function connectionApi(
           ["GUARD_API_URL", "GUARD_API_TOKEN"],
           422,
         );
-      const candidate = {
+      const candidate = backup ? input : {
         ...saved,
         ...Object.fromEntries(
           Object.entries(input).filter(([, value]) => !!value),
@@ -364,7 +419,7 @@ export async function connectionApi(
         input.f5Url &&
         target !== "f5Url" &&
         input.f5Url.replace(/\/+$/, "") !==
-          previous.F5_API_URL?.replace(/\/+$/, "") &&
+          credentialSource.F5_API_URL?.replace(/\/+$/, "") &&
         !input.f5Token
       )
         throw new DeploymentError(
@@ -375,6 +430,11 @@ export async function connectionApi(
           422,
         );
       const effective = connectionEnvironment(request, env, candidate, target !== "evaluationUrl" && !input.evaluationUrl);
+      if (snapshot && (
+        input.nemoToken && effective.GUARD_API_URL !== snapshot.nemoUrl ||
+        input.f5Token && effective.F5_API_URL && effective.F5_API_URL !== snapshot.f5Url
+      )) throw new DeploymentError("runtime", "connection_backup_destination_changed",
+        "A deployment URL changed since this backup was exported. Re-enter the affected connection credentials before using the new URL.", [], 422);
       const transport = connectionTransport(effective, fetcher);
       if (target) {
         try {
