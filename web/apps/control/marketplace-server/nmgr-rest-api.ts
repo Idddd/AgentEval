@@ -46,6 +46,7 @@ export async function nmgrRestApi(request: Request, invoke: Legacy): Promise<Res
     }
     const query = querySchema.parse(params) as any;
     if (query.from && query.to && Date.parse(query.from) > Date.parse(query.to)) fail(422, "from must be earlier than or equal to to.");
+    if (route.mode === "identity") return invoke(request);
     const body = route.body ? route.body.parse(await readBody(request)) as any : undefined;
     const call = async (path: string, command?: unknown, discover = false) => {
       const headers = new Headers(request.headers);

@@ -3,6 +3,8 @@ import { caseSchema, draftSchema } from "./nmgr-contract";
 import { unifiedConfigSchema } from "../src/features/business-demo/evaluation";
 
 export const restBase = "/api/nmgr/v1";
+const currentActorRoute = "/me";
+export const currentActorPath = restBase + currentActorRoute;
 const page = z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().max(1_000_000)).default(1);
 const pageSize = z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().max(100)).default(20);
 const paging = { page, pageSize, q: z.string().trim().max(200).optional(), order: z.enum(["asc", "desc"]).default("desc") };
@@ -36,6 +38,7 @@ for (const [collection, kind] of [["guardrails", "Guardrail"], ["profiles", "Pro
   add({ method: "POST", path: `${path}/{id}/deployments`, operationId: `deploy${kind}`, mode: "command", action: "deploy", body: actionBody, response: "ResourceMutation", summary: `Queue publication of the approved ${kind}` });
 }
 restRoutes.push(
+  { method: "GET", path: currentActorRoute, operationId: "getCurrentMarketplaceActor", tag: "Identity", mode: "identity", response: "CurrentMarketplaceActor", summary: "Read the current Marketplace identity, workbench role and control unit" },
   { method: "POST", path: "/guardrails/{id}/implementation", operationId: "implementGuardrail", tag: "Guardrails", mode: "command", kind: "Guardrail", action: "implement", body: implementBody, response: "ResourceMutation", summary: "Tech selects the provider and saves implementation" },
   { method: "POST", path: "/guardrails/{id}/evaluations", operationId: "evaluateGuardrail", tag: "Evaluations", mode: "command", kind: "Guardrail", action: "evaluate", body: evaluateBody, response: "ResourceMutation", summary: "Queue a real provider evaluation" },
   { method: "GET", path: "/evaluation-candidates", operationId: "listEvaluationCandidates", tag: "Evaluations", mode: "candidates", kind: "Guardrail", query: entityQuery, response: "ResourceList", summary: "List implemented Guardrails ready for evaluation" },

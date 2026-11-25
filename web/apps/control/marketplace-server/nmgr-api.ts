@@ -10,6 +10,7 @@ import { openDatabase } from "./storage/database";
 import { NmgrService, type NmgrActor, type NmgrRemote } from "./nmgr";
 import { createF5Client, f5Configuration } from "./f5-client";
 import { nmgrRestApi } from "./nmgr-rest-api";
+import { currentActorPath, restBase } from "./nmgr-rest-contract";
 import { EvaluationError, guardrailEvaluation } from "./guardrail-evaluation";
 import { browserOriginsDocument, browserOriginsPath, browserOriginsSchema, browserOriginsStatus, crossOriginResource, deploymentBrowserOrigins } from "./nmgr-browser-origins";
 
@@ -56,24 +57,33 @@ export async function closeNmgrDatabase(env: NodeJS.ProcessEnv) {
 }
 export async function nmgrApi(request: Request, env = process.env, fetcher: typeof fetch = fetch): Promise<Response> {
   const url = new URL(request.url);
+  if (!url.pathname.startsWith(`${restBase}/`)) return nmgrWorkspaceApi(request, env, fetcher);
+  const dispatch = (accepted: Request) => nmgrRestApi(accepted, legacy => nmgrWorkspaceApi(legacy, env, fetcher));
+  const origin = request.headers.get("origin");
+  const crossSite = request.headers.get("sec-fetch-site") === "cross-site";
+  if (env.MARKETPLACE_V3_DEMO !== "false" || env.MARKETPLACE_V2_LOCAL_ACCESS === "true"
+      || !(request.method === "OPTIONS" || crossSite || origin !== null && origin !== env.MARKETPLACE_PUBLIC_ORIGIN))
+    return dispatch(request);
+  try {
+    const config = nmgrConfiguration(env);
+    return await crossOriginResource(request, async () => {
+      const deployment = deploymentBrowserOrigins(env);
+      const saved = await (await store(env)).readDocument(browserOriginsDocument(config.workspace));
+      return browserOriginsStatus(deployment, saved).origins;
+    }, dispatch);
+  } catch (error) {
+    return diagnosticResponse(error, "runtime", "nmgr.workspace", "Cannot connect to the configured dependency. Check the listed settings, network and TLS CA.");
+  }
+}
+
+async function nmgrWorkspaceApi(request: Request, env: NodeJS.ProcessEnv, fetcher: typeof fetch): Promise<Response> {
+  const url = new URL(request.url);
   let component: Component = "runtime";
   try {
     const origin = request.headers.get("origin");
-    const crossSite = request.headers.get("sec-fetch-site") === "cross-site";
-    if (url.pathname.startsWith("/api/nmgr/v1/")) {
-      const dispatch = (accepted: Request) => nmgrRestApi(accepted, legacy => nmgrApi(legacy, env, fetcher));
-      if (env.MARKETPLACE_V3_DEMO === "false" && env.MARKETPLACE_V2_LOCAL_ACCESS !== "true"
-          && (request.method === "OPTIONS" || crossSite || origin !== null && origin !== env.MARKETPLACE_PUBLIC_ORIGIN)) {
-        const config = nmgrConfiguration(env);
-        return await crossOriginResource(request, async () => {
-          const deployment = deploymentBrowserOrigins(env);
-          const saved = await (await store(env)).readDocument(browserOriginsDocument(config.workspace));
-          return browserOriginsStatus(deployment, saved).origins;
-        }, dispatch);
-      }
-      return dispatch(request);
-    }
     const config = nmgrConfiguration(env);
+    const accessMode = config.demo ? "demo" : config.localAccess ? "local" : "authenticated";
+    const currentActor = url.pathname === currentActorPath;
     const origins = url.pathname === browserOriginsPath;
     const saveOrigins = origins && request.method === "PUT";
     const restoreOrigins = origins && request.method === "DELETE";
@@ -81,7 +91,7 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
     const resource = url.searchParams.get("resource");
     const evaluation = url.pathname === "/api/nmgr/guardrail-evaluation";
     if (origins && (config.demo || config.localAccess)) throw new StoreError(403, "Only authenticated Tech can configure browser origins in strict V3.");
-    if (!evaluation && (url.search && (url.pathname !== "/api/nmgr/workspace" || [...url.searchParams].length !== 1 || !resource || !/^[a-z][a-z0-9-]{2,63}$/.test(resource)) || !["/api/nmgr/workspace", "/api/nmgr/commands", "/api/nmgr/ready", browserOriginsPath].includes(url.pathname))) throw new StoreError(404, "Route not found.");
+    if (!evaluation && (url.search && (url.pathname !== "/api/nmgr/workspace" || [...url.searchParams].length !== 1 || !resource || !/^[a-z][a-z0-9-]{2,63}$/.test(resource)) || !["/api/nmgr/workspace", "/api/nmgr/commands", "/api/nmgr/ready", browserOriginsPath, currentActorPath].includes(url.pathname))) throw new StoreError(404, "Route not found.");
     if (url.pathname === "/api/nmgr/ready" && request.method === "GET") {
       component = "database";
       await (await store(env)).readDocument(`nmgr:${config.workspace}`);
@@ -138,6 +148,7 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
       }
       actor = { id: identity.userId, ...mapping };
     }
+    if (currentActor) return reply({ actor, accessMode });
     component = "database";
     if (origins) {
       if (actor.role !== "IT Admin") throw new StoreError(403, "Only Tech can configure browser origins.");
@@ -187,14 +198,14 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
       if (!resource && request.headers.get("x-marketplace-import") === "f5") {
         component = "f5";
         if (config.f5Error) throw new DeploymentError("f5", config.f5Error.code, config.f5Error.message);
-        return reply({ ...await service.importF5Resources(actor), accessMode: config.demo ? "demo" : config.localAccess ? "local" : "authenticated" });
+        return reply({ ...await service.importF5Resources(actor), accessMode });
       }
       if (!resource && request.headers.get("x-marketplace-import") === "true") {
         component = "nemo";
-        try { return reply({ ...await service.importResources(actor, remote), accessMode: config.demo ? "demo" : config.localAccess ? "local" : "authenticated" }); }
+        try { return reply({ ...await service.importResources(actor, remote), accessMode }); }
         catch (error) { if (error instanceof z.ZodError) throw new DeploymentError("nemo", "nemo_catalog_invalid", "NeMo catalog or resource definitions are incompatible. Existing workspace data was retained."); throw error; }
       }
-      return reply(resource ? await service.resourceStatus(actor, resource, remote) : { ...await service.snapshot(actor), accessMode: config.demo ? "demo" : config.localAccess ? "local" : "authenticated" });
+      return reply(resource ? await service.resourceStatus(actor, resource, remote) : { ...await service.snapshot(actor), accessMode });
     }
     if (!request.headers.get("content-type")?.startsWith("application/json")) throw new StoreError(415, "JSON is required.");
     const raw = await request.text();
@@ -204,7 +215,7 @@ export async function nmgrApi(request: Request, env = process.env, fetcher: type
   } catch (error) {
     if (error instanceof z.ZodError) return diagnosticResponse(new StoreError(422, "Invalid command fields. Check the record, configuration and test cases."), "workspace", "nmgr.request", "Invalid command.");
     if (error instanceof StoreError && !(error instanceof DeploymentError) && error.status < 500) component = "workspace";
-    const endpoint = new URL(request.url).pathname.endsWith("/ready") ? "ready" : new URL(request.url).pathname.endsWith("/commands") ? "commands" : "workspace";
+    const endpoint = url.pathname === currentActorPath ? "me" : url.pathname.endsWith("/ready") ? "ready" : url.pathname.endsWith("/commands") ? "commands" : "workspace";
     return diagnosticResponse(error, component, `nmgr.${endpoint}`, component === "database" ? "Cannot connect to Marketplace database. Check database URL/password, network, TLS CA and schema permissions." : "Cannot connect to the configured dependency. Check the listed settings, network and TLS CA.");
   }
 }

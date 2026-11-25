@@ -21,6 +21,36 @@ async function request(path: string, method = "GET", body?: unknown, actor = "us
 }
 beforeEach(() => { storage.clear(); fetcher.mockClear(); storage.set(docKey(), { revision: 4, state: { entities: [entity("guard-one"), entity("guard-two"), entity("profile-one", "Profile"), entity("hidden-record", "Profile", "RMG")], audit: [] }, jobs: {}, bindings: {}, requests: {}, authors: { "guard-one": "user" }, requestors: {} }); });
 
+it("returns the authenticated actor and never treats a role header as identity", async () => {
+  const approver = await request("/me", "GET", undefined, "approver");
+  expect(approver.status).toBe(200);
+  expect(approver.headers.get("Cache-Control")).toBe("no-store");
+  expect(await approver.json()).toEqual({
+    actor: { id: "approver", name: "Approver", role: "User Admin", unit: "ISS" },
+    accessMode: "authenticated",
+  });
+  const user = await request("/me", "GET", undefined, "user", { "X-Marketplace-Role": "User Admin" });
+  expect((await user.json()).actor.role).toBe("User");
+  expect((await request("/me", "GET", undefined, "unmapped")).status).toBe(403);
+  expect((await request("/me?role=approver")).status).toBe(422);
+});
+
+it("returns current identity to an allowed frontend with a user Bearer token", async () => {
+  const origin = "https://portal.example.invalid";
+  const strict = { ...env, MARKETPLACE_V3_DEMO: "false", MARKETPLACE_ALLOWED_BROWSER_ORIGINS: JSON.stringify([origin]) };
+  const url = "https://marketplace.internal/api/nmgr/v1/me";
+  const preflight = await nmgrApi(new Request(url, { method: "OPTIONS", headers: {
+    Origin: origin, "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "authorization",
+  } }), strict, fetcher);
+  expect(preflight.status).toBe(204);
+  expect(preflight.headers.get("Access-Control-Allow-Origin")).toBe(origin);
+  expect((await nmgrApi(new Request(url, { headers: { Origin: origin } }), strict, fetcher)).status).toBe(401);
+  const response = await nmgrApi(new Request(url, { headers: { Origin: origin, Authorization: "Bearer approver" } }), strict, fetcher);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Access-Control-Allow-Origin")).toBe(origin);
+  expect((await response.json()).actor.role).toBe("User Admin");
+});
+
 it("allows all V3 Demo roles to start managed evaluations behind an intranet proxy, without changing strict authorization", async () => {
   const doc = storage.get(docKey())!;
   doc.state.entities[0].status = "TEST READY";

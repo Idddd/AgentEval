@@ -35,6 +35,8 @@ V3 Demo 的 **Connection backup** 可导出已保存的手动连接设置，再�
 
 ## 按页面接入
 
+前端初始化时调用 `GET /api/nmgr/v1/me`（Swagger 操作 `getCurrentMarketplaceActor`）。响应包含 `actor.id`、`actor.name`、`actor.role`、`actor.unit` 和 `accessMode`。严格 V3 由 NeMo 验证用户 Token，再通过服务端账号映射确定角色和控制单元。前端用 `actor.role === "User Admin"` 显示 Control Unit Approver 工作台。待审批记录由 `GET /api/nmgr/v1/approval-requests?kind=Guardrail` 或 `?kind=Profile` 查询。审批接口会继续校验角色、控制单元、流程状态及审批人与申请人是否独立。
+
 F5 真实目录导入新增 `POST /api/nmgr/v1/integrations/f5/imports`（请求体 `{}`），与 NeMo 导入独立；随后用 `GET /guardrails?provider=F5`、`GET /profiles?provider=F5` 获取列表。版本及精确绑定见 `item.imported.f5`。详情与故障隔离说明见 [F5 真实资源导入](f5-catalog-import.md)。
 
 下表路径省略 `/api/nmgr/v1`。所有 ID 均为 Marketplace 本地 ID，只有 `/evaluations/{id}` 使用评测 run ID。

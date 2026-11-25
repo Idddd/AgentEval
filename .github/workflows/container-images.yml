@@ -38,14 +38,16 @@ jobs:
           set -euo pipefail
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tali-ui-demo"
           image_tag="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
+          embedded_image_tag="$image_tag"
           storage=browser
-          chart_version="0.2.31-dev.${GITHUB_RUN_NUMBER}"
+          chart_version="0.2.32-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${image_tag}")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tags+=("${image}:pr-${{ github.event.pull_request.number }}")
           elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             [[ "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
             chart_version="${GITHUB_REF_NAME#v}"
+            embedded_image_tag="$chart_version"
             tags+=("${image}:${chart_version}" "${image}:${GITHUB_REF_NAME}")
           else
             branch="${GITHUB_REF_NAME,,}"
@@ -53,7 +55,7 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.2.31-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.32-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi
@@ -61,6 +63,7 @@ jobs:
             echo "name=${image}"
             echo "storage=${storage}"
             echo "image_tag=${image_tag}"
+            echo "embedded_image_tag=$embedded_image_tag"
             echo "chart_version=${chart_version}"
             echo "chart_registry=oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"
             echo 'tags<<EOF'
@@ -80,7 +83,7 @@ jobs:
           build-args: |
             TALI_UI_DEMO_CHART_VERSION=${{ steps.image.outputs.chart_version }}
             TALI_UI_DEMO_IMAGE_REPOSITORY=${{ steps.image.outputs.name }}
-            TALI_UI_DEMO_IMAGE_TAG=${{ steps.image.outputs.image_tag }}
+            TALI_UI_DEMO_IMAGE_TAG=${{ steps.image.outputs.embedded_image_tag }}
             TALI_UI_DEMO_STORAGE=${{ steps.image.outputs.storage }}
           labels: |
             org.opencontainers.image.title=AI Marketplace
@@ -96,6 +99,7 @@ jobs:
         env:
           IMAGE: ${{ steps.image.outputs.name }}:${{ steps.image.outputs.image_tag }}
           CHART_VERSION: ${{ steps.image.outputs.chart_version }}
+          RELEASE_IMAGE: ${{ steps.image.outputs.name }}:${{ steps.image.outputs.embedded_image_tag }}
         run: |
           set -euo pipefail
           if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then docker pull "$IMAGE"; fi
@@ -178,6 +182,11 @@ jobs:
           container=""
           helm lint "$chart"
           helm template tali-ui-demo "$chart" > artifacts/mock.yaml
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            helm template tali-ui-demo "$chart" -f deploy/values.uat.example.yaml > artifacts/uat-example.yaml
+            grep -Fq "image: \"$RELEASE_IMAGE\"" artifacts/mock.yaml
+            grep -Fq "image: \"$RELEASE_IMAGE\"" artifacts/uat-example.yaml
+          fi
           grep -A1 'name: MARKETPLACE_NEMO_TLS' artifacts/mock.yaml | grep 'value: "skip"'
           helm template tali-ui-demo "$chart" --set marketplace.nemoTls=verify > artifacts/nemo-tls-verify.yaml
           grep -A1 'name: MARKETPLACE_NEMO_TLS' artifacts/nemo-tls-verify.yaml | grep 'value: "verify"'
@@ -263,7 +272,8 @@ jobs:
           bundle="marketplace-v3-${version//./-}-offline"
           mkdir -p release "offline/${bundle}"
           docker pull "$image"
-          docker tag "$image" "$image_version"
+          docker pull --platform linux/amd64 "$image_version"
+          test "$(docker image inspect "$image" --format '{{.Id}}')" = "$(docker image inspect "$image_version" --format '{{.Id}}')"
           docker image inspect "$image" --format '{{json .RepoDigests}}' > release/image-digests.json
           cp "artifacts/tali-ui-demo-${version}.tgz" release/
           cp artifacts/project-source.zip "release/AgentEval-v${version}-source.zip"
@@ -274,8 +284,8 @@ jobs:
           cp docs/marketplace-guardrail-evaluation.md release/
           cp docs/integration-api.md docs/resource-api.md release/
           cp deploy/v2/UAT-token-config.md release/UAT-Helm-upgrade.md
-          cp -R deploy/helm/tali-ui-demo "offline/${bundle}/helm"
-          sed -i "s|tag: dev|tag: ${version}|" "offline/${bundle}/helm/values.yaml"
+          mkdir -p "offline/${bundle}/helm"
+          tar -xzf "release/tali-ui-demo-${version}.tgz" -C "offline/${bundle}/helm" --strip-components=1
           cp deploy/values.uat.example.yaml "offline/${bundle}/values.uat.yaml"
           cp deploy/values.evaluation.example.yaml "offline/${bundle}/values.evaluation.yaml"
           cp deploy/values.evaluation.example.yaml release/values.evaluation.example.yaml
