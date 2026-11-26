@@ -167,7 +167,8 @@ async function nmgrWorkspaceApi(request: Request, env: NodeJS.ProcessEnv, fetche
       await database.writeDocument(key, candidate);
       return reply(browserOriginsStatus(deployment, candidate));
     }
-    const service = new NmgrService(await store(env), config.workspace, config.f5 ? createF5Client(config.f5, fetcher) : undefined, config.f5Error ? { F5: config.f5Error } : undefined);
+    const database = await store(env);
+    const service = new NmgrService(database, config.workspace, config.f5 ? createF5Client(config.f5, fetcher) : undefined, config.f5Error ? { F5: config.f5Error } : undefined);
     if (evaluation) {
       if (!config.demo && actor.role !== "IT Admin") throw new StoreError(403, "Only Tech may run or view independent Guardrail evaluations in strict V3.");
       const snapshot = await service.snapshot(actor);
@@ -178,7 +179,7 @@ async function nmgrWorkspaceApi(request: Request, env: NodeJS.ProcessEnv, fetche
           throw new EvaluationError(404, "evaluation_guardrail_missing", "The implemented guardrail revision was not found.");
         if (write && job && (job.status === "pending" || job.status === "uncertain" || job.inflight || job.purpose === "draft-sync" && job.status !== "done"))
           throw new EvaluationError(409, "evaluation_guardrail_pending", "Wait for the Guardrail revision to finish synchronizing before starting an evaluation.");
-        return { provider: item.provider, workspace: config.workspace };
+        return { provider: item.provider, workspace: config.workspace, database };
       }, fetcher);
     }
     const remote: NmgrRemote = { async request(path, method = "GET", body) {

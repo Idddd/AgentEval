@@ -16,6 +16,36 @@ function request(query = "", method = "GET", role = "IT Admin", site = origin) {
 }
 
 describe("independent Guardrail evaluation", () => {
+  it("returns a labeled mock run and report when V3 has no Evaluate URL", async () => {
+    const docs = new Map<string, unknown>();
+    const database = {
+      readDocument: async <T>(id: string) => docs.get(id) as T | undefined,
+      writeDocument: async (id: string, value: unknown) => { docs.set(id, value); },
+      exclusive: async <T>(fn: () => Promise<T>) => fn(),
+    };
+    const upstream = vi.fn();
+    const invoke = async (q = "", method = "GET", workspace = "team") => {
+      const initial = request(q, method);
+      const req = new Request(initial.url.replace("/api/guardrail-", "/api/nmgr/guardrail-"), { method, headers: initial.headers });
+      const res = await guardrailEvaluation(req, { MARKETPLACE_V3_DEMO: "true" }, () => ({ workspace, provider: "NeMo", database }), upstream);
+      await assertOpenApiResponse(req, res);
+      return res.json();
+    };
+    const setup = await invoke();
+    expect(setup.source).toBe("mock");
+    const start = () => invoke("&revision=" + setup.setup.revision, "POST");
+    const { run } = await start();
+    expect((await start()).run).toEqual(run);
+    expect((await invoke()).history).toHaveLength(1);
+    expect((await invoke("&run=" + run.id)).run.status).toBe("COMPLETED");
+    expect((await invoke("&run=" + run.id + "&report=true"))).toMatchObject({ source: "mock", report: { total: 2, matched: 2 } });
+    expect((await invoke("&run=" + run.id, "GET", "other")).error.code).toBe("evaluation_not_found");
+    expect(upstream).not.toHaveBeenCalled();
+    const failing = vi.fn().mockRejectedValue(new Error("offline"));
+    const real = await guardrailEvaluation(request(), { ...env, MARKETPLACE_V3_DEMO: "true" }, () => ({ workspace: "team", database }), failing);
+    expect((await real.json()).error.code).toBe("evaluation_unreachable");
+  });
+
   it("uses only the configured upstream and pinned revision with stable idempotency", async () => {
     const upstream = vi.fn(async (url: string, init?: RequestInit) => init?.method === "POST" ? Response.json(run) : Response.json(cfg));
     for (let n = 0; n < 2; n++) expect((await demoGuardrailEvaluation(request("&revision=7%3A1", "POST"), env, upstream as typeof fetch)).status).toBe(202);

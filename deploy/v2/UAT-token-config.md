@@ -1,6 +1,6 @@
-# UAT 升级到 v0.2.33
+# UAT 升级到 v0.2.34
 
-镜像 `ghcr.io/idddd/tali-ui-demo:0.2.33`，Chart `oci://ghcr.io/idddd/charts/tali-ui-demo`，版本 `0.2.33`。默认 V3 演示只需 NeMo URL、业务 Token、完整 DB URL，保留三角色切换，无需 SSO 或账号映射。Mock 继续独立运行。独立评测是可选连接，见[配置示例](../values.evaluation.example.yaml)。
+镜像 `ghcr.io/idddd/tali-ui-demo:0.2.34`，Chart `oci://ghcr.io/idddd/charts/tali-ui-demo`，版本 `0.2.34`。默认 V3 演示只需 NeMo URL、业务 Token、完整 DB URL，保留三角色切换，无需 SSO 或账号映射。Mock 继续独立运行。独立评测是可选连接，见[配置示例](../values.evaluation.example.yaml)。
 
 ## 现有 values.yaml 最小改动
 
@@ -8,7 +8,7 @@
 
 ```yaml
 image:
-  tag: "0.2.33"
+  tag: "0.2.34"
 ```
 
 本版 Chart 默认使用正式版镜像标签，示例 values 继承 Chart 的镜像仓库。使用内网镜像仓库时，先上传同版本镜像，再在实际部署 values 中填写 `image.repository`，并按仓库要求配置 `imagePullSecrets`。
@@ -26,11 +26,11 @@ image:
 
 如果 Istio/Ingress 将请求主机改写成内部 Service 名，V3 Demo 可识别浏览器标记的同源请求。需要显式固定来源时，在部署 values 的 `marketplace.publicOrigin` 填浏览器实际访问的 Marketplace origin，省略路径和尾斜杠。页面与 `/api` 使用同一个对外地址。
 
-默认 V3 仅对配置的 NeMo API 跳过证书校验，不影响 Evaluate、F5 和数据库。需要开启 NeMo 验证时配置 `marketplace.nemoTls: verify`，或在 V3 配置页选择 Verify certificate；默认跳过无需新增配置。CA、DB TLS、F5 可继续沿用已有部署值，也可以在同页修复。不要因升级而更改现有数据库 TLS 策略。
+默认 V3 演示模式对配置的 NeMo、Evaluate 和 F5 API 跳过证书校验。各服务可在 V3 配置页选择 Verify certificate，Helm 对应选项为 `marketplace.nemoTls`、`marketplace.evaluationTls` 和 `marketplace.f5Tls`。CA、DB TLS、F5 可继续沿用已有部署值，也可以在同页修复。不要因升级而更改现有数据库 TLS 策略。
 
 正式 UI 通过同域网关调用 `/api/nmgr/*`。保持 `/api` 路径及子路径原样转发；Swagger 为 `/api/docs`，其本地 JS/CSS 使用 `/api/docs/*`，契约为 `/api/openapi.json`，列表为 `/api/endpoints`。同域调用无需配置 CORS。使用独立前端时，在严格模式的 V3 高级配置中填写前端 origin，再使用用户 Bearer Token 调用 `/api/nmgr/v1/*`。
 
-从之前版本升级，原有 NeMo 流程无新增必填连接项；镜像和 Chart 同步到 0.2.33。使用自维护模板且需要通过 values 控制 NeMo TLS 时，增加以下可选映射：
+从之前版本升级，原有 NeMo 流程无新增必填连接项；镜像和 Chart 同步到 0.2.34。使用自维护模板且需要通过 values 控制 NeMo TLS 时，增加以下可选映射：
 
 ```yaml
 - name: MARKETPLACE_NEMO_TLS

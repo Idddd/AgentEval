@@ -19,15 +19,15 @@ type Field =
   | "f5Token"
   | "f5AdminIds"
   | "evaluationUrl";
-type Option = "databaseTls" | "caMode" | "f5Mode" | "nemoTls";
+type Option = "databaseTls" | "caMode" | "f5Mode" | "nemoTls" | "f5Tls" | "evaluationTls";
 type Probe = "nemoUrl" | "nemoToken" | "databaseUrl" | "f5Url" | "f5Token" | "evaluationUrl";
 const probeFields: Record<Probe, Array<Field | Option>> = {
   nemoUrl: ["nemoUrl", "nemoTls", "caMode", "caPem"],
   nemoToken: ["nemoUrl", "nemoToken", "nemoTls", "caMode", "caPem"],
   databaseUrl: ["databaseUrl", "databaseTls", "caMode", "caPem"],
-  f5Url: ["f5Url", "f5Mode", "caMode", "caPem"],
-  f5Token: ["f5Url", "f5Token", "f5Mode", "caMode", "caPem"],
-  evaluationUrl: ["evaluationUrl", "caMode", "caPem"],
+  f5Url: ["f5Url", "f5Tls", "f5Mode", "caMode", "caPem"],
+  f5Token: ["f5Url", "f5Token", "f5Tls", "f5Mode", "caMode", "caPem"],
+  evaluationUrl: ["evaluationUrl", "evaluationTls", "caMode", "caPem"],
 };
 type EvaluationLog = {
   time: string; action: "test" | "save" | "restore" | "start"; status: number; durationMs: number; requestId: string; code?: string;
@@ -109,6 +109,8 @@ const emptyValues: Record<Field, string> = {
 };
 const emptyOptions: Record<Option, string> = {
   nemoTls: "",
+  evaluationTls: "",
+  f5Tls: "",
   databaseTls: "",
   caMode: "",
   f5Mode: "",
@@ -238,9 +240,10 @@ export function ConnectionSetup({
       await runtimeRequest<Status>("/api/nmgr/connection/evaluation", {
         method: restore ? "DELETE" : "POST",
         headers: { "Content-Type": "application/json", ...(status?.connectionRevision ? { "X-Marketplace-Connection": status.connectionRevision } : {}) },
-        ...(!restore ? { body: JSON.stringify({ evaluationUrl: values.evaluationUrl.trim() }) } : {}),
+        ...(!restore ? { body: JSON.stringify({ evaluationUrl: values.evaluationUrl.trim(), ...(options.evaluationTls && { evaluationTls: options.evaluationTls }) }) } : {}),
       });
       setValues(current => ({ ...current, evaluationUrl: "" }));
+      setOptions(current => ({ ...current, evaluationTls: "" }));
       setResults(current => ({ ...current, evaluationUrl: { ok: true, message: restore ? (status?.evaluationPolicy?.manualSetup ? "Saved Evaluate URL cleared." : "Saved fallback cleared. See the deployment URL below.") : "Evaluate URL verified and saved. It is now active for this workspace." } }));
     } catch (error) {
       setResults(current => ({ ...current, evaluationUrl: { ok: false, message: error instanceof Error ? error.message : "Evaluate settings could not be updated." } }));
@@ -341,6 +344,10 @@ export function ConnectionSetup({
       </select>
     </label>
   );
+  const tlsChoices: Array<[string, string]> = [
+    ["skip", "Skip verification (demo default)"],
+    ["verify", "Verify certificate"],
+  ];
   const caMode = options.caMode || status?.advanced?.caMode;
   const f5Mode = options.f5Mode || status?.advanced?.f5Mode;
   return (
@@ -375,10 +382,7 @@ export function ConnectionSetup({
           <fieldset className="nm-connection-group">
             <legend>NeMo connection</legend>
             {field("nemoUrl")}
-            {choice("nemoTls", "NeMo certificate verification", [
-              ["skip", "Skip verification (demo default)"],
-              ["verify", "Verify certificate"],
-            ])}
+            {choice("nemoTls", "NeMo certificate verification", tlsChoices)}
             {field("nemoToken")}
           </fieldset>
           <fieldset className="nm-connection-group">
@@ -389,6 +393,7 @@ export function ConnectionSetup({
             ])}
             {f5Mode === "enabled" ? <>
               {field("f5Url")}
+              {choice("f5Tls", "F5 certificate verification", tlsChoices)}
               {field("f5Token")}
               {field("f5AdminIds")}
             </> : <>
@@ -400,6 +405,7 @@ export function ConnectionSetup({
           <fieldset className="nm-connection-group">
             <legend>Independent Evaluate</legend>
             {field("evaluationUrl")}
+            {choice("evaluationTls", "Evaluate certificate verification", tlsChoices)}
             {status?.manualConfiguration !== false && <>
               {status?.evaluationPolicy && !status.evaluationPolicy.manualSetup && <p className="nm-muted">
                 Deployment Evaluate URL {status.evaluationPolicy.deploymentUrl} · {status.evaluationPolicy.approvedAlternates} approved fallback addresses

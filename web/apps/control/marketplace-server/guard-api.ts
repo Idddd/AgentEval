@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { DeploymentError, diagnosticResponse } from "./diagnostics";
-import { demoEvaluationRefs, evaluationEnabled } from "./guardrail-evaluation";
+import { demoEvaluationRefs, evaluationEnabled, useMockEvaluation } from "./guardrail-evaluation";
 import { configuredMarketplaceOrigin } from "./marketplace-origin";
 
 export type GuardMode = "mock" | "live" | "auto";
@@ -55,7 +55,7 @@ export function runtimeResponse(env = process.env, liveRequired = false) {
         f5Mock: env.MARKETPLACE_F5_MOCK === "true",
         marketplaceDb: !!(env.MARKETPLACE_DATABASE_URL || env.MARKETPLACE_DB_FILE),
         autoConnect: !!config.demoToken,
-        ...(liveRequired ? { independentEvaluation: evaluationEnabled(env) } : { demoEvaluationRefs: demoEvaluationRefs(env) }),
+        ...(liveRequired ? { independentEvaluation: evaluationEnabled(env) || useMockEvaluation(env) } : { demoEvaluationRefs: demoEvaluationRefs(env) }),
       },
       { headers: { "Cache-Control": "no-store" } },
     );

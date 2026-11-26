@@ -315,10 +315,11 @@ it("switches between a deployment URL and an explicit Evaluate fallback without 
   const current = () => nmgrRequest(request("connection"), settings, fetcher, saved).then(response => response.json());
   const before = await current();
   expect(before.values.evaluationUrl).toMatchObject({ overridden: false, effective: { preview: "https://primary.internal/api/v1/evaluations" } });
-  const fallback = await nmgrRequest(modify("POST", before.connectionRevision, { evaluationUrl: "https://backup.internal" }), settings, fetcher, saved);
+  const fallback = await nmgrRequest(modify("POST", before.connectionRevision, { evaluationUrl: "https://backup.internal", evaluationTls: "verify" }), settings, fetcher, saved);
   expect(fallback.status).toBe(200);
-  expect(await saved.read()).toEqual({ ...otherSettings, evaluationUrl: "https://backup.internal" });
+  expect(await saved.read()).toEqual({ ...otherSettings, evaluationUrl: "https://backup.internal", evaluationTls: "verify" });
   const active = await current();
+  expect(active.advanced).toMatchObject({ evaluationTls: "verify", f5Tls: "skip" });
   expect(active.values.evaluationUrl).toMatchObject({ overridden: true, effective: { preview: "https://backup.internal/api/v1/evaluations" } });
   expect((await nmgrRequest(modify("DELETE", before.connectionRevision), settings, fetcher, saved)).status).toBe(409);
   expect((await nmgrRequest(modify("DELETE", active.connectionRevision), settings, fetcher, saved)).status).toBe(200);

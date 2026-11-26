@@ -51,6 +51,7 @@ export function IndependentEvaluation({ guardrail, version, demo = false, roleHe
     return value as T;
   }, [path, guardrail, version, demo, roleHeader, connectionRevision]);
 
+  const [mock, setMock] = useState(false);
   const [setup, setSetup] = useState<Setup | null>(null);
   const [history, setHistory] = useState<HistoryRun[]>([]);
   const [runId, selectRun] = useState("");
@@ -76,8 +77,9 @@ export function IndependentEvaluation({ guardrail, version, demo = false, roleHe
   useEffect(() => {
     const controller = new AbortController();
     setLoadError("");
-    void request<{ setup: Setup; history: HistoryRun[] }>(controller.signal).then(value => {
+    void request<{ source?: "mock"; setup: Setup; history: HistoryRun[] }>(controller.signal).then(value => {
       if (controller.signal.aborted) return;
+      setMock(value.source === "mock");
       setSetup(value.setup);
       setHistory(value.history);
       selectRun(previous => previous || value.history[0]?.id || "");
@@ -172,7 +174,8 @@ export function IndependentEvaluation({ guardrail, version, demo = false, roleHe
 
   return <section className="nm-independent" aria-label="Independent evaluation">
     <div className="nm-ie-heading">
-      <div><h3>Independent evaluation</h3><p>Run the published suite for revision {version}.</p></div>
+      <div><h3>Independent evaluation</h3><p>{mock ? "Evaluate URL is not configured. This run uses mock results." : `Run the published suite for revision ${version}.`}</p></div>
+      {mock && <span className="nm-ie-demo">Mock evaluation</span>}
       {demo && <span className="nm-ie-demo">Local demo endpoint</span>}
     </div>
     {loadError ? <div className="nm-ie-error" role="alert">{loadError} <Button variant="outline" size="sm" onClick={() => reloadSetup(i => i + 1)}>Retry connection</Button></div>

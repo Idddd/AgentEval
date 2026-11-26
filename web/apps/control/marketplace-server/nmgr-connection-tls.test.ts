@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import { connectionTransport } from "./nmgr-connection-tls";
 import { connectionEnvironment } from "./nmgr-connection-config";
 
-it("trusts a supplied CA for this operation while built-in trust still rejects the self-signed endpoint", async () => {
+it("uses per-provider demo defaults and strict or custom trust only within each configured API", async () => {
   const cert = readFileSync(
     new URL("./fixtures/connection-tls/localhost-test.crt", import.meta.url),
     "utf8",
@@ -35,12 +35,26 @@ it("trusts a supplied CA for this operation while built-in trust still rejects t
   const previous = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
   const demo = connectionTransport(connectionEnvironment(new Request("https://ui.test"), {
     GUARD_API_URL: `https://127.0.0.1:${port}/api/v1`,
+    MARKETPLACE_EVALUATION_URL: `https://127.0.0.1:${port}`,
     F5_API_URL: `https://127.0.0.1:${port}/api/v1/backend/v1`,
   }), fetch);
   try {
     const url = `https://127.0.0.1:${port}/api/v1/account/identity`;
     expect((await demo.fetcher(url)).status).toBe(200);
-    await expect(demo.fetcher(`https://127.0.0.1:${port}/api/v1/backend/v1/scanners`)).rejects.toThrow();
+    const evaluation = `https://127.0.0.1:${port}/api/v1/evaluations/targets`;
+    const scanners = `https://127.0.0.1:${port}/api/v1/backend/v1/scanners`;
+    expect((await demo.fetcher(evaluation)).status).toBe(200);
+    expect((await demo.fetcher(scanners)).status).toBe(200);
+    const verifying = connectionTransport(connectionEnvironment(new Request("https://ui.test"), {
+      MARKETPLACE_EVALUATION_URL: `https://127.0.0.1:${port}`,
+      F5_API_URL: `https://127.0.0.1:${port}/api/v1/backend/v1`,
+      GUARD_API_URL: `https://127.0.0.1:${port}/api/v1`,
+    }, { f5Tls: "verify", evaluationTls: "verify" }), fetch);
+    try {
+      await expect(verifying.fetcher(evaluation)).rejects.toThrow();
+      await expect(verifying.fetcher(scanners)).rejects.toThrow();
+      expect((await verifying.fetcher(url)).status).toBe(200);
+    } finally { await verifying.close(); }
     await expect(demo.fetcher(`https://127.0.0.1:${port}/backend/v1/scanners`)).rejects.toThrow();
     await expect(system.fetcher(url)).rejects.toThrow();
     const response = await custom.fetcher(url);

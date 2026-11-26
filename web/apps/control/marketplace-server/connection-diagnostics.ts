@@ -78,10 +78,10 @@ export function connectionErrorDetails(error: unknown, f5 = false, evaluation = 
   const upstream = error && typeof error === "object" && "upstream" in error ? error.upstream as Record<string, unknown> : undefined;
   return {
     operation: active.operation,
-    certificateVerification: evaluation ? "Evaluate enabled" : f5 ? "F5 enabled" : active.env.MARKETPLACE_NEMO_TLS === "skip" ? "NeMo skipped" : "NeMo enabled",
+    certificateVerification: evaluation ? (active.env.MARKETPLACE_EVALUATION_TLS === "skip" ? "Evaluate skipped" : "Evaluate enabled") : f5 ? (active.env.MARKETPLACE_F5_TLS === "skip" ? "F5 skipped" : "F5 enabled") : active.env.MARKETPLACE_NEMO_TLS === "skip" ? "NeMo skipped" : "NeMo enabled",
     ...(upstream ? { httpStatus: typeof upstream.httpStatus === "number" ? upstream.httpStatus : undefined,
       contentType: clean(upstream.contentType), upstreamCode: f5 ? undefined : clean(upstream.code), upstreamMessage: f5 ? undefined : clean(upstream.message) } : {}),
     causes,
-    hints: [...new Set(causes.map(c => ((f5 || evaluation) && c.code === "DEPTH_ZERO_SELF_SIGNED_CERT" ? "The certificate is self-signed. Supply its trusted CA; verification remains enabled." : hints[String(c.code)] || hints[String(c.name)])).filter(Boolean))],
+    hints: [...new Set(causes.map(c => ((f5 || evaluation) && c.code === "DEPTH_ZERO_SELF_SIGNED_CERT" ? "The certificate is self-signed. Supply its trusted CA when using certificate verification." : hints[String(c.code)] || hints[String(c.name)])).filter(Boolean))],
   };
 }

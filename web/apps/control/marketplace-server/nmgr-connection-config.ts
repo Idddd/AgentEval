@@ -15,6 +15,8 @@ export const connectionSettingsSchema = z
       .regex(/^[a-z0-9-]{1,24}$/)
       .optional(),
     databaseTls: z.enum(["url", "true"]).optional(),
+    evaluationTls: z.enum(["skip", "verify"]).optional(),
+    f5Tls: z.enum(["skip", "verify"]).optional(),
     nemoTls: z.enum(["skip", "verify"]).optional(),
     caMode: z.enum(["system", "custom"]).optional(),
     caPem: z.string().trim().max(64_000).optional(),
@@ -82,6 +84,8 @@ export function connectionEnvironment(
     MARKETPLACE_CRUD_ONLY: "false",
     MARKETPLACE_V2_LOCAL_ACCESS: "false",
     MARKETPLACE_NEMO_AUTH_MODE: "token",
+    MARKETPLACE_EVALUATION_TLS: overrides.evaluationTls || env.MARKETPLACE_EVALUATION_TLS || "skip",
+    MARKETPLACE_F5_TLS: overrides.f5Tls || env.MARKETPLACE_F5_TLS || "skip",
     MARKETPLACE_NEMO_TLS: overrides.nemoTls || env.MARKETPLACE_NEMO_TLS || "skip",
   };
   if (overrides.evaluationUrl) {
@@ -94,11 +98,16 @@ export function connectionEnvironment(
       if (!savedEvaluation || !(error instanceof DeploymentError) || error.component !== "evaluation") throw error;
       // A deployment change can invalidate yesterday's override. Keep the
       // workspace online, but do not silently send evaluation traffic elsewhere.
+      effective.MARKETPLACE_EVALUATION_OVERRIDE_INVALID = "true";
       effective.MARKETPLACE_EVALUATION_URL = "";
     }
   }
   if (!["skip", "verify"].includes(effective.MARKETPLACE_NEMO_TLS!))
     throw new DeploymentError("nemo", "nemo_tls_invalid", "Choose skip or verify for NeMo certificate verification.", ["MARKETPLACE_NEMO_TLS"], 422);
+  for (const [component, key] of [["evaluation", "MARKETPLACE_EVALUATION_TLS"], ["f5", "MARKETPLACE_F5_TLS"]] as const) {
+    if (!["skip", "verify"].includes(effective[key]!))
+      throw new DeploymentError(component, component + "_tls_invalid", "Choose skip or verify for certificate verification.", [key], 422);
+  }
   // Default V3 does not use V1/V2 authoring, fixed actors or automatic browser tokens.
   for (const key of [
     "MARKETPLACE_DEMO_TOKEN",

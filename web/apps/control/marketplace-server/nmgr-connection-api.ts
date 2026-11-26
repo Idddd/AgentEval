@@ -53,6 +53,7 @@ async function logEvaluation(store: ConnectionStore, action: EvaluationAction, r
     durationMs: Math.round(performance.now() - started),
     requestId: response.headers.get("X-Request-ID") ?? nmgrRequestContext.getStore()?.requestId ?? randomUUID(),
     stage,
+    ...(response.ok && action === "start" && (await response.clone().json()).source === "mock" ? { message: "Mock evaluation completed." } : {}),
     ...(code ? { code } : {}),
     ...(code?.startsWith("evaluation_") && typeof error.message === "string" ? { message: error.message.slice(0, 600) } : {}),
     ...(upstreamStatus !== undefined ? { upstreamStatus } : {}),
@@ -67,9 +68,9 @@ const probeFields: Record<ProbeTarget, string[]> = {
   nemoUrl: ["nemoUrl", "nemoTls", "caMode", "caPem"],
   nemoToken: ["nemoUrl", "nemoToken", "nemoTls", "caMode", "caPem"],
   databaseUrl: ["databaseUrl", "databaseTls", "caMode", "caPem"],
-  f5Url: ["f5Url", "f5Mode", "caMode", "caPem"],
-  f5Token: ["f5Url", "f5Token", "f5Mode", "caMode", "caPem"],
-  evaluationUrl: ["evaluationUrl", "caMode", "caPem"],
+  f5Url: ["f5Url", "f5Tls", "f5Mode", "caMode", "caPem"],
+  f5Token: ["f5Url", "f5Token", "f5Tls", "f5Mode", "caMode", "caPem"],
+  evaluationUrl: ["evaluationUrl", "evaluationTls", "caMode", "caPem"],
 };
 function defaultStore(env: NodeJS.ProcessEnv) {
   const dir =
@@ -98,6 +99,8 @@ function revision(env: NodeJS.ProcessEnv) {
         env.MARKETPLACE_CONNECTION_CA_MODE,
         env.MARKETPLACE_CONNECTION_CA_PEM,
         env.MARKETPLACE_NEMO_TLS,
+        env.MARKETPLACE_F5_TLS,
+        env.MARKETPLACE_EVALUATION_TLS,
         env.MARKETPLACE_WORKSPACE_ID,
         env.MARKETPLACE_F5_ENABLED,
         env.F5_API_URL,
@@ -136,7 +139,9 @@ function state(effective: NodeJS.ProcessEnv, saved: ConnectionSettings | null) {
       evaluationUrl: !!effective.MARKETPLACE_EVALUATION_URL?.trim(),
     },
     advanced: {
-      nemoTls: effective.MARKETPLACE_NEMO_TLS || "verify",
+      nemoTls: effective.MARKETPLACE_V3_DEMO === "true" ? effective.MARKETPLACE_NEMO_TLS : "verify",
+      f5Tls: effective.MARKETPLACE_V3_DEMO === "true" ? effective.MARKETPLACE_F5_TLS : "verify",
+      evaluationTls: effective.MARKETPLACE_V3_DEMO === "true" ? effective.MARKETPLACE_EVALUATION_TLS : "verify",
       databaseTls: effective.MARKETPLACE_DB_TLS === "true" ? "true" : "url",
       caMode: effective.MARKETPLACE_CONNECTION_CA_MODE || "deployment",
       f5Mode:
@@ -332,7 +337,7 @@ export async function connectionApi(
           input = Object.fromEntries(Object.entries(parsed.settings ?? {}).filter(([key]) => probeFields[target!].includes(key)));
         } else {
           input = connectionSettingsSchema.parse(payload);
-          if (evaluationOnly && (!input.evaluationUrl || Object.keys(input).length !== 1)) throw new Error("Expected only the Evaluate URL");
+          if (evaluationOnly && (!input.evaluationUrl || Object.keys(input).some(key => key !== "evaluationUrl" && key !== "evaluationTls"))) throw new Error("Expected only the Evaluate URL");
         }
       } catch (error) {
         if (backup) {
@@ -342,7 +347,7 @@ export async function connectionApi(
         throw new DeploymentError(
           "runtime",
           "connection_fields_invalid",
-          evaluationOnly ? "Provide only a non-empty Evaluate URL." : "Provide valid connection fields from this page. Workspace ID allows 1–24 lowercase letters, numbers or hyphens.",
+          evaluationOnly ? "Provide an Evaluate URL and optionally its certificate verification mode." : "Provide valid connection fields from this page. Workspace ID allows 1–24 lowercase letters, numbers or hyphens.",
           evaluationOnly ? ["MARKETPLACE_EVALUATION_URL"] : ["GUARD_API_URL", "GUARD_API_TOKEN", "MARKETPLACE_DATABASE_URL"],
           422,
         );
@@ -370,8 +375,13 @@ export async function connectionApi(
       const credentialSource = backup ? env : previous;
       if (evaluationOnly) {
         const candidate = { ...saved };
-        if (request.method === "DELETE") delete candidate.evaluationUrl;
-        else candidate.evaluationUrl = input.evaluationUrl!.trim();
+        if (request.method === "DELETE") {
+          delete candidate.evaluationUrl;
+          delete candidate.evaluationTls;
+        } else {
+          candidate.evaluationUrl = input.evaluationUrl!.trim();
+          if (input.evaluationTls) candidate.evaluationTls = input.evaluationTls;
+        }
         const effective = connectionEnvironment(request, env, candidate);
         if (request.method === "POST") {
           const transport = connectionTransport(effective, fetcher);

@@ -55,7 +55,7 @@ NeMo 最小配置仍是 Controller API URL、业务用户 PAT、Marketplace DB U
 - NeMo Token 测试读取 `/account/identity`，要求 `effectivePermissions.policies`、`guardrails` 为 `write`。
 - 数据库测试只执行 `SELECT 1` 并关闭连接，不迁移表。保存/进入工作区时另外检查应用 schema 权限。
 - F5 Token 测试读取 `/scanners`，不会创建 Scanner、Project 或触发扫描。
-- 默认 V3 演示仅对指定的 NeMo API 跳过证书校验，TLS 连接仍加密。可在配置页设 `nemoTls: verify`，或 Helm 设 `marketplace.nemoTls: verify`（环境变量 `MARKETPLACE_NEMO_TLS=verify`）。不会全局修改 Node TLS，也不会跳过 F5/数据库证书校验。数据库 TLS/自定义 CA 保留原配置入口。
+- V3 演示模式默认跳过指定 NeMo、F5 和 Evaluate API 的证书校验。可在配置页分别选择 `Verify certificate`，或在 Helm 中将 `marketplace.nemoTls`、`marketplace.f5Tls`、`marketplace.evaluationTls` 设为 `verify`。数据库使用独立的 TLS 配置。
 
 成功响应包括 `ok`、`target`、`message`、`durationMs`，HTTP 探测另含 `httpStatus`。
 

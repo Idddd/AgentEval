@@ -9,6 +9,7 @@ const status = { type: "string", enum: ["RUNNING", "COMPLETED", "FAILED", "CANCE
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const list = (items: object) => ({ type: "array", items });
 const obj = (properties: Record<string, object>, required = Object.keys(properties)) => ({ type: "object", properties, required, additionalProperties: false });
+const source = { type: "string", const: "mock", ...field("Present for simulated results when V3 has no Evaluate URL.", panel) };
 const history = { id, status, createdAt: text };
 const historyDocs = fields(`${panel} Recent runs selector.`, {
   id: "Identifier of the run used in follow-up status and report requests.",
@@ -18,9 +19,10 @@ const historyDocs = fields(`${panel} Recent runs selector.`, {
 
 export const independentEvaluationSchemas = {
   IndependentEvaluationSetup: withFieldDocs(obj({
+    source,
     setup: obj({ revision, target: id, demo: { type: "boolean" }, endpoint: id, datasets: list(obj({ id, name: text, version: count })) }),
     history: list(obj(history)),
-  }), {
+  }, ["setup", "history"]), {
     ...fields(panel, {
       setup: "Published configuration metadata for the selected Guardrail business revision.",
       "setup.revision": "Opaque Evaluate configuration revision. Supply it as the revision query when starting a run.",
@@ -36,8 +38,9 @@ export const independentEvaluationSchemas = {
     ...under("history", historyDocs),
   }),
   IndependentEvaluationRun: withFieldDocs(obj({
+    source,
     run: obj({ ...history, phase: { type: ["string", "null"] }, completed: count, total: count }, ["id", "status", "createdAt", "completed", "total"]),
-  }), {
+  }, ["run"]), {
     run: field("Current status snapshot for the selected or newly queued run.", `${panel} Status card and progress bar.`),
     ...under("run", historyDocs),
     ...fields(`${panel} Status card and progress bar.`, {
@@ -47,6 +50,7 @@ export const independentEvaluationSchemas = {
     }),
   }),
   IndependentEvaluationReport: withFieldDocs(obj({
+    source,
     report: obj({
       status, total: count, offset: count, nextOffset: { type: ["integer", "null"], minimum: 0 },
       matched: count, mismatches: count, errors: count,
@@ -55,7 +59,7 @@ export const independentEvaluationSchemas = {
         labels: list(obj({ expected: text, observed: text }, [])),
       }, ["id", "status", "labels"])),
     }, ["status", "total", "offset", "matched", "mismatches", "errors", "rows"]),
-  }), fields(`${panel} Report summary and Evaluation case results table.`, {
+  }, ["report"]), fields(`${panel} Report summary and Evaluation case results table.`, {
     report: "Paged, redacted report for the selected independent evaluation run.",
     "report.status": "Report state. RUNNING means results are still being prepared.",
     "report.total": "Total case rows in the report.",
@@ -106,7 +110,7 @@ export function independentEvaluationOpenApi(commonParameters: object[], errors:
     get: {
       ...base, operationId: "getIndependentEvaluation",
       summary: "Read evaluation setup, run status, or a report page",
-      description: "Without run, load the published configuration and recent runs. With run, load current status. Add report=true to load one page of case results after the run finishes." + access,
+      description: "Without an active Evaluate URL, V3 serves labeled mock runs and reports. Configured service errors are returned to the caller. Without run, load the configuration and recent runs. With run, load current status. Add report=true to load one page of case results after the run finishes." + access,
       parameters: [
         ...parameters,
         parameter("run", id, "Run ID from Recent runs or the submission response.", "Select which run to track or open."),

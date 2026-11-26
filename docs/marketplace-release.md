@@ -1,7 +1,9 @@
-# AI Marketplace deployment — v0.2.33
+# AI Marketplace deployment — v0.2.34
 
-Image: `ghcr.io/idddd/tali-ui-demo:0.2.33` (Linux amd64).
-Chart: `oci://ghcr.io/idddd/charts/tali-ui-demo`, version `0.2.33`.
+Image: `ghcr.io/idddd/tali-ui-demo:0.2.34` (Linux amd64).
+Chart: `oci://ghcr.io/idddd/charts/tali-ui-demo`, version `0.2.34`.
+
+Version 0.2.34 adds labeled mock reports when no Evaluate URL is configured. Shared V3 defaults to skipping certificate verification for its configured NeMo, F5 and Evaluate APIs. Each service can opt into verification.
 
 Version 0.2.33 adds direct HTTPS Evaluate setup in the shared V3 connection page, record-level concurrency checks, business version lists and reverse Profile references. Open Swagger at `/api/docs` or download `openapi.json` from the release. Schemas describe each field and its UI use.
 
@@ -28,19 +30,19 @@ V3 now needs only a NeMo API URL, business API token and full PostgreSQL/MariaDB
 ## Start or upgrade
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.33
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.34
 docker run -d --name ai-marketplace -p 18082:8080 \
   -v marketplace-connections:/var/lib/marketplace/connection \
   -e MARKETPLACE_CONNECTION_DIR=/var/lib/marketplace/connection \
   -e MARKETPLACE_CONNECTION_PERSISTENT=true \
-  ghcr.io/idddd/tali-ui-demo:0.2.33
+  ghcr.io/idddd/tali-ui-demo:0.2.34
 ```
 
 Open `/v3/guardrails` to configure connections, or `/v2/guardrails` for Mock.
 
 ```sh
 helm upgrade --install tali-ui-demo oci://ghcr.io/idddd/charts/tali-ui-demo \
-  --version 0.2.33 --namespace YOUR_NAMESPACE -f values.uat.yaml
+  --version 0.2.34 --namespace YOUR_NAMESPACE -f values.uat.yaml
 ```
 
 Keep the existing release name, namespace, registry, Istio and resource settings. Preserve `workspaceId` and NeMo URL to retain the same workspace. The new chart defaults read token/DB URL from existing Secret `tali`, keys `tali-guard-bootstrap-user-ini` and `tali-guard-postgresql-init`. Override Secret references only when names differ. Credentials belong in Secrets. For independent evaluation, fill in the actual service address in a deployment values file outside the source repository using the [Evaluate values template](../deploy/values.evaluation.example.yaml).
@@ -60,7 +62,7 @@ No extra account ConfigMap, `dataMode`, `v2Live`, `crudOnly` or local actor setu
 
 Saved settings take precedence over deployment settings until Use deployment settings clears them. Secret/YAML are not overwritten. After rotating a deployment Secret, restart as usual and clear old manual overrides if those were saved. Changing a NeMo/F5 address requires a fresh token, so existing credentials are never forwarded to a new destination.
 
-Stored plaintext is not returned to clients or logged; all inputs are masked by default. V3 demo defaults to skipping certificate verification only for the configured NeMo API. Set `marketplace.nemoTls: verify` or choose verification in the connection page to use trusted certificates. F5 and database TLS policies remain unchanged. Every visitor can configure and switch roles in this user-requested demo mode. Browser Mock data and shared server connection settings have separate storage lifecycles.
+Stored plaintext is not returned to clients or logged; all inputs are masked by default. Shared V3 defaults to skipping certificate verification for the configured NeMo, F5 and Evaluate APIs. Enable verification per API on the connection page or set the corresponding Helm option (`marketplace.nemoTls`, `marketplace.f5Tls`, `marketplace.evaluationTls`) to `verify`. Database TLS uses its own settings. Every visitor can configure and switch roles in this user-requested demo mode. Browser Mock data and shared server connection settings have separate storage lifecycles.
 
 Version 0.2.28 adds 36 independent resource operations under `/api/nmgr/v1`, preserving the existing workspace/commands APIs and NeMo/F5 workflows. Swagger describes 48 operations and 44 schemas, with request/operation IDs in structured logs. V3 navigation stays in V3; Guardrail creation opens a drawer in both V2 and V3. NeMo custom policies validate executable JSON and offer a gray sample inserted with Tab. See [resource API guide](resource-api.md). Independent URL/Token/database probes remain available. The external UI can use the same `/api/nmgr/*` contract through a same-origin gateway. Forward `/api` unchanged, including `/api/docs/*` for bundled offline Swagger assets; no CORS or new required connection values are needed. See [API inventory and frontend integration](integration-api.md). Swagger is `/api/docs`, the machine-readable contract is `/api/openapi.json`, and the API list is `/api/endpoints`.
 
@@ -69,9 +71,9 @@ V3 failures include component, code, setting names and Reference matching `X-Req
 ## Internal registry and offline artifacts
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.33
-docker tag ghcr.io/idddd/tali-ui-demo:0.2.33 INTERNAL_REGISTRY/tali-ui:0.2.33
-docker push INTERNAL_REGISTRY/tali-ui:0.2.33
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.34
+docker tag ghcr.io/idddd/tali-ui-demo:0.2.34 INTERNAL_REGISTRY/tali-ui:0.2.34
+docker push INTERNAL_REGISTRY/tali-ui:0.2.34
 ```
 
 The published image embeds its matching chart and sanitized source archive:
@@ -82,8 +84,8 @@ The published image embeds its matching chart and sanitized source archive:
 - `/opt/marketplace/check-nemo.mjs`
 
 ```sh
-container=$(docker create ghcr.io/idddd/tali-ui-demo:0.2.33)
-docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" ./tali-ui-demo-0.2.33.tgz
+container=$(docker create ghcr.io/idddd/tali-ui-demo:0.2.34)
+docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" ./tali-ui-demo-0.2.34.tgz
 docker cp "$container:/opt/tali/source/project-source.zip" ./project-source.zip
 docker cp "$container:/opt/tali/source/project-source.zip.sha256" ./project-source.zip.sha256
 docker rm "$container"
@@ -92,7 +94,7 @@ sha256sum -c project-source.zip.sha256
 
 Source excludes real credentials, local environment files, databases, logs, dependencies and generated output. Public localhost TLS fixtures are test-only. The release workflow verifies startup, embedded source/chart integrity, Helm templates and 16 synthetic dependency failures before publishing the OCI chart. Release assets include checksums; validate offline archives before importing.
 
-See [v0.2.33 verification](uat/v0.2.33-release-validation.md) and [F5 deployment and troubleshooting](uat/2026-11-05-f5-integration.md).
+See [v0.2.34 verification](uat/v0.2.34-release-validation.md) and [F5 deployment and troubleshooting](uat/2026-11-05-f5-integration.md).
 
 ## Independent evaluation
 

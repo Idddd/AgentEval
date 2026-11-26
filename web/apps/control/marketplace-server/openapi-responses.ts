@@ -19,7 +19,7 @@ const metadata = { name: text, description: text, policies: strings, refs: strin
 const connectionProperties = {
   saved: bool,
   configured: obj(Object.fromEntries(["nemoUrl", "nemoToken", "databaseUrl", "workspaceId", "caPem", "f5Url", "f5Token", "f5AdminIds", "evaluationUrl"].map(key => [key, bool]))),
-  advanced: obj({ nemoTls: choice("skip", "verify"), databaseTls: choice("true", "url"), caMode: choice("system", "custom", "deployment"), f5Mode: choice("enabled", "disabled") }),
+  advanced: obj({ evaluationTls: choice("skip", "verify"), f5Tls: choice("skip", "verify"), nemoTls: choice("skip", "verify"), databaseTls: choice("true", "url"), caMode: choice("system", "custom", "deployment"), f5Mode: choice("enabled", "disabled") }),
   connectionRevision: text, demoRoleSwitching: bool, manualConfiguration: bool, persistence: choice("persistent", "pod"),
 };
 

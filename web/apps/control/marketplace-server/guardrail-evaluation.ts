@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import type { NmgrPersistence } from "./nmgr";
 import { evaluationApiBase } from "./evaluation-connection";
 import { DeploymentError } from "./diagnostics";
 import { nmgrRequestContext } from "./nmgr-request-context";
@@ -44,7 +45,7 @@ type Env = NodeJS.ProcessEnv;
 type Input = { guardrail: string; version: number; run?: string | undefined; report?: string | undefined; offset: number; revision?: string | undefined };
 const query = z.object({ guardrail: id, version, run: id.optional(), report: z.literal("true").optional(), offset: z.coerce.number().int().min(0).max(1_000_000).default(0), revision: revision.optional() }).strict();
 export type EvaluationInput = Input;
-export type EvaluationScope = { provider?: string | undefined; demo?: boolean | undefined; workspace: string };
+export type EvaluationScope = { provider?: string | undefined; demo?: boolean | undefined; workspace: string; database?: NmgrPersistence };
 
 export class EvaluationError extends Error {
   upstream?: DeploymentError["upstream"];
@@ -67,6 +68,10 @@ function readBindings(env: Env) {
 }
 const loopback = (host: string) => ["127.0.0.1", "localhost", "[::1]", "::1"].includes(host);
 export function evaluationEnabled(env: Env) { return !!env.MARKETPLACE_EVALUATION_URL?.trim(); }
+export function useMockEvaluation(env: Env) {
+  return (env.MARKETPLACE_V3_DEMO === "true" || env.MARKETPLACE_V3_DEMO === "false") &&
+    !evaluationEnabled(env) && !env.MARKETPLACE_EVALUATION_OVERRIDE_INVALID;
+}
 function allowDemo(env: Env) {
   return evaluationEnabled(env) && (env.MARKETPLACE_DATA_MODE ?? "mock") === "mock" && loopback(env.NITRO_HOST ?? env.HOST ?? "");
 }
@@ -152,12 +157,55 @@ function client(env: Env, fetcher: typeof fetch, probing = false) {
   };
 }
 
+type MockRun = { id: string; status: "COMPLETED"; createdAt: string };
+async function mockEvaluation(request: Request, input: Input, scope: EvaluationScope, database: NmgrPersistence) {
+  const digest = (value: string) => createHash("sha256").update(value).digest("hex");
+  const scopeKey = digest(JSON.stringify([scope.workspace, input.guardrail, input.version, scope.provider]));
+  const historyKey = "mock-eval:" + scopeKey;
+  const revision = "mock:" + scopeKey;
+  const rows = ["allow", "block"].map(label => ({
+    id: "sample-" + label, status: "PASS", labels: [{ expected: label, observed: label }],
+  }));
+  const runView = (run: MockRun) => ({ ...run, completed: rows.length, total: rows.length });
+  if (request.method === "POST") {
+    const key = z.string().uuid().safeParse(request.headers.get("idempotency-key"));
+    if (!key.success) return fail(422, "evaluation_request_invalid", "Starting an evaluation requires a valid request ID.");
+    if (input.revision !== revision) return fail(409, "evaluation_changed", "Reload the evaluation setup before starting a mock run.");
+    const runId = "mock-" + digest(scopeKey + key.data);
+    const run = await database.exclusive(async () => {
+      const history = await database.readDocument<MockRun[]>(historyKey) ?? [];
+      const existing = await database.readDocument<MockRun>(mockRunDocument(scopeKey, runId));
+      const entry: MockRun = existing ?? { id: runId, createdAt: new Date().toISOString(), status: "COMPLETED" };
+      if (!existing) await database.writeDocument(mockRunDocument(scopeKey, runId), entry);
+      if (!history.some(item => item.id === runId))
+        await database.writeDocument(historyKey, [entry, ...history].slice(0, 12));
+      return entry;
+    });
+    return json({ source: "mock", run: runView(run) }, 202);
+  }
+  if (input.run) {
+    // Scope the stored lookup even when a caller supplies another workspace's run ID.
+    const run = await database.readDocument<MockRun>(mockRunDocument(scopeKey, input.run));
+    if (!run) return fail(404, "evaluation_not_found", "Mock run not found for this guardrail revision.");
+    if (!input.report) return json({ source: "mock", run: runView(run) });
+    return json({ source: "mock", report: { status: run.status, total: rows.length, matched: rows.length,
+      mismatches: 0, errors: 0, offset: input.offset, nextOffset: null, rows: rows.slice(input.offset) } });
+  }
+  return json({ source: "mock", setup: { revision, target: input.guardrail, endpoint: input.guardrail, demo: false,
+    datasets: [{ id: "mock-examples", version: 1, name: "Mock examples" }] },
+    history: await database.readDocument<MockRun[]>(historyKey) ?? [] });
+}
+function mockRunDocument(scopeKey: string, runId: string) {
+  return "mock-run:" + createHash("sha256").update(scopeKey + "/" + runId).digest("hex");
+}
+
 export async function guardrailEvaluation(
   request: Request, env: Env, authorize: (input: Input) => Promise<EvaluationScope> | EvaluationScope, fetcher: typeof fetch = fetch,
 ) {
   try {
     const input = evaluationInput(request);
     const scope = await authorize(input);
+    if (scope.database && useMockEvaluation(env)) return await mockEvaluation(request, input, scope, scope.database);
     const bindings = readBindings(env), ref = `${input.guardrail}@${input.version}`;
     if (scope.demo && !Object.hasOwn(bindings, ref)) return fail(404, "evaluation_not_bound", "No independent evaluation is mapped to this demo guardrail revision.");
     const target = Object.hasOwn(bindings, ref) ? bindings[ref]! : input.guardrail;

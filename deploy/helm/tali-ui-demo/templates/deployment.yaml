@@ -64,6 +64,10 @@ spec:
               value: {{ .Values.marketplace.guardApiUrl | quote }}
             - name: MARKETPLACE_NEMO_TLS
               value: {{ .Values.marketplace.nemoTls | default "skip" | quote }}
+            - name: MARKETPLACE_EVALUATION_TLS
+              value: {{ .Values.marketplace.evaluationTls | default "skip" | quote }}
+            - name: MARKETPLACE_F5_TLS
+              value: {{ .Values.marketplace.f5Tls | default "skip" | quote }}
             - name: GUARD_AUTH_ORIGIN
               value: {{ .Values.marketplace.guardAuthOrigin | default "" | quote }}
             {{- if or .Values.marketplace.nemoSecret .Values.marketplace.nemoTokenSecret }}

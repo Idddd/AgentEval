@@ -10,6 +10,8 @@ const backups = `${connections} Connection backup JSON import and export. Preser
 
 export const evaluationUrlField = field("Evaluate API URL. In shared V3 with no deployment URL, allowlist or Evaluate token, enter an HTTPS service hostname on port 443 directly. Enter the server address or its /api/v1/evaluations endpoint. Marketplace probes the target catalog before activation.", `${evaluate} Evaluate URL field.`);
 
+export const evaluationTlsField = field("Evaluate certificate verification. Shared V3 defaults to skip. Choose verify to require a trusted certificate.", `${evaluate} Evaluate certificate verification.`);
+
 const connectionSettings = {
   ...fields(`${connections} NeMo connection.`, {
     nemoUrl: "NeMo Controller API base ending in /api/v1. Changing it requires a fresh NeMo Token.",
@@ -26,12 +28,14 @@ const connectionSettings = {
     caPem: "Certificate authority PEM bundle used when the custom CA option is selected.",
   }),
   ...fields(`${connections} F5 connection.`, {
+    f5Tls: "F5 certificate verification. Shared V3 defaults to skip. Choose verify to require a trusted certificate.",
     f5Mode: "Enable or disable F5 as a provider.",
     f5Url: "F5 API base URL. Supply a fresh F5 API Token if this destination changes.",
     f5Token: "API Token for F5 integration. Use a masked input.",
     f5AdminIds: "Comma-separated F5 user IDs for Project administrators when required by F5.",
   }),
   evaluationUrl: evaluationUrlField,
+  evaluationTls: evaluationTlsField,
 };
 const connectionState = {
   ...fields(connections, {
@@ -44,6 +48,8 @@ const connectionState = {
     advanced: "Effective settings used to populate the current-value options.",
   }),
   ...under("advanced", fields(advanced, {
+    evaluationTls: "Effective Evaluate certificate verification mode.",
+    f5Tls: "Effective F5 certificate verification mode.",
     nemoTls: "Effective NeMo certificate verification mode.",
     databaseTls: "Effective database TLS option.",
     caMode: "Effective trusted CA selection. deployment means the CA is deployment-managed.",

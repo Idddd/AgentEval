@@ -21,43 +21,40 @@ const evaluationLookup: LookupFunction = (hostname, options, callback) => {
   });
 };
 
-// Per-operation TLS policy. The demo bypass is scoped to the configured NeMo API;
-// never change process-wide TLS, F5, database, or Mock behavior.
-export function connectionTransport(
-  env: NodeJS.ProcessEnv,
-  fetcher: typeof fetch,
-) {
-  const skip = env.MARKETPLACE_V3_DEMO === "true" && env.MARKETPLACE_NEMO_TLS === "skip";
+function apiBase(value: string | undefined, normalize = (url: string) => new URL(url).href) {
+  if (!value) return undefined;
+  try { return normalize(value).replace(/\/+$/, ""); }
+  catch { return undefined; } // Provider configuration validation reports malformed URLs.
+}
+
+export function connectionTransport(env: NodeJS.ProcessEnv, fetcher: typeof fetch) {
+  const demo = env.MARKETPLACE_V3_DEMO === "true";
+  const skipNemo = demo && env.MARKETPLACE_NEMO_TLS === "skip";
+  const skipF5 = demo && env.MARKETPLACE_F5_TLS === "skip";
+  const skipEvaluate = demo && env.MARKETPLACE_EVALUATION_TLS === "skip";
   const manual = env.MARKETPLACE_EVALUATION_MANUAL_TLS === "true";
-  if (!env.MARKETPLACE_CONNECTION_CA_MODE && !manual && !skip)
+  if (!env.MARKETPLACE_CONNECTION_CA_MODE && !manual && !skipNemo && !skipF5 && !skipEvaluate)
     return { fetcher, close: async () => {} };
+
   const verified = {
     rejectUnauthorized: true,
     ...(env.MARKETPLACE_CONNECTION_CA_PEM ? { ca: [...rootCertificates, env.MARKETPLACE_CONNECTION_CA_PEM] } : {}),
   };
-  const agent = new Agent({ connect: verified });
-  const manualAgent = manual ? new Agent({ connect: { ...verified, lookup: evaluationLookup } }) : undefined;
-  const insecure = skip ? new Agent({ connect: { rejectUnauthorized: false } }) : undefined;
+  const agent = env.MARKETPLACE_CONNECTION_CA_MODE ? new Agent({ connect: verified }) : undefined;
+  const insecure = skipNemo || skipF5 || skipEvaluate ? new Agent({ connect: { rejectUnauthorized: false } }) : undefined;
+  const manualAgent = manual ? new Agent({ connect: { ...verified, rejectUnauthorized: !skipEvaluate, lookup: evaluationLookup } }) : undefined;
+  const bases = [
+    { base: apiBase(env.MARKETPLACE_EVALUATION_URL, evaluationApiBase), skip: skipEvaluate, manualAgent },
+    { base: apiBase(env.F5_API_URL), skip: skipF5 },
+    { base: apiBase(env.GUARD_API_URL), skip: skipNemo },
+  ];
   const trustedFetch: typeof fetch = (input, init) => {
-    const target = new URL(input instanceof Request ? input.url : String(input));
-    let isNemo = false;
-    try {
-      const base = new URL(env.GUARD_API_URL!);
-      isNemo = target.origin === base.origin && target.pathname.startsWith(base.pathname.replace(/\/+$/, "") + "/");
-    } catch { /* Configuration validation reports malformed URLs. */ }
-    try {
-      const f5 = new URL(env.F5_API_URL!);
-      if (target.origin === f5.origin && target.pathname.startsWith(f5.pathname.replace(/\/+$/, "") + "/")) isNemo = false;
-    } catch { /* F5 is optional; never apply its configuration to a NeMo request. */ }
-    try {
-      if (target.href.startsWith(evaluationApiBase(env.MARKETPLACE_EVALUATION_URL!) + "/")) {
-        if (manualAgent) return fetcher(input, { ...init, dispatcher: manualAgent } as RequestInit);
-        isNemo = false;
-      }
-    } catch { /* Evaluate is optional; it never uses the NeMo TLS bypass. */ }
-    if (!isNemo && !env.MARKETPLACE_CONNECTION_CA_MODE) return fetcher(input, init);
-    return fetcher(input, { ...init, ...(isNemo && insecure ? { redirect: "manual" } : {}), dispatcher: isNemo && insecure ? insecure : agent } as RequestInit);
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    const path = url.origin + url.pathname;
+    const provider = bases.find(({ base }) => base && (path === base || path.startsWith(base + "/")));
+    const dispatcher = provider?.manualAgent ?? (provider?.skip ? insecure : agent);
+    if (!dispatcher) return fetcher(input, init);
+    return fetcher(input, { ...init, ...(provider?.skip || provider?.manualAgent ? { redirect: "manual" } : {}), dispatcher } as RequestInit);
   };
-  // The operation has finished; abort unread error bodies instead of waiting for them.
-  return { fetcher: trustedFetch, close: async () => { await Promise.all([agent.destroy(), insecure?.destroy(), manualAgent?.destroy()]); } };
+  return { fetcher: trustedFetch, close: async () => { await Promise.all([agent?.destroy(), insecure?.destroy(), manualAgent?.destroy()]); } };
 }
