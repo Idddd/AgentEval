@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { NmgrPersistence } from "./nmgr";
+import { EvaluationRunHistory } from "./evaluation-run-history";
 import { evaluationApiBase } from "./evaluation-connection";
 import { DeploymentError } from "./diagnostics";
 import { nmgrRequestContext } from "./nmgr-request-context";
@@ -12,15 +13,15 @@ const version = z.coerce.number().int().min(1).max(1_000_000);
 const revision = z.string().regex(/^[\w:./-]{1,256}$/);
 const count = z.number().int().nonnegative();
 const configSchema = z.object({
-  id, version, revision, execution_mode: z.string(), data_source: z.string(),
-  default_endpoint: z.object({ provider: providerId, guardrail_id: id }).nullish(),
+  id, name: z.string().nullish(), version, revision, execution_mode: z.string(), data_source: z.string(),
+  default_endpoint: z.object({ provider: providerId.nullish(), guardrail_id: id.nullish() }).nullish(),
   datasets: z.array(z.object({ dataset_id: id, dataset_version: count })).default([]),
   benchmarks: z.array(z.object({ dataset_id: id, dataset_version: count, name: z.string().nullish() })).default([]),
 });
 const runSchema = z.object({
   id, experiment_id: id, status: z.enum(["RUNNING", "COMPLETED", "FAILED", "CANCELLED"]),
   phase: z.string().nullish(), completed: count, sample_count: count, created_at: z.string(),
-  execution_mode: z.literal("guardrail"), target_id: id, guardrail_provider: providerId, guardrail_instance_id: id,
+  execution_mode: z.string(), target_id: id, guardrail_provider: providerId.nullish(),
   snapshot: z.object({ target: z.object({ version }) }),
 });
 const reportSchema = z.object({
@@ -42,8 +43,8 @@ const historySchema = z.object({ items: z.array(z.object({
 const bindingsSchema = z.record(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}@[1-9]\d{0,5}$/), id);
 
 type Env = NodeJS.ProcessEnv;
-type Input = { guardrail: string; version: number; run?: string | undefined; report?: string | undefined; offset: number; revision?: string | undefined };
-const query = z.object({ guardrail: id, version, run: id.optional(), report: z.literal("true").optional(), offset: z.coerce.number().int().min(0).max(1_000_000).default(0), revision: revision.optional() }).strict();
+type Input = { guardrail: string; version: number; target?: string | undefined; run?: string | undefined; report?: string | undefined; offset: number; revision?: string | undefined };
+const query = z.object({ guardrail: id, version, target: id.optional(), run: id.optional(), report: z.literal("true").optional(), offset: z.coerce.number().int().min(0).max(1_000_000).default(0), revision: revision.optional() }).strict();
 export type EvaluationInput = Input;
 export type EvaluationScope = { provider?: string | undefined; demo?: boolean | undefined; workspace: string; database?: NmgrPersistence };
 
@@ -86,7 +87,7 @@ export function evaluationInput(request: Request): Input {
     return fail(422, "evaluation_request_invalid", "Select a valid guardrail revision and evaluation run.");
   const value = parsed.data;
   if (request.method === "POST" ? !value.revision || value.run || value.report || value.offset :
-    request.method !== "GET" || value.revision || (value.report && !value.run) || (value.offset && !value.report))
+    request.method !== "GET" || value.revision || (value.target && value.run) || (value.report && !value.run) || (value.offset && !value.report))
     return fail(422, "evaluation_request_invalid", "The evaluation request has incompatible fields.");
   return value;
 }
@@ -157,6 +158,26 @@ function client(env: Env, fetcher: typeof fetch, probing = false) {
   };
 }
 
+const targetListSchema = z.object({
+  total: count,
+  items: z.array(z.object({ id, name: z.string().nullish(), version: version.nullish() })),
+});
+async function evaluationCatalog(get: ReturnType<typeof client>) {
+  const configurations = new Map<string, { id: string; name: string; version?: number }>();
+  let offset = 0;
+  for (;;) {
+    const page = await get(`/targets?limit=100&offset=${offset}`, targetListSchema);
+    const before = configurations.size;
+    for (const item of page.items) configurations.set(item.id, {
+      id: item.id, name: item.name || item.id, ...(item.version != null && { version: item.version }),
+    });
+    offset += page.items.length;
+    if (configurations.size >= page.total) return [...configurations.values()];
+    if (configurations.size === before || offset >= page.total)
+      return fail(502, "evaluation_catalog_incomplete", "Evaluate returned an incomplete configuration list. Refresh to reload it.");
+  }
+}
+
 type MockRun = { id: string; status: "COMPLETED"; createdAt: string };
 async function mockEvaluation(request: Request, input: Input, scope: EvaluationScope, database: NmgrPersistence) {
   const digest = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -205,25 +226,39 @@ export async function guardrailEvaluation(
   try {
     const input = evaluationInput(request);
     const scope = await authorize(input);
-    if (scope.database && useMockEvaluation(env)) return await mockEvaluation(request, input, scope, scope.database);
-    const bindings = readBindings(env), ref = `${input.guardrail}@${input.version}`;
+    if (scope.database && useMockEvaluation(env)) {
+      if (input.target) return fail(409, "evaluation_changed", "The Evaluate connection changed. Reload the evaluation page.");
+      return await mockEvaluation(request, input, scope, scope.database);
+    }
+    const get = client(env, fetcher);
+    const records = scope.database ? new EvaluationRunHistory(scope.database, scope.workspace, input.guardrail,
+      input.version, apiBase(env), env.MARKETPLACE_EVALUATION_PROJECT_ID?.trim() ?? "") : undefined;
+    if (records && !input.target && !input.run) {
+      if (request.method === "POST") return fail(422, "evaluation_target_required", "Select an evaluation configuration before starting a run.");
+      return json({ configurations: await evaluationCatalog(get), history: await records.recent() });
+    }
+    if (!records && input.target) return fail(422, "evaluation_request_invalid", "Configuration selection requires the V3 Evaluation page.");
+    const savedRun = records && input.run ? await records.find(input.run) : undefined;
+    if (records && input.run && !savedRun)
+      return fail(404, "evaluation_not_found", "This run was not started from the selected Guardrail version.");
+    const bindings = records ? {} : readBindings(env), ref = `${input.guardrail}@${input.version}`;
     if (scope.demo && !Object.hasOwn(bindings, ref)) return fail(404, "evaluation_not_bound", "No independent evaluation is mapped to this demo guardrail revision.");
-    const target = Object.hasOwn(bindings, ref) ? bindings[ref]! : input.guardrail;
+    const target = input.target ?? savedRun?.target ?? bindings[ref] ?? input.guardrail;
     if (!Object.hasOwn(bindings, ref) && Object.entries(bindings).some(([other, mapped]) => mapped === target && other.endsWith(`@${input.version}`)))
       return fail(404, "evaluation_not_bound", "This evaluation target is mapped to a different guardrail.");
-    const get = client(env, fetcher);
     const targetPath = `/targets/${encodeURIComponent(target)}`;
     const providerMatches = (provider: string) => !scope.provider || normalizedProvider(provider) === normalizedProvider(scope.provider);
-    const viewRun = (run: z.infer<typeof runSchema>) => {
-      if (run.target_id !== target || run.snapshot.target.version !== input.version || !providerMatches(run.guardrail_provider))
+    const viewRun = (run: z.infer<typeof runSchema>, targetVersion: number) => {
+      if (run.target_id !== target || run.snapshot.target.version !== targetVersion || (!records && (run.execution_mode !== "guardrail" || !run.guardrail_provider || !providerMatches(run.guardrail_provider))))
         return fail(404, "evaluation_not_found", "This evaluation run does not belong to the selected guardrail revision.");
       return { id: run.id, status: run.status, phase: run.phase, completed: run.completed, total: run.sample_count, createdAt: run.created_at };
     };
     if (input.run) {
       const run = await get(`/runs/${encodeURIComponent(input.run)}`, runSchema);
       if (run.id !== input.run) throw new Error("Unexpected run ID");
-      const result = viewRun(run);
-      if (!input.report) return json({ run: result });
+      const result = viewRun(run, savedRun?.targetVersion ?? input.version);
+      if (savedRun && records && savedRun.status !== result.status) await records.remember({ ...savedRun, status: result.status });
+      if (!input.report) return json({ run: { ...savedRun, ...result } });
       let report;
       try { report = await get(`/reports/${encodeURIComponent(run.experiment_id)}?offset=${input.offset}&limit=25`, reportSchema); }
       catch (error) {
@@ -242,28 +277,36 @@ export async function guardrailEvaluation(
       } });
     }
     const config = await get(targetPath + "/config", configSchema);
-    if (config.id !== target || config.version !== input.version || config.execution_mode !== "guardrail")
-      return fail(409, "evaluation_revision_mismatch", "The backend target is not a Guardrail evaluation for this revision. Publish the matching evaluation configuration.");
-    if (!config.default_endpoint || !providerMatches(config.default_endpoint.provider))
-      return fail(409, "evaluation_endpoint_missing", "Configure a default evaluation endpoint for the selected guardrail provider.");
+    if (config.id !== target || (!records && (config.version !== input.version || config.execution_mode !== "guardrail")))
+      return fail(409, "evaluation_revision_mismatch", "Select a published Guardrail evaluation configuration.");
+    if (!records || config.execution_mode === "guardrail") {
+      const endpoint = config.default_endpoint;
+      if (!endpoint?.guardrail_id || !endpoint.provider || (!records && !providerMatches(endpoint.provider)))
+        return fail(409, "evaluation_endpoint_missing", "Configure a default Guardrail endpoint for this evaluation configuration.");
+    }
     if (config.data_source !== "published" || !config.datasets.length)
       return fail(422, "evaluation_datasets_missing", "Publish a dataset in this evaluation configuration. Marketplace does not accept temporary uploads.");
     if (request.method === "POST") {
       const key = request.headers.get("idempotency-key");
       if (!key || !z.string().uuid().safeParse(key).success) return fail(422, "evaluation_request_invalid", "Starting an evaluation requires a valid request ID.");
       if (input.revision !== config.revision) return fail(409, "evaluation_changed", "The evaluation configuration changed. Reload before starting a new run.");
-      const idempotencyKey = createHash("sha256").update(JSON.stringify([scope.workspace, ref, key])).digest("hex");
+      const idempotencyKey = createHash("sha256").update(JSON.stringify(records ? [scope.workspace, ref, target, config.revision, key] : [scope.workspace, ref, key])).digest("hex");
       const run = await get(targetPath + "/runs", runSchema, { key: idempotencyKey, configRevision: config.revision });
-      return json({ run: viewRun(run) }, 202);
+      const result = viewRun(run, config.version);
+      if (!records) return json({ run: result }, 202);
+      const entry = { id: result.id, status: result.status, createdAt: result.createdAt, target,
+        targetName: config.name || target, targetVersion: config.version, configRevision: config.revision };
+      await records.remember(entry);
+      return json({ run: { ...result, ...entry } }, 202);
     }
-    const history = await get(`/guardrail-reports?config_id=${encodeURIComponent(target)}&config_version=${input.version}`, historySchema);
+    const history = records ? null : await get(`/guardrail-reports?config_id=${encodeURIComponent(target)}&config_version=${input.version}`, historySchema);
     return json({
-      setup: { revision: config.revision, target, demo: !!scope.demo, endpoint: config.default_endpoint.guardrail_id,
+      setup: { revision: config.revision, target, demo: !!scope.demo, endpoint: config.default_endpoint?.guardrail_id ?? null,
         datasets: config.datasets.map(d => ({
           id: d.dataset_id, version: d.dataset_version,
           name: config.benchmarks.find(b => b.dataset_id === d.dataset_id && b.dataset_version === d.dataset_version)?.name ?? d.dataset_id,
         })) },
-      history: history.items.filter(row => row.config_id === target && row.config_version === input.version && providerMatches(row.provider))
+      history: records ? await records.recent() : history!.items.filter(row => row.config_id === target && row.config_version === input.version && providerMatches(row.provider))
         .slice(0, 12).map(row => ({ id: row.report_id, status: row.status, createdAt: row.created_at })),
     });
   } catch (error) { return failResponse(error); }

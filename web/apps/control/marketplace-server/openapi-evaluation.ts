@@ -10,30 +10,48 @@ const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const list = (items: object) => ({ type: "array", items });
 const obj = (properties: Record<string, object>, required = Object.keys(properties)) => ({ type: "object", properties, required, additionalProperties: false });
 const source = { type: "string", const: "mock", ...field("Present for simulated results when V3 has no Evaluate URL.", panel) };
-const history = { id, status, createdAt: text };
+const history = { id, status, createdAt: text, target: id, targetName: text, targetVersion: count, configRevision: revision };
+const historyRequired = ["id", "status", "createdAt"];
 const historyDocs = fields(`${panel} Recent runs selector.`, {
+  target: "Evaluate configuration that executed this run.",
+  targetName: "Configuration display name captured when the run started.",
+  targetVersion: "Evaluate target version at run time, independent of the Marketplace Guardrail version.",
+  configRevision: "Evaluate configuration revision used at submission.",
   id: "Identifier of the run used in follow-up status and report requests.",
   status: "Run state. Display running, completed, failed or cancelled.",
   createdAt: "Run creation timestamp shown in the selector.",
 });
 
 export const independentEvaluationSchemas = {
+  IndependentEvaluationCatalog: withFieldDocs(obj({
+    configurations: list(obj({ id, name: text, version: count }, ["id", "name"])),
+    history: list(obj(history, historyRequired)),
+  }), {
+    ...fields(panel, {
+      configurations: "All configurations from the connected Evaluate project, across upstream pages. An empty array means none are available.",
+      "configurations.id": "Send as target when loading or starting the selected configuration.",
+      "configurations.name": "Display label in the Evaluation configuration dropdown.",
+      "configurations.version": "Display the upstream target version when supplied.",
+      history: "Recent runs started from this Marketplace Guardrail version on the current Evaluate connection and project.",
+    }),
+    ...under("history", historyDocs),
+  }),
   IndependentEvaluationSetup: withFieldDocs(obj({
     source,
-    setup: obj({ revision, target: id, demo: { type: "boolean" }, endpoint: id, datasets: list(obj({ id, name: text, version: count })) }),
-    history: list(obj(history)),
+    setup: obj({ revision, target: id, demo: { type: "boolean" }, endpoint: { anyOf: [id, { type: "null" }] }, datasets: list(obj({ id, name: text, version: count })) }),
+    history: list(obj(history, historyRequired)),
   }, ["setup", "history"]), {
     ...fields(panel, {
       setup: "Published configuration metadata for the selected Guardrail business revision.",
       "setup.revision": "Opaque Evaluate configuration revision. Supply it as the revision query when starting a run.",
-      "setup.target": "Evaluate service target linked to the Marketplace Guardrail.",
+      "setup.target": "Selected Evaluate configuration ID. Its version and provider may differ from the Marketplace Guardrail.",
       "setup.demo": "Compatibility flag identifying the separate loopback evaluation flow. V3 returns false.",
-      "setup.endpoint": "Guardrail endpoint ID rendered under Endpoint.",
+      "setup.endpoint": "Configured Guardrail endpoint ID, or null for a configuration without one.",
       "setup.datasets": "Published datasets displayed under Dataset.",
       "setup.datasets.id": "Stable Evaluate dataset identifier.",
       "setup.datasets.name": "Benchmark display name, falling back to the dataset ID.",
       "setup.datasets.version": "Published dataset version in the Dataset label.",
-      history: "Up to twelve recent runs for the selected revision and provider.",
+      history: "Up to twelve recent runs started from the current Guardrail version on this Evaluate connection and project.",
     }),
     ...under("history", historyDocs),
   }),
@@ -110,20 +128,22 @@ export function independentEvaluationOpenApi(commonParameters: object[], errors:
     get: {
       ...base, operationId: "getIndependentEvaluation",
       summary: "Read evaluation setup, run status, or a report page",
-      description: "Without an active Evaluate URL, V3 serves labeled mock runs and reports. Configured service errors are returned to the caller. Without run, load the configuration and recent runs. With run, load current status. Add report=true to load one page of case results after the run finishes." + access,
+      description: "Without an active Evaluate URL, V3 serves labeled mock runs and reports. Configured service errors are returned to the caller. With only guardrail and version, a configured V3 service returns the full configuration dropdown and recent runs for this Guardrail version. Add target for its setup. With run, load the status of a run started from this Guardrail version. Add report=true to load one page of case results after the run finishes." + access,
       parameters: [
         ...parameters,
+        parameter("target", id, "Selected Evaluate configuration ID. Omit to load the catalog. Mutually exclusive with run.", "Load the selected configuration."),
         parameter("run", id, "Run ID from Recent runs or the submission response.", "Select which run to track or open."),
         parameter("report", { type: "string", const: "true" }, "Include with run to read the report page.", "Switch from progress to case results."),
         parameter("offset", { ...count, maximum: 1_000_000, default: 0 }, "Zero-based report offset. Nonzero offsets require report=true.", "Use report.nextOffset for Next and subtract 25 for Previous."),
       ],
-      responses: { "200": response("Setup, run, or report according to the query.", { oneOf: ["IndependentEvaluationSetup", "IndependentEvaluationRun", "IndependentEvaluationReport"].map(ref) }), ...failures },
+      responses: { "200": response("Setup, run, or report according to the query.", { oneOf: ["IndependentEvaluationCatalog", "IndependentEvaluationSetup", "IndependentEvaluationRun", "IndependentEvaluationReport"].map(ref) }), ...failures },
     },
     post: {
       ...base, operationId: "startIndependentEvaluation", summary: "Start the selected published evaluation suite",
       description: "Start a run using the setup revision and a client UUID. Reuse both after an unconfirmed submission. The request has no JSON body." + access,
       parameters: [
         ...parameters,
+        parameter("target", id, "Required for a configured Evaluate service. Omit for the no-URL mock flow.", "Send the selected dropdown ID."),
         parameter("revision", revision, "Opaque setup.revision returned by GET. A change returns 409.", "Keep this value with the pending submission.", true),
         parameter("Idempotency-Key", { ...text, format: "uuid" }, "Client UUID reused for one logical run submission.", "Run evaluation and Retry submission.", true, "header"),
       ],

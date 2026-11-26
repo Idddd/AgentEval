@@ -61,12 +61,14 @@ it("returns current identity to an allowed frontend with a user Bearer token", a
 it("allows all V3 Demo roles to start managed evaluations behind an intranet proxy, without changing strict authorization", async () => {
   const doc = storage.get(docKey())!;
   doc.state.entities[0].status = "TEST READY";
+  doc.jobs["guard-one"] = { actor: "tech", phase: "sync-policy-save", status: "pending", purpose: "draft-sync", started: new Date().toISOString() };
   const shared = { ...env, HOST: "0.0.0.0", MARKETPLACE_V3_DEMO: "true", GUARD_API_TOKEN: "fixture-demo-token", MARKETPLACE_EVALUATION_URL: "https://eval.internal" };
   const handler = vi.fn<typeof fetch>(async (url, init) => {
     const path = new URL(String(url)).pathname;
     if (path.endsWith("/account/identity")) return fetcher(url, init);
-    if (path.endsWith("/config")) return Response.json({ id: "guard-one", version: 1, revision: "1:1", execution_mode: "guardrail", data_source: "published", default_endpoint: { provider: "nemo guardrail", guardrail_id: "nemo" }, datasets: [{ dataset_id: "suite", dataset_version: 1 }] });
-    if (path.endsWith("/runs")) return Response.json({ id: "eval-a", experiment_id: "exp-a", status: "RUNNING", phase: "QUEUED", completed: 0, sample_count: 1, created_at: "2026-11-24", execution_mode: "guardrail", target_id: "guard-one", guardrail_provider: "nemo guardrail", guardrail_instance_id: "nemo", snapshot: { target: { version: 1 } } });
+    if (path.endsWith("/targets")) return Response.json({ items: [{ id: "demo-suite", name: "Shared suite", version: 3 }], total: 1 });
+    if (path.endsWith("/config")) return Response.json({ id: "demo-suite", version: 1, revision: "1:1", execution_mode: "guardrail", data_source: "published", default_endpoint: { provider: "nemo guardrail", guardrail_id: "nemo" }, datasets: [{ dataset_id: "suite", dataset_version: 1 }] });
+    if (path.endsWith("/runs")) return Response.json({ id: "eval-a", experiment_id: "exp-a", status: "RUNNING", phase: "QUEUED", completed: 0, sample_count: 1, created_at: "2026-11-24", execution_mode: "guardrail", target_id: "demo-suite", guardrail_provider: "nemo guardrail", guardrail_instance_id: "nemo", snapshot: { target: { version: 1 } } });
     return Response.json({ items: [] });
   });
   const endpoint = "http://marketplace-service:8080/api/nmgr/guardrail-evaluation?guardrail=guard-one&version=1";
@@ -76,7 +78,7 @@ it("allows all V3 Demo roles to start managed evaluations behind an intranet pro
     const setupResponse = await nmgrApi(setup, shared, handler);
     expect(setupResponse.status).toBe(200);
     await assertOpenApiResponse(setup, setupResponse);
-    const start = new Request(endpoint + "&revision=1%3A1", { method: "POST", headers });
+    const start = new Request(endpoint + "&target=demo-suite&revision=1%3A1", { method: "POST", headers });
     const startResponse = await nmgrApi(start, shared, handler);
     expect(startResponse.status).toBe(202);
     await assertOpenApiResponse(start, startResponse);

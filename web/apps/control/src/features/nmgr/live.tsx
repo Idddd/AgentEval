@@ -281,7 +281,7 @@ function LiveWorkspace({ demoRoles = false, role, independentEvaluation = false,
   const rows = state.entities.filter(e => e.kind === kind && (view === "tests" ? ["TEST READY", "TEST PASSED", "TEST FAILED"].includes(e.status) || canEvaluateIndependently(e) : view === "signoff" ? e.status === "SIGNOFF REQUESTED" : view === "deploy" ? e.status === "SIGNED OFF" : true));
   const evaluationPanel = item && canEvaluateIndependently(item) ? <div className="nm-card nm-padding nm-live-panel">
     {view === "tests" && <h2>{item.name}</h2>}
-    <IndependentEvaluation key={`${item.id}@${item.version}`} guardrail={item.id} version={item.version} roleHeader={demoRoles ? role : undefined} connectionRevision={connectionRevision} />
+    <IndependentEvaluation key={`${item.id}@${item.version}:${connectionRevision ?? ""}`} guardrail={item.id} version={item.version} roleHeader={demoRoles ? role : undefined} connectionRevision={connectionRevision} />
   </div> : null;
   const binding = item ? snapshot.bindings[`${item.id}@${item.version}`] : undefined;
   function navigate(kind: Kind, view: View, selected = "") { const next = { kind, view, selected }; writeLiveLocation(next, router?.history); setLocation(next); setForm(null); setCreateGuardrail(false); }

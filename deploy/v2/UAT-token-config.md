@@ -1,6 +1,6 @@
-# UAT 升级到 v0.2.34
+# UAT 升级到 v0.2.35
 
-镜像 `ghcr.io/idddd/tali-ui-demo:0.2.34`，Chart `oci://ghcr.io/idddd/charts/tali-ui-demo`，版本 `0.2.34`。默认 V3 演示只需 NeMo URL、业务 Token、完整 DB URL，保留三角色切换，无需 SSO 或账号映射。Mock 继续独立运行。独立评测是可选连接，见[配置示例](../values.evaluation.example.yaml)。
+镜像 `ghcr.io/idddd/tali-ui-demo:0.2.35`，Chart `oci://ghcr.io/idddd/charts/tali-ui-demo`，版本 `0.2.35`。默认 V3 演示只需 NeMo URL、业务 Token、完整 DB URL，保留三角色切换，无需 SSO 或账号映射。Mock 继续独立运行。独立评测是可选连接，见[配置示例](../values.evaluation.example.yaml)。
 
 ## 现有 values.yaml 最小改动
 
@@ -8,7 +8,7 @@
 
 ```yaml
 image:
-  tag: "0.2.34"
+  tag: "0.2.35"
 ```
 
 本版 Chart 默认使用正式版镜像标签，示例 values 继承 Chart 的镜像仓库。使用内网镜像仓库时，先上传同版本镜像，再在实际部署 values 中填写 `image.repository`，并按仓库要求配置 `imagePullSecrets`。
@@ -30,7 +30,7 @@ image:
 
 正式 UI 通过同域网关调用 `/api/nmgr/*`。保持 `/api` 路径及子路径原样转发；Swagger 为 `/api/docs`，其本地 JS/CSS 使用 `/api/docs/*`，契约为 `/api/openapi.json`，列表为 `/api/endpoints`。同域调用无需配置 CORS。使用独立前端时，在严格模式的 V3 高级配置中填写前端 origin，再使用用户 Bearer Token 调用 `/api/nmgr/v1/*`。
 
-从之前版本升级，原有 NeMo 流程无新增必填连接项；镜像和 Chart 同步到 0.2.34。使用自维护模板且需要通过 values 控制 NeMo TLS 时，增加以下可选映射：
+从之前版本升级，原有 NeMo 流程无新增必填连接项；镜像和 Chart 同步到 0.2.35。使用自维护模板且需要通过 values 控制 NeMo TLS 时，增加以下可选映射：
 
 ```yaml
 - name: MARKETPLACE_NEMO_TLS

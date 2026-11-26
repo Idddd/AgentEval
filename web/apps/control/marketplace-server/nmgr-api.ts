@@ -177,7 +177,7 @@ async function nmgrWorkspaceApi(request: Request, env: NodeJS.ProcessEnv, fetche
         const job = item ? snapshot.jobs[item.id] : undefined;
         if (!item || item.sourcePending || !item.provider || !["TEST READY", "TEST PASSED", "TEST FAILED", "DEPLOYED"].includes(item.status))
           throw new EvaluationError(404, "evaluation_guardrail_missing", "The implemented guardrail revision was not found.");
-        if (write && job && (job.status === "pending" || job.status === "uncertain" || job.inflight || job.purpose === "draft-sync" && job.status !== "done"))
+        if (write && !input.target && job && (job.status === "pending" || job.status === "uncertain" || job.inflight || job.purpose === "draft-sync" && job.status !== "done"))
           throw new EvaluationError(409, "evaluation_guardrail_pending", "Wait for the Guardrail revision to finish synchronizing before starting an evaluation.");
         return { provider: item.provider, workspace: config.workspace, database };
       }, fetcher);

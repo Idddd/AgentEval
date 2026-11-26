@@ -4,14 +4,15 @@ import { Button } from "@/components/ui/button";
 import "./independent-evaluation.css";
 
 type Status = "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
-type HistoryRun = { id: string; status: Status; createdAt: string };
+type Configuration = { id: string; name: string; version?: number };
+type HistoryRun = { id: string; status: Status; createdAt: string; target?: string; targetName?: string; targetVersion?: number };
 type Run = HistoryRun & { phase?: string; completed: number; total: number };
-type Setup = { revision: string; target: string; endpoint: string; demo: boolean; datasets: { id: string; name: string; version: number }[] };
+type Setup = { revision: string; target: string; endpoint: string | null; demo: boolean; datasets: { id: string; name: string; version: number }[] };
 type Report = {
   status: Status; total: number; offset: number; nextOffset?: number | null; matched: number; mismatches: number; errors: number;
   rows: { id: string; status: "PASS" | "FAIL" | "ERROR"; httpStatus?: number; labels: { expected?: string; observed?: string }[] }[];
 };
-type Pending = { key: string; revision: string };
+type Pending = { key: string; revision: string; target?: string };
 class EvaluationFailure extends Error {
   constructor(message: string, readonly code: string, readonly status: number) { super(message); }
 }
@@ -28,7 +29,7 @@ export function IndependentEvaluation({ guardrail, version, demo = false, roleHe
   const path = demo ? "/api/guardrail-evaluation" : "/api/nmgr/guardrail-evaluation";
   const storageKey = `nmgr-independent:${path}:${connectionRevision ?? ""}:${guardrail}@${version}`;
   const request = useMemo(() => async <T,>(signal: AbortSignal, query: Record<string, string> = {}, pending?: Pending): Promise<T> => {
-    const params = new URLSearchParams({ guardrail, version: String(version), ...query, ...(pending ? { revision: pending.revision } : {}) });
+    const params = new URLSearchParams({ guardrail, version: String(version), ...query, ...(pending ? { revision: pending.revision, ...(pending.target && { target: pending.target }) } : {}) });
     let response: Response;
     try {
       response = await fetch(`${path}?${params}`, {
@@ -51,6 +52,9 @@ export function IndependentEvaluation({ guardrail, version, demo = false, roleHe
     return value as T;
   }, [path, guardrail, version, demo, roleHeader, connectionRevision]);
 
+  const [configurations, setConfigurations] = useState<Configuration[] | null>(null);
+  const [target, setTarget] = useState(() => loadPending(storageKey)?.target ?? "");
+  const [selectionError, setSelectionError] = useState("");
   const [mock, setMock] = useState(false);
   const [setup, setSetup] = useState<Setup | null>(null);
   const [history, setHistory] = useState<HistoryRun[]>([]);
@@ -77,15 +81,27 @@ export function IndependentEvaluation({ guardrail, version, demo = false, roleHe
   useEffect(() => {
     const controller = new AbortController();
     setLoadError("");
-    void request<{ source?: "mock"; setup: Setup; history: HistoryRun[] }>(controller.signal).then(value => {
+    void request<{ source?: "mock"; configurations?: Configuration[]; setup?: Setup; history: HistoryRun[] }>(controller.signal).then(value => {
       if (controller.signal.aborted) return;
       setMock(value.source === "mock");
-      setSetup(value.setup);
+      setConfigurations(value.configurations ?? null);
+      if (!value.configurations) setSetup(value.setup ?? null);
       setHistory(value.history);
       selectRun(previous => previous || value.history[0]?.id || "");
     }).catch(error => { if (!controller.signal.aborted) setLoadError(error.message); });
     return () => controller.abort();
   }, [request, refreshSetup]);
+
+  useEffect(() => {
+    if (!configurations || !target) return;
+    const controller = new AbortController();
+    setSelectionError("");
+    setSetup(null);
+    void request<{ setup: Setup }>(controller.signal, { target }).then(value => {
+      if (!controller.signal.aborted) setSetup(value.setup);
+    }).catch(error => { if (!controller.signal.aborted) setSelectionError(error.message); });
+    return () => controller.abort();
+  }, [request, configurations, target]);
 
   useEffect(() => {
     if (!runId) return;
@@ -136,13 +152,13 @@ export function IndependentEvaluation({ guardrail, version, demo = false, roleHe
     setReport(null); setOffset(0); setTrackError(""); selectRun(next);
   }
   async function submit() {
-    if (!setup || sending.current || loadError) return;
+    if (!setup || sending.current || loadError || (configurations && setup.target !== target)) return;
     if (pending && pending.revision !== setup.revision) {
       setSubmitError("The configuration changed after the last submission. Check Recent runs before starting a new evaluation.");
       return;
     }
     const controller = new AbortController();
-    const attempt = pending ?? { key: crypto.randomUUID(), revision: setup.revision };
+    const attempt = pending ?? { key: crypto.randomUUID(), revision: setup.revision, ...(configurations && { target }) };
     remember(attempt);
     sending.current = controller;
     setSubmitting(true);
@@ -174,32 +190,44 @@ export function IndependentEvaluation({ guardrail, version, demo = false, roleHe
 
   return <section className="nm-independent" aria-label="Independent evaluation">
     <div className="nm-ie-heading">
-      <div><h3>Independent evaluation</h3><p>{mock ? "Evaluate URL is not configured. This run uses mock results." : `Run the published suite for revision ${version}.`}</p></div>
+      <div><h3>Independent evaluation</h3><p>{mock ? "Evaluate URL is not configured. This run uses mock results." : `Guardrail version ${version}`}</p></div>
       {mock && <span className="nm-ie-demo">Mock evaluation</span>}
       {demo && <span className="nm-ie-demo">Local demo endpoint</span>}
     </div>
+    {configurations && <div className="nm-ie-controls"><label>Evaluation configuration
+      <select value={target} disabled={submitting || !!pending} onChange={event => {
+        setTarget(event.target.value); setSetup(null); setSelectionError(""); setSubmitError(""); chooseRun("");
+      }}>
+        <option value="" disabled>{configurations.length ? "Select an evaluation" : "No evaluation configurations available"}</option>
+        {configurations.map(config => <option key={config.id} value={config.id}>{config.name}{config.version != null ? ` · v${config.version}` : ""}</option>)}
+      </select>
+    </label></div>}
+    {configurations && !setup && <div className="nm-ie-controls"><Button disabled>Run evaluation</Button></div>}
+    {selectionError && <div role="alert" className="nm-ie-error">{selectionError} <Button variant="outline" size="sm" onClick={() => reloadSetup(i => i + 1)}>Retry</Button></div>}
     {loadError ? <div className="nm-ie-error" role="alert">{loadError} <Button variant="outline" size="sm" onClick={() => reloadSetup(i => i + 1)}>Retry connection</Button></div>
-      : !setup ? <p role="status">Connecting to the evaluation service…</p> : <>
+      : !setup ? (!selectionError && (!configurations || target) && <p role="status">Loading evaluation configuration…</p>) : <>
         <div className="nm-ie-meta">
           <div><span>Dataset</span><strong>{setup.datasets.map(dataset => `${dataset.name} · v${dataset.version}`).join(", ")}</strong></div>
-          <div><span>Endpoint</span><strong>{setup.endpoint}</strong></div>
+          <div><span>Endpoint</span><strong>{setup.endpoint ?? "—"}</strong></div>
         </div>
         <div className="nm-ie-controls">
           <Button disabled={submitting || (!pending && running) || (!!pending && pending.revision !== setup.revision)} onClick={() => void submit()}>
             {submitting ? <LoaderCircle aria-hidden className="nm-ie-spin" size={16} /> : <FlaskConical aria-hidden size={16} />}
             {submitting ? "Submitting…" : pending ? "Retry submission" : "Run evaluation"}
           </Button>
-          {history.length > 0 && <label>Recent runs<select aria-label="Recent runs" value={runId} disabled={submitting} onChange={event => chooseRun(event.target.value)}>
-            {history.map(entry => <option key={entry.id} value={entry.id}>{displayDate(entry.createdAt)} · {entry.status.toLowerCase()} · {entry.id.slice(-6)}</option>)}
-          </select></label>}
         </div>
-        {pending && !submitting && <div className="nm-ie-note">The last submission was not confirmed. {pending.revision === setup.revision ? "Retrying uses the same request and does not create a duplicate." : "The suite changed since that submission; check Recent runs before continuing."}
+      </>}
+    {history.length > 0 && <div className="nm-ie-controls"><label>Recent runs<select aria-label="Recent runs" value={runId} disabled={submitting} onChange={event => chooseRun(event.target.value)}>
+      <option value="">Select a run</option>
+      {history.map(entry => <option key={entry.id} value={entry.id}>{entry.targetName && `${entry.targetName} · `}{displayDate(entry.createdAt)} · {entry.status.toLowerCase()} · {entry.id.slice(-6)}</option>)}
+    </select></label></div>}
+    {pending && !submitting && <div className="nm-ie-note">The last submission was not confirmed. {pending.revision === setup?.revision ? "Retrying uses the same request and does not create a duplicate." : "The suite changed since that submission; check Recent runs before continuing."}
           <div className="nm-ie-controls"><Button variant="outline" size="sm" onClick={() => reloadSetup(i => i + 1)}>Refresh recent runs</Button>
           <Button variant="ghost" size="sm" onClick={() => { remember(null); setSubmitError(""); }}>Dismiss retry</Button></div>
         </div>}
-        {submitError && <p className="nm-ie-error" role="alert">{submitError}</p>}
-      </>}
+    {submitError && <p className="nm-ie-error" role="alert">{submitError}</p>}
     {runId && !submitting && <div className="nm-ie-result">
+      {selectedRun?.target && <p>Demo evaluation · {selectedRun.targetName && selectedRun.targetName !== selectedRun.target ? selectedRun.targetName : configurations?.find(config => config.id === selectedRun.target)?.name ?? selectedRun.target} · v{selectedRun.targetVersion}</p>}
       <div className="nm-ie-run">
         <div role="status" aria-live="polite"><strong>
           {running || !selectedRun ? <LoaderCircle className="nm-ie-spin" size={18} aria-hidden /> : selectedRun.status === "COMPLETED" && !report?.errors && !report?.mismatches ? <CircleCheck size={18} aria-hidden /> : <CircleAlert size={18} aria-hidden />}

@@ -46,6 +46,57 @@ describe("independent Guardrail evaluation", () => {
     expect((await real.json()).error.code).toBe("evaluation_unreachable");
   });
 
+  it("pages the live catalog and scopes selected-suite runs to the workspace, Guardrail version and Evaluate project", async () => {
+    const docs = new Map<string, unknown>();
+    const database = {
+      readDocument: async <T>(id: string) => docs.get(id) as T | undefined,
+      writeDocument: async (id: string, value: unknown) => { docs.set(id, value); },
+      exclusive: async <T>(fn: () => Promise<T>) => fn(),
+    };
+    const selected = { ...cfg, name: "Remote suite", version: 7 };
+    const remoteRun = { ...run, snapshot: { target: { version: 7 } } };
+    const upstream = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/targets")) return Response.json({ total: 2, items: [
+        url.searchParams.get("offset") === "0" ? { id: "first", name: "First" } : { id: cfg.id, name: selected.name, version: 7 },
+      ] });
+      if (url.pathname.endsWith("/test-suite/config")) return Response.json(selected);
+      if (url.pathname.endsWith("/test-suite/runs") && init?.method === "POST") return Response.json(remoteRun);
+      if (url.pathname.endsWith("/runs/eval-a")) return Response.json({ ...remoteRun, status: "COMPLETED" });
+      if (url.pathname.endsWith("/reports/exp-b")) return Response.json({ evaluation_id: "exp-b", status: "COMPLETED", total: 1,
+        overall: { TP: 1, TN: 0, FP: 0, FN: 0, errors: 0 }, results: [{ caseid: "example", status: "PASS" }] });
+      throw new Error("Unexpected Evaluate request");
+    });
+    const invoke = async (extra = "", method = "GET", guardrail = "local", version = 1, workspace = "workspace", project = "test") => {
+      const req = new Request(`${origin}/api/nmgr/guardrail-evaluation?guardrail=${guardrail}&version=${version}${extra}`, {
+        method, headers: { "Idempotency-Key": key },
+      });
+      const res = await guardrailEvaluation(req, { ...env, MARKETPLACE_EVALUATION_PROJECT_ID: project }, () => ({ database, workspace, provider: "NeMo" }), upstream);
+      await assertOpenApiResponse(req, res);
+      return res.json();
+    };
+    expect((await invoke()).configurations.map((c: { id: string }) => c.id)).toEqual(["first", cfg.id]);
+    expect((await invoke("&target=test-suite")).setup.revision).toBe(cfg.revision);
+    expect((await invoke("&revision=7:1", "POST")).error.code).toBe("evaluation_target_required");
+    expect((await invoke("&target=test-suite&revision=old", "POST")).error.code).toBe("evaluation_changed");
+    const start = () => invoke("&target=test-suite&revision=7:1", "POST");
+    expect((await start()).run).toMatchObject({ target: cfg.id, targetVersion: 7, targetName: "Remote suite" });
+    await start();
+    const writes = upstream.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(writes).toHaveLength(2);
+    expect(writes[0]?.[1]?.headers).toEqual(writes[1]?.[1]?.headers);
+    expect((await invoke("&run=eval-a")).run.status).toBe("COMPLETED");
+    expect((await invoke("&run=eval-a&report=true")).report.matched).toBe(1);
+    expect((await invoke()).history).toHaveLength(1);
+    for (const [guardrail, version, workspace, project] of [
+      ["other", 1, "workspace", "test"], ["local", 2, "workspace", "test"],
+      ["local", 1, "other", "test"], ["local", 1, "workspace", "other"],
+    ] as const) {
+      expect((await invoke("", "GET", guardrail, version, workspace, project)).history).toEqual([]);
+      expect((await invoke("&run=eval-a&report=true", "GET", guardrail, version, workspace, project)).error.code).toBe("evaluation_not_found");
+    }
+  });
+
   it("uses only the configured upstream and pinned revision with stable idempotency", async () => {
     const upstream = vi.fn(async (url: string, init?: RequestInit) => init?.method === "POST" ? Response.json(run) : Response.json(cfg));
     for (let n = 0; n < 2; n++) expect((await demoGuardrailEvaluation(request("&revision=7%3A1", "POST"), env, upstream as typeof fetch)).status).toBe(202);
