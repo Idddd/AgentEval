@@ -1,10 +1,10 @@
-# V3 demo connection defaults for v0.2.35.
+# V3 demo connection defaults for v0.2.36.
 # Deploy Marketplace only. Use existing NeMo and PostgreSQL (or MariaDB).
 replicaCount: 1
 fullnameOverride: marketplace-v2
 image:
   # Inherit the chart repository. Set repository only when using a verified mirror.
-  tag: "0.2.35"
+  tag: "0.2.36"
 openshift:
   enabled: true
   route:

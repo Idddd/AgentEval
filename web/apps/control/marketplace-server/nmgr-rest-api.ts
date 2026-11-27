@@ -89,14 +89,16 @@ export async function nmgrRestApi(request: Request, invoke: Legacy): Promise<Res
     if (route.mode === "command") {
       const target = route.action === "create" ? undefined : resource(snapshot, id, route.kind);
       const envelope = { requestId: body.requestId, expectedRevision: body.expectedRevision };
-      addRequestMetadata({ commandId: body.requestId, resourceId: target?.id ?? body.draft?.id });
+      // A retry that omitted the ID must resolve to the same business command.
+      const resourceId = target?.id ?? body.draft.id ?? `${route.kind === "Guardrail" ? "gr" : "profile"}-${body.requestId.toLowerCase()}`;
+      addRequestMetadata({ commandId: body.requestId, resourceId });
       let command: Record<string, unknown>;
-      if (["create", "edit", "revise"].includes(route.action!)) command = { ...envelope, type: route.action, draft: { ...body.draft, id: target?.id ?? body.draft.id, kind: route.kind } };
+      if (["create", "edit", "revise"].includes(route.action!)) command = { ...envelope, type: route.action, draft: { ...body.draft, id: resourceId, kind: route.kind } };
       else if (["advance", "reconcile"].includes(route.action!)) command = { ...body, type: route.action, id: target!.id };
       else if (route.action === "evaluate") command = { ...body, type: "evaluate", id: target!.id };
       else command = { ...body, type: "action", action: route.action, id: target!.id };
       const saved: Snapshot = await call("commands", command);
-      const item = resource(saved, target?.id ?? body.draft.id, route.kind), job = saved.jobs[item.id];
+      const item = resource(saved, resourceId, route.kind), job = saved.jobs[item.id];
       if (job) addRequestMetadata({ jobStatus: job.status, ...(job.traceId ? { operationReference: job.traceId } : {}) });
       const pending = !!job && (job.status === "pending" || !!job.inflight);
       const status = pending ? 202 : route.action === "create" ? 201 : 200;
@@ -140,6 +142,13 @@ export async function nmgrRestApi(request: Request, invoke: Legacy): Promise<Res
     return json({ ...meta, capabilities: { configuration: { available: true }, evaluations: { available: true }, approvals: { available: true }, deployments: { available: true }, audit: { available: true, reason: "Configuration workflow only" }, measure: { available: false, reason: "Live scan metrics and scan details are not connected" }, feedback: { available: false, reason: "Live feedback and closure storage are not connected" }, runtimeControl: { available: false, reason: "Bypass, Monitoring and Preventing are not connected" }, runners: { available: false, reason: "Runner monitoring is not connected" } } });
   } catch (error) {
     if (error instanceof UpstreamResponse) return error.response;
-    return diagnosticResponse(error instanceof z.ZodError ? new StoreError(422, `Invalid fields: ${error.issues.map(i => i.path.join(".") || "request").join(", ")}. Check the endpoint schema.`) : error, "workspace", operation, "Resource API request failed.");
+    if (error instanceof z.ZodError) {
+      const fields = error.issues.map(issue => issue.path.join(".") || "request");
+      const hint = fields.includes("draft.id")
+        ? "Omit draft.id for automatic assignment, or use 3-64 characters starting with a lowercase letter and containing only lowercase letters, digits and hyphens."
+        : "Check the endpoint schema.";
+      return diagnosticResponse(new StoreError(422, `Invalid fields: ${fields.join(", ")}. ${hint}`), "workspace", operation, "Resource API request failed.");
+    }
+    return diagnosticResponse(error, "workspace", operation, "Resource API request failed.");
   }
 }

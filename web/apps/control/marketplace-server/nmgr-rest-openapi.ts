@@ -57,7 +57,7 @@ const command = " Supply a UUID requestId. Create accepts an omitted or legacy e
 const draft = { name: "Customer protection", description: "Protect customer information", location: "ALL", mandatory: false, refs: [], attributes: { bu: "ISS", agent: "Customer assistant", data: "Text" }, threshold: 5 };
 function exampleFor(action?: string, kind?: string) {
   const envelope = { requestId: "d594d357-2aeb-446b-a116-2e1d8dca4a7b", ...(action === "create" ? {} : { expectedRevision: 0 }) };
-  if (["create", "edit", "revise"].includes(action ?? "")) return { ...envelope, draft: { ...(action === "create" ? { id: kind === "Profile" ? "customer-profile" : "customer-control" } : {}), ...draft, ...(kind === "Profile" ? { refs: ["customer-control"] } : {}) } };
+  if (["create", "edit", "revise"].includes(action ?? "")) return { ...envelope, draft: { ...draft, ...(kind === "Profile" ? { refs: ["customer-control"] } : {}) } };
   if (action === "implement") return { ...envelope, provider: "NeMo", config: { scannerType: "keyword", direction: "request", content: "private-key", versionName: "v1", versionDescription: "Initial definition" } };
   if (action === "evaluate") return { ...envelope, dataset: "Acceptance", cases: [{ input: "private-key", expected: "block", phase: "input" }, { input: "hello", expected: "allow", phase: "input" }] };
   return { ...envelope, ...(action === "reject" ? { reason: "Please revise the requirements" } : {}) };
@@ -83,7 +83,7 @@ export function restOpenApi(commonParameters: unknown[], errors: Record<string, 
       responses: { "200": success("Completed request; inspect business/job status"), ...(route.action === "create" ? { "201": success("Resource created; inspect draft synchronization status") } : {}), ...(route.mode === "command" ? { "202": { ...success("Pending operation; explicitly advance or reconcile the job"), headers: { ...headers, Location: { ...field("Relative URL of the current resource job.", "Backend status panel. Poll this URL after an accepted write."), schema: text } } } } : {}), ...errors, default: { description: "Structured dependency failure", headers, content: { "application/json": { schema: ref("ErrorResponse") } } } } };
     if (route.body) operation.requestBody = {
       required: true,
-      ...(route.mode === "command" ? { description: route.action === "create" ? "Send a UUID requestId and the draft. Creating a new ID needs no prior read. A duplicate ID returns 409." : "Replace the example expectedRevision with the live top-level revision from the relevant GET response, and generate a UUID for the action." } : {}),
+      ...(route.mode === "command" ? { description: route.action === "create" ? "Send a fresh UUID requestId and the draft. Omit draft.id for automatic assignment and read item.id from the response. Reuse the same requestId and body on retry. Creating a different resource with an existing ID returns 409." : "Replace the example expectedRevision with the live top-level revision from the relevant GET response, and generate a UUID for the action." } : {}),
       content: { "application/json": { schema: withFieldDocs(schema(route.body), commandFields), example: route.mode === "import" ? {} : exampleFor(route.action, route.kind) } },
     };
     if (route.operationId === "listGuardrails") operation.description += " Tech (IT Admin) sees resources across control units. User and Approver (User Admin) see their assigned unit. Read /api/nmgr/v1/me for the effective role. Use unit to filter within scope.";

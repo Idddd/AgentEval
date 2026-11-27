@@ -1,7 +1,9 @@
-# AI Marketplace deployment — v0.2.35
+# AI Marketplace deployment — v0.2.36
 
-Image: `ghcr.io/idddd/tali-ui-demo:0.2.35` (Linux amd64).
-Chart: `oci://ghcr.io/idddd/charts/tali-ui-demo`, version `0.2.35`.
+Image: `ghcr.io/idddd/tali-ui-demo:0.2.36` (Linux amd64).
+Chart: `oci://ghcr.io/idddd/charts/tali-ui-demo`, version `0.2.36`.
+
+Version 0.2.36 lets clients omit draft.id when creating a Guardrail or Profile through the V3 resource API. Swagger documents automatic assignment, validation and retry behavior.
 
 Version 0.2.35 lets Tech users choose a configuration from the connected Evaluate project and follow its run and report on the selected Guardrail version.
 
@@ -32,19 +34,19 @@ V3 now needs only a NeMo API URL, business API token and full PostgreSQL/MariaDB
 ## Start or upgrade
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.35
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.36
 docker run -d --name ai-marketplace -p 18082:8080 \
   -v marketplace-connections:/var/lib/marketplace/connection \
   -e MARKETPLACE_CONNECTION_DIR=/var/lib/marketplace/connection \
   -e MARKETPLACE_CONNECTION_PERSISTENT=true \
-  ghcr.io/idddd/tali-ui-demo:0.2.35
+  ghcr.io/idddd/tali-ui-demo:0.2.36
 ```
 
 Open `/v3/guardrails` to configure connections, or `/v2/guardrails` for Mock.
 
 ```sh
 helm upgrade --install tali-ui-demo oci://ghcr.io/idddd/charts/tali-ui-demo \
-  --version 0.2.35 --namespace YOUR_NAMESPACE -f values.uat.yaml
+  --version 0.2.36 --namespace YOUR_NAMESPACE -f values.uat.yaml
 ```
 
 Keep the existing release name, namespace, registry, Istio and resource settings. Preserve `workspaceId` and NeMo URL to retain the same workspace. The new chart defaults read token/DB URL from existing Secret `tali`, keys `tali-guard-bootstrap-user-ini` and `tali-guard-postgresql-init`. Override Secret references only when names differ. Credentials belong in Secrets. For independent evaluation, fill in the actual service address in a deployment values file outside the source repository using the [Evaluate values template](../deploy/values.evaluation.example.yaml).
@@ -73,9 +75,9 @@ V3 failures include component, code, setting names and Reference matching `X-Req
 ## Internal registry and offline artifacts
 
 ```sh
-docker pull ghcr.io/idddd/tali-ui-demo:0.2.35
-docker tag ghcr.io/idddd/tali-ui-demo:0.2.35 INTERNAL_REGISTRY/tali-ui:0.2.35
-docker push INTERNAL_REGISTRY/tali-ui:0.2.35
+docker pull ghcr.io/idddd/tali-ui-demo:0.2.36
+docker tag ghcr.io/idddd/tali-ui-demo:0.2.36 INTERNAL_REGISTRY/tali-ui:0.2.36
+docker push INTERNAL_REGISTRY/tali-ui:0.2.36
 ```
 
 The published image embeds its matching chart and sanitized source archive:
@@ -86,8 +88,8 @@ The published image embeds its matching chart and sanitized source archive:
 - `/opt/marketplace/check-nemo.mjs`
 
 ```sh
-container=$(docker create ghcr.io/idddd/tali-ui-demo:0.2.35)
-docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" ./tali-ui-demo-0.2.35.tgz
+container=$(docker create ghcr.io/idddd/tali-ui-demo:0.2.36)
+docker cp "$container:/opt/tali/helm/tali-UI-demo.tgz" ./tali-ui-demo-0.2.36.tgz
 docker cp "$container:/opt/tali/source/project-source.zip" ./project-source.zip
 docker cp "$container:/opt/tali/source/project-source.zip.sha256" ./project-source.zip.sha256
 docker rm "$container"
@@ -96,7 +98,7 @@ sha256sum -c project-source.zip.sha256
 
 Source excludes real credentials, local environment files, databases, logs, dependencies and generated output. Public localhost TLS fixtures are test-only. The release workflow verifies startup, embedded source/chart integrity, Helm templates and 16 synthetic dependency failures before publishing the OCI chart. Release assets include checksums; validate offline archives before importing.
 
-See [v0.2.35 verification](uat/v0.2.35-release-validation.md) and [F5 deployment and troubleshooting](uat/2026-11-05-f5-integration.md).
+See [v0.2.36 verification](uat/v0.2.36-release-validation.md) and [F5 deployment and troubleshooting](uat/2026-11-05-f5-integration.md).
 
 ## Independent evaluation
 

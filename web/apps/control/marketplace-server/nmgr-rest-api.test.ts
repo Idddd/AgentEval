@@ -193,6 +193,22 @@ it("creates through the same business command and retains idempotency and old sn
   const data = await old.json();
   expect(data.state.entities.filter((e: any) => e.id === "new-control")).toHaveLength(1);
 });
+it("creates without a client resource ID and returns the same item on retry", async () => {
+  const payload = { requestId: randomUUID(), draft };
+  const created = await request("/guardrails", "POST", payload);
+  expect(created.status).toBe(201);
+  const { item } = await created.json();
+  expect(item.id).toMatch(/^[a-z][a-z0-9-]{2,63}$/);
+  const retry = await request("/guardrails", "POST", payload);
+  expect(retry.status).toBe(201);
+  expect((await retry.json()).item.id).toBe(item.id);
+  expect((await (await request("/guardrails/" + item.id)).json()).item.id).toBe(item.id);
+});
+it("explains the required format when a supplied draft.id is invalid", async () => {
+  const response = await request("/guardrails", "POST", { requestId: randomUUID(), draft: { ...draft, id: "123" } });
+  expect(response.status).toBe(422);
+  expect((await response.json()).error.message).toMatch(/draft\.id.*lowercase letter/);
+});
 it("rejects stale writes and URI/body identity overrides", async () => {
   expect((await request("/guardrails/guard-one", "PUT", { requestId: randomUUID(), expectedRevision: 0, draft })).status).toBe(409);
   expect((await request("/profiles/guard-one", "PUT", { requestId: randomUUID(), expectedRevision: 4, draft })).status).toBe(404);

@@ -40,7 +40,7 @@ jobs:
           image_tag="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
           embedded_image_tag="$image_tag"
           storage=browser
-          chart_version="0.2.35-dev.${GITHUB_RUN_NUMBER}"
+          chart_version="0.2.36-dev.${GITHUB_RUN_NUMBER}"
           tags=("${image}:${image_tag}")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tags+=("${image}:pr-${{ github.event.pull_request.number }}")
@@ -55,7 +55,7 @@ jobs:
             branch="${branch//_/-}"
             tags+=("${image}:${branch}")
             if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-              chart_version="0.2.35-main.${GITHUB_RUN_NUMBER}"
+              chart_version="0.2.36-main.${GITHUB_RUN_NUMBER}"
               tags+=("${image}:latest")
             fi
           fi

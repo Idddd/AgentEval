@@ -35,7 +35,7 @@ const resourceFields = fields(detail, {
   thresholdWindow: "Stored alert window in minutes. V3 does not compute live alerts from this field.",
 });
 const draftFields = fields(forms, {
-    id: "Stable Marketplace record ID. Generate once at create. Versioned edit and revision APIs take the existing ID in the path.",
+    id: "Stable Marketplace record ID. Versioned create APIs can assign it when omitted. A supplied ID must start with a lowercase letter and use 3-64 lowercase letters, digits or hyphens. Versioned edit and revision APIs take the existing ID in the path.",
     kind: "Guardrail or Profile. The versioned endpoint path determines which form and record type apply.",
     name: "Value of the Guardrail Name or Profile Name field.",
     description: "Value of Control Intent for Guardrails or Use Case for Profiles.",
